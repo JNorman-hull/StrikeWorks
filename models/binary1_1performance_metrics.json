@@ -1,0 +1,83 @@
+{
+  "model": "MiniRocket + RidgeClassifierCV (Binary)",
+  "n_samples": 565,
+  "n_strikes": 264,
+  "n_no_strikes": 301,
+  "strike_rate": 0.4672566371681416,
+  "class_weight": 1.1401515151515151,
+  "n_channels": 10,
+  "max_sequence_length": 401,
+  "channels": [
+    "higacc_x_g",
+    "higacc_y_g",
+    "higacc_z_g",
+    "inacc_x_ms",
+    "inacc_y_ms",
+    "inacc_z_ms",
+    "rot_x_degs",
+    "rot_y_degs",
+    "rot_z_degs",
+    "pressure_kpa"
+  ],
+  "cross_validation": {
+    "n_folds": 5,
+    "mean_auc": 0.9920322886989554,
+    "mean_accuracy": 0.97515664160401,
+    "mean_sensitivity": 0.9770655270655271,
+    "mean_specificity": 0.9733333333333334,
+    "mean_precision": 0.9712780514504653,
+    "mean_f1": 0.9736210362170408,
+    "std_auc": 0.0093884334595578,
+    "std_accuracy": 0.01629979143414042,
+    "std_sensitivity": 0.025430043669763817,
+    "std_specificity": 0.029059326290271154,
+    "std_precision": 0.031213780396440603,
+    "std_f1": 0.017216265123013393
+  },
+  "out_of_fold_performance": {
+    "roc_auc": 0.9912161481928924,
+    "pr_auc": 0.9921616043706883,
+    "overall_accuracy": 0.9663716814159292,
+    "sensitivity": 0.9507575757575758,
+    "specificity": 0.9800664451827242,
+    "precision": 0.9766536964980544,
+    "f1_score": 0.963531669865643,
+    "mcc": 0.9326332044178229,
+    "FNR": 0.04924242424242424,
+    "FPR": 0.019933554817275746,
+    "optimal_threshold": 0.4881023816528933,
+    "confusion_matrix": {
+      "tn": 295,
+      "fp": 6,
+      "fn": 13,
+      "tp": 251
+    }
+  },
+  "performance_by_strike_type": {
+    "leading_direct": {
+      "n_files": 168,
+      "accuracy": 0.9821428571428571
+    },
+    "leading_indirect": {
+      "n_files": 32,
+      "accuracy": 1.0
+    },
+    "no_contact": {
+      "n_files": 301,
+      "accuracy": 0.9800664451827242
+    },
+    "other_impeller_hub": {
+      "n_files": 47,
+      "accuracy": 0.9148936170212766
+    },
+    "other_impeller_surface": {
+      "n_files": 17,
+      "accuracy": 0.6470588235294118
+    }
+  },
+  "misclassified": {
+    "total": 19,
+    "false_positives": 6,
+    "false_negatives": 13
+  }
+}

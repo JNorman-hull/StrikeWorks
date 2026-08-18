@@ -1,0 +1,107 @@
+{
+  "model": "MiniRocket + RidgeClassifierCV (collapsed: region_1 | region_2+3 | region_4+5)",
+  "scheme": "model_1_1",
+  "target": "concentric_pump_region (collapsed)",
+  "region_to_class": {
+    "1": 0,
+    "2": 1,
+    "3": 1,
+    "4": 2,
+    "5": 2
+  },
+  "include_surface_as_region1": "N",
+  "n_surface_files": 17,
+  "n_samples": 247,
+  "n_classes": 3,
+  "class_names": [
+    "region_1",
+    "region_2_3",
+    "region_4_5"
+  ],
+  "class_distribution": {
+    "region_1": 47,
+    "region_2_3": 96,
+    "region_4_5": 104
+  },
+  "class_weights": {
+    "region_1": 1.75177304964539,
+    "region_2_3": 0.8576388888888888,
+    "region_4_5": 0.7916666666666666
+  },
+  "n_channels": 10,
+  "channels": [
+    "higacc_x_g",
+    "higacc_y_g",
+    "higacc_z_g",
+    "inacc_x_ms",
+    "inacc_y_ms",
+    "inacc_z_ms",
+    "rot_x_degs",
+    "rot_y_degs",
+    "rot_z_degs",
+    "pressure_kpa"
+  ],
+  "max_sequence_length": 401,
+  "cross_validation": {
+    "n_folds": 5,
+    "mean_accuracy": 0.598938775510204,
+    "mean_macro_precision": 0.6038828417958853,
+    "mean_macro_recall": 0.5764383180172654,
+    "mean_macro_f1": 0.5794149923212535,
+    "std_accuracy": 0.03274029164820463,
+    "std_macro_precision": 0.056816367929820616,
+    "std_macro_recall": 0.028275896225173264,
+    "std_macro_f1": 0.038381307128819576
+  },
+  "out_of_fold_performance": {
+    "overall_accuracy": 0.5991902834008097,
+    "macro_precision": 0.5876164875818564,
+    "macro_recall": 0.576849199854519,
+    "macro_f1": 0.5799535827287058,
+    "confusion_matrix": [
+      [
+        23,
+        15,
+        9
+      ],
+      [
+        13,
+        49,
+        34
+      ],
+      [
+        5,
+        23,
+        76
+      ]
+    ],
+    "per_class_metrics": {
+      "region_1": {
+        "precision": 0.5609756097560976,
+        "recall": 0.48936170212765956,
+        "f1_score": 0.5227272727272727,
+        "support": 47
+      },
+      "region_2_3": {
+        "precision": 0.5632183908045977,
+        "recall": 0.5104166666666666,
+        "f1_score": 0.5355191256830601,
+        "support": 96
+      },
+      "region_4_5": {
+        "precision": 0.6386554621848739,
+        "recall": 0.7307692307692307,
+        "f1_score": 0.6816143497757847,
+        "support": 104
+      }
+    }
+  },
+  "misclassified": {
+    "total": 99,
+    "by_true_class": {
+      "region_1": 24,
+      "region_2_3": 47,
+      "region_4_5": 28
+    }
+  }
+}
