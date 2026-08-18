@@ -1,16 +1,10 @@
 # ///////////////////////////////////////////////////////////////
 #
-# BY: WANDERSON M.PIMENTA
-# PROJECT MADE WITH: Qt Designer and PySide6
-# V: 1.0.0
+# StrikeWorks - data extraction, validation, processing and model
+# development tool for underwater passive sensor devices.
 #
-# This project can be used freely for all uses, as long as they maintain the
-# respective credits only in the Python scripts, any information in the visual
-# interface (GUI) can be modified without any implication.
-#
-# There are limitations on Qt licenses if you want to use your products
-# commercially, I recommend reading them on the official website:
-# https://doc.qt.io/qtforpython/licenses.html
+# GUI built on the PyDracula template (MIT licence) - credit and link
+# available under Settings > About. See LICENSE.
 #
 # ///////////////////////////////////////////////////////////////
 
@@ -27,6 +21,11 @@ os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
 # SET AS GLOBAL WIDGETS
 # ///////////////////////////////////////////////////////////////
 widgets = None
+
+# UI TEMPLATE CREDIT (shown under Settings > About)
+# ///////////////////////////////////////////////////////////////
+TEMPLATE_URL = "https://github.com/Wanderson-Magalhaes/Modern_GUI_PyDracula_PySide6_or_PyQt6"
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -45,8 +44,9 @@ class MainWindow(QMainWindow):
 
         # APP NAME
         # ///////////////////////////////////////////////////////////////
-        title = "PyDracula - Modern GUI"
-        description = "PyDracula APP - Theme with colors based on Dracula for Python."
+        title = "StrikeWorks"
+        description = ("StrikeWorks - data extraction, validation, processing and model "
+                       "development tool for underwater passive sensor devices")
         # APPLY TEXTS
         self.setWindowTitle(title)
         widgets.titleRightInfo.setText(description)
@@ -72,16 +72,23 @@ class MainWindow(QMainWindow):
         widgets.btn_new.clicked.connect(self.buttonClick)
         widgets.btn_save.clicked.connect(self.buttonClick)
 
-        # EXTRA LEFT BOX
-        def openCloseLeftBox():
+        # SENSOR PROCESSING PANEL (slides out of the left menu)
+        def openCloseSensorBox():
             UIFunctions.toggleLeftBox(self, True)
-        widgets.toggleLeftBox.clicked.connect(openCloseLeftBox)
-        widgets.extraCloseColumnBtn.clicked.connect(openCloseLeftBox)
+        widgets.btn_sensor.clicked.connect(openCloseSensorBox)
+        widgets.extraCloseColumnBtn.clicked.connect(openCloseSensorBox)
 
-        # EXTRA RIGHT BOX
+        # SENSOR PROCESSING SUB-MENU
+        widgets.btn_prepare.clicked.connect(self.sensorButtonClick)
+        widgets.btn_process.clicked.connect(self.sensorButtonClick)
+        widgets.btn_validate.clicked.connect(self.sensorButtonClick)
+        widgets.btn_dataset.clicked.connect(self.sensorButtonClick)
+
+        # SETTINGS PANEL (right hand box)
         def openCloseRightBox():
             UIFunctions.toggleRightBox(self, True)
         widgets.settingsTopBtn.clicked.connect(openCloseRightBox)
+        widgets.btn_about.clicked.connect(self.openAbout)
 
         # SHOW APP
         # ///////////////////////////////////////////////////////////////
@@ -90,7 +97,7 @@ class MainWindow(QMainWindow):
         # SET CUSTOM THEME
         # ///////////////////////////////////////////////////////////////
         useCustomTheme = False
-        themeFile = "themes\py_dracula_light.qss"
+        themeFile = os.path.join("themes", "strikeworks_light.qss")
 
         # SET THEME AND HACKS
         if useCustomTheme:
@@ -103,7 +110,15 @@ class MainWindow(QMainWindow):
         # SET HOME PAGE AND SELECT MENU
         # ///////////////////////////////////////////////////////////////
         widgets.stackedWidget.setCurrentWidget(widgets.home)
-        widgets.btn_home.setStyleSheet(UIFunctions.selectMenu(widgets.btn_home.styleSheet()))
+        self.setSelected(widgets.btn_home)
+
+
+    # APPLY THE "SELECTED" HIGHLIGHT TO A MENU BUTTON
+    # Deselect first so repeated clicks don't stack the stylesheet.
+    # ///////////////////////////////////////////////////////////////
+    def setSelected(self, btn):
+        clean = UIFunctions.deselectMenu(btn.styleSheet())
+        btn.setStyleSheet(UIFunctions.selectMenu(clean))
 
 
     # BUTTONS CLICK
@@ -118,25 +133,63 @@ class MainWindow(QMainWindow):
         if btnName == "btn_home":
             widgets.stackedWidget.setCurrentWidget(widgets.home)
             UIFunctions.resetStyle(self, btnName)
-            btn.setStyleSheet(UIFunctions.selectMenu(btn.styleSheet()))
+            UIFunctions.resetPanelStyle(self, "")
+            self.setSelected(btn)
 
         # SHOW WIDGETS PAGE
         if btnName == "btn_widgets":
             widgets.stackedWidget.setCurrentWidget(widgets.widgets)
             UIFunctions.resetStyle(self, btnName)
-            btn.setStyleSheet(UIFunctions.selectMenu(btn.styleSheet()))
+            UIFunctions.resetPanelStyle(self, "")
+            self.setSelected(btn)
 
         # SHOW NEW PAGE
         if btnName == "btn_new":
             widgets.stackedWidget.setCurrentWidget(widgets.new_page) # SET PAGE
             UIFunctions.resetStyle(self, btnName) # RESET ANOTHERS BUTTONS SELECTED
-            btn.setStyleSheet(UIFunctions.selectMenu(btn.styleSheet())) # SELECT MENU
+            UIFunctions.resetPanelStyle(self, "")
+            self.setSelected(btn) # SELECT MENU
 
         if btnName == "btn_save":
             print("Save BTN clicked!")
 
         # PRINT BTN NAME
         print(f'Button "{btnName}" pressed!')
+
+
+    # SENSOR PROCESSING SUB-MENU CLICK
+    # ///////////////////////////////////////////////////////////////
+    def sensorButtonClick(self):
+        btn = self.sender()
+        btnName = btn.objectName()
+
+        pages = {
+            "btn_prepare":  widgets.page_prepare,
+            "btn_process":  widgets.page_process,
+            "btn_validate": widgets.page_validate,
+            "btn_dataset":  widgets.page_dataset,
+        }
+
+        if btnName in pages:
+            widgets.stackedWidget.setCurrentWidget(pages[btnName])
+
+            # HIGHLIGHT THE SUB-MENU ENTRY
+            UIFunctions.resetPanelStyle(self, btnName)
+            self.setSelected(btn)
+
+            # KEEP "SENSOR PROCESSING" MARKED AS THE ACTIVE TOP-LEVEL MENU
+            UIFunctions.resetStyle(self, "btn_sensor")
+            self.setSelected(widgets.btn_sensor)
+
+        # PRINT BTN NAME
+        print(f'Button "{btnName}" pressed!')
+
+
+    # ABOUT - UI TEMPLATE CREDIT
+    # ///////////////////////////////////////////////////////////////
+    def openAbout(self):
+        QDesktopServices.openUrl(QUrl(TEMPLATE_URL))
+        print(f"Opened UI template credit: {TEMPLATE_URL}")
 
 
     # RESIZE EVENTS

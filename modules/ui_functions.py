@@ -1,16 +1,10 @@
 # ///////////////////////////////////////////////////////////////
 #
-# BY: WANDERSON M.PIMENTA
-# PROJECT MADE WITH: Qt Designer and PySide6
-# V: 1.0.0
+# StrikeWorks - data extraction, validation, processing and model
+# development tool for underwater passive sensor devices.
 #
-# This project can be used freely for all uses, as long as they maintain the
-# respective credits only in the Python scripts, any information in the visual
-# interface (GUI) can be modified without any implication.
-#
-# There are limitations on Qt licenses if you want to use your products
-# commercially, I recommend reading them on the official website:
-# https://doc.qt.io/qtforpython/licenses.html
+# GUI built on the PyDracula template (MIT licence) - credit and link
+# available under Settings > About. See LICENSE.
 #
 # ///////////////////////////////////////////////////////////////
 
@@ -99,20 +93,20 @@ class UIFunctions(MainWindow):
             standard = 0
 
             # GET BTN STYLE
-            style = self.ui.toggleLeftBox.styleSheet()
+            style = self.ui.btn_sensor.styleSheet()
 
             # SET MAX WIDTH
             if width == 0:
                 widthExtended = maxExtend
                 # SELECT BTN
-                self.ui.toggleLeftBox.setStyleSheet(style + color)
+                self.ui.btn_sensor.setStyleSheet(style + color)
                 if widthRightBox != 0:
                     style = self.ui.settingsTopBtn.styleSheet()
                     self.ui.settingsTopBtn.setStyleSheet(style.replace(Settings.BTN_RIGHT_BOX_COLOR, ''))
             else:
                 widthExtended = standard
                 # RESET BTN
-                self.ui.toggleLeftBox.setStyleSheet(style.replace(color, ''))
+                self.ui.btn_sensor.setStyleSheet(style.replace(color, ''))
                 
         UIFunctions.start_box_animation(self, width, widthRightBox, "left")
 
@@ -136,8 +130,8 @@ class UIFunctions(MainWindow):
                 # SELECT BTN
                 self.ui.settingsTopBtn.setStyleSheet(style + color)
                 if widthLeftBox != 0:
-                    style = self.ui.toggleLeftBox.styleSheet()
-                    self.ui.toggleLeftBox.setStyleSheet(style.replace(Settings.BTN_LEFT_BOX_COLOR, ''))
+                    style = self.ui.btn_sensor.styleSheet()
+                    self.ui.btn_sensor.setStyleSheet(style.replace(Settings.BTN_LEFT_BOX_COLOR, ''))
             else:
                 widthExtended = standard
                 # RESET BTN
@@ -201,6 +195,21 @@ class UIFunctions(MainWindow):
     # RESET SELECTION
     def resetStyle(self, widget):
         for w in self.ui.topMenu.findChildren(QPushButton):
+            if w.objectName() != widget:
+                w.setStyleSheet(UIFunctions.deselectMenu(w.styleSheet()))
+
+    # SELECT/DESELECT SENSOR PROCESSING SUB-MENU
+    # These act on the slide-out panel, not the main left menu.
+    # ///////////////////////////////////////////////////////////////
+    # START SELECTION
+    def selectPanelMenu(self, widget):
+        for w in self.ui.extraTopMenu.findChildren(QPushButton):
+            if w.objectName() == widget:
+                w.setStyleSheet(UIFunctions.selectMenu(w.styleSheet()))
+
+    # RESET SELECTION
+    def resetPanelStyle(self, widget):
+        for w in self.ui.extraTopMenu.findChildren(QPushButton):
             if w.objectName() != widget:
                 w.setStyleSheet(UIFunctions.deselectMenu(w.styleSheet()))
 
