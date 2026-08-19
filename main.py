@@ -16,6 +16,7 @@ import platform
 # ///////////////////////////////////////////////////////////////
 from modules import *
 from widgets import *
+from modules.page_process import ProcessPage
 os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
 
 # SET AS GLOBAL WIDGETS
@@ -62,6 +63,12 @@ class MainWindow(QMainWindow):
         # QTableWidget PARAMETERS
         # ///////////////////////////////////////////////////////////////
         widgets.tableWidget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
+        # PAGE CONTROLLERS
+        # ///////////////////////////////////////////////////////////////
+        self.process_page = ProcessPage(widgets, self)
+        self.process_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
 
         # BUTTONS CLICK
         # ///////////////////////////////////////////////////////////////

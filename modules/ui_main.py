@@ -17,18 +17,19 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QAbstractItemView, QAbstractScrollArea, QApplication, QCheckBox,
     QComboBox, QCommandLinkButton, QFrame, QGridLayout,
-    QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QMainWindow, QPlainTextEdit, QPushButton, QRadioButton,
-    QScrollArea, QScrollBar, QSizePolicy, QSlider,
-    QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
-    QWidget)
-from . resources_rc import *
+    QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
+    QPlainTextEdit, QPushButton, QRadioButton, QScrollArea,
+    QScrollBar, QSizePolicy, QSlider, QSpacerItem,
+    QStackedWidget, QTabWidget, QTableWidget, QTableWidgetItem,
+    QTreeView, QVBoxLayout, QWidget)
+import resources_rc
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(1280, 720)
+        MainWindow.resize(1048, 720)
         MainWindow.setMinimumSize(QSize(940, 560))
         self.styleSheet = QWidget(MainWindow)
         self.styleSheet.setObjectName(u"styleSheet")
@@ -600,10 +601,9 @@ class Ui_MainWindow(object):
         font1 = QFont()
         font1.setFamilies([u"Segoe UI Semibold"])
         font1.setPointSize(12)
-        font1.setBold(False)
         font1.setItalic(False)
         self.titleLeftApp.setFont(font1)
-        self.titleLeftApp.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignTop)
+        self.titleLeftApp.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop)
         self.titleLeftDescription = QLabel(self.topLogoInfo)
         self.titleLeftDescription.setObjectName(u"titleLeftDescription")
         self.titleLeftDescription.setGeometry(QRect(70, 27, 160, 16))
@@ -614,7 +614,7 @@ class Ui_MainWindow(object):
         font2.setBold(False)
         font2.setItalic(False)
         self.titleLeftDescription.setFont(font2)
-        self.titleLeftDescription.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignTop)
+        self.titleLeftDescription.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop)
 
         self.verticalLayout_3.addWidget(self.topLogoInfo)
 
@@ -734,7 +734,7 @@ class Ui_MainWindow(object):
         self.verticalLayout_8.addWidget(self.btn_exit)
 
 
-        self.verticalMenuLayout.addWidget(self.topMenu, 0, Qt.AlignTop)
+        self.verticalMenuLayout.addWidget(self.topMenu, 0, Qt.AlignmentFlag.AlignTop)
 
 
         self.verticalLayout_3.addWidget(self.leftMenuFrame)
@@ -865,7 +865,7 @@ class Ui_MainWindow(object):
         self.verticalLayout_11.addWidget(self.btn_dataset)
 
 
-        self.verticalLayout_12.addWidget(self.extraTopMenu, 0, Qt.AlignTop)
+        self.verticalLayout_12.addWidget(self.extraTopMenu, 0, Qt.AlignmentFlag.AlignTop)
 
         self.extraCenter = QFrame(self.extraContent)
         self.extraCenter.setObjectName(u"extraCenter")
@@ -929,7 +929,7 @@ class Ui_MainWindow(object):
         self.titleRightInfo.setSizePolicy(sizePolicy2)
         self.titleRightInfo.setMaximumSize(QSize(16777215, 45))
         self.titleRightInfo.setFont(font)
-        self.titleRightInfo.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignVCenter)
+        self.titleRightInfo.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter)
 
         self.horizontalLayout_3.addWidget(self.titleRightInfo)
 
@@ -999,7 +999,7 @@ class Ui_MainWindow(object):
         self.horizontalLayout_2.addWidget(self.closeAppBtn)
 
 
-        self.horizontalLayout.addWidget(self.rightButtons, 0, Qt.AlignRight)
+        self.horizontalLayout.addWidget(self.rightButtons, 0, Qt.AlignmentFlag.AlignRight)
 
 
         self.verticalLayout_2.addWidget(self.contentTopBg)
@@ -1112,7 +1112,7 @@ class Ui_MainWindow(object):
         self.labelVersion_3.setObjectName(u"labelVersion_3")
         self.labelVersion_3.setStyleSheet(u"color: rgb(113, 126, 149);")
         self.labelVersion_3.setLineWidth(1)
-        self.labelVersion_3.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignVCenter)
+        self.labelVersion_3.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter)
 
         self.gridLayout.addWidget(self.labelVersion_3, 1, 0, 1, 2)
 
@@ -1330,36 +1330,38 @@ class Ui_MainWindow(object):
         brush2.setStyle(Qt.BrushStyle.NoBrush)
         palette.setBrush(QPalette.ColorGroup.Active, QPalette.ColorRole.Base, brush2)
         palette.setBrush(QPalette.ColorGroup.Active, QPalette.ColorRole.Window, brush1)
+        brush3 = QBrush(QColor(221, 221, 221, 128))
+        brush3.setStyle(Qt.BrushStyle.SolidPattern)
 #if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
-        palette.setBrush(QPalette.ColorGroup.Active, QPalette.ColorRole.PlaceholderText, brush)
+        palette.setBrush(QPalette.ColorGroup.Active, QPalette.ColorRole.PlaceholderText, brush3)
 #endif
         palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.WindowText, brush)
         palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.Button, brush1)
         palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.Text, brush)
         palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.ButtonText, brush)
-        brush3 = QBrush(QColor(0, 0, 0, 255))
-        brush3.setStyle(Qt.BrushStyle.NoBrush)
-        palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.Base, brush3)
+        brush4 = QBrush(QColor(0, 0, 0, 255))
+        brush4.setStyle(Qt.BrushStyle.NoBrush)
+        palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.Base, brush4)
         palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.Window, brush1)
 #if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
-        palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.PlaceholderText, brush)
+        palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.PlaceholderText, brush3)
 #endif
         palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, brush)
         palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Button, brush1)
         palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, brush)
         palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, brush)
-        brush4 = QBrush(QColor(0, 0, 0, 255))
-        brush4.setStyle(Qt.BrushStyle.NoBrush)
-        palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Base, brush4)
+        brush5 = QBrush(QColor(0, 0, 0, 255))
+        brush5.setStyle(Qt.BrushStyle.NoBrush)
+        palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Base, brush5)
         palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Window, brush1)
 #if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
-        palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.PlaceholderText, brush)
+        palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.PlaceholderText, brush3)
 #endif
         self.tableWidget.setPalette(palette)
         self.tableWidget.setFrameShape(QFrame.NoFrame)
         self.tableWidget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.tableWidget.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
-        self.tableWidget.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tableWidget.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.tableWidget.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tableWidget.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tableWidget.setShowGrid(True)
@@ -1386,7 +1388,7 @@ class Ui_MainWindow(object):
         self.verticalLayout_20.setObjectName(u"verticalLayout_20")
         self.label = QLabel(self.new_page)
         self.label.setObjectName(u"label")
-        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.verticalLayout_20.addWidget(self.label)
 
@@ -1400,11 +1402,7 @@ class Ui_MainWindow(object):
         self.title_prepare = QLabel(self.page_prepare)
         self.title_prepare.setObjectName(u"title_prepare")
         self.title_prepare.setMaximumSize(QSize(16777215, 30))
-        font5 = QFont()
-        font5.setFamilies([u"Segoe UI"])
-        font5.setPointSize(14)
-        font5.setBold(True)
-        self.title_prepare.setFont(font5)
+        self.title_prepare.setFont(font)
 
         self.layout_prepare.addWidget(self.title_prepare)
 
@@ -1432,7 +1430,7 @@ class Ui_MainWindow(object):
         self.title_process = QLabel(self.page_process)
         self.title_process.setObjectName(u"title_process")
         self.title_process.setMaximumSize(QSize(16777215, 30))
-        self.title_process.setFont(font5)
+        self.title_process.setFont(font)
 
         self.layout_process.addWidget(self.title_process)
 
@@ -1447,6 +1445,470 @@ class Ui_MainWindow(object):
         self.content_process.setObjectName(u"content_process")
         self.content_process.setFrameShape(QFrame.NoFrame)
         self.content_process.setFrameShadow(QFrame.Raised)
+        self.layout_content_process = QVBoxLayout(self.content_process)
+        self.layout_content_process.setSpacing(0)
+        self.layout_content_process.setObjectName(u"layout_content_process")
+        self.layout_content_process.setContentsMargins(0, 0, 0, 0)
+        self.tabs_process = QTabWidget(self.content_process)
+        self.tabs_process.setObjectName(u"tabs_process")
+        self.tab_raw = QWidget()
+        self.tab_raw.setObjectName(u"tab_raw")
+        self.grid_raw = QGridLayout(self.tab_raw)
+        self.grid_raw.setSpacing(8)
+        self.grid_raw.setObjectName(u"grid_raw")
+        self.grid_raw.setContentsMargins(8, 8, 8, 8)
+        self.grp_library = QGroupBox(self.tab_raw)
+        self.grp_library.setObjectName(u"grp_library")
+        self.layout_grp_library = QVBoxLayout(self.grp_library)
+        self.layout_grp_library.setSpacing(6)
+        self.layout_grp_library.setObjectName(u"layout_grp_library")
+        self.layout_grp_library.setContentsMargins(6, 6, 6, 6)
+        self.tree_library = QTreeView(self.grp_library)
+        self.tree_library.setObjectName(u"tree_library")
+
+        self.layout_grp_library.addWidget(self.tree_library)
+
+        self.btn_change_libraries = QPushButton(self.grp_library)
+        self.btn_change_libraries.setObjectName(u"btn_change_libraries")
+        self.btn_change_libraries.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        self.layout_grp_library.addWidget(self.btn_change_libraries)
+
+
+        self.grid_raw.addWidget(self.grp_library, 0, 0, 1, 1)
+
+        self.grp_index = QGroupBox(self.tab_raw)
+        self.grp_index.setObjectName(u"grp_index")
+        self.layout_grp_index = QVBoxLayout(self.grp_index)
+        self.layout_grp_index.setSpacing(6)
+        self.layout_grp_index.setObjectName(u"layout_grp_index")
+        self.layout_grp_index.setContentsMargins(6, 6, 6, 6)
+        self.tree_index = QTreeView(self.grp_index)
+        self.tree_index.setObjectName(u"tree_index")
+
+        self.layout_grp_index.addWidget(self.tree_index)
+
+
+        self.grid_raw.addWidget(self.grp_index, 1, 0, 1, 1)
+
+        self.grp_inventory = QGroupBox(self.tab_raw)
+        self.grp_inventory.setObjectName(u"grp_inventory")
+        self.layout_grp_inventory = QVBoxLayout(self.grp_inventory)
+        self.layout_grp_inventory.setSpacing(6)
+        self.layout_grp_inventory.setObjectName(u"layout_grp_inventory")
+        self.layout_grp_inventory.setContentsMargins(6, 6, 6, 6)
+        self.table_inventory = QTableWidget(self.grp_inventory)
+        if (self.table_inventory.columnCount() < 7):
+            self.table_inventory.setColumnCount(7)
+        __qtablewidgetitem24 = QTableWidgetItem()
+        self.table_inventory.setHorizontalHeaderItem(0, __qtablewidgetitem24)
+        __qtablewidgetitem25 = QTableWidgetItem()
+        self.table_inventory.setHorizontalHeaderItem(1, __qtablewidgetitem25)
+        __qtablewidgetitem26 = QTableWidgetItem()
+        self.table_inventory.setHorizontalHeaderItem(2, __qtablewidgetitem26)
+        __qtablewidgetitem27 = QTableWidgetItem()
+        self.table_inventory.setHorizontalHeaderItem(3, __qtablewidgetitem27)
+        __qtablewidgetitem28 = QTableWidgetItem()
+        self.table_inventory.setHorizontalHeaderItem(4, __qtablewidgetitem28)
+        __qtablewidgetitem29 = QTableWidgetItem()
+        self.table_inventory.setHorizontalHeaderItem(5, __qtablewidgetitem29)
+        __qtablewidgetitem30 = QTableWidgetItem()
+        self.table_inventory.setHorizontalHeaderItem(6, __qtablewidgetitem30)
+        self.table_inventory.setObjectName(u"table_inventory")
+        self.table_inventory.setMinimumSize(QSize(0, 220))
+        self.table_inventory.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_inventory.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+
+        self.layout_grp_inventory.addWidget(self.table_inventory)
+
+        self.layout_inventory_controls = QHBoxLayout()
+        self.layout_inventory_controls.setObjectName(u"layout_inventory_controls")
+        self.chk_select_all = QCheckBox(self.grp_inventory)
+        self.chk_select_all.setObjectName(u"chk_select_all")
+        self.chk_select_all.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        self.layout_inventory_controls.addWidget(self.chk_select_all)
+
+        self.spacer_1 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.layout_inventory_controls.addItem(self.spacer_1)
+
+        self.btn_process_selected = QPushButton(self.grp_inventory)
+        self.btn_process_selected.setObjectName(u"btn_process_selected")
+        self.btn_process_selected.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        self.layout_inventory_controls.addWidget(self.btn_process_selected)
+
+
+        self.layout_grp_inventory.addLayout(self.layout_inventory_controls)
+
+
+        self.grid_raw.addWidget(self.grp_inventory, 0, 1, 1, 1)
+
+        self.grp_console = QGroupBox(self.tab_raw)
+        self.grp_console.setObjectName(u"grp_console")
+        self.layout_grp_console = QVBoxLayout(self.grp_console)
+        self.layout_grp_console.setSpacing(6)
+        self.layout_grp_console.setObjectName(u"layout_grp_console")
+        self.layout_grp_console.setContentsMargins(6, 6, 6, 6)
+        self.console_output = QPlainTextEdit(self.grp_console)
+        self.console_output.setObjectName(u"console_output")
+        self.console_output.setReadOnly(True)
+
+        self.layout_grp_console.addWidget(self.console_output)
+
+
+        self.grid_raw.addWidget(self.grp_console, 1, 1, 1, 1)
+
+        self.grp_selection_info = QGroupBox(self.tab_raw)
+        self.grp_selection_info.setObjectName(u"grp_selection_info")
+        self.layout_grp_selection_info = QVBoxLayout(self.grp_selection_info)
+        self.layout_grp_selection_info.setSpacing(6)
+        self.layout_grp_selection_info.setObjectName(u"layout_grp_selection_info")
+        self.layout_grp_selection_info.setContentsMargins(6, 6, 6, 6)
+        self.frame_cards = QFrame(self.grp_selection_info)
+        self.frame_cards.setObjectName(u"frame_cards")
+        self.frame_cards.setFrameShape(QFrame.NoFrame)
+
+        self.layout_grp_selection_info.addWidget(self.frame_cards)
+
+
+        self.grid_raw.addWidget(self.grp_selection_info, 0, 2, 1, 1)
+
+        self.grp_processed = QGroupBox(self.tab_raw)
+        self.grp_processed.setObjectName(u"grp_processed")
+        self.layout_grp_processed = QVBoxLayout(self.grp_processed)
+        self.layout_grp_processed.setSpacing(6)
+        self.layout_grp_processed.setObjectName(u"layout_grp_processed")
+        self.layout_grp_processed.setContentsMargins(6, 6, 6, 6)
+        self.list_processed = QListWidget(self.grp_processed)
+        self.list_processed.setObjectName(u"list_processed")
+
+        self.layout_grp_processed.addWidget(self.list_processed)
+
+
+        self.grid_raw.addWidget(self.grp_processed, 1, 2, 1, 1)
+
+        self.grid_raw.setRowStretch(0, 1)
+        self.grid_raw.setRowStretch(1, 1)
+        self.grid_raw.setColumnStretch(0, 1)
+        self.grid_raw.setColumnStretch(1, 2)
+        self.grid_raw.setColumnStretch(2, 1)
+        self.tabs_process.addTab(self.tab_raw, "")
+        self.tab_meta = QWidget()
+        self.tab_meta.setObjectName(u"tab_meta")
+        self.grid_meta = QGridLayout(self.tab_meta)
+        self.grid_meta.setSpacing(8)
+        self.grid_meta.setObjectName(u"grid_meta")
+        self.grid_meta.setContentsMargins(8, 8, 8, 8)
+        self.grp_deployment = QGroupBox(self.tab_meta)
+        self.grp_deployment.setObjectName(u"grp_deployment")
+        self.layout_grp_deployment = QVBoxLayout(self.grp_deployment)
+        self.layout_grp_deployment.setSpacing(6)
+        self.layout_grp_deployment.setObjectName(u"layout_grp_deployment")
+        self.layout_grp_deployment.setContentsMargins(6, 6, 6, 6)
+        self.grid_deployment_fields = QGridLayout()
+        self.grid_deployment_fields.setObjectName(u"grid_deployment_fields")
+        self.lbl_ed_deployment_config_label = QLabel(self.grp_deployment)
+        self.lbl_ed_deployment_config_label.setObjectName(u"lbl_ed_deployment_config_label")
+
+        self.grid_deployment_fields.addWidget(self.lbl_ed_deployment_config_label, 0, 0, 1, 1)
+
+        self.ed_deployment_config_label = QLineEdit(self.grp_deployment)
+        self.ed_deployment_config_label.setObjectName(u"ed_deployment_config_label")
+
+        self.grid_deployment_fields.addWidget(self.ed_deployment_config_label, 0, 1, 1, 1)
+
+        self.lbl_ed_site = QLabel(self.grp_deployment)
+        self.lbl_ed_site.setObjectName(u"lbl_ed_site")
+
+        self.grid_deployment_fields.addWidget(self.lbl_ed_site, 1, 0, 1, 1)
+
+        self.ed_site = QLineEdit(self.grp_deployment)
+        self.ed_site.setObjectName(u"ed_site")
+
+        self.grid_deployment_fields.addWidget(self.ed_site, 1, 1, 1, 1)
+
+        self.lbl_ed_deployment_id = QLabel(self.grp_deployment)
+        self.lbl_ed_deployment_id.setObjectName(u"lbl_ed_deployment_id")
+
+        self.grid_deployment_fields.addWidget(self.lbl_ed_deployment_id, 2, 0, 1, 1)
+
+        self.ed_deployment_id = QLineEdit(self.grp_deployment)
+        self.ed_deployment_id.setObjectName(u"ed_deployment_id")
+
+        self.grid_deployment_fields.addWidget(self.ed_deployment_id, 2, 1, 1, 1)
+
+        self.lbl_ed_pump_turbine = QLabel(self.grp_deployment)
+        self.lbl_ed_pump_turbine.setObjectName(u"lbl_ed_pump_turbine")
+
+        self.grid_deployment_fields.addWidget(self.lbl_ed_pump_turbine, 3, 0, 1, 1)
+
+        self.ed_pump_turbine = QLineEdit(self.grp_deployment)
+        self.ed_pump_turbine.setObjectName(u"ed_pump_turbine")
+
+        self.grid_deployment_fields.addWidget(self.ed_pump_turbine, 3, 1, 1, 1)
+
+        self.lbl_ed_type = QLabel(self.grp_deployment)
+        self.lbl_ed_type.setObjectName(u"lbl_ed_type")
+
+        self.grid_deployment_fields.addWidget(self.lbl_ed_type, 4, 0, 1, 1)
+
+        self.ed_type = QLineEdit(self.grp_deployment)
+        self.ed_type.setObjectName(u"ed_type")
+
+        self.grid_deployment_fields.addWidget(self.ed_type, 4, 1, 1, 1)
+
+        self.lbl_ed_rpm = QLabel(self.grp_deployment)
+        self.lbl_ed_rpm.setObjectName(u"lbl_ed_rpm")
+
+        self.grid_deployment_fields.addWidget(self.lbl_ed_rpm, 5, 0, 1, 1)
+
+        self.ed_rpm = QLineEdit(self.grp_deployment)
+        self.ed_rpm.setObjectName(u"ed_rpm")
+
+        self.grid_deployment_fields.addWidget(self.ed_rpm, 5, 1, 1, 1)
+
+        self.lbl_ed_head = QLabel(self.grp_deployment)
+        self.lbl_ed_head.setObjectName(u"lbl_ed_head")
+
+        self.grid_deployment_fields.addWidget(self.lbl_ed_head, 6, 0, 1, 1)
+
+        self.ed_head = QLineEdit(self.grp_deployment)
+        self.ed_head.setObjectName(u"ed_head")
+
+        self.grid_deployment_fields.addWidget(self.ed_head, 6, 1, 1, 1)
+
+        self.lbl_ed_flow = QLabel(self.grp_deployment)
+        self.lbl_ed_flow.setObjectName(u"lbl_ed_flow")
+
+        self.grid_deployment_fields.addWidget(self.lbl_ed_flow, 7, 0, 1, 1)
+
+        self.ed_flow = QLineEdit(self.grp_deployment)
+        self.ed_flow.setObjectName(u"ed_flow")
+
+        self.grid_deployment_fields.addWidget(self.ed_flow, 7, 1, 1, 1)
+
+        self.lbl_ed_point_bep = QLabel(self.grp_deployment)
+        self.lbl_ed_point_bep.setObjectName(u"lbl_ed_point_bep")
+
+        self.grid_deployment_fields.addWidget(self.lbl_ed_point_bep, 8, 0, 1, 1)
+
+        self.ed_point_bep = QLineEdit(self.grp_deployment)
+        self.ed_point_bep.setObjectName(u"ed_point_bep")
+
+        self.grid_deployment_fields.addWidget(self.ed_point_bep, 8, 1, 1, 1)
+
+        self.lbl_ed_treatment = QLabel(self.grp_deployment)
+        self.lbl_ed_treatment.setObjectName(u"lbl_ed_treatment")
+
+        self.grid_deployment_fields.addWidget(self.lbl_ed_treatment, 9, 0, 1, 1)
+
+        self.ed_treatment = QLineEdit(self.grp_deployment)
+        self.ed_treatment.setObjectName(u"ed_treatment")
+
+        self.grid_deployment_fields.addWidget(self.ed_treatment, 9, 1, 1, 1)
+
+        self.lbl_ed_run = QLabel(self.grp_deployment)
+        self.lbl_ed_run.setObjectName(u"lbl_ed_run")
+
+        self.grid_deployment_fields.addWidget(self.lbl_ed_run, 10, 0, 1, 1)
+
+        self.ed_run = QLineEdit(self.grp_deployment)
+        self.ed_run.setObjectName(u"ed_run")
+
+        self.grid_deployment_fields.addWidget(self.ed_run, 10, 1, 1, 1)
+
+
+        self.layout_grp_deployment.addLayout(self.grid_deployment_fields)
+
+        self.btn_save_deployment = QPushButton(self.grp_deployment)
+        self.btn_save_deployment.setObjectName(u"btn_save_deployment")
+        self.btn_save_deployment.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        self.layout_grp_deployment.addWidget(self.btn_save_deployment)
+
+
+        self.grid_meta.addWidget(self.grp_deployment, 0, 0, 1, 1)
+
+        self.grp_meta_inventory = QGroupBox(self.tab_meta)
+        self.grp_meta_inventory.setObjectName(u"grp_meta_inventory")
+        self.layout_grp_meta_inventory = QVBoxLayout(self.grp_meta_inventory)
+        self.layout_grp_meta_inventory.setSpacing(6)
+        self.layout_grp_meta_inventory.setObjectName(u"layout_grp_meta_inventory")
+        self.layout_grp_meta_inventory.setContentsMargins(6, 6, 6, 6)
+        self.table_meta = QTableWidget(self.grp_meta_inventory)
+        if (self.table_meta.columnCount() < 5):
+            self.table_meta.setColumnCount(5)
+        __qtablewidgetitem31 = QTableWidgetItem()
+        self.table_meta.setHorizontalHeaderItem(0, __qtablewidgetitem31)
+        __qtablewidgetitem32 = QTableWidgetItem()
+        self.table_meta.setHorizontalHeaderItem(1, __qtablewidgetitem32)
+        __qtablewidgetitem33 = QTableWidgetItem()
+        self.table_meta.setHorizontalHeaderItem(2, __qtablewidgetitem33)
+        __qtablewidgetitem34 = QTableWidgetItem()
+        self.table_meta.setHorizontalHeaderItem(3, __qtablewidgetitem34)
+        __qtablewidgetitem35 = QTableWidgetItem()
+        self.table_meta.setHorizontalHeaderItem(4, __qtablewidgetitem35)
+        self.table_meta.setObjectName(u"table_meta")
+        self.table_meta.setMinimumSize(QSize(0, 200))
+        self.table_meta.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_meta.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+
+        self.layout_grp_meta_inventory.addWidget(self.table_meta)
+
+        self.layout_meta_controls = QHBoxLayout()
+        self.layout_meta_controls.setObjectName(u"layout_meta_controls")
+        self.chk_meta_select_all = QCheckBox(self.grp_meta_inventory)
+        self.chk_meta_select_all.setObjectName(u"chk_meta_select_all")
+        self.chk_meta_select_all.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        self.layout_meta_controls.addWidget(self.chk_meta_select_all)
+
+        self.spacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.layout_meta_controls.addItem(self.spacer_2)
+
+        self.btn_apply_deployment = QPushButton(self.grp_meta_inventory)
+        self.btn_apply_deployment.setObjectName(u"btn_apply_deployment")
+        self.btn_apply_deployment.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        self.layout_meta_controls.addWidget(self.btn_apply_deployment)
+
+
+        self.layout_grp_meta_inventory.addLayout(self.layout_meta_controls)
+
+
+        self.grid_meta.addWidget(self.grp_meta_inventory, 1, 0, 1, 1)
+
+        self.grp_dash_library = QGroupBox(self.tab_meta)
+        self.grp_dash_library.setObjectName(u"grp_dash_library")
+        self.layout_grp_dash_library = QVBoxLayout(self.grp_dash_library)
+        self.layout_grp_dash_library.setSpacing(6)
+        self.layout_grp_dash_library.setObjectName(u"layout_grp_dash_library")
+        self.layout_grp_dash_library.setContentsMargins(6, 6, 6, 6)
+        self.lbl_dash_library_value = QLabel(self.grp_dash_library)
+        self.lbl_dash_library_value.setObjectName(u"lbl_dash_library_value")
+        font5 = QFont()
+        font5.setPointSize(16)
+        font5.setBold(True)
+        self.lbl_dash_library_value.setFont(font5)
+
+        self.layout_grp_dash_library.addWidget(self.lbl_dash_library_value)
+
+        self.lbl_dash_library_caption = QLabel(self.grp_dash_library)
+        self.lbl_dash_library_caption.setObjectName(u"lbl_dash_library_caption")
+
+        self.layout_grp_dash_library.addWidget(self.lbl_dash_library_caption)
+
+        self.lbl_dash_library_detail = QLabel(self.grp_dash_library)
+        self.lbl_dash_library_detail.setObjectName(u"lbl_dash_library_detail")
+
+        self.layout_grp_dash_library.addWidget(self.lbl_dash_library_detail)
+
+        self.spacer_3 = QSpacerItem(40, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.layout_grp_dash_library.addItem(self.spacer_3)
+
+
+        self.grid_meta.addWidget(self.grp_dash_library, 0, 1, 1, 1)
+
+        self.grp_dash_coverage = QGroupBox(self.tab_meta)
+        self.grp_dash_coverage.setObjectName(u"grp_dash_coverage")
+        self.layout_grp_dash_coverage = QVBoxLayout(self.grp_dash_coverage)
+        self.layout_grp_dash_coverage.setSpacing(6)
+        self.layout_grp_dash_coverage.setObjectName(u"layout_grp_dash_coverage")
+        self.layout_grp_dash_coverage.setContentsMargins(6, 6, 6, 6)
+        self.lbl_dash_coverage_value = QLabel(self.grp_dash_coverage)
+        self.lbl_dash_coverage_value.setObjectName(u"lbl_dash_coverage_value")
+        self.lbl_dash_coverage_value.setFont(font5)
+
+        self.layout_grp_dash_coverage.addWidget(self.lbl_dash_coverage_value)
+
+        self.lbl_dash_coverage_caption = QLabel(self.grp_dash_coverage)
+        self.lbl_dash_coverage_caption.setObjectName(u"lbl_dash_coverage_caption")
+
+        self.layout_grp_dash_coverage.addWidget(self.lbl_dash_coverage_caption)
+
+        self.lbl_dash_coverage_detail = QLabel(self.grp_dash_coverage)
+        self.lbl_dash_coverage_detail.setObjectName(u"lbl_dash_coverage_detail")
+
+        self.layout_grp_dash_coverage.addWidget(self.lbl_dash_coverage_detail)
+
+        self.spacer_4 = QSpacerItem(40, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.layout_grp_dash_coverage.addItem(self.spacer_4)
+
+
+        self.grid_meta.addWidget(self.grp_dash_coverage, 0, 2, 1, 1)
+
+        self.grp_dash_quality = QGroupBox(self.tab_meta)
+        self.grp_dash_quality.setObjectName(u"grp_dash_quality")
+        self.layout_grp_dash_quality = QVBoxLayout(self.grp_dash_quality)
+        self.layout_grp_dash_quality.setSpacing(6)
+        self.layout_grp_dash_quality.setObjectName(u"layout_grp_dash_quality")
+        self.layout_grp_dash_quality.setContentsMargins(6, 6, 6, 6)
+        self.lbl_dash_quality_value = QLabel(self.grp_dash_quality)
+        self.lbl_dash_quality_value.setObjectName(u"lbl_dash_quality_value")
+        self.lbl_dash_quality_value.setFont(font5)
+
+        self.layout_grp_dash_quality.addWidget(self.lbl_dash_quality_value)
+
+        self.lbl_dash_quality_caption = QLabel(self.grp_dash_quality)
+        self.lbl_dash_quality_caption.setObjectName(u"lbl_dash_quality_caption")
+
+        self.layout_grp_dash_quality.addWidget(self.lbl_dash_quality_caption)
+
+        self.lbl_dash_quality_detail = QLabel(self.grp_dash_quality)
+        self.lbl_dash_quality_detail.setObjectName(u"lbl_dash_quality_detail")
+
+        self.layout_grp_dash_quality.addWidget(self.lbl_dash_quality_detail)
+
+        self.spacer_5 = QSpacerItem(40, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.layout_grp_dash_quality.addItem(self.spacer_5)
+
+
+        self.grid_meta.addWidget(self.grp_dash_quality, 1, 1, 1, 1)
+
+        self.grp_dash_sites = QGroupBox(self.tab_meta)
+        self.grp_dash_sites.setObjectName(u"grp_dash_sites")
+        self.layout_grp_dash_sites = QVBoxLayout(self.grp_dash_sites)
+        self.layout_grp_dash_sites.setSpacing(6)
+        self.layout_grp_dash_sites.setObjectName(u"layout_grp_dash_sites")
+        self.layout_grp_dash_sites.setContentsMargins(6, 6, 6, 6)
+        self.lbl_dash_sites_value = QLabel(self.grp_dash_sites)
+        self.lbl_dash_sites_value.setObjectName(u"lbl_dash_sites_value")
+        self.lbl_dash_sites_value.setFont(font5)
+
+        self.layout_grp_dash_sites.addWidget(self.lbl_dash_sites_value)
+
+        self.lbl_dash_sites_caption = QLabel(self.grp_dash_sites)
+        self.lbl_dash_sites_caption.setObjectName(u"lbl_dash_sites_caption")
+
+        self.layout_grp_dash_sites.addWidget(self.lbl_dash_sites_caption)
+
+        self.lbl_dash_sites_detail = QLabel(self.grp_dash_sites)
+        self.lbl_dash_sites_detail.setObjectName(u"lbl_dash_sites_detail")
+
+        self.layout_grp_dash_sites.addWidget(self.lbl_dash_sites_detail)
+
+        self.spacer_6 = QSpacerItem(40, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.layout_grp_dash_sites.addItem(self.spacer_6)
+
+
+        self.grid_meta.addWidget(self.grp_dash_sites, 1, 2, 1, 1)
+
+        self.grid_meta.setRowStretch(0, 1)
+        self.grid_meta.setRowStretch(1, 1)
+        self.grid_meta.setColumnStretch(0, 1)
+        self.grid_meta.setColumnStretch(1, 2)
+        self.grid_meta.setColumnStretch(2, 1)
+        self.tabs_process.addTab(self.tab_meta, "")
+
+        self.layout_content_process.addWidget(self.tabs_process)
+
 
         self.layout_process.addWidget(self.content_process)
 
@@ -1460,7 +1922,7 @@ class Ui_MainWindow(object):
         self.title_validate = QLabel(self.page_validate)
         self.title_validate.setObjectName(u"title_validate")
         self.title_validate.setMaximumSize(QSize(16777215, 30))
-        self.title_validate.setFont(font5)
+        self.title_validate.setFont(font)
 
         self.layout_validate.addWidget(self.title_validate)
 
@@ -1488,7 +1950,7 @@ class Ui_MainWindow(object):
         self.title_dataset = QLabel(self.page_dataset)
         self.title_dataset.setObjectName(u"title_dataset")
         self.title_dataset.setMaximumSize(QSize(16777215, 30))
-        self.title_dataset.setFont(font5)
+        self.title_dataset.setFont(font)
 
         self.layout_dataset.addWidget(self.title_dataset)
 
@@ -1584,7 +2046,7 @@ class Ui_MainWindow(object):
         self.verticalLayout_14.addWidget(self.btn_more)
 
 
-        self.verticalLayout_13.addWidget(self.topMenus, 0, Qt.AlignTop)
+        self.verticalLayout_13.addWidget(self.topMenus, 0, Qt.AlignmentFlag.AlignTop)
 
 
         self.verticalLayout_7.addWidget(self.contentSettings)
@@ -1613,13 +2075,13 @@ class Ui_MainWindow(object):
         font6.setBold(False)
         font6.setItalic(False)
         self.creditsLabel.setFont(font6)
-        self.creditsLabel.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignVCenter)
+        self.creditsLabel.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter)
 
         self.horizontalLayout_5.addWidget(self.creditsLabel)
 
         self.version = QLabel(self.bottomBar)
         self.version.setObjectName(u"version")
-        self.version.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
+        self.version.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignTrailing|Qt.AlignmentFlag.AlignVCenter)
 
         self.horizontalLayout_5.addWidget(self.version)
 
@@ -1648,7 +2110,8 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
 
-        self.stackedWidget.setCurrentIndex(0)
+        self.stackedWidget.setCurrentIndex(4)
+        self.tabs_process.setCurrentIndex(0)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -1762,6 +2225,84 @@ class Ui_MainWindow(object):
         self.subtitle_prepare.setText(QCoreApplication.translate("MainWindow", u"Import raw sensor files and check their integrity before processing.", None))
         self.title_process.setText(QCoreApplication.translate("MainWindow", u"Process", None))
         self.subtitle_process.setText(QCoreApplication.translate("MainWindow", u"Import and process raw sensor data", None))
+        self.grp_library.setTitle(QCoreApplication.translate("MainWindow", u"Library", None))
+        self.btn_change_libraries.setText(QCoreApplication.translate("MainWindow", u"Change libraries folder\u2026", None))
+        self.grp_index.setTitle(QCoreApplication.translate("MainWindow", u"Index", None))
+        self.grp_inventory.setTitle(QCoreApplication.translate("MainWindow", u"File inventory", None))
+        ___qtablewidgetitem24 = self.table_inventory.horizontalHeaderItem(0)
+        ___qtablewidgetitem24.setText(QCoreApplication.translate("MainWindow", u"#", None))
+        ___qtablewidgetitem25 = self.table_inventory.horizontalHeaderItem(1)
+        ___qtablewidgetitem25.setText(QCoreApplication.translate("MainWindow", u"Filename", None))
+        ___qtablewidgetitem26 = self.table_inventory.horizontalHeaderItem(2)
+        ___qtablewidgetitem26.setText(QCoreApplication.translate("MainWindow", u"Sensor", None))
+        ___qtablewidgetitem27 = self.table_inventory.horizontalHeaderItem(3)
+        ___qtablewidgetitem27.setText(QCoreApplication.translate("MainWindow", u"Date", None))
+        ___qtablewidgetitem28 = self.table_inventory.horizontalHeaderItem(4)
+        ___qtablewidgetitem28.setText(QCoreApplication.translate("MainWindow", u"Time", None))
+        ___qtablewidgetitem29 = self.table_inventory.horizontalHeaderItem(5)
+        ___qtablewidgetitem29.setText(QCoreApplication.translate("MainWindow", u"Paired", None))
+        ___qtablewidgetitem30 = self.table_inventory.horizontalHeaderItem(6)
+        ___qtablewidgetitem30.setText(QCoreApplication.translate("MainWindow", u"Status", None))
+        self.chk_select_all.setText(QCoreApplication.translate("MainWindow", u"Select / unselect all", None))
+        self.btn_process_selected.setText(QCoreApplication.translate("MainWindow", u"Process selected", None))
+        self.grp_console.setTitle(QCoreApplication.translate("MainWindow", u"Console output", None))
+        self.grp_selection_info.setTitle(QCoreApplication.translate("MainWindow", u"Selection information", None))
+        self.grp_processed.setTitle(QCoreApplication.translate("MainWindow", u"Processed data", None))
+        self.tabs_process.setTabText(self.tabs_process.indexOf(self.tab_raw), QCoreApplication.translate("MainWindow", u"Raw data processing", None))
+        self.grp_deployment.setTitle(QCoreApplication.translate("MainWindow", u"Deployment information", None))
+        self.lbl_ed_deployment_config_label.setText(QCoreApplication.translate("MainWindow", u"Configuration label:", None))
+        self.ed_deployment_config_label.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. PumpWizard_configuration", None))
+        self.lbl_ed_site.setText(QCoreApplication.translate("MainWindow", u"Site:", None))
+        self.ed_site.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. Johnson_Lane", None))
+        self.lbl_ed_deployment_id.setText(QCoreApplication.translate("MainWindow", u"Deployment ID:", None))
+        self.ed_deployment_id.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. JL_2025_FFP", None))
+        self.lbl_ed_pump_turbine.setText(QCoreApplication.translate("MainWindow", u"Pump/turbine model:", None))
+        self.ed_pump_turbine.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. Pentair_XRW", None))
+        self.lbl_ed_type.setText(QCoreApplication.translate("MainWindow", u"Pump/turbine type:", None))
+        self.ed_type.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. Axial_flow", None))
+        self.lbl_ed_rpm.setText(QCoreApplication.translate("MainWindow", u"Rotation per minute (RPM):", None))
+        self.ed_rpm.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. 500", None))
+        self.lbl_ed_head.setText(QCoreApplication.translate("MainWindow", u"Head:", None))
+        self.ed_head.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. 3", None))
+        self.lbl_ed_flow.setText(QCoreApplication.translate("MainWindow", u"Flow:", None))
+        self.ed_flow.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. 1.32", None))
+        self.lbl_ed_point_bep.setText(QCoreApplication.translate("MainWindow", u"Point of best efficiency (BEP):", None))
+        self.ed_point_bep.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. 100", None))
+        self.lbl_ed_treatment.setText(QCoreApplication.translate("MainWindow", u"Treatment:", None))
+        self.ed_treatment.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. Scenario_1", None))
+        self.lbl_ed_run.setText(QCoreApplication.translate("MainWindow", u"Run:", None))
+        self.ed_run.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. 1", None))
+        self.btn_save_deployment.setText(QCoreApplication.translate("MainWindow", u"Apply to selected sensors", None))
+        self.grp_meta_inventory.setTitle(QCoreApplication.translate("MainWindow", u"Processed sensor index", None))
+        ___qtablewidgetitem31 = self.table_meta.horizontalHeaderItem(0)
+        ___qtablewidgetitem31.setText(QCoreApplication.translate("MainWindow", u"#", None))
+        ___qtablewidgetitem32 = self.table_meta.horizontalHeaderItem(1)
+        ___qtablewidgetitem32.setText(QCoreApplication.translate("MainWindow", u"Filename", None))
+        ___qtablewidgetitem33 = self.table_meta.horizontalHeaderItem(2)
+        ___qtablewidgetitem33.setText(QCoreApplication.translate("MainWindow", u"Sensor", None))
+        ___qtablewidgetitem34 = self.table_meta.horizontalHeaderItem(3)
+        ___qtablewidgetitem34.setText(QCoreApplication.translate("MainWindow", u"Date", None))
+        ___qtablewidgetitem35 = self.table_meta.horizontalHeaderItem(4)
+        ___qtablewidgetitem35.setText(QCoreApplication.translate("MainWindow", u"Status", None))
+        self.chk_meta_select_all.setText(QCoreApplication.translate("MainWindow", u"Select / unselect all", None))
+        self.btn_apply_deployment.setText(QCoreApplication.translate("MainWindow", u"Load values from selected sensor", None))
+        self.grp_dash_library.setTitle(QCoreApplication.translate("MainWindow", u"Library overview", None))
+        self.lbl_dash_library_value.setText(QCoreApplication.translate("MainWindow", u"\u2014", None))
+        self.lbl_dash_library_caption.setText(QCoreApplication.translate("MainWindow", u"Sensors in global index", None))
+        self.lbl_dash_library_detail.setText(QCoreApplication.translate("MainWindow", u"No library selected", None))
+        self.grp_dash_coverage.setTitle(QCoreApplication.translate("MainWindow", u"Deployment coverage", None))
+        self.lbl_dash_coverage_value.setText(QCoreApplication.translate("MainWindow", u"\u2014", None))
+        self.lbl_dash_coverage_caption.setText(QCoreApplication.translate("MainWindow", u"Complete deployment info", None))
+        self.lbl_dash_coverage_detail.setText(QCoreApplication.translate("MainWindow", u"No library selected", None))
+        self.grp_dash_quality.setTitle(QCoreApplication.translate("MainWindow", u"Data quality", None))
+        self.lbl_dash_quality_value.setText(QCoreApplication.translate("MainWindow", u"\u2014", None))
+        self.lbl_dash_quality_caption.setText(QCoreApplication.translate("MainWindow", u"Flagged bad_sens", None))
+        self.lbl_dash_quality_detail.setText(QCoreApplication.translate("MainWindow", u"No library selected", None))
+        self.grp_dash_sites.setTitle(QCoreApplication.translate("MainWindow", u"Sites and configurations", None))
+        self.lbl_dash_sites_value.setText(QCoreApplication.translate("MainWindow", u"\u2014", None))
+        self.lbl_dash_sites_caption.setText(QCoreApplication.translate("MainWindow", u"Distinct sites", None))
+        self.lbl_dash_sites_detail.setText(QCoreApplication.translate("MainWindow", u"No library selected", None))
+        self.tabs_process.setTabText(self.tabs_process.indexOf(self.tab_meta), QCoreApplication.translate("MainWindow", u"Metadata", None))
         self.title_validate.setText(QCoreApplication.translate("MainWindow", u"Validate & segment", None))
         self.subtitle_validate.setText(QCoreApplication.translate("MainWindow", u"Review processed signals, flag bad records and cut them into event segments.", None))
         self.title_dataset.setText(QCoreApplication.translate("MainWindow", u"Dataset creation", None))
