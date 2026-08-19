@@ -61,6 +61,13 @@ class UIFunctions(MainWindow):
     # TOGGLE MENU
     # ///////////////////////////////////////////////////////////////
     def toggleMenu(self, enable):
+        """Expand/collapse the left menu.
+
+        Both minimumWidth and maximumWidth are animated so the menu is pinned to
+        an exact width in either state. Animating only the minimum leaves the
+        width free between min and max, which lets the frame settle on its own
+        size hint and lets a sibling panel squeeze the menu when it opens.
+        """
         if enable:
             # GET WIDTH
             width = self.ui.leftMenuBg.width()
@@ -68,18 +75,32 @@ class UIFunctions(MainWindow):
             standard = 60
 
             # SET MAX WIDTH
-            if width == 60:
+            if width == standard:
                 widthExtended = maxExtend
             else:
                 widthExtended = standard
 
-            # ANIMATION
-            self.animation = QPropertyAnimation(self.ui.leftMenuBg, b"minimumWidth")
-            self.animation.setDuration(Settings.TIME_ANIMATION)
-            self.animation.setStartValue(width)
-            self.animation.setEndValue(widthExtended)
-            self.animation.setEasingCurve(QEasingCurve.InOutQuart)
-            self.animation.start()
+            UIFunctions.animate_menu_width(self, width, widthExtended)
+
+    # ANIMATE THE LEFT MENU TO AN EXACT WIDTH
+    # ///////////////////////////////////////////////////////////////
+    def animate_menu_width(self, start, end):
+        self.menu_min = QPropertyAnimation(self.ui.leftMenuBg, b"minimumWidth")
+        self.menu_min.setDuration(Settings.TIME_ANIMATION)
+        self.menu_min.setStartValue(start)
+        self.menu_min.setEndValue(end)
+        self.menu_min.setEasingCurve(QEasingCurve.InOutQuart)
+
+        self.menu_max = QPropertyAnimation(self.ui.leftMenuBg, b"maximumWidth")
+        self.menu_max.setDuration(Settings.TIME_ANIMATION)
+        self.menu_max.setStartValue(start)
+        self.menu_max.setEndValue(end)
+        self.menu_max.setEasingCurve(QEasingCurve.InOutQuart)
+
+        self.menu_group = QParallelAnimationGroup()
+        self.menu_group.addAnimation(self.menu_min)
+        self.menu_group.addAnimation(self.menu_max)
+        self.menu_group.start()
 
     # TOGGLE LEFT BOX
     # ///////////////////////////////////////////////////////////////

@@ -40,6 +40,19 @@ else:
 
 _SCOPED_ENUM = re.compile(r"<enum>([A-Za-z]+)::[A-Za-z]+::([A-Za-z]+)</enum>")
 
+# Scoped enums inside XML attributes, e.g. alignment="Qt::AlignmentFlag::AlignTop".
+# These are worse than the <enum> ones: Designer cannot parse them back, so on the
+# next save it drops the attribute entirely and the layout silently changes.
+_SCOPED_ATTR = re.compile(r'(\b[a-z]+=")([A-Za-z]+)::[A-Za-z]+::([A-Za-z|:]+)(")')
+
+
+def _unscope_attr(m: re.Match) -> str:
+    prefix, cls, value, suffix = m.groups()
+    # A value may be a |-separated flag list. Every flag keeps its own class
+    # prefix - "Qt::AlignLeft|AlignVCenter" is not valid .ui syntax.
+    parts = [part.split("::")[-1] for part in value.split("|")]
+    return "%s%s%s" % (prefix, "|".join("%s::%s" % (cls, p) for p in parts), suffix)
+
 
 def normalise(path: Path) -> dict:
     """Undo Designer's save-time damage. Returns a count of what was fixed."""
@@ -47,6 +60,7 @@ def normalise(path: Path) -> dict:
     original = text
 
     text, n_enums = _SCOPED_ENUM.subn(r"<enum>\1::\2</enum>", text)
+    text, n_attrs = _SCOPED_ATTR.subn(_unscope_attr, text)
 
     lines = text.split("\n")
     kept = [ln for ln in lines if ln.strip() != "<fontweight></fontweight>"]
@@ -56,7 +70,7 @@ def normalise(path: Path) -> dict:
     if text != original:
         path.write_text(text, encoding="utf-8", newline="\n")
 
-    return {"enums": n_enums, "fontweights": n_weights}
+    return {"enums": n_enums, "attrs": n_attrs, "fontweights": n_weights}
 
 
 def compile_ui() -> int:
@@ -106,11 +120,14 @@ def main() -> int:
     fixed = normalise(UI_FILE)
     if fixed["enums"]:
         print(f"  normalised {fixed['enums']} scoped enum(s) in main.ui")
+    if fixed["attrs"]:
+        print(f"  normalised {fixed['attrs']} scoped enum attribute(s) "
+              f"(Designer would have dropped these)")
     if fixed["fontweights"]:
         print(f"  removed {fixed['fontweights']} empty <fontweight> element(s)")
 
     # normalise() may have just touched main.ui, so re-check staleness
-    stale = stale or bool(fixed["enums"] or fixed["fontweights"])
+    stale = stale or bool(fixed["enums"] or fixed["attrs"] or fixed["fontweights"])
 
     if not (stale or force):
         print("UI up to date.")

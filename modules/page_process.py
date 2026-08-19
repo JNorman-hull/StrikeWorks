@@ -578,7 +578,9 @@ class ProcessPage(QObject):
             for p, cap in (("library", "Sensors in global index"),
                            ("coverage", "Complete deployment info"),
                            ("quality", "Flagged bad_sens"),
-                           ("sites", "Distinct sites")):
+                           ("sites", "Distinct sites"),
+                           ("delineated", "Delineated signals"),
+                           ("treatments", "Distinct treatments")):
                 put(p, "—", cap, "No library selected")
             return
 
@@ -608,6 +610,27 @@ class ProcessPage(QObject):
                 ", ".join(sites[:3]) if sites else "none recorded")
         else:
             put("sites", "—", "Distinct sites", "column not present")
+
+        if "delineated" in df.columns:
+            deline = int((df["delineated"].astype(str).str.upper() == "Y").sum())
+            trimmed = (int((df["trimmed"].astype(str).str.upper() == "Y").sum())
+                       if "trimmed" in df.columns else 0)
+            put("delineated", f"{deline}/{n}", "Delineated signals",
+                f"{trimmed} trimmed, {n - deline} awaiting delineation")
+        else:
+            put("delineated", "—", "Delineated signals", "column not present")
+
+        if "treatment" in df.columns:
+            treatments = [t for t in df["treatment"].astype(str).unique()
+                          if t and t.upper() not in ("NA", "NAN", "")]
+            runs = (len([r for r in df["run"].astype(str).unique()
+                         if r and r.upper() not in ("NA", "NAN", "")])
+                    if "run" in df.columns else 0)
+            put("treatments", len(treatments), "Distinct treatments",
+                f"{runs} distinct run(s): "
+                + (", ".join(treatments[:3]) if treatments else "none recorded"))
+        else:
+            put("treatments", "—", "Distinct treatments", "column not present")
 
     def _on_meta_select_all(self, checked):
         if checked:

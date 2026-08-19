@@ -29,7 +29,7 @@ class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(1048, 720)
+        MainWindow.resize(1205, 896)
         MainWindow.setMinimumSize(QSize(940, 560))
         self.styleSheet = QWidget(MainWindow)
         self.styleSheet.setObjectName(u"styleSheet")
@@ -574,8 +574,8 @@ class Ui_MainWindow(object):
         self.appLayout.setContentsMargins(0, 0, 0, 0)
         self.leftMenuBg = QFrame(self.bgApp)
         self.leftMenuBg.setObjectName(u"leftMenuBg")
-        self.leftMenuBg.setMinimumSize(QSize(60, 0))
-        self.leftMenuBg.setMaximumSize(QSize(60, 16777215))
+        self.leftMenuBg.setMinimumSize(QSize(240, 0))
+        self.leftMenuBg.setMaximumSize(QSize(240, 16777215))
         self.leftMenuBg.setFrameShape(QFrame.NoFrame)
         self.leftMenuBg.setFrameShadow(QFrame.Raised)
         self.verticalLayout_3 = QVBoxLayout(self.leftMenuBg)
@@ -601,9 +601,9 @@ class Ui_MainWindow(object):
         font1 = QFont()
         font1.setFamilies([u"Segoe UI Semibold"])
         font1.setPointSize(12)
+        font1.setBold(False)
         font1.setItalic(False)
         self.titleLeftApp.setFont(font1)
-        self.titleLeftApp.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop)
         self.titleLeftDescription = QLabel(self.topLogoInfo)
         self.titleLeftDescription.setObjectName(u"titleLeftDescription")
         self.titleLeftDescription.setGeometry(QRect(70, 27, 160, 16))
@@ -614,7 +614,6 @@ class Ui_MainWindow(object):
         font2.setBold(False)
         font2.setItalic(False)
         self.titleLeftDescription.setFont(font2)
-        self.titleLeftDescription.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop)
 
         self.verticalLayout_3.addWidget(self.topLogoInfo)
 
@@ -734,7 +733,7 @@ class Ui_MainWindow(object):
         self.verticalLayout_8.addWidget(self.btn_exit)
 
 
-        self.verticalMenuLayout.addWidget(self.topMenu, 0, Qt.AlignmentFlag.AlignTop)
+        self.verticalMenuLayout.addWidget(self.topMenu, 0, Qt.AlignTop)
 
 
         self.verticalLayout_3.addWidget(self.leftMenuFrame)
@@ -865,7 +864,7 @@ class Ui_MainWindow(object):
         self.verticalLayout_11.addWidget(self.btn_dataset)
 
 
-        self.verticalLayout_12.addWidget(self.extraTopMenu, 0, Qt.AlignmentFlag.AlignTop)
+        self.verticalLayout_12.addWidget(self.extraTopMenu, 0, Qt.AlignTop)
 
         self.extraCenter = QFrame(self.extraContent)
         self.extraCenter.setObjectName(u"extraCenter")
@@ -929,7 +928,6 @@ class Ui_MainWindow(object):
         self.titleRightInfo.setSizePolicy(sizePolicy2)
         self.titleRightInfo.setMaximumSize(QSize(16777215, 45))
         self.titleRightInfo.setFont(font)
-        self.titleRightInfo.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter)
 
         self.horizontalLayout_3.addWidget(self.titleRightInfo)
 
@@ -999,7 +997,7 @@ class Ui_MainWindow(object):
         self.horizontalLayout_2.addWidget(self.closeAppBtn)
 
 
-        self.horizontalLayout.addWidget(self.rightButtons, 0, Qt.AlignmentFlag.AlignRight)
+        self.horizontalLayout.addWidget(self.rightButtons, 0, Qt.AlignRight)
 
 
         self.verticalLayout_2.addWidget(self.contentTopBg)
@@ -1112,7 +1110,6 @@ class Ui_MainWindow(object):
         self.labelVersion_3.setObjectName(u"labelVersion_3")
         self.labelVersion_3.setStyleSheet(u"color: rgb(113, 126, 149);")
         self.labelVersion_3.setLineWidth(1)
-        self.labelVersion_3.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter)
 
         self.gridLayout.addWidget(self.labelVersion_3, 1, 0, 1, 2)
 
@@ -1179,7 +1176,7 @@ class Ui_MainWindow(object):
         self.scrollArea.setWidgetResizable(True)
         self.scrollAreaWidgetContents = QWidget()
         self.scrollAreaWidgetContents.setObjectName(u"scrollAreaWidgetContents")
-        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 218, 218))
+        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 315, 218))
         self.scrollAreaWidgetContents.setStyleSheet(u" QScrollBar:vertical {\n"
 "	border: none;\n"
 "    background: rgb(52, 59, 72);\n"
@@ -1330,38 +1327,27 @@ class Ui_MainWindow(object):
         brush2.setStyle(Qt.BrushStyle.NoBrush)
         palette.setBrush(QPalette.ColorGroup.Active, QPalette.ColorRole.Base, brush2)
         palette.setBrush(QPalette.ColorGroup.Active, QPalette.ColorRole.Window, brush1)
-        brush3 = QBrush(QColor(221, 221, 221, 128))
-        brush3.setStyle(Qt.BrushStyle.SolidPattern)
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
-        palette.setBrush(QPalette.ColorGroup.Active, QPalette.ColorRole.PlaceholderText, brush3)
-#endif
         palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.WindowText, brush)
         palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.Button, brush1)
         palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.Text, brush)
         palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.ButtonText, brush)
-        brush4 = QBrush(QColor(0, 0, 0, 255))
-        brush4.setStyle(Qt.BrushStyle.NoBrush)
-        palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.Base, brush4)
+        brush3 = QBrush(QColor(0, 0, 0, 255))
+        brush3.setStyle(Qt.BrushStyle.NoBrush)
+        palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.Base, brush3)
         palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.Window, brush1)
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
-        palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.PlaceholderText, brush3)
-#endif
         palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, brush)
         palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Button, brush1)
         palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, brush)
         palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, brush)
-        brush5 = QBrush(QColor(0, 0, 0, 255))
-        brush5.setStyle(Qt.BrushStyle.NoBrush)
-        palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Base, brush5)
+        brush4 = QBrush(QColor(0, 0, 0, 255))
+        brush4.setStyle(Qt.BrushStyle.NoBrush)
+        palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Base, brush4)
         palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Window, brush1)
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
-        palette.setBrush(QPalette.ColorGroup.Disabled, QPalette.ColorRole.PlaceholderText, brush3)
-#endif
         self.tableWidget.setPalette(palette)
         self.tableWidget.setFrameShape(QFrame.NoFrame)
         self.tableWidget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.tableWidget.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
-        self.tableWidget.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.tableWidget.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tableWidget.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tableWidget.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tableWidget.setShowGrid(True)
@@ -1388,7 +1374,6 @@ class Ui_MainWindow(object):
         self.verticalLayout_20.setObjectName(u"verticalLayout_20")
         self.label = QLabel(self.new_page)
         self.label.setObjectName(u"label")
-        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.verticalLayout_20.addWidget(self.label)
 
@@ -1516,8 +1501,8 @@ class Ui_MainWindow(object):
         self.table_inventory.setHorizontalHeaderItem(6, __qtablewidgetitem30)
         self.table_inventory.setObjectName(u"table_inventory")
         self.table_inventory.setMinimumSize(QSize(0, 220))
+        self.table_inventory.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_inventory.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table_inventory.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
 
         self.layout_grp_inventory.addWidget(self.table_inventory)
 
@@ -1729,7 +1714,7 @@ class Ui_MainWindow(object):
         self.layout_grp_deployment.addWidget(self.btn_save_deployment)
 
 
-        self.grid_meta.addWidget(self.grp_deployment, 0, 0, 1, 1)
+        self.grid_meta.addWidget(self.grp_deployment, 0, 0, 2, 1)
 
         self.grp_meta_inventory = QGroupBox(self.tab_meta)
         self.grp_meta_inventory.setObjectName(u"grp_meta_inventory")
@@ -1752,8 +1737,8 @@ class Ui_MainWindow(object):
         self.table_meta.setHorizontalHeaderItem(4, __qtablewidgetitem35)
         self.table_meta.setObjectName(u"table_meta")
         self.table_meta.setMinimumSize(QSize(0, 200))
+        self.table_meta.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_meta.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table_meta.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
 
         self.layout_grp_meta_inventory.addWidget(self.table_meta)
 
@@ -1779,7 +1764,7 @@ class Ui_MainWindow(object):
         self.layout_grp_meta_inventory.addLayout(self.layout_meta_controls)
 
 
-        self.grid_meta.addWidget(self.grp_meta_inventory, 1, 0, 1, 1)
+        self.grid_meta.addWidget(self.grp_meta_inventory, 2, 0, 1, 1)
 
         self.grp_dash_library = QGroupBox(self.tab_meta)
         self.grp_dash_library.setObjectName(u"grp_dash_library")
@@ -1789,10 +1774,7 @@ class Ui_MainWindow(object):
         self.layout_grp_dash_library.setContentsMargins(6, 6, 6, 6)
         self.lbl_dash_library_value = QLabel(self.grp_dash_library)
         self.lbl_dash_library_value.setObjectName(u"lbl_dash_library_value")
-        font5 = QFont()
-        font5.setPointSize(16)
-        font5.setBold(True)
-        self.lbl_dash_library_value.setFont(font5)
+        self.lbl_dash_library_value.setFont(font)
 
         self.layout_grp_dash_library.addWidget(self.lbl_dash_library_value)
 
@@ -1821,7 +1803,7 @@ class Ui_MainWindow(object):
         self.layout_grp_dash_coverage.setContentsMargins(6, 6, 6, 6)
         self.lbl_dash_coverage_value = QLabel(self.grp_dash_coverage)
         self.lbl_dash_coverage_value.setObjectName(u"lbl_dash_coverage_value")
-        self.lbl_dash_coverage_value.setFont(font5)
+        self.lbl_dash_coverage_value.setFont(font)
 
         self.layout_grp_dash_coverage.addWidget(self.lbl_dash_coverage_value)
 
@@ -1850,7 +1832,7 @@ class Ui_MainWindow(object):
         self.layout_grp_dash_quality.setContentsMargins(6, 6, 6, 6)
         self.lbl_dash_quality_value = QLabel(self.grp_dash_quality)
         self.lbl_dash_quality_value.setObjectName(u"lbl_dash_quality_value")
-        self.lbl_dash_quality_value.setFont(font5)
+        self.lbl_dash_quality_value.setFont(font)
 
         self.layout_grp_dash_quality.addWidget(self.lbl_dash_quality_value)
 
@@ -1879,7 +1861,7 @@ class Ui_MainWindow(object):
         self.layout_grp_dash_sites.setContentsMargins(6, 6, 6, 6)
         self.lbl_dash_sites_value = QLabel(self.grp_dash_sites)
         self.lbl_dash_sites_value.setObjectName(u"lbl_dash_sites_value")
-        self.lbl_dash_sites_value.setFont(font5)
+        self.lbl_dash_sites_value.setFont(font)
 
         self.layout_grp_dash_sites.addWidget(self.lbl_dash_sites_value)
 
@@ -1900,11 +1882,70 @@ class Ui_MainWindow(object):
 
         self.grid_meta.addWidget(self.grp_dash_sites, 1, 2, 1, 1)
 
+        self.grp_dash_delineated = QGroupBox(self.tab_meta)
+        self.grp_dash_delineated.setObjectName(u"grp_dash_delineated")
+        self.layout_grp_dash_delineated = QVBoxLayout(self.grp_dash_delineated)
+        self.layout_grp_dash_delineated.setSpacing(6)
+        self.layout_grp_dash_delineated.setObjectName(u"layout_grp_dash_delineated")
+        self.layout_grp_dash_delineated.setContentsMargins(6, 6, 6, 6)
+        self.lbl_dash_delineated_value = QLabel(self.grp_dash_delineated)
+        self.lbl_dash_delineated_value.setObjectName(u"lbl_dash_delineated_value")
+        self.lbl_dash_delineated_value.setFont(font)
+
+        self.layout_grp_dash_delineated.addWidget(self.lbl_dash_delineated_value)
+
+        self.lbl_dash_delineated_caption = QLabel(self.grp_dash_delineated)
+        self.lbl_dash_delineated_caption.setObjectName(u"lbl_dash_delineated_caption")
+
+        self.layout_grp_dash_delineated.addWidget(self.lbl_dash_delineated_caption)
+
+        self.lbl_dash_delineated_detail = QLabel(self.grp_dash_delineated)
+        self.lbl_dash_delineated_detail.setObjectName(u"lbl_dash_delineated_detail")
+
+        self.layout_grp_dash_delineated.addWidget(self.lbl_dash_delineated_detail)
+
+        self.spacer_dash_delineated = QSpacerItem(40, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.layout_grp_dash_delineated.addItem(self.spacer_dash_delineated)
+
+
+        self.grid_meta.addWidget(self.grp_dash_delineated, 2, 1, 1, 1)
+
+        self.grp_dash_treatments = QGroupBox(self.tab_meta)
+        self.grp_dash_treatments.setObjectName(u"grp_dash_treatments")
+        self.layout_grp_dash_treatments = QVBoxLayout(self.grp_dash_treatments)
+        self.layout_grp_dash_treatments.setSpacing(6)
+        self.layout_grp_dash_treatments.setObjectName(u"layout_grp_dash_treatments")
+        self.layout_grp_dash_treatments.setContentsMargins(6, 6, 6, 6)
+        self.lbl_dash_treatments_value = QLabel(self.grp_dash_treatments)
+        self.lbl_dash_treatments_value.setObjectName(u"lbl_dash_treatments_value")
+        self.lbl_dash_treatments_value.setFont(font)
+
+        self.layout_grp_dash_treatments.addWidget(self.lbl_dash_treatments_value)
+
+        self.lbl_dash_treatments_caption = QLabel(self.grp_dash_treatments)
+        self.lbl_dash_treatments_caption.setObjectName(u"lbl_dash_treatments_caption")
+
+        self.layout_grp_dash_treatments.addWidget(self.lbl_dash_treatments_caption)
+
+        self.lbl_dash_treatments_detail = QLabel(self.grp_dash_treatments)
+        self.lbl_dash_treatments_detail.setObjectName(u"lbl_dash_treatments_detail")
+
+        self.layout_grp_dash_treatments.addWidget(self.lbl_dash_treatments_detail)
+
+        self.spacer_dash_treatments = QSpacerItem(40, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.layout_grp_dash_treatments.addItem(self.spacer_dash_treatments)
+
+
+        self.grid_meta.addWidget(self.grp_dash_treatments, 2, 2, 1, 1)
+
         self.grid_meta.setRowStretch(0, 1)
         self.grid_meta.setRowStretch(1, 1)
-        self.grid_meta.setColumnStretch(0, 1)
-        self.grid_meta.setColumnStretch(1, 2)
-        self.grid_meta.setColumnStretch(2, 1)
+        self.grid_meta.setRowStretch(2, 1)
+        self.grid_meta.setColumnStretch(0, 4)
+        self.grid_meta.setColumnStretch(1, 3)
+        self.grid_meta.setColumnStretch(2, 3)
         self.tabs_process.addTab(self.tab_meta, "")
 
         self.layout_content_process.addWidget(self.tabs_process)
@@ -2046,7 +2087,7 @@ class Ui_MainWindow(object):
         self.verticalLayout_14.addWidget(self.btn_more)
 
 
-        self.verticalLayout_13.addWidget(self.topMenus, 0, Qt.AlignmentFlag.AlignTop)
+        self.verticalLayout_13.addWidget(self.topMenus, 0, Qt.AlignTop)
 
 
         self.verticalLayout_7.addWidget(self.contentSettings)
@@ -2070,18 +2111,16 @@ class Ui_MainWindow(object):
         self.creditsLabel = QLabel(self.bottomBar)
         self.creditsLabel.setObjectName(u"creditsLabel")
         self.creditsLabel.setMaximumSize(QSize(16777215, 16))
-        font6 = QFont()
-        font6.setFamilies([u"Segoe UI"])
-        font6.setBold(False)
-        font6.setItalic(False)
-        self.creditsLabel.setFont(font6)
-        self.creditsLabel.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter)
+        font5 = QFont()
+        font5.setFamilies([u"Segoe UI"])
+        font5.setBold(False)
+        font5.setItalic(False)
+        self.creditsLabel.setFont(font5)
 
         self.horizontalLayout_5.addWidget(self.creditsLabel)
 
         self.version = QLabel(self.bottomBar)
         self.version.setObjectName(u"version")
-        self.version.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignTrailing|Qt.AlignmentFlag.AlignVCenter)
 
         self.horizontalLayout_5.addWidget(self.version)
 
@@ -2111,7 +2150,7 @@ class Ui_MainWindow(object):
         self.retranslateUi(MainWindow)
 
         self.stackedWidget.setCurrentIndex(4)
-        self.tabs_process.setCurrentIndex(0)
+        self.tabs_process.setCurrentIndex(1)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -2302,6 +2341,14 @@ class Ui_MainWindow(object):
         self.lbl_dash_sites_value.setText(QCoreApplication.translate("MainWindow", u"\u2014", None))
         self.lbl_dash_sites_caption.setText(QCoreApplication.translate("MainWindow", u"Distinct sites", None))
         self.lbl_dash_sites_detail.setText(QCoreApplication.translate("MainWindow", u"No library selected", None))
+        self.grp_dash_delineated.setTitle(QCoreApplication.translate("MainWindow", u"Signal processing", None))
+        self.lbl_dash_delineated_value.setText(QCoreApplication.translate("MainWindow", u"\u2014", None))
+        self.lbl_dash_delineated_caption.setText(QCoreApplication.translate("MainWindow", u"Delineated signals", None))
+        self.lbl_dash_delineated_detail.setText(QCoreApplication.translate("MainWindow", u"No library selected", None))
+        self.grp_dash_treatments.setTitle(QCoreApplication.translate("MainWindow", u"Treatments and runs", None))
+        self.lbl_dash_treatments_value.setText(QCoreApplication.translate("MainWindow", u"\u2014", None))
+        self.lbl_dash_treatments_caption.setText(QCoreApplication.translate("MainWindow", u"Distinct treatments", None))
+        self.lbl_dash_treatments_detail.setText(QCoreApplication.translate("MainWindow", u"No library selected", None))
         self.tabs_process.setTabText(self.tabs_process.indexOf(self.tab_meta), QCoreApplication.translate("MainWindow", u"Metadata", None))
         self.title_validate.setText(QCoreApplication.translate("MainWindow", u"Validate & segment", None))
         self.subtitle_validate.setText(QCoreApplication.translate("MainWindow", u"Review processed signals, flag bad records and cut them into event segments.", None))

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <ui version="4.0">
  <author>JNorman-hull</author>
  <class>MainWindow</class>
@@ -40,7 +40,7 @@ STRIKEWORKS - DEFAULT DARK THEME
 
 QWidget{
 	color: rgb(221, 221, 221);
-	font: 10pt &quot;Segoe UI&quot;;
+	font: 10pt "Segoe UI";
 }
 
 /* /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -77,8 +77,8 @@ Left Menu */
 	background-position: centered;
 	background-repeat: no-repeat;
 }
-#titleLeftApp { font: 63 12pt &quot;Segoe UI Semibold&quot;; }
-#titleLeftDescription { font: 8pt &quot;Segoe UI&quot;; color: rgb(189, 147, 249); }
+#titleLeftApp { font: 63 12pt "Segoe UI Semibold"; }
+#titleLeftDescription { font: 8pt "Segoe UI"; color: rgb(189, 147, 249); }
 
 /* MENUS */
 #topMenu .QPushButton {	
@@ -557,7 +557,7 @@ Button */
     <item>
      <widget class="QFrame" name="bgApp">
       <property name="styleSheet">
-       <string notr="true"/>
+       <string notr="true" />
       </property>
       <property name="frameShape">
        <enum>QFrame::NoFrame</enum>
@@ -585,13 +585,13 @@ Button */
         <widget class="QFrame" name="leftMenuBg">
          <property name="minimumSize">
           <size>
-           <width>60</width>
+           <width>240</width>
            <height>0</height>
           </size>
          </property>
          <property name="maximumSize">
           <size>
-           <width>60</width>
+           <width>240</width>
            <height>16777215</height>
           </size>
          </property>
@@ -811,7 +811,7 @@ Button */
                </layout>
               </widget>
              </item>
-             <item>
+             <item alignment="Qt::AlignTop">
               <widget class="QFrame" name="topMenu">
                <property name="frameShape">
                 <enum>QFrame::NoFrame</enum>
@@ -1208,7 +1208,7 @@ Button */
                   <string>Close sensor processing</string>
                  </property>
                  <property name="text">
-                  <string/>
+                  <string />
                  </property>
                  <property name="icon">
                   <iconset resource="resources.qrc">
@@ -1251,7 +1251,7 @@ Button */
              <property name="bottomMargin">
               <number>0</number>
              </property>
-             <item>
+             <item alignment="Qt::AlignTop">
               <widget class="QFrame" name="extraTopMenu">
                <property name="frameShape">
                 <enum>QFrame::NoFrame</enum>
@@ -1434,7 +1434,7 @@ Button */
                <property name="frameShadow">
                 <enum>QFrame::Raised</enum>
                </property>
-               <layout class="QVBoxLayout" name="verticalLayout_10"/>
+               <layout class="QVBoxLayout" name="verticalLayout_10" />
               </widget>
              </item>
              <item>
@@ -1574,7 +1574,7 @@ Button */
                </layout>
               </widget>
              </item>
-             <item>
+             <item alignment="Qt::AlignRight">
               <widget class="QFrame" name="rightButtons">
                <property name="minimumSize">
                 <size>
@@ -1625,7 +1625,7 @@ Button */
                    <string>Settings</string>
                   </property>
                   <property name="text">
-                   <string/>
+                   <string />
                   </property>
                   <property name="icon">
                    <iconset resource="resources.qrc">
@@ -1660,7 +1660,7 @@ Button */
                    <string>Minimize</string>
                   </property>
                   <property name="text">
-                   <string/>
+                   <string />
                   </property>
                   <property name="icon">
                    <iconset resource="resources.qrc">
@@ -1705,7 +1705,7 @@ Button */
                    <string>Maximize</string>
                   </property>
                   <property name="text">
-                   <string/>
+                   <string />
                   </property>
                   <property name="icon">
                    <iconset resource="resources.qrc">
@@ -1740,7 +1740,7 @@ Button */
                    <string>Close</string>
                   </property>
                   <property name="text">
-                   <string/>
+                   <string />
                   </property>
                   <property name="icon">
                    <iconset resource="resources.qrc">
@@ -1811,7 +1811,7 @@ Button */
                 <item>
                  <widget class="QFrame" name="pagesContainer">
                   <property name="styleSheet">
-                   <string notr="true"/>
+                   <string notr="true" />
                   </property>
                   <property name="frameShape">
                    <enum>QFrame::NoFrame</enum>
@@ -1957,7 +1957,7 @@ background-repeat: no-repeat;</string>
                                    </font>
                                   </property>
                                   <property name="styleSheet">
-                                   <string notr="true"/>
+                                   <string notr="true" />
                                   </property>
                                   <property name="text">
                                    <string>FILE BOX</string>
@@ -1993,7 +1993,7 @@ background-repeat: no-repeat;</string>
                                      <string notr="true">background-color: rgb(33, 37, 43);</string>
                                     </property>
                                     <property name="text">
-                                     <string/>
+                                     <string />
                                     </property>
                                     <property name="placeholderText">
                                      <string>Type here</string>
@@ -2079,7 +2079,7 @@ background-repeat: no-repeat;</string>
                                <bool>false</bool>
                               </property>
                               <property name="styleSheet">
-                               <string notr="true"/>
+                               <string notr="true" />
                               </property>
                               <property name="text">
                                <string>CheckBox</string>
@@ -2089,7 +2089,7 @@ background-repeat: no-repeat;</string>
                             <item row="0" column="1">
                              <widget class="QRadioButton" name="radioButton">
                               <property name="styleSheet">
-                               <string notr="true"/>
+                               <string notr="true" />
                               </property>
                               <property name="text">
                                <string>RadioButton</string>
@@ -2099,7 +2099,7 @@ background-repeat: no-repeat;</string>
                             <item row="0" column="2" rowspan="3">
                              <widget class="QSlider" name="verticalSlider">
                               <property name="styleSheet">
-                               <string notr="true"/>
+                               <string notr="true" />
                               </property>
                               <property name="orientation">
                                <enum>Qt::Vertical</enum>
@@ -2241,7 +2241,7 @@ background-repeat: no-repeat;</string>
                                <cursorShape>PointingHandCursor</cursorShape>
                               </property>
                               <property name="styleSheet">
-                               <string notr="true"/>
+                               <string notr="true" />
                               </property>
                               <property name="text">
                                <string>Link Button</string>
@@ -2258,7 +2258,7 @@ background-repeat: no-repeat;</string>
                             <item row="2" column="0" colspan="2">
                              <widget class="QSlider" name="horizontalSlider">
                               <property name="styleSheet">
-                               <string notr="true"/>
+                               <string notr="true" />
                               </property>
                               <property name="orientation">
                                <enum>Qt::Horizontal</enum>
@@ -2867,7 +2867,7 @@ background-repeat: no-repeat;</string>
                                   <number>6</number>
                                  </property>
                                  <item>
-                                  <widget class="QTreeView" name="tree_library"/>
+                                  <widget class="QTreeView" name="tree_library" />
                                  </item>
                                  <item>
                                   <widget class="QPushButton" name="btn_change_libraries">
@@ -2904,7 +2904,7 @@ background-repeat: no-repeat;</string>
                                   <number>6</number>
                                  </property>
                                  <item>
-                                  <widget class="QTreeView" name="tree_index"/>
+                                  <widget class="QTreeView" name="tree_index" />
                                  </item>
                                 </layout>
                                </widget>
@@ -3105,7 +3105,7 @@ background-repeat: no-repeat;</string>
                                   <number>6</number>
                                  </property>
                                  <item>
-                                  <widget class="QListWidget" name="list_processed"/>
+                                  <widget class="QListWidget" name="list_processed" />
                                  </item>
                                 </layout>
                                </widget>
@@ -3116,7 +3116,7 @@ background-repeat: no-repeat;</string>
                              <attribute name="title">
                               <string>Metadata</string>
                              </attribute>
-                             <layout class="QGridLayout" name="grid_meta" rowstretch="1,1" columnstretch="1,2,2">
+                             <layout class="QGridLayout" name="grid_meta" rowstretch="1,1,1" columnstretch="4,3,3">
                               <property name="leftMargin">
                                <number>8</number>
                               </property>
@@ -3132,7 +3132,7 @@ background-repeat: no-repeat;</string>
                               <property name="spacing">
                                <number>8</number>
                               </property>
-                              <item row="0" column="0">
+                              <item row="0" column="0" rowspan="2">
                                <widget class="QGroupBox" name="grp_deployment">
                                 <property name="title">
                                  <string>Deployment information</string>
@@ -3324,7 +3324,7 @@ background-repeat: no-repeat;</string>
                                 </layout>
                                </widget>
                               </item>
-                              <item row="1" column="0">
+                              <item row="2" column="0">
                                <widget class="QGroupBox" name="grp_meta_inventory">
                                 <property name="title">
                                  <string>Processed sensor index</string>
@@ -3694,6 +3694,140 @@ background-repeat: no-repeat;</string>
                                 </layout>
                                </widget>
                               </item>
+                              <item row="2" column="1">
+                               <widget class="QGroupBox" name="grp_dash_delineated">
+                                <property name="title">
+                                 <string>Signal processing</string>
+                                </property>
+                                <layout class="QVBoxLayout" name="layout_grp_dash_delineated">
+                                 <property name="spacing">
+                                  <number>6</number>
+                                 </property>
+                                 <property name="leftMargin">
+                                  <number>6</number>
+                                 </property>
+                                 <property name="topMargin">
+                                  <number>6</number>
+                                 </property>
+                                 <property name="rightMargin">
+                                  <number>6</number>
+                                 </property>
+                                 <property name="bottomMargin">
+                                  <number>6</number>
+                                 </property>
+                                 <item>
+                                  <widget class="QLabel" name="lbl_dash_delineated_value">
+                                   <property name="font">
+                                    <font>
+                                     <family>Segoe UI</family>
+                                     <pointsize>10</pointsize>
+                                     <weight>50</weight>
+                                     <italic>false</italic>
+                                     <bold>false</bold>
+                                    </font>
+                                   </property>
+                                   <property name="text">
+                                    <string>—</string>
+                                   </property>
+                                  </widget>
+                                 </item>
+                                 <item>
+                                  <widget class="QLabel" name="lbl_dash_delineated_caption">
+                                   <property name="text">
+                                    <string>Delineated signals</string>
+                                   </property>
+                                  </widget>
+                                 </item>
+                                 <item>
+                                  <widget class="QLabel" name="lbl_dash_delineated_detail">
+                                   <property name="text">
+                                    <string>No library selected</string>
+                                   </property>
+                                  </widget>
+                                 </item>
+                                 <item>
+                                  <spacer name="spacer_dash_delineated">
+                                   <property name="orientation">
+                                    <enum>Qt::Vertical</enum>
+                                   </property>
+                                   <property name="sizeHint" stdset="0">
+                                    <size>
+                                     <width>40</width>
+                                     <height>20</height>
+                                    </size>
+                                   </property>
+                                  </spacer>
+                                 </item>
+                                </layout>
+                               </widget>
+                              </item>
+                              <item row="2" column="2">
+                               <widget class="QGroupBox" name="grp_dash_treatments">
+                                <property name="title">
+                                 <string>Treatments and runs</string>
+                                </property>
+                                <layout class="QVBoxLayout" name="layout_grp_dash_treatments">
+                                 <property name="spacing">
+                                  <number>6</number>
+                                 </property>
+                                 <property name="leftMargin">
+                                  <number>6</number>
+                                 </property>
+                                 <property name="topMargin">
+                                  <number>6</number>
+                                 </property>
+                                 <property name="rightMargin">
+                                  <number>6</number>
+                                 </property>
+                                 <property name="bottomMargin">
+                                  <number>6</number>
+                                 </property>
+                                 <item>
+                                  <widget class="QLabel" name="lbl_dash_treatments_value">
+                                   <property name="font">
+                                    <font>
+                                     <family>Segoe UI</family>
+                                     <pointsize>10</pointsize>
+                                     <weight>50</weight>
+                                     <italic>false</italic>
+                                     <bold>false</bold>
+                                    </font>
+                                   </property>
+                                   <property name="text">
+                                    <string>—</string>
+                                   </property>
+                                  </widget>
+                                 </item>
+                                 <item>
+                                  <widget class="QLabel" name="lbl_dash_treatments_caption">
+                                   <property name="text">
+                                    <string>Distinct treatments</string>
+                                   </property>
+                                  </widget>
+                                 </item>
+                                 <item>
+                                  <widget class="QLabel" name="lbl_dash_treatments_detail">
+                                   <property name="text">
+                                    <string>No library selected</string>
+                                   </property>
+                                  </widget>
+                                 </item>
+                                 <item>
+                                  <spacer name="spacer_dash_treatments">
+                                   <property name="orientation">
+                                    <enum>Qt::Vertical</enum>
+                                   </property>
+                                   <property name="sizeHint" stdset="0">
+                                    <size>
+                                     <width>40</width>
+                                     <height>20</height>
+                                    </size>
+                                   </property>
+                                  </spacer>
+                                 </item>
+                                </layout>
+                               </widget>
+                              </item>
                              </layout>
                             </widget>
                            </widget>
@@ -3918,7 +4052,7 @@ background-repeat: no-repeat;</string>
                       <property name="bottomMargin">
                        <number>0</number>
                       </property>
-                      <item>
+                      <item alignment="Qt::AlignTop">
                        <widget class="QFrame" name="topMenus">
                         <property name="frameShape">
                          <enum>QFrame::NoFrame</enum>
@@ -4168,7 +4302,7 @@ background-repeat: no-repeat;</string>
   </widget>
  </widget>
  <resources>
-  <include location="resources.qrc"/>
+  <include location="resources.qrc" />
  </resources>
- <connections/>
+ <connections />
 </ui>

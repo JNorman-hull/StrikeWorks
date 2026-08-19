@@ -128,6 +128,14 @@ class MainWindow(QMainWindow):
         btn.setStyleSheet(UIFunctions.selectMenu(clean))
 
 
+    # CLOSE THE SENSOR PROCESSING PANEL IF IT IS OPEN
+    # Navigating to another top-level page slides the panel away.
+    # ///////////////////////////////////////////////////////////////
+    def closeSensorPanel(self):
+        if widgets.extraLeftBox.width() > 0:
+            UIFunctions.toggleLeftBox(self, True)
+
+
     # BUTTONS CLICK
     # Post here your functions for clicked buttons
     # ///////////////////////////////////////////////////////////////
@@ -141,6 +149,7 @@ class MainWindow(QMainWindow):
             widgets.stackedWidget.setCurrentWidget(widgets.home)
             UIFunctions.resetStyle(self, btnName)
             UIFunctions.resetPanelStyle(self, "")
+            self.closeSensorPanel()
             self.setSelected(btn)
 
         # SHOW WIDGETS PAGE
@@ -148,6 +157,7 @@ class MainWindow(QMainWindow):
             widgets.stackedWidget.setCurrentWidget(widgets.widgets)
             UIFunctions.resetStyle(self, btnName)
             UIFunctions.resetPanelStyle(self, "")
+            self.closeSensorPanel()
             self.setSelected(btn)
 
         # SHOW NEW PAGE
@@ -155,6 +165,7 @@ class MainWindow(QMainWindow):
             widgets.stackedWidget.setCurrentWidget(widgets.new_page) # SET PAGE
             UIFunctions.resetStyle(self, btnName) # RESET ANOTHERS BUTTONS SELECTED
             UIFunctions.resetPanelStyle(self, "")
+            self.closeSensorPanel()
             self.setSelected(btn) # SELECT MENU
 
         if btnName == "btn_save":
