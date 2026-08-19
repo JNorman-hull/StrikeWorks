@@ -22,7 +22,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QAbstractScrollArea, QApplicat
     QPlainTextEdit, QPushButton, QRadioButton, QScrollArea,
     QScrollBar, QSizePolicy, QSlider, QSpacerItem,
     QStackedWidget, QTabWidget, QTableWidget, QTableWidgetItem,
-    QTreeView, QVBoxLayout, QWidget)
+    QTreeView, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+    QWidget)
 import resources_rc
 
 class Ui_MainWindow(object):
@@ -1978,6 +1979,151 @@ class Ui_MainWindow(object):
         self.content_validate.setObjectName(u"content_validate")
         self.content_validate.setFrameShape(QFrame.NoFrame)
         self.content_validate.setFrameShadow(QFrame.Raised)
+        self.grid_validate = QGridLayout(self.content_validate)
+        self.grid_validate.setSpacing(8)
+        self.grid_validate.setObjectName(u"grid_validate")
+        self.grid_validate.setContentsMargins(8, 8, 8, 8)
+        self.grp_val_library = QGroupBox(self.content_validate)
+        self.grp_val_library.setObjectName(u"grp_val_library")
+        self.layout_grp_val_library = QVBoxLayout(self.grp_val_library)
+        self.layout_grp_val_library.setSpacing(6)
+        self.layout_grp_val_library.setObjectName(u"layout_grp_val_library")
+        self.layout_grp_val_library.setContentsMargins(6, 6, 6, 6)
+        self.tree_val_library = QTreeView(self.grp_val_library)
+        self.tree_val_library.setObjectName(u"tree_val_library")
+
+        self.layout_grp_val_library.addWidget(self.tree_val_library)
+
+        self.btn_val_change_libraries = QPushButton(self.grp_val_library)
+        self.btn_val_change_libraries.setObjectName(u"btn_val_change_libraries")
+        self.btn_val_change_libraries.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        self.layout_grp_val_library.addWidget(self.btn_val_change_libraries)
+
+
+        self.grid_validate.addWidget(self.grp_val_library, 0, 0, 1, 1)
+
+        self.grp_val_files = QGroupBox(self.content_validate)
+        self.grp_val_files.setObjectName(u"grp_val_files")
+        self.layout_grp_val_files = QVBoxLayout(self.grp_val_files)
+        self.layout_grp_val_files.setSpacing(6)
+        self.layout_grp_val_files.setObjectName(u"layout_grp_val_files")
+        self.layout_grp_val_files.setContentsMargins(6, 6, 6, 6)
+        self.tree_val_files = QTreeWidget(self.grp_val_files)
+        self.tree_val_files.setObjectName(u"tree_val_files")
+        self.tree_val_files.setHeaderHidden(True)
+
+        self.layout_grp_val_files.addWidget(self.tree_val_files)
+
+        self.lbl_val_progress = QLabel(self.grp_val_files)
+        self.lbl_val_progress.setObjectName(u"lbl_val_progress")
+        font5 = QFont()
+        font5.setBold(True)
+        self.lbl_val_progress.setFont(font5)
+        self.lbl_val_progress.setAlignment(Qt.AlignCenter)
+
+        self.layout_grp_val_files.addWidget(self.lbl_val_progress)
+
+        self.btn_val_save_next = QPushButton(self.grp_val_files)
+        self.btn_val_save_next.setObjectName(u"btn_val_save_next")
+        self.btn_val_save_next.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_val_save_next.setEnabled(False)
+
+        self.layout_grp_val_files.addWidget(self.btn_val_save_next)
+
+        self.btn_val_reset = QPushButton(self.grp_val_files)
+        self.btn_val_reset.setObjectName(u"btn_val_reset")
+        self.btn_val_reset.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_val_reset.setEnabled(False)
+
+        self.layout_grp_val_files.addWidget(self.btn_val_reset)
+
+        self.btn_val_jump = QPushButton(self.grp_val_files)
+        self.btn_val_jump.setObjectName(u"btn_val_jump")
+        self.btn_val_jump.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_val_jump.setEnabled(False)
+
+        self.layout_grp_val_files.addWidget(self.btn_val_jump)
+
+
+        self.grid_validate.addWidget(self.grp_val_files, 1, 0, 1, 1)
+
+        self.grp_val_plot = QGroupBox(self.content_validate)
+        self.grp_val_plot.setObjectName(u"grp_val_plot")
+        self.layout_grp_val_plot = QVBoxLayout(self.grp_val_plot)
+        self.layout_grp_val_plot.setSpacing(6)
+        self.layout_grp_val_plot.setObjectName(u"layout_grp_val_plot")
+        self.layout_grp_val_plot.setContentsMargins(6, 6, 6, 6)
+        self.layout_val_controls = QHBoxLayout()
+        self.layout_val_controls.setObjectName(u"layout_val_controls")
+        self.lbl_val_left = QLabel(self.grp_val_plot)
+        self.lbl_val_left.setObjectName(u"lbl_val_left")
+
+        self.layout_val_controls.addWidget(self.lbl_val_left)
+
+        self.cmb_val_left = QComboBox(self.grp_val_plot)
+        self.cmb_val_left.setObjectName(u"cmb_val_left")
+
+        self.layout_val_controls.addWidget(self.cmb_val_left)
+
+        self.lbl_val_right = QLabel(self.grp_val_plot)
+        self.lbl_val_right.setObjectName(u"lbl_val_right")
+
+        self.layout_val_controls.addWidget(self.lbl_val_right)
+
+        self.cmb_val_right = QComboBox(self.grp_val_plot)
+        self.cmb_val_right.setObjectName(u"cmb_val_right")
+
+        self.layout_val_controls.addWidget(self.cmb_val_right)
+
+        self.lbl_val_window = QLabel(self.grp_val_plot)
+        self.lbl_val_window.setObjectName(u"lbl_val_window")
+
+        self.layout_val_controls.addWidget(self.lbl_val_window)
+
+        self.cmb_val_window = QComboBox(self.grp_val_plot)
+        self.cmb_val_window.setObjectName(u"cmb_val_window")
+
+        self.layout_val_controls.addWidget(self.cmb_val_window)
+
+        self.spacer_val_controls = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.layout_val_controls.addItem(self.spacer_val_controls)
+
+
+        self.layout_grp_val_plot.addLayout(self.layout_val_controls)
+
+        self.frame_val_plot = QFrame(self.grp_val_plot)
+        self.frame_val_plot.setObjectName(u"frame_val_plot")
+        self.frame_val_plot.setFrameShape(QFrame.NoFrame)
+
+        self.layout_grp_val_plot.addWidget(self.frame_val_plot)
+
+        self.layout_val_loading = QHBoxLayout()
+        self.layout_val_loading.setObjectName(u"layout_val_loading")
+        self.frame_val_spinner = QFrame(self.grp_val_plot)
+        self.frame_val_spinner.setObjectName(u"frame_val_spinner")
+        self.frame_val_spinner.setFrameShape(QFrame.NoFrame)
+        self.frame_val_spinner.setMinimumSize(QSize(20, 20))
+        self.frame_val_spinner.setMaximumSize(QSize(20, 20))
+
+        self.layout_val_loading.addWidget(self.frame_val_spinner)
+
+        self.lbl_val_loading = QLabel(self.grp_val_plot)
+        self.lbl_val_loading.setObjectName(u"lbl_val_loading")
+
+        self.layout_val_loading.addWidget(self.lbl_val_loading)
+
+
+        self.layout_grp_val_plot.addLayout(self.layout_val_loading)
+
+
+        self.grid_validate.addWidget(self.grp_val_plot, 0, 1, 2, 1)
+
+        self.grid_validate.setRowStretch(0, 1)
+        self.grid_validate.setRowStretch(1, 1)
+        self.grid_validate.setColumnStretch(0, 3)
+        self.grid_validate.setColumnStretch(1, 7)
 
         self.layout_validate.addWidget(self.content_validate)
 
@@ -2111,11 +2257,11 @@ class Ui_MainWindow(object):
         self.creditsLabel = QLabel(self.bottomBar)
         self.creditsLabel.setObjectName(u"creditsLabel")
         self.creditsLabel.setMaximumSize(QSize(16777215, 16))
-        font5 = QFont()
-        font5.setFamilies([u"Segoe UI"])
-        font5.setBold(False)
-        font5.setItalic(False)
-        self.creditsLabel.setFont(font5)
+        font6 = QFont()
+        font6.setFamilies([u"Segoe UI"])
+        font6.setBold(False)
+        font6.setItalic(False)
+        self.creditsLabel.setFont(font6)
 
         self.horizontalLayout_5.addWidget(self.creditsLabel)
 
@@ -2176,7 +2322,7 @@ class Ui_MainWindow(object):
         self.btn_process.setText(QCoreApplication.translate("MainWindow", u"Process", None))
         self.btn_validate.setText(QCoreApplication.translate("MainWindow", u"Validate & segment", None))
         self.btn_dataset.setText(QCoreApplication.translate("MainWindow", u"Dataset creation", None))
-        self.titleRightInfo.setText(QCoreApplication.translate("MainWindow", u"StrikeWorks - data extraction, validation, processing and model development tool for underwater passive sensor devices", None))
+        self.titleRightInfo.setText("")
 #if QT_CONFIG(tooltip)
         self.settingsTopBtn.setToolTip(QCoreApplication.translate("MainWindow", u"Settings", None))
 #endif // QT_CONFIG(tooltip)
@@ -2352,6 +2498,18 @@ class Ui_MainWindow(object):
         self.tabs_process.setTabText(self.tabs_process.indexOf(self.tab_meta), QCoreApplication.translate("MainWindow", u"Metadata", None))
         self.title_validate.setText(QCoreApplication.translate("MainWindow", u"Validate & segment", None))
         self.subtitle_validate.setText(QCoreApplication.translate("MainWindow", u"Review processed signals, flag bad records and cut them into event segments.", None))
+        self.grp_val_library.setTitle(QCoreApplication.translate("MainWindow", u"Library", None))
+        self.btn_val_change_libraries.setText(QCoreApplication.translate("MainWindow", u"Change libraries folder\u2026", None))
+        self.grp_val_files.setTitle(QCoreApplication.translate("MainWindow", u"Sensor files", None))
+        self.lbl_val_progress.setText(QCoreApplication.translate("MainWindow", u"\u2014", None))
+        self.btn_val_save_next.setText(QCoreApplication.translate("MainWindow", u"Save + Next", None))
+        self.btn_val_reset.setText(QCoreApplication.translate("MainWindow", u"Reset current sensor", None))
+        self.btn_val_jump.setText(QCoreApplication.translate("MainWindow", u"Jump to next unvalidated", None))
+        self.grp_val_plot.setTitle(QCoreApplication.translate("MainWindow", u"Nadir validation", None))
+        self.lbl_val_left.setText(QCoreApplication.translate("MainWindow", u"Left axis:", None))
+        self.lbl_val_right.setText(QCoreApplication.translate("MainWindow", u"Right axis:", None))
+        self.lbl_val_window.setText(QCoreApplication.translate("MainWindow", u"ROI window:", None))
+        self.lbl_val_loading.setText("")
         self.title_dataset.setText(QCoreApplication.translate("MainWindow", u"Dataset creation", None))
         self.subtitle_dataset.setText(QCoreApplication.translate("MainWindow", u"Assemble validated segments into labelled datasets for model development.", None))
         self.btn_adjustments.setText(QCoreApplication.translate("MainWindow", u"Adjustments", None))

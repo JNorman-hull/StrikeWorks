@@ -1,0 +1,8 @@
+# StrikeWorks runtime dependencies
+PySide6
+pyqtgraph
+numpy
+pandas
+scipy
+scikit-learn
+joblib

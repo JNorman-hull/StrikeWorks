@@ -32,11 +32,15 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 UI_FILE = ROOT / "main.ui"
 OUT_FILE = ROOT / "modules" / "ui_main.py"
+QRC_FILE = ROOT / "resources.qrc"
+QRC_OUT = ROOT / "modules" / "resources_rc.py"
 
 if sys.platform == "win32":
     UIC = ROOT / ".venv" / "Scripts" / "pyside6-uic.exe"
+    RCC = ROOT / ".venv" / "Scripts" / "pyside6-rcc.exe"
 else:
     UIC = ROOT / ".venv" / "bin" / "pyside6-uic"
+    RCC = ROOT / ".venv" / "bin" / "pyside6-rcc"
 
 _SCOPED_ENUM = re.compile(r"<enum>([A-Za-z]+)::[A-Za-z]+::([A-Za-z]+)</enum>")
 
@@ -71,6 +75,49 @@ def normalise(path: Path) -> dict:
         path.write_text(text, encoding="utf-8", newline="\n")
 
     return {"enums": n_enums, "attrs": n_attrs, "fontweights": n_weights}
+
+
+def resources_stale() -> bool:
+    """True if resources.qrc, or any file it lists, is newer than the output.
+
+    Images and icons are compiled into modules/resources_rc.py. Replacing a PNG
+    on disk has no effect on the running app until this is rebuilt, because Qt
+    loads them from the ':/...' resource system, not the filesystem.
+    """
+    if not QRC_FILE.exists():
+        return False
+    if not QRC_OUT.exists():
+        return True
+
+    out_mtime = QRC_OUT.stat().st_mtime
+    if QRC_FILE.stat().st_mtime > out_mtime:
+        return True
+
+    try:
+        import xml.etree.ElementTree as ET
+        for node in ET.parse(QRC_FILE).iter("file"):
+            asset = ROOT / (node.text or "").strip()
+            if asset.exists() and asset.stat().st_mtime > out_mtime:
+                return True
+    except Exception:
+        # If the .qrc cannot be parsed, rebuild rather than silently skip.
+        return True
+    return False
+
+
+def compile_resources() -> int:
+    if not RCC.exists():
+        print(f"ERROR: {RCC} not found - is the virtualenv set up?")
+        return 1
+    result = subprocess.run(
+        [str(RCC), str(QRC_FILE), "-o", str(QRC_OUT)],
+        capture_output=True, text=True)
+    if result.returncode != 0:
+        print("ERROR: pyside6-rcc failed")
+        print(result.stderr.strip())
+        return result.returncode
+    print(f"Built {QRC_OUT.relative_to(ROOT)} from {QRC_FILE.name}")
+    return 0
 
 
 def compile_ui() -> int:
@@ -111,11 +158,15 @@ def main() -> int:
              or UI_FILE.stat().st_mtime > OUT_FILE.stat().st_mtime)
 
     if check_only:
-        print(f"main.ui         {UI_FILE.stat().st_mtime}")
-        print(f"ui_main.py      "
-              f"{OUT_FILE.stat().st_mtime if OUT_FILE.exists() else 'missing'}")
-        print("STALE - run build_ui.py" if stale else "up to date")
+        print("ui        : %s" % ("STALE" if stale else "up to date"))
+        print("resources : %s" % ("STALE" if resources_stale() else "up to date"))
         return 0
+
+    # Icons and images first - the UI references them.
+    if force or resources_stale():
+        rc = compile_resources()
+        if rc != 0:
+            return rc
 
     fixed = normalise(UI_FILE)
     if fixed["enums"]:

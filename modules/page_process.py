@@ -244,6 +244,12 @@ class ProcessPage(QObject):
             tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
             tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
 
+        # Always start on "Raw data processing".
+        # Qt Designer writes tabs_process/currentIndex to whichever tab happened
+        # to be showing on its canvas when the file was saved, so the .ui value
+        # cannot be relied on. Set it here instead.
+        u.tabs_process.setCurrentIndex(0)
+
         u.btn_process_selected.setEnabled(False)
         u.console_output.setFont(QFont("Consolas", 9))
         u.console_output.setStyleSheet(

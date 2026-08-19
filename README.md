@@ -26,7 +26,11 @@ The layout lives in `main.ui` — edit it in Qt Designer (`.venv\Scripts\pyside6
 Use `build_ui.py` (see below) rather than calling `pyside6-uic` directly — it
 normalises `main.ui` first and checks the generated file actually compiles.
 
-Icons and images are compiled from `resources.qrc`:
+Icons and images are compiled from `resources.qrc` into
+`modules/resources_rc.py`. Qt loads them through the `:/...` resource system,
+**not from disk** — so replacing a PNG under `images/` has no effect on the
+running app until the resources are rebuilt. `build_ui.py` detects a changed
+image and rebuilds them automatically. To do it by hand:
 
 ```
 .venv\Scripts\pyside6-rcc.exe resources.qrc -o modules\resources_rc.py

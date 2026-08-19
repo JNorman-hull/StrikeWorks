@@ -1567,7 +1567,7 @@ Button */
                    </font>
                   </property>
                   <property name="text">
-                   <string>StrikeWorks - data extraction, validation, processing and model development tool for underwater passive sensor devices</string>
+                   <string></string>
                   </property>
                  </widget>
                 </item>
@@ -3900,6 +3900,257 @@ background-repeat: no-repeat;</string>
                          <property name="frameShadow">
                           <enum>QFrame::Raised</enum>
                          </property>
+                         <layout class="QGridLayout" name="grid_validate" columnstretch="3,7" rowstretch="1,1">
+                          <property name="spacing">
+                           <number>8</number>
+                          </property>
+                          <property name="leftMargin">
+                           <number>8</number>
+                          </property>
+                          <property name="topMargin">
+                           <number>8</number>
+                          </property>
+                          <property name="rightMargin">
+                           <number>8</number>
+                          </property>
+                          <property name="bottomMargin">
+                           <number>8</number>
+                          </property>
+                          <item row="0" column="0">
+                                <widget class="QGroupBox" name="grp_val_library">
+                                 <property name="title">
+                                  <string>Library</string>
+                                 </property>
+                                 <layout class="QVBoxLayout" name="layout_grp_val_library">
+                                  <property name="spacing">
+                                   <number>6</number>
+                                  </property>
+                                  <property name="leftMargin">
+                                   <number>6</number>
+                                  </property>
+                                  <property name="topMargin">
+                                   <number>6</number>
+                                  </property>
+                                  <property name="rightMargin">
+                                   <number>6</number>
+                                  </property>
+                                  <property name="bottomMargin">
+                                   <number>6</number>
+                                  </property>
+                                  <item>
+                                   <widget class="QTreeView" name="tree_val_library">
+                                   </widget>
+                                  </item>
+                                  <item>
+                                   <widget class="QPushButton" name="btn_val_change_libraries">
+                                    <property name="text">
+                                     <string>Change libraries folder…</string>
+                                    </property>
+                                    <property name="cursor">
+                                     <cursorShape>PointingHandCursor</cursorShape>
+                                    </property>
+                                   </widget>
+                                  </item>
+                                 </layout>
+                                </widget>
+                          </item>
+                          <item row="1" column="0">
+                                <widget class="QGroupBox" name="grp_val_files">
+                                 <property name="title">
+                                  <string>Sensor files</string>
+                                 </property>
+                                 <layout class="QVBoxLayout" name="layout_grp_val_files">
+                                  <property name="spacing">
+                                   <number>6</number>
+                                  </property>
+                                  <property name="leftMargin">
+                                   <number>6</number>
+                                  </property>
+                                  <property name="topMargin">
+                                   <number>6</number>
+                                  </property>
+                                  <property name="rightMargin">
+                                   <number>6</number>
+                                  </property>
+                                  <property name="bottomMargin">
+                                   <number>6</number>
+                                  </property>
+                                  <item>
+                                   <widget class="QTreeWidget" name="tree_val_files">
+                                    <property name="headerHidden">
+                                     <bool>true</bool>
+                                    </property>
+                                   </widget>
+                                  </item>
+                                  <item>
+                                   <widget class="QLabel" name="lbl_val_progress">
+                                    <property name="font">
+                                     <font>
+                                      <bold>true</bold>
+                                     </font>
+                                    </property>
+                                    <property name="text">
+                                     <string>—</string>
+                                    </property>
+                                    <property name="alignment">
+                                     <set>Qt::AlignCenter</set>
+                                    </property>
+                                   </widget>
+                                  </item>
+                                  <item>
+                                   <widget class="QPushButton" name="btn_val_save_next">
+                                    <property name="text">
+                                     <string>Save + Next</string>
+                                    </property>
+                                    <property name="cursor">
+                                     <cursorShape>PointingHandCursor</cursorShape>
+                                    </property>
+                                    <property name="enabled">
+                                     <bool>false</bool>
+                                    </property>
+                                   </widget>
+                                  </item>
+                                  <item>
+                                   <widget class="QPushButton" name="btn_val_reset">
+                                    <property name="text">
+                                     <string>Reset current sensor</string>
+                                    </property>
+                                    <property name="cursor">
+                                     <cursorShape>PointingHandCursor</cursorShape>
+                                    </property>
+                                    <property name="enabled">
+                                     <bool>false</bool>
+                                    </property>
+                                   </widget>
+                                  </item>
+                                  <item>
+                                   <widget class="QPushButton" name="btn_val_jump">
+                                    <property name="text">
+                                     <string>Jump to next unvalidated</string>
+                                    </property>
+                                    <property name="cursor">
+                                     <cursorShape>PointingHandCursor</cursorShape>
+                                    </property>
+                                    <property name="enabled">
+                                     <bool>false</bool>
+                                    </property>
+                                   </widget>
+                                  </item>
+                                 </layout>
+                                </widget>
+                          </item>
+                          <item row="0" column="1" rowspan="2">
+                                <widget class="QGroupBox" name="grp_val_plot">
+                                 <property name="title">
+                                  <string>Nadir validation</string>
+                                 </property>
+                                 <layout class="QVBoxLayout" name="layout_grp_val_plot">
+                                  <property name="spacing">
+                                   <number>6</number>
+                                  </property>
+                                  <property name="leftMargin">
+                                   <number>6</number>
+                                  </property>
+                                  <property name="topMargin">
+                                   <number>6</number>
+                                  </property>
+                                  <property name="rightMargin">
+                                   <number>6</number>
+                                  </property>
+                                  <property name="bottomMargin">
+                                   <number>6</number>
+                                  </property>
+                                  <item>
+                                   <layout class="QHBoxLayout" name="layout_val_controls">
+                                    <item>
+                                     <widget class="QLabel" name="lbl_val_left">
+                                      <property name="text">
+                                       <string>Left axis:</string>
+                                      </property>
+                                     </widget>
+                                    </item>
+                                    <item>
+                                     <widget class="QComboBox" name="cmb_val_left">
+                                     </widget>
+                                    </item>
+                                    <item>
+                                     <widget class="QLabel" name="lbl_val_right">
+                                      <property name="text">
+                                       <string>Right axis:</string>
+                                      </property>
+                                     </widget>
+                                    </item>
+                                    <item>
+                                     <widget class="QComboBox" name="cmb_val_right">
+                                     </widget>
+                                    </item>
+                                    <item>
+                                     <widget class="QLabel" name="lbl_val_window">
+                                      <property name="text">
+                                       <string>ROI window:</string>
+                                      </property>
+                                     </widget>
+                                    </item>
+                                    <item>
+                                     <widget class="QComboBox" name="cmb_val_window">
+                                     </widget>
+                                    </item>
+                                    <item>
+                                     <spacer name="spacer_val_controls">
+                                      <property name="orientation">
+                                       <enum>Qt::Horizontal</enum>
+                                      </property>
+                                      <property name="sizeHint" stdset="0">
+                                       <size>
+                                        <width>40</width>
+                                        <height>20</height>
+                                       </size>
+                                      </property>
+                                     </spacer>
+                                    </item>
+                                   </layout>
+                                  </item>
+                                  <item>
+                                   <widget class="QFrame" name="frame_val_plot">
+                                    <property name="frameShape">
+                                     <enum>QFrame::NoFrame</enum>
+                                    </property>
+                                   </widget>
+                                  </item>
+                                  <item>
+                                   <layout class="QHBoxLayout" name="layout_val_loading">
+                                    <item>
+                                     <widget class="QFrame" name="frame_val_spinner">
+                                      <property name="frameShape">
+                                       <enum>QFrame::NoFrame</enum>
+                                      </property>
+                                      <property name="minimumSize">
+                                       <size>
+                                        <width>20</width>
+                                        <height>20</height>
+                                       </size>
+                                      </property>
+                                      <property name="maximumSize">
+                                       <size>
+                                        <width>20</width>
+                                        <height>20</height>
+                                       </size>
+                                      </property>
+                                     </widget>
+                                    </item>
+                                    <item>
+                                     <widget class="QLabel" name="lbl_val_loading">
+                                      <property name="text">
+                                       <string></string>
+                                      </property>
+                                     </widget>
+                                    </item>
+                                   </layout>
+                                  </item>
+                                 </layout>
+                                </widget>
+                          </item>
+                         </layout>
                         </widget>
                        </item>
                       </layout>

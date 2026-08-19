@@ -17,6 +17,7 @@ import platform
 from modules import *
 from widgets import *
 from modules.page_process import ProcessPage
+from modules.page_validate import ValidatePage
 os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
 
 # SET AS GLOBAL WIDGETS
@@ -46,11 +47,12 @@ class MainWindow(QMainWindow):
         # APP NAME
         # ///////////////////////////////////////////////////////////////
         title = "StrikeWorks"
-        description = ("StrikeWorks - data extraction, validation, processing and model "
-                       "development tool for underwater passive sensor devices")
         # APPLY TEXTS
         self.setWindowTitle(title)
-        widgets.titleRightInfo.setText(description)
+        # NOTE: the header label (titleRightInfo) is deliberately NOT set here.
+        # Its text comes from main.ui so it can be edited in Qt Designer.
+        # Calling setText() on a widget here overrides the .ui at startup and
+        # makes Designer edits look like they have no effect.
 
         # TOGGLE MENU
         # ///////////////////////////////////////////////////////////////
@@ -68,6 +70,9 @@ class MainWindow(QMainWindow):
         # ///////////////////////////////////////////////////////////////
         self.process_page = ProcessPage(widgets, self)
         self.process_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
+        self.validate_page = ValidatePage(widgets, self)
+        self.validate_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
 
         # BUTTONS CLICK
