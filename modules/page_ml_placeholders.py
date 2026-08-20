@@ -4,29 +4,17 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Placeholder content for the Model Training and Model Performance pages.
+"""Placeholder content for the Model Performance page.
 
-These pages are part of the Machine Learning Analysis navigation now, but
-their functionality is deliberately not implemented yet. The placeholders
-document the planned architecture so the pages can be developed later and
-eventually feed the deployed models used by Model Prediction.
+Model Performance is part of the Machine Learning Analysis navigation, but
+its functionality is deliberately not implemented yet. The placeholder
+documents the planned architecture so the page can be developed later.
+(Model Training and Model Prediction are fully implemented in their own
+page modules.)
 """
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout
 
 from .ml_widgets import MUTED, MetaCard
-
-_TRAINING_SECTIONS = [
-    ("Training dataset", "Select a curated, annotated sensor dataset "
-                         "produced by Sensor Processing."),
-    ("Features & channels", "Choose the sensor channels and windowing "
-                            "supplied to the model."),
-    ("Model configuration", "Classifier setup: binary strike detection and "
-                            "optional pump-region multiclass stage."),
-    ("Training & validation", "Cross-validated training with held-out "
-                              "performance estimation."),
-    ("Model saving & versioning", "Save versioned model + performance "
-                                  "metrics JSON for deployment."),
-]
 
 _PERFORMANCE_SECTIONS = [
     ("Performance metrics", "Accuracy, sensitivity, specificity, precision, "
@@ -68,15 +56,10 @@ def _fill(frame, sections, note):
     v.addStretch()
 
 
-def build_training_page(ui):
-    _fill(ui.content_ml_training, _TRAINING_SECTIONS,
-          "Model training is not implemented yet. This page will train new "
-          "blade-strike models from curated datasets and publish them, with "
-          "their performance metrics, for use in Model Prediction.")
-
-
 def build_performance_page(ui):
     _fill(ui.content_ml_performance, _PERFORMANCE_SECTIONS,
-          "Model performance analysis is not implemented yet. Deployed-model "
-          "metrics are currently shown on the Model Prediction → Predict tab; "
-          "this page will provide the full evaluation suite.")
+          "Model performance analysis is not implemented yet. "
+          "Cross-validated performance for a training run is shown on "
+          "Model Training → Evaluate; deployed-model metrics appear on "
+          "Model Prediction → Predict. This page will provide the full "
+          "evaluation suite across models.")

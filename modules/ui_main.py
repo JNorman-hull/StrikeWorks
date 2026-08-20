@@ -2429,6 +2429,71 @@ class Ui_MainWindow(object):
         self.content_ml_training.setObjectName(u"content_ml_training")
         self.content_ml_training.setFrameShape(QFrame.NoFrame)
         self.content_ml_training.setFrameShadow(QFrame.Raised)
+        self.layout_content_ml_training = QVBoxLayout(self.content_ml_training)
+        self.layout_content_ml_training.setSpacing(0)
+        self.layout_content_ml_training.setObjectName(u"layout_content_ml_training")
+        self.layout_content_ml_training.setContentsMargins(0, 0, 0, 0)
+        self.tabs_ml_training = QTabWidget(self.content_ml_training)
+        self.tabs_ml_training.setObjectName(u"tabs_ml_training")
+        self.tab_train_configure = QWidget()
+        self.tab_train_configure.setObjectName(u"tab_train_configure")
+        self.layout_tab_train_configure = QVBoxLayout(self.tab_train_configure)
+        self.layout_tab_train_configure.setSpacing(0)
+        self.layout_tab_train_configure.setObjectName(u"layout_tab_train_configure")
+        self.layout_tab_train_configure.setContentsMargins(0, 0, 0, 0)
+        self.frame_train_configure = QFrame(self.tab_train_configure)
+        self.frame_train_configure.setObjectName(u"frame_train_configure")
+        self.frame_train_configure.setFrameShape(QFrame.NoFrame)
+        self.frame_train_configure.setFrameShadow(QFrame.Raised)
+
+        self.layout_tab_train_configure.addWidget(self.frame_train_configure)
+
+        self.tabs_ml_training.addTab(self.tab_train_configure, "")
+        self.tab_train_cv = QWidget()
+        self.tab_train_cv.setObjectName(u"tab_train_cv")
+        self.layout_tab_train_cv = QVBoxLayout(self.tab_train_cv)
+        self.layout_tab_train_cv.setSpacing(0)
+        self.layout_tab_train_cv.setObjectName(u"layout_tab_train_cv")
+        self.layout_tab_train_cv.setContentsMargins(0, 0, 0, 0)
+        self.frame_train_cv = QFrame(self.tab_train_cv)
+        self.frame_train_cv.setObjectName(u"frame_train_cv")
+        self.frame_train_cv.setFrameShape(QFrame.NoFrame)
+        self.frame_train_cv.setFrameShadow(QFrame.Raised)
+
+        self.layout_tab_train_cv.addWidget(self.frame_train_cv)
+
+        self.tabs_ml_training.addTab(self.tab_train_cv, "")
+        self.tab_train_evaluate = QWidget()
+        self.tab_train_evaluate.setObjectName(u"tab_train_evaluate")
+        self.layout_tab_train_evaluate = QVBoxLayout(self.tab_train_evaluate)
+        self.layout_tab_train_evaluate.setSpacing(0)
+        self.layout_tab_train_evaluate.setObjectName(u"layout_tab_train_evaluate")
+        self.layout_tab_train_evaluate.setContentsMargins(0, 0, 0, 0)
+        self.frame_train_evaluate = QFrame(self.tab_train_evaluate)
+        self.frame_train_evaluate.setObjectName(u"frame_train_evaluate")
+        self.frame_train_evaluate.setFrameShape(QFrame.NoFrame)
+        self.frame_train_evaluate.setFrameShadow(QFrame.Raised)
+
+        self.layout_tab_train_evaluate.addWidget(self.frame_train_evaluate)
+
+        self.tabs_ml_training.addTab(self.tab_train_evaluate, "")
+        self.tab_train_deploy = QWidget()
+        self.tab_train_deploy.setObjectName(u"tab_train_deploy")
+        self.layout_tab_train_deploy = QVBoxLayout(self.tab_train_deploy)
+        self.layout_tab_train_deploy.setSpacing(0)
+        self.layout_tab_train_deploy.setObjectName(u"layout_tab_train_deploy")
+        self.layout_tab_train_deploy.setContentsMargins(0, 0, 0, 0)
+        self.frame_train_deploy = QFrame(self.tab_train_deploy)
+        self.frame_train_deploy.setObjectName(u"frame_train_deploy")
+        self.frame_train_deploy.setFrameShape(QFrame.NoFrame)
+        self.frame_train_deploy.setFrameShadow(QFrame.Raised)
+
+        self.layout_tab_train_deploy.addWidget(self.frame_train_deploy)
+
+        self.tabs_ml_training.addTab(self.tab_train_deploy, "")
+
+        self.layout_content_ml_training.addWidget(self.tabs_ml_training)
+
 
         self.layout_ml_training.addWidget(self.content_ml_training)
 
@@ -2681,6 +2746,7 @@ class Ui_MainWindow(object):
 
         self.stackedWidget.setCurrentIndex(4)
         self.tabs_process.setCurrentIndex(1)
+        self.tabs_ml_training.setCurrentIndex(0)
         self.tabs_ml_prediction.setCurrentIndex(0)
 
 
@@ -2923,6 +2989,10 @@ class Ui_MainWindow(object):
         self.grp_ds_figure.setTitle(QCoreApplication.translate("MainWindow", u"Annotation summary", None))
         self.title_ml_training.setText(QCoreApplication.translate("MainWindow", u"Model training", None))
         self.subtitle_ml_training.setText(QCoreApplication.translate("MainWindow", u"Train and version blade-strike models from curated sensor datasets.", None))
+        self.tabs_ml_training.setTabText(self.tabs_ml_training.indexOf(self.tab_train_configure), QCoreApplication.translate("MainWindow", u"Configure", None))
+        self.tabs_ml_training.setTabText(self.tabs_ml_training.indexOf(self.tab_train_cv), QCoreApplication.translate("MainWindow", u"Cross-validate", None))
+        self.tabs_ml_training.setTabText(self.tabs_ml_training.indexOf(self.tab_train_evaluate), QCoreApplication.translate("MainWindow", u"Evaluate", None))
+        self.tabs_ml_training.setTabText(self.tabs_ml_training.indexOf(self.tab_train_deploy), QCoreApplication.translate("MainWindow", u"Deploy", None))
         self.title_ml_performance.setText(QCoreApplication.translate("MainWindow", u"Model performance", None))
         self.subtitle_ml_performance.setText(QCoreApplication.translate("MainWindow", u"Evaluate trained models: metrics, confusion matrices, ROC/PR curves and threshold analysis.", None))
         self.title_ml_prediction.setText(QCoreApplication.translate("MainWindow", u"Model prediction", None))

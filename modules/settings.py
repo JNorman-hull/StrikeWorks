@@ -49,3 +49,22 @@ def set_libraries_dir(path) -> Path:
     data["libraries_dir"] = str(p)
     _save(data)
     return p
+
+
+_MAX_RECENT = 8
+
+
+def get_recent_training_datasets() -> list:
+    """Recently used training dataset CSVs (existing files only)."""
+    paths = _load().get("recent_training_datasets", [])
+    return [p for p in paths if Path(p).exists()]
+
+
+def add_recent_training_dataset(path):
+    """Move/insert a dataset path at the top of the recent list."""
+    p = str(Path(path))
+    data = _load()
+    recent = [r for r in data.get("recent_training_datasets", []) if r != p]
+    recent.insert(0, p)
+    data["recent_training_datasets"] = recent[:_MAX_RECENT]
+    _save(data)

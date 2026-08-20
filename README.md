@@ -11,10 +11,35 @@ Copyright University of Hull (2026)
 ## Pages
 
 * **Sensor Processing** — Prepare, Process, Validate & segment, Dataset creation.
-* **Machine Learning Analysis** — Model training and Model performance
-  (placeholders for now) and **Model Prediction**, which applies the deployed
-  blade-strike models to a curated dataset through three tabs sharing one
-  analysis state (`modules/ml_state.py`):
+* **Machine Learning Analysis** — Model performance (placeholder for now),
+  **Model Training** and **Model Prediction**.
+
+  **Model Training** ports the ML pipeline scripts (01_binary_model /
+  05_multiclass_collapsed) into four tabs sharing one training state
+  (`modules/ml_train_state.py`), run by `modules/train_worker.py` in a
+  streaming subprocess. One run trains the full two-stage prediction
+  pipeline: the binary strike model plus (when region labels exist) the
+  multiclass region model for predicted strikes. Run outputs live in
+  `training_runs/` (gitignored).
+  * **Configure** — dataset loading/filtering, the two-stage target
+    definition with both class distributions, channel selection, sequence
+    preparation, hold-out/CV setup, class balancing, model parameters,
+    readiness checks;
+  * **Cross-validate** — stratified K-fold run over both stages with live
+    fold progress and the full training console;
+  * **Evaluate** — per-model results (selector): performance cards, CV
+    mean±SD, ROC/PR/confusion/probability/strike-type figures, error
+    analysis and stratification by strike type and treatment;
+  * **Deploy** — the explicit accept step: train the final models on all
+    data, then deploy the pipeline under one shared version
+    (`binary<v>.joblib` + `multiclass<v>.joblib` plus a
+    `BladeStrikeModel_v<v>/` package with metrics, config, channels and the
+    model card) into the models folder that Model Prediction
+    auto-discovers.
+
+  **Model Prediction** applies the deployed blade-strike models to a curated
+  dataset through three tabs sharing one analysis state
+  (`modules/ml_state.py`):
   * **Predict** — model/dataset cards, compatibility validation, prediction
     configuration and the asynchronous run (`modules/predict_worker.py` in a
     subprocess, so the sktime/numba model stack never loads into the GUI

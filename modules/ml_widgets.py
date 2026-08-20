@@ -235,11 +235,12 @@ class MetaCard(QFrame):
 
     def set_rows(self, rows):
         """rows: [(label, value)] - value None/'' renders as an em dash."""
-        # clear existing
+        # clear existing (detach immediately so stale rows never paint)
         while self._grid.count():
             item = self._grid.takeAt(0)
             w = item.widget()
             if w is not None:
+                w.setParent(None)
                 w.deleteLater()
         self._rows = {}
 
@@ -293,8 +294,10 @@ class CheckList(QFrame):
         self._verdict.setStyleSheet("border:none;")
         self._items = []
 
-    def set_checks(self, checks, ready):
+    def set_checks(self, checks, ready, ready_text="READY TO PREDICT",
+                   blocked_text="PREDICTION UNAVAILABLE"):
         for w in self._items:
+            w.setParent(None)
             w.deleteLater()
         self._items = []
         self._v.removeWidget(self._verdict)
@@ -311,10 +314,10 @@ class CheckList(QFrame):
             self._items.append(row)
 
         if ready:
-            self._verdict.setText("READY TO PREDICT")
+            self._verdict.setText(ready_text)
             self._verdict.setStyleSheet(f"color:{OK};border:none;")
         else:
-            self._verdict.setText("PREDICTION UNAVAILABLE")
+            self._verdict.setText(blocked_text)
             self._verdict.setStyleSheet(f"color:{BAD};border:none;")
         self._v.addWidget(self._verdict)
 
