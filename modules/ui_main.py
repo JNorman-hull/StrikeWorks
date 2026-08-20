@@ -2152,6 +2152,207 @@ class Ui_MainWindow(object):
         self.content_dataset.setObjectName(u"content_dataset")
         self.content_dataset.setFrameShape(QFrame.NoFrame)
         self.content_dataset.setFrameShadow(QFrame.Raised)
+        self.grid_dataset = QGridLayout(self.content_dataset)
+        self.grid_dataset.setSpacing(8)
+        self.grid_dataset.setObjectName(u"grid_dataset")
+        self.grid_dataset.setContentsMargins(8, 8, 8, 8)
+        self.grp_ds_library = QGroupBox(self.content_dataset)
+        self.grp_ds_library.setObjectName(u"grp_ds_library")
+        self.layout_grp_ds_library = QVBoxLayout(self.grp_ds_library)
+        self.layout_grp_ds_library.setSpacing(6)
+        self.layout_grp_ds_library.setObjectName(u"layout_grp_ds_library")
+        self.layout_grp_ds_library.setContentsMargins(6, 6, 6, 6)
+        self.tree_ds_library = QTreeView(self.grp_ds_library)
+        self.tree_ds_library.setObjectName(u"tree_ds_library")
+
+        self.layout_grp_ds_library.addWidget(self.tree_ds_library)
+
+        self.btn_ds_change_libraries = QPushButton(self.grp_ds_library)
+        self.btn_ds_change_libraries.setObjectName(u"btn_ds_change_libraries")
+        self.btn_ds_change_libraries.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        self.layout_grp_ds_library.addWidget(self.btn_ds_change_libraries)
+
+
+        self.grid_dataset.addWidget(self.grp_ds_library, 0, 0, 1, 1)
+
+        self.grp_ds_filter = QGroupBox(self.content_dataset)
+        self.grp_ds_filter.setObjectName(u"grp_ds_filter")
+        self.layout_grp_ds_filter = QVBoxLayout(self.grp_ds_filter)
+        self.layout_grp_ds_filter.setSpacing(6)
+        self.layout_grp_ds_filter.setObjectName(u"layout_grp_ds_filter")
+        self.layout_grp_ds_filter.setContentsMargins(6, 6, 6, 6)
+        self.tree_ds_filter = QTreeWidget(self.grp_ds_filter)
+        self.tree_ds_filter.setObjectName(u"tree_ds_filter")
+        self.tree_ds_filter.setHeaderHidden(True)
+
+        self.layout_grp_ds_filter.addWidget(self.tree_ds_filter)
+
+        self.chk_ds_select_all = QCheckBox(self.grp_ds_filter)
+        self.chk_ds_select_all.setObjectName(u"chk_ds_select_all")
+        self.chk_ds_select_all.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        self.layout_grp_ds_filter.addWidget(self.chk_ds_select_all)
+
+
+        self.grid_dataset.addWidget(self.grp_ds_filter, 1, 0, 1, 1)
+
+        self.grp_ds_console = QGroupBox(self.content_dataset)
+        self.grp_ds_console.setObjectName(u"grp_ds_console")
+        self.layout_grp_ds_console = QVBoxLayout(self.grp_ds_console)
+        self.layout_grp_ds_console.setSpacing(6)
+        self.layout_grp_ds_console.setObjectName(u"layout_grp_ds_console")
+        self.layout_grp_ds_console.setContentsMargins(6, 6, 6, 6)
+        self.console_ds = QPlainTextEdit(self.grp_ds_console)
+        self.console_ds.setObjectName(u"console_ds")
+        self.console_ds.setReadOnly(True)
+
+        self.layout_grp_ds_console.addWidget(self.console_ds)
+
+
+        self.grid_dataset.addWidget(self.grp_ds_console, 2, 0, 1, 1)
+
+        self.grp_ds_create = QGroupBox(self.content_dataset)
+        self.grp_ds_create.setObjectName(u"grp_ds_create")
+        self.layout_grp_ds_create = QVBoxLayout(self.grp_ds_create)
+        self.layout_grp_ds_create.setSpacing(6)
+        self.layout_grp_ds_create.setObjectName(u"layout_grp_ds_create")
+        self.layout_grp_ds_create.setContentsMargins(6, 6, 6, 6)
+        self.rb_ds_unsegmented = QRadioButton(self.grp_ds_create)
+        self.rb_ds_unsegmented.setObjectName(u"rb_ds_unsegmented")
+        self.rb_ds_unsegmented.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.rb_ds_unsegmented.setChecked(True)
+
+        self.layout_grp_ds_create.addWidget(self.rb_ds_unsegmented)
+
+        self.rb_ds_segmented = QRadioButton(self.grp_ds_create)
+        self.rb_ds_segmented.setObjectName(u"rb_ds_segmented")
+        self.rb_ds_segmented.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        self.layout_grp_ds_create.addWidget(self.rb_ds_segmented)
+
+        self.layout_ds_create_buttons = QHBoxLayout()
+        self.layout_ds_create_buttons.setObjectName(u"layout_ds_create_buttons")
+        self.btn_ds_create = QPushButton(self.grp_ds_create)
+        self.btn_ds_create.setObjectName(u"btn_ds_create")
+        self.btn_ds_create.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_ds_create.setEnabled(False)
+
+        self.layout_ds_create_buttons.addWidget(self.btn_ds_create)
+
+        self.btn_ds_save = QPushButton(self.grp_ds_create)
+        self.btn_ds_save.setObjectName(u"btn_ds_save")
+        self.btn_ds_save.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_ds_save.setEnabled(False)
+
+        self.layout_ds_create_buttons.addWidget(self.btn_ds_save)
+
+        self.spacer_ds_create = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.layout_ds_create_buttons.addItem(self.spacer_ds_create)
+
+
+        self.layout_grp_ds_create.addLayout(self.layout_ds_create_buttons)
+
+
+        self.grid_dataset.addWidget(self.grp_ds_create, 0, 1, 1, 1)
+
+        self.grp_ds_annotate = QGroupBox(self.content_dataset)
+        self.grp_ds_annotate.setObjectName(u"grp_ds_annotate")
+        self.layout_grp_ds_annotate = QVBoxLayout(self.grp_ds_annotate)
+        self.layout_grp_ds_annotate.setSpacing(6)
+        self.layout_grp_ds_annotate.setObjectName(u"layout_grp_ds_annotate")
+        self.layout_grp_ds_annotate.setContentsMargins(6, 6, 6, 6)
+        self.layout_ds_feat_row = QHBoxLayout()
+        self.layout_ds_feat_row.setObjectName(u"layout_ds_feat_row")
+        self.lbl_ds_features = QLabel(self.grp_ds_annotate)
+        self.lbl_ds_features.setObjectName(u"lbl_ds_features")
+
+        self.layout_ds_feat_row.addWidget(self.lbl_ds_features)
+
+        self.ed_ds_features = QLineEdit(self.grp_ds_annotate)
+        self.ed_ds_features.setObjectName(u"ed_ds_features")
+        self.ed_ds_features.setReadOnly(True)
+
+        self.layout_ds_feat_row.addWidget(self.ed_ds_features)
+
+        self.btn_ds_browse_features = QPushButton(self.grp_ds_annotate)
+        self.btn_ds_browse_features.setObjectName(u"btn_ds_browse_features")
+        self.btn_ds_browse_features.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        self.layout_ds_feat_row.addWidget(self.btn_ds_browse_features)
+
+
+        self.layout_grp_ds_annotate.addLayout(self.layout_ds_feat_row)
+
+        self.layout_ds_lab_row = QHBoxLayout()
+        self.layout_ds_lab_row.setObjectName(u"layout_ds_lab_row")
+        self.lbl_ds_labels = QLabel(self.grp_ds_annotate)
+        self.lbl_ds_labels.setObjectName(u"lbl_ds_labels")
+
+        self.layout_ds_lab_row.addWidget(self.lbl_ds_labels)
+
+        self.ed_ds_labels = QLineEdit(self.grp_ds_annotate)
+        self.ed_ds_labels.setObjectName(u"ed_ds_labels")
+        self.ed_ds_labels.setReadOnly(True)
+
+        self.layout_ds_lab_row.addWidget(self.ed_ds_labels)
+
+        self.btn_ds_browse_labels = QPushButton(self.grp_ds_annotate)
+        self.btn_ds_browse_labels.setObjectName(u"btn_ds_browse_labels")
+        self.btn_ds_browse_labels.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        self.layout_ds_lab_row.addWidget(self.btn_ds_browse_labels)
+
+
+        self.layout_grp_ds_annotate.addLayout(self.layout_ds_lab_row)
+
+        self.layout_ds_annotate_buttons = QHBoxLayout()
+        self.layout_ds_annotate_buttons.setObjectName(u"layout_ds_annotate_buttons")
+        self.btn_ds_append = QPushButton(self.grp_ds_annotate)
+        self.btn_ds_append.setObjectName(u"btn_ds_append")
+        self.btn_ds_append.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_ds_append.setEnabled(False)
+
+        self.layout_ds_annotate_buttons.addWidget(self.btn_ds_append)
+
+        self.btn_ds_save_annotated = QPushButton(self.grp_ds_annotate)
+        self.btn_ds_save_annotated.setObjectName(u"btn_ds_save_annotated")
+        self.btn_ds_save_annotated.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_ds_save_annotated.setEnabled(False)
+
+        self.layout_ds_annotate_buttons.addWidget(self.btn_ds_save_annotated)
+
+        self.spacer_ds_annotate = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.layout_ds_annotate_buttons.addItem(self.spacer_ds_annotate)
+
+
+        self.layout_grp_ds_annotate.addLayout(self.layout_ds_annotate_buttons)
+
+
+        self.grid_dataset.addWidget(self.grp_ds_annotate, 1, 1, 1, 1)
+
+        self.grp_ds_figure = QGroupBox(self.content_dataset)
+        self.grp_ds_figure.setObjectName(u"grp_ds_figure")
+        self.layout_grp_ds_figure = QVBoxLayout(self.grp_ds_figure)
+        self.layout_grp_ds_figure.setSpacing(6)
+        self.layout_grp_ds_figure.setObjectName(u"layout_grp_ds_figure")
+        self.layout_grp_ds_figure.setContentsMargins(6, 6, 6, 6)
+        self.frame_ds_figure = QFrame(self.grp_ds_figure)
+        self.frame_ds_figure.setObjectName(u"frame_ds_figure")
+        self.frame_ds_figure.setFrameShape(QFrame.NoFrame)
+
+        self.layout_grp_ds_figure.addWidget(self.frame_ds_figure)
+
+
+        self.grid_dataset.addWidget(self.grp_ds_figure, 2, 1, 1, 1)
+
+        self.grid_dataset.setRowStretch(0, 1)
+        self.grid_dataset.setRowStretch(1, 2)
+        self.grid_dataset.setRowStretch(2, 2)
+        self.grid_dataset.setColumnStretch(0, 3)
+        self.grid_dataset.setColumnStretch(1, 7)
 
         self.layout_dataset.addWidget(self.content_dataset)
 
@@ -2512,6 +2713,26 @@ class Ui_MainWindow(object):
         self.lbl_val_loading.setText("")
         self.title_dataset.setText(QCoreApplication.translate("MainWindow", u"Dataset creation", None))
         self.subtitle_dataset.setText(QCoreApplication.translate("MainWindow", u"Assemble validated segments into labelled datasets for model development.", None))
+        self.grp_ds_library.setTitle(QCoreApplication.translate("MainWindow", u"Library", None))
+        self.btn_ds_change_libraries.setText(QCoreApplication.translate("MainWindow", u"Change libraries folder\u2026", None))
+        self.grp_ds_filter.setTitle(QCoreApplication.translate("MainWindow", u"Sensor selection", None))
+        self.chk_ds_select_all.setText(QCoreApplication.translate("MainWindow", u"Select / unselect all", None))
+        self.grp_ds_console.setTitle(QCoreApplication.translate("MainWindow", u"Console output", None))
+        self.grp_ds_create.setTitle(QCoreApplication.translate("MainWindow", u"Create dataset", None))
+        self.rb_ds_unsegmented.setText(QCoreApplication.translate("MainWindow", u"Create from unsegmented (auto nadir, 200 ms window)", None))
+        self.rb_ds_segmented.setText(QCoreApplication.translate("MainWindow", u"Create from segmented (bind saved nadir windows)", None))
+        self.btn_ds_create.setText(QCoreApplication.translate("MainWindow", u"Create dataset", None))
+        self.btn_ds_save.setText(QCoreApplication.translate("MainWindow", u"Save dataset", None))
+        self.grp_ds_annotate.setTitle(QCoreApplication.translate("MainWindow", u"Annotate dataset", None))
+        self.lbl_ds_features.setText(QCoreApplication.translate("MainWindow", u"Sensor dataset:", None))
+        self.ed_ds_features.setPlaceholderText(QCoreApplication.translate("MainWindow", u"no file selected", None))
+        self.btn_ds_browse_features.setText(QCoreApplication.translate("MainWindow", u"Browse\u2026", None))
+        self.lbl_ds_labels.setText(QCoreApplication.translate("MainWindow", u"Annotation dataset:", None))
+        self.ed_ds_labels.setPlaceholderText(QCoreApplication.translate("MainWindow", u"no file selected", None))
+        self.btn_ds_browse_labels.setText(QCoreApplication.translate("MainWindow", u"Browse\u2026", None))
+        self.btn_ds_append.setText(QCoreApplication.translate("MainWindow", u"Append features", None))
+        self.btn_ds_save_annotated.setText(QCoreApplication.translate("MainWindow", u"Save annotated dataset", None))
+        self.grp_ds_figure.setTitle(QCoreApplication.translate("MainWindow", u"Annotation summary", None))
         self.btn_adjustments.setText(QCoreApplication.translate("MainWindow", u"Adjustments", None))
         self.btn_about.setText(QCoreApplication.translate("MainWindow", u"About", None))
         self.btn_more.setText(QCoreApplication.translate("MainWindow", u"More", None))

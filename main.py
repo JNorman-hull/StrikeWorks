@@ -18,6 +18,7 @@ from modules import *
 from widgets import *
 from modules.page_process import ProcessPage
 from modules.page_validate import ValidatePage
+from modules.page_dataset import DatasetPage
 os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
 
 # SET AS GLOBAL WIDGETS
@@ -73,6 +74,9 @@ class MainWindow(QMainWindow):
             lambda msg, ms: print(f"[status] {msg}"))
         self.validate_page = ValidatePage(widgets, self)
         self.validate_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
+        self.dataset_page = DatasetPage(widgets, self)
+        self.dataset_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
 
         # BUTTONS CLICK
