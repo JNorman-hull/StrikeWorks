@@ -103,6 +103,9 @@ class UIFunctions(MainWindow):
         self.menu_group.start()
 
     # TOGGLE LEFT BOX
+    # The slide-out panel is shared by the Sensor processing and Machine
+    # learning analysis sections; MainWindow tracks which top-level button
+    # owns it in self._panel_btn so the highlight follows the active section.
     # ///////////////////////////////////////////////////////////////
     def toggleLeftBox(self, enable):
         if enable:
@@ -114,21 +117,22 @@ class UIFunctions(MainWindow):
             standard = 0
 
             # GET BTN STYLE
-            style = self.ui.btn_sensor.styleSheet()
+            btn = getattr(self, "_panel_btn", None) or self.ui.btn_sensor
+            style = btn.styleSheet()
 
             # SET MAX WIDTH
             if width == 0:
                 widthExtended = maxExtend
                 # SELECT BTN
-                self.ui.btn_sensor.setStyleSheet(style + color)
+                btn.setStyleSheet(style + color)
                 if widthRightBox != 0:
                     style = self.ui.settingsTopBtn.styleSheet()
                     self.ui.settingsTopBtn.setStyleSheet(style.replace(Settings.BTN_RIGHT_BOX_COLOR, ''))
             else:
                 widthExtended = standard
                 # RESET BTN
-                self.ui.btn_sensor.setStyleSheet(style.replace(color, ''))
-                
+                btn.setStyleSheet(style.replace(color, ''))
+
         UIFunctions.start_box_animation(self, width, widthRightBox, "left")
 
     # TOGGLE RIGHT BOX
@@ -151,8 +155,9 @@ class UIFunctions(MainWindow):
                 # SELECT BTN
                 self.ui.settingsTopBtn.setStyleSheet(style + color)
                 if widthLeftBox != 0:
-                    style = self.ui.btn_sensor.styleSheet()
-                    self.ui.btn_sensor.setStyleSheet(style.replace(Settings.BTN_LEFT_BOX_COLOR, ''))
+                    panel_btn = getattr(self, "_panel_btn", None) or self.ui.btn_sensor
+                    style = panel_btn.styleSheet()
+                    panel_btn.setStyleSheet(style.replace(Settings.BTN_LEFT_BOX_COLOR, ''))
             else:
                 widthExtended = standard
                 # RESET BTN

@@ -19,6 +19,8 @@ from widgets import *
 from modules.page_process import ProcessPage
 from modules.page_validate import ValidatePage
 from modules.page_dataset import DatasetPage
+from modules.page_ml_prediction import MLPredictionPage
+from modules import page_ml_placeholders
 os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
 
 # SET AS GLOBAL WIDGETS
@@ -79,6 +81,17 @@ class MainWindow(QMainWindow):
         self.dataset_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
 
+        # MACHINE LEARNING ANALYSIS PAGES
+        self.ml_prediction_page = MLPredictionPage(widgets, self)
+        self.ml_prediction_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
+        page_ml_placeholders.build_training_page(widgets)
+        page_ml_placeholders.build_performance_page(widgets)
+
+        # the curated dataset from Sensor Processing feeds Model Prediction
+        self.dataset_page.dataset_ready.connect(
+            self.ml_prediction_page.on_dataset_ready)
+
         # BUTTONS CLICK
         # ///////////////////////////////////////////////////////////////
 
@@ -88,17 +101,27 @@ class MainWindow(QMainWindow):
         widgets.btn_new.clicked.connect(self.buttonClick)
         widgets.btn_save.clicked.connect(self.buttonClick)
 
-        # SENSOR PROCESSING PANEL (slides out of the left menu)
-        def openCloseSensorBox():
-            UIFunctions.toggleLeftBox(self, True)
-        widgets.btn_sensor.clicked.connect(openCloseSensorBox)
-        widgets.extraCloseColumnBtn.clicked.connect(openCloseSensorBox)
+        # SLIDE-OUT PANEL (shared by Sensor processing and Machine learning
+        # analysis - the panel contents swap with the active section)
+        self._panel_mode = "sensor"
+        self._panel_btn = widgets.btn_sensor
+        self._configure_panel("sensor")
+
+        widgets.btn_sensor.clicked.connect(lambda: self.openPanel("sensor"))
+        widgets.btn_ml.clicked.connect(lambda: self.openPanel("ml"))
+        widgets.extraCloseColumnBtn.clicked.connect(
+            lambda: UIFunctions.toggleLeftBox(self, True))
 
         # SENSOR PROCESSING SUB-MENU
         widgets.btn_prepare.clicked.connect(self.sensorButtonClick)
         widgets.btn_process.clicked.connect(self.sensorButtonClick)
         widgets.btn_validate.clicked.connect(self.sensorButtonClick)
         widgets.btn_dataset.clicked.connect(self.sensorButtonClick)
+
+        # MACHINE LEARNING ANALYSIS SUB-MENU
+        widgets.btn_ml_training.clicked.connect(self.mlButtonClick)
+        widgets.btn_ml_performance.clicked.connect(self.mlButtonClick)
+        widgets.btn_ml_prediction.clicked.connect(self.mlButtonClick)
 
         # SETTINGS PANEL (right hand box)
         def openCloseRightBox():
@@ -137,12 +160,45 @@ class MainWindow(QMainWindow):
         btn.setStyleSheet(UIFunctions.selectMenu(clean))
 
 
-    # CLOSE THE SENSOR PROCESSING PANEL IF IT IS OPEN
+    # CLOSE THE SLIDE-OUT PANEL IF IT IS OPEN
     # Navigating to another top-level page slides the panel away.
     # ///////////////////////////////////////////////////////////////
     def closeSensorPanel(self):
         if widgets.extraLeftBox.width() > 0:
             UIFunctions.toggleLeftBox(self, True)
+
+
+    # SLIDE-OUT PANEL MODE
+    # One panel serves both Sensor processing and Machine learning analysis:
+    # its header and sub-menu swap with the requested section.
+    # ///////////////////////////////////////////////////////////////
+    def _configure_panel(self, mode):
+        ml = mode == "ml"
+        widgets.extraLabel.setText(
+            "Machine learning" if ml else "Sensor processing")
+        for b in (widgets.btn_prepare, widgets.btn_process,
+                  widgets.btn_validate, widgets.btn_dataset):
+            b.setVisible(not ml)
+        for b in (widgets.btn_ml_training, widgets.btn_ml_performance,
+                  widgets.btn_ml_prediction):
+            b.setVisible(ml)
+        self._panel_mode = mode
+        self._panel_btn = widgets.btn_ml if ml else widgets.btn_sensor
+
+    def openPanel(self, mode):
+        is_open = widgets.extraLeftBox.width() > 0
+        if is_open and self._panel_mode != mode:
+            # panel already open for the other section: swap its contents in
+            # place and move the ownership highlight - no close/reopen
+            color = Settings.BTN_LEFT_BOX_COLOR
+            old_btn = self._panel_btn
+            old_btn.setStyleSheet(old_btn.styleSheet().replace(color, ''))
+            self._configure_panel(mode)
+            self._panel_btn.setStyleSheet(
+                self._panel_btn.styleSheet() + color)
+            return
+        self._configure_panel(mode)
+        UIFunctions.toggleLeftBox(self, True)
 
 
     # BUTTONS CLICK
@@ -207,6 +263,33 @@ class MainWindow(QMainWindow):
             # KEEP "SENSOR PROCESSING" MARKED AS THE ACTIVE TOP-LEVEL MENU
             UIFunctions.resetStyle(self, "btn_sensor")
             self.setSelected(widgets.btn_sensor)
+
+        # PRINT BTN NAME
+        print(f'Button "{btnName}" pressed!')
+
+
+    # MACHINE LEARNING ANALYSIS SUB-MENU CLICK
+    # ///////////////////////////////////////////////////////////////
+    def mlButtonClick(self):
+        btn = self.sender()
+        btnName = btn.objectName()
+
+        pages = {
+            "btn_ml_training":    widgets.page_ml_training,
+            "btn_ml_performance": widgets.page_ml_performance,
+            "btn_ml_prediction":  widgets.page_ml_prediction,
+        }
+
+        if btnName in pages:
+            widgets.stackedWidget.setCurrentWidget(pages[btnName])
+
+            # HIGHLIGHT THE SUB-MENU ENTRY
+            UIFunctions.resetPanelStyle(self, btnName)
+            self.setSelected(btn)
+
+            # KEEP "MACHINE LEARNING ANALYSIS" AS THE ACTIVE TOP-LEVEL MENU
+            UIFunctions.resetStyle(self, "btn_ml")
+            self.setSelected(widgets.btn_ml)
 
         # PRINT BTN NAME
         print(f'Button "{btnName}" pressed!')

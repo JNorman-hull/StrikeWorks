@@ -1,0 +1,605 @@
+# ///////////////////////////////////////////////////////////////
+#
+# StrikeWorks - data extraction, validation, processing and model
+# development tool for underwater passive sensor devices.
+#
+# ///////////////////////////////////////////////////////////////
+"""Inspect tab - interrogate individual predictions.
+
+Select a prediction -> inspect the underlying sensor event -> understand how
+it was classified. The browser lists the per-recording predictions produced
+by the worker; the detail panel shows the class probabilities and the exact
+model-input signal (the same segmented channels that were supplied to the
+model), plotted with the same pyqtgraph navigation used on the Validate &
+segment page. Ground-truth comparison appears only when the dataset carries
+annotation labels.
+"""
+import numpy as np
+import pandas as pd
+import pyqtgraph as pg
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QComboBox, QDoubleSpinBox, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit, QPushButton, QSizePolicy, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget,
+)
+
+from .ml_state import STRIKE_TYPES
+from .ml_tab_predict import _NumItem
+from .ml_widgets import (
+    BAD, INFO, MUTED, OK, PALETTE, PINK, TEXT, WARN, ProbBars,
+)
+from .page_validate import _NavViewBox
+
+_FILTER_ALL       = "all"
+_FILTER_STRIKES   = "strikes"
+_FILTER_NO_STRIKE = "no_strikes"
+_FILTER_LOW_CONF  = "low_conf"
+_FILTER_MISCLASS  = "misclass"
+
+
+class InspectTab:
+    """Builds the Inspect tab UI into `frame` and binds it to `state`."""
+
+    def __init__(self, frame, state, window):
+        self.state = state
+        self.window = window
+        self._updating_table = False
+        self._left_curve = None
+        self._right_curve = None
+        self._nadir_line = None
+
+        self._build(frame)
+        self._connect_state()
+        self._rebuild_filters()
+        self._populate_table()
+        self._refresh_detail()
+
+    # ── layout ───────────────────────────────────────────────────────────────
+    def _build(self, frame):
+        root = QHBoxLayout(frame)
+        root.setContentsMargins(4, 6, 4, 6)
+        root.setSpacing(10)
+
+        # ── left: browser ───────────────────────────────────────────────────
+        left = QWidget()
+        left.setMinimumWidth(430)
+        left.setMaximumWidth(560)
+        lv = QVBoxLayout(left)
+        lv.setContentsMargins(0, 0, 0, 0)
+        lv.setSpacing(8)
+
+        grp_filter = QGroupBox("Filter predictions")
+        fv = QVBoxLayout(grp_filter)
+        fv.setSpacing(6)
+
+        row1 = QHBoxLayout()
+        self.cmb_filter = QComboBox()
+        self.cmb_filter.currentIndexChanged.connect(self._populate_table)
+        self.spin_low = QDoubleSpinBox()
+        self.spin_low.setRange(0.0, 1.0)
+        self.spin_low.setDecimals(2)
+        self.spin_low.setSingleStep(0.05)
+        self.spin_low.setValue(self.state.low_conf_threshold)
+        self.spin_low.setToolTip("Low-confidence threshold")
+        self.spin_low.valueChanged.connect(self._on_low_conf_changed)
+        row1.addWidget(self.cmb_filter, stretch=1)
+        row1.addWidget(self.spin_low)
+        fv.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        self.cmb_treatment = QComboBox()
+        self.cmb_treatment.currentIndexChanged.connect(self._populate_table)
+        self.cmb_class = QComboBox()
+        self.cmb_class.currentIndexChanged.connect(self._populate_table)
+        row2.addWidget(self.cmb_treatment, stretch=1)
+        row2.addWidget(self.cmb_class, stretch=1)
+        fv.addLayout(row2)
+
+        self.ed_search = QLineEdit()
+        self.ed_search.setPlaceholderText("Search recording…")
+        self.ed_search.textChanged.connect(self._populate_table)
+        fv.addWidget(self.ed_search)
+
+        self.lbl_count = QLabel("No prediction run yet.")
+        self.lbl_count.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        fv.addWidget(self.lbl_count)
+        lv.addWidget(grp_filter)
+
+        self.tbl = QTableWidget(0, 0)
+        self.tbl.verticalHeader().setVisible(False)
+        self.tbl.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.tbl.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.tbl.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.tbl.setSortingEnabled(True)
+        self.tbl.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents)
+        self.tbl.horizontalHeader().setStretchLastSection(True)
+        self.tbl.itemSelectionChanged.connect(self._on_row_selected)
+        lv.addWidget(self.tbl, stretch=1)
+        root.addWidget(left)
+
+        # ── right: detail ───────────────────────────────────────────────────
+        right = QWidget()
+        rv = QVBoxLayout(right)
+        rv.setContentsMargins(0, 0, 0, 0)
+        rv.setSpacing(8)
+
+        top = QHBoxLayout()
+        top.setSpacing(8)
+
+        grp_sel = QGroupBox("Selected prediction")
+        sv = QVBoxLayout(grp_sel)
+        sv.setSpacing(3)
+        self.lbl_rec = QLabel("No prediction selected")
+        self.lbl_rec.setStyleSheet(
+            f"color:{TEXT};font-weight:bold;font-size:12px;")
+        self.lbl_tx = QLabel("")
+        self.lbl_tx.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        self.lbl_verdict = QLabel("")
+        self.lbl_verdict.setStyleSheet(
+            f"color:{PINK};font-weight:bold;font-size:16px;")
+        self.lbl_prob = QLabel("")
+        self.lbl_prob.setStyleSheet(f"color:{TEXT};font-size:10px;")
+        self.lbl_region = QLabel("")
+        self.lbl_region.setStyleSheet(f"color:{TEXT};font-size:10px;")
+        self.lbl_gt = QLabel("")
+        self.lbl_gt.setStyleSheet(f"color:{TEXT};font-size:10px;")
+        self.lbl_gt.setWordWrap(True)
+        self.lbl_gt.setTextFormat(Qt.TextFormat.RichText)
+        for w in (self.lbl_rec, self.lbl_tx, self.lbl_verdict,
+                  self.lbl_prob, self.lbl_region, self.lbl_gt):
+            sv.addWidget(w)
+        sv.addStretch()
+        top.addWidget(grp_sel, stretch=1)
+
+        grp_probs = QGroupBox("Class probabilities")
+        pv = QVBoxLayout(grp_probs)
+        self.prob_bars = ProbBars()
+        pv.addWidget(self.prob_bars)
+        pv.addStretch()
+        top.addWidget(grp_probs, stretch=1)
+        rv.addLayout(top)
+
+        grp_sig = QGroupBox("Model input signal")
+        gv = QVBoxLayout(grp_sig)
+        gv.setSpacing(6)
+
+        ctl = QHBoxLayout()
+        lab_l = QLabel("Left axis")
+        lab_l.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        self.cmb_left = QComboBox()
+        self.cmb_left.currentIndexChanged.connect(self._refresh_signal)
+        lab_r = QLabel("Right axis")
+        lab_r.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        self.cmb_right = QComboBox()
+        self.cmb_right.currentIndexChanged.connect(self._refresh_signal)
+        self.btn_reset_view = QPushButton("Reset view")
+        self.btn_reset_view.clicked.connect(self._reset_view)
+        ctl.addWidget(lab_l)
+        ctl.addWidget(self.cmb_left, stretch=1)
+        ctl.addWidget(lab_r)
+        ctl.addWidget(self.cmb_right, stretch=1)
+        ctl.addWidget(self.btn_reset_view)
+        gv.addLayout(ctl)
+
+        self._pw = pg.PlotWidget(viewBox=_NavViewBox())
+        self._pw.setMinimumHeight(220)
+        self._pw.setSizePolicy(QSizePolicy.Policy.Expanding,
+                               QSizePolicy.Policy.Expanding)
+        pi = self._pw.plotItem
+        pi.getViewBox().setMouseMode(pg.ViewBox.RectMode)
+        pi.setLabel("bottom", "Time (s)")
+
+        # secondary ViewBox for the optional right-axis channel
+        self._vb2 = pg.ViewBox()
+        pi.scene().addItem(self._vb2)
+        pi.getAxis("right").linkToView(self._vb2)
+        self._vb2.setXLink(pi)
+        pi.hideAxis("right")
+        pi.vb.sigResized.connect(self._sync_vb2)
+        gv.addWidget(self._pw, stretch=1)
+
+        self.lbl_sig_note = QLabel(
+            "This is the exact segmented window supplied to the model. "
+            "Drag to box-zoom, wheel to pan, Shift+wheel to pan vertically.")
+        self.lbl_sig_note.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        self.lbl_sig_note.setWordWrap(True)
+        gv.addWidget(self.lbl_sig_note)
+        rv.addWidget(grp_sig, stretch=1)
+
+        root.addWidget(right, stretch=1)
+
+    # ── state wiring ─────────────────────────────────────────────────────────
+    def _connect_state(self):
+        s = self.state
+        s.run_finished.connect(self._on_run_finished)
+        s.models_changed.connect(self._rebuild_channel_combos)
+        s.dataset_changed.connect(self._rebuild_channel_combos)
+        s.selection_changed.connect(self._on_selection_changed)
+        s.treatment_selected.connect(self._on_treatment_from_predict)
+
+    # ── filters ──────────────────────────────────────────────────────────────
+    def _rebuild_filters(self):
+        s = self.state
+        thr = s.low_conf_threshold
+
+        self.cmb_filter.blockSignals(True)
+        current = self.cmb_filter.currentData()
+        self.cmb_filter.clear()
+        self.cmb_filter.addItem("All predictions", _FILTER_ALL)
+        self.cmb_filter.addItem("Strikes only", _FILTER_STRIKES)
+        self.cmb_filter.addItem("No strikes", _FILTER_NO_STRIKE)
+        self.cmb_filter.addItem(f"Low confidence (< {thr:.2f})",
+                                _FILTER_LOW_CONF)
+        if self._have_ground_truth():
+            self.cmb_filter.addItem("Misclassified (vs ground truth)",
+                                    _FILTER_MISCLASS)
+        idx = self.cmb_filter.findData(current)
+        self.cmb_filter.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_filter.blockSignals(False)
+
+        self.cmb_treatment.blockSignals(True)
+        current = self.cmb_treatment.currentText()
+        self.cmb_treatment.clear()
+        self.cmb_treatment.addItem("All treatments", None)
+        if s.predictions is not None and "treatment" in s.predictions.columns:
+            for tx in sorted(s.predictions["treatment"].astype(str).unique()):
+                self.cmb_treatment.addItem(tx, tx)
+        idx = self.cmb_treatment.findText(current)
+        self.cmb_treatment.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_treatment.blockSignals(False)
+
+        self.cmb_class.blockSignals(True)
+        current = self.cmb_class.currentText()
+        self.cmb_class.clear()
+        self.cmb_class.addItem("All classes", None)
+        if (s.predictions is not None
+                and "predicted_region" in s.predictions.columns):
+            for cn in s.class_names:
+                self.cmb_class.addItem(cn, cn)
+            self.cmb_class.setVisible(True)
+        else:
+            self.cmb_class.setVisible(False)
+        idx = self.cmb_class.findText(current)
+        self.cmb_class.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_class.blockSignals(False)
+
+        self._rebuild_channel_combos()
+
+    def _rebuild_channel_combos(self):
+        chans = self.state.required_channels()
+        df = self.state.dataset_df
+        if df is not None:
+            chans = [c for c in chans if c in df.columns]
+
+        for cmb, default, extra_none in (
+                (self.cmb_left, "higacc_x_g", False),
+                (self.cmb_right, "pressure_kpa", True)):
+            cmb.blockSignals(True)
+            current = cmb.currentData()
+            cmb.clear()
+            if extra_none:
+                cmb.addItem("None", None)
+            for c in chans:
+                cmb.addItem(c, c)
+            idx = cmb.findData(current if current in chans else default)
+            cmb.setCurrentIndex(idx if idx >= 0 else 0)
+            cmb.blockSignals(False)
+        self._refresh_signal()
+
+    def _on_low_conf_changed(self, value):
+        self.state.low_conf_threshold = float(value)
+        idx = self.cmb_filter.findData(_FILTER_LOW_CONF)
+        if idx >= 0:
+            self.cmb_filter.setItemText(idx, f"Low confidence (< {value:.2f})")
+        if self.cmb_filter.currentData() == _FILTER_LOW_CONF:
+            self._populate_table()
+
+    def apply_filter_preset(self, preset):
+        """External navigation hook (e.g. Predict's low-confidence button)."""
+        idx = self.cmb_filter.findData(preset)
+        if idx >= 0:
+            self.cmb_filter.setCurrentIndex(idx)
+
+    def _on_treatment_from_predict(self, treatment):
+        if not treatment:
+            return
+        idx = self.cmb_treatment.findText(treatment)
+        if idx >= 0:
+            self.cmb_treatment.setCurrentIndex(idx)
+
+    # ── ground truth helpers ─────────────────────────────────────────────────
+    def _have_ground_truth(self):
+        p = self.state.predictions
+        return p is not None and "overall_passage_type" in p.columns \
+            and p["overall_passage_type"].notna().any()
+
+    def _filtered(self):
+        s = self.state
+        df = s.predictions
+        if df is None:
+            return None
+        out = df
+
+        mode = self.cmb_filter.currentData()
+        if mode == _FILTER_STRIKES:
+            out = out[out["predicted_strike"] == 1]
+        elif mode == _FILTER_NO_STRIKE:
+            out = out[out["predicted_strike"] == 0]
+        elif mode == _FILTER_LOW_CONF:
+            out = out[out["confidence"] < s.low_conf_threshold]
+        elif mode == _FILTER_MISCLASS and "overall_passage_type" in out.columns:
+            has_gt = (out["overall_passage_type"].notna()
+                      & (out["overall_passage_type"].astype(str).str.strip()
+                         != ""))
+            gt_strike = out["overall_passage_type"].astype(str).isin(
+                STRIKE_TYPES)
+            out = out[has_gt
+                      & (out["predicted_strike"].astype(bool) != gt_strike)]
+
+        tx = self.cmb_treatment.currentData()
+        if tx is not None and "treatment" in out.columns:
+            out = out[out["treatment"].astype(str) == tx]
+
+        cls = self.cmb_class.currentData()
+        if cls is not None and "predicted_region" in out.columns:
+            out = out[out["predicted_region"] == cls]
+
+        text = self.ed_search.text().strip().lower()
+        if text:
+            out = out[out["file"].astype(str).str.lower()
+                      .str.contains(text, regex=False)]
+        return out
+
+    # ── prediction browser table ─────────────────────────────────────────────
+    def _on_run_finished(self):
+        self._rebuild_filters()
+        self._populate_table()
+        self._refresh_detail()
+
+    def _populate_table(self):
+        s = self.state
+        df = self._filtered()
+        have_mc = df is not None and "predicted_region" in (
+            df.columns if df is not None else [])
+        have_gt = self._have_ground_truth()
+
+        headers = ["Recording", "Treatment", "Prediction", "P(strike)",
+                   "Confidence"]
+        if have_mc:
+            headers += ["Region", "Region conf"]
+        if have_gt:
+            headers += ["Ground truth", "Match"]
+
+        self._updating_table = True
+        self.tbl.setSortingEnabled(False)
+        self.tbl.clear()
+        self.tbl.setColumnCount(len(headers))
+        self.tbl.setHorizontalHeaderLabels(headers)
+        self.tbl.setRowCount(0 if df is None else len(df))
+
+        if df is None:
+            self.lbl_count.setText("No prediction run yet.")
+            self._updating_table = False
+            self.tbl.setSortingEnabled(True)
+            return
+
+        total = len(s.predictions)
+        self.lbl_count.setText(f"Showing {len(df)} of {total} predictions.")
+
+        for row, (_, r) in enumerate(df.iterrows()):
+            is_strike = int(r["predicted_strike"]) == 1
+            items = [
+                QTableWidgetItem(str(r["file"])),
+                QTableWidgetItem(str(r.get("treatment", "—"))),
+                QTableWidgetItem("Strike" if is_strike else "No strike"),
+                _NumItem(f"{r['probability_strike']:.3f}",
+                         float(r["probability_strike"])),
+                _NumItem(f"{r['confidence']:.3f}", float(r["confidence"])),
+            ]
+            if have_mc:
+                region = r.get("predicted_region", "")
+                rc = r.get("region_confidence")
+                items.append(QTableWidgetItem(
+                    str(region) if isinstance(region, str) and region else "—"))
+                items.append(_NumItem(
+                    f"{rc:.3f}" if pd.notna(rc) else "—",
+                    float(rc) if pd.notna(rc) else -1.0))
+            if have_gt:
+                gt_strike, gt_label, _gt_cls = s.ground_truth_for(r)
+                if gt_strike is None:
+                    items.append(QTableWidgetItem("—"))
+                    items.append(QTableWidgetItem("—"))
+                else:
+                    items.append(QTableWidgetItem(gt_label))
+                    match = is_strike == gt_strike
+                    it = QTableWidgetItem("✓" if match else "✗")
+                    it.setForeground(
+                        pg.mkColor(OK) if match else pg.mkColor(BAD))
+                    items.append(it)
+
+            items[0].setData(Qt.ItemDataRole.UserRole, str(r["file"]))
+            low = float(r["confidence"]) < s.low_conf_threshold
+            for col, item in enumerate(items):
+                if col >= 2:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if low and col == 4:
+                    item.setForeground(pg.mkColor(WARN))
+                self.tbl.setItem(row, col, item)
+
+        self.tbl.setSortingEnabled(True)
+        self._updating_table = False
+        self._reselect_current()
+
+    def _reselect_current(self):
+        """Keep the table selection in sync with the shared state."""
+        target = self.state.selected_file
+        if not target:
+            return
+        self._updating_table = True
+        try:
+            for row in range(self.tbl.rowCount()):
+                item = self.tbl.item(row, 0)
+                if item and item.data(Qt.ItemDataRole.UserRole) == target:
+                    self.tbl.selectRow(row)
+                    break
+            else:
+                self.tbl.clearSelection()
+        finally:
+            self._updating_table = False
+
+    def _on_row_selected(self):
+        if self._updating_table:
+            return
+        items = self.tbl.selectedItems()
+        if not items:
+            return
+        file_id = self.tbl.item(items[0].row(), 0).data(
+            Qt.ItemDataRole.UserRole)
+        self.state.select_file(file_id)
+
+    # ── detail panel ─────────────────────────────────────────────────────────
+    def _on_selection_changed(self, _file_id):
+        self._reselect_current()
+        self._refresh_detail()
+
+    def _refresh_detail(self):
+        s = self.state
+        row = s.selected_row()
+        if row is None:
+            self.lbl_rec.setText("No prediction selected")
+            self.lbl_tx.setText("Run a prediction and pick a recording "
+                                "from the browser.")
+            self.lbl_verdict.setText("")
+            self.lbl_prob.setText("")
+            self.lbl_region.setText("")
+            self.lbl_gt.setText("")
+            self.prob_bars.clear()
+            self._clear_signal()
+            return
+
+        is_strike = int(row["predicted_strike"]) == 1
+        self.lbl_rec.setText(f"Recording: {row['file']}")
+        self.lbl_tx.setText(f"Treatment: {row.get('treatment', '—')}")
+        self.lbl_verdict.setText("STRIKE" if is_strike else "NO STRIKE")
+        self.lbl_verdict.setStyleSheet(
+            f"color:{PINK if is_strike else INFO};"
+            "font-weight:bold;font-size:16px;")
+        self.lbl_prob.setText(
+            f"Strike probability: {row['probability_strike']:.3f}    "
+            f"Confidence: {row['confidence']:.3f}")
+
+        region = row.get("predicted_region")
+        rc = row.get("region_confidence")
+        if is_strike and isinstance(region, str) and region:
+            txt = f"Region: {region}"
+            if pd.notna(rc):
+                txt += f"    Region confidence: {float(rc):.3f}"
+            self.lbl_region.setText(txt)
+            self.lbl_region.setVisible(True)
+        else:
+            self.lbl_region.setVisible(False)
+
+        gt_strike, gt_label, gt_cls = s.ground_truth_for(row)
+        if gt_strike is None:
+            self.lbl_gt.setVisible(False)
+        else:
+            match = is_strike == gt_strike
+            verdict = ("<span style='color:%s;'>✓ Correct</span>" % OK
+                       if match else
+                       "<span style='color:%s;'>⚠ Misclassification</span>" % BAD)
+            gt_txt = f"Ground truth: {gt_label}"
+            if gt_cls:
+                gt_txt += f" ({gt_cls})"
+            self.lbl_gt.setText(f"{gt_txt}<br/>{verdict}")
+            self.lbl_gt.setVisible(True)
+
+        self._refresh_prob_bars(row, is_strike)
+        self._refresh_signal()
+
+    def _refresh_prob_bars(self, row, is_strike):
+        s = self.state
+        prob_cols = [c for c in row.index if c.startswith("prob_")]
+        if prob_cols:
+            bars = []
+            ordered = [f"prob_{cn}" for cn in s.class_names
+                       if f"prob_{cn}" in prob_cols] or prob_cols
+            for i, col in enumerate(ordered):
+                label = col[len("prob_"):]
+                bars.append((label, float(row[col]),
+                             PALETTE[i % len(PALETTE)]))
+            self.prob_bars.set_probs(bars)
+        else:
+            p = float(row["probability_strike"])
+            self.prob_bars.set_probs([
+                ("No strike", 1.0 - p, INFO),
+                ("Strike",    p,       PINK),
+            ])
+
+    # ── signal plot ──────────────────────────────────────────────────────────
+    def _clear_signal(self):
+        pi = self._pw.plotItem
+        if self._left_curve is not None:
+            pi.removeItem(self._left_curve)
+            self._left_curve = None
+        if self._right_curve is not None:
+            self._vb2.removeItem(self._right_curve)
+            self._right_curve = None
+        if self._nadir_line is not None:
+            pi.removeItem(self._nadir_line)
+            self._nadir_line = None
+        pi.hideAxis("right")
+
+    def _refresh_signal(self):
+        s = self.state
+        self._clear_signal()
+
+        sig = s.file_signal(s.selected_file)
+        if sig is None:
+            return
+        pi = self._pw.plotItem
+        t = sig["time_s"].to_numpy(dtype=float)
+
+        left = self.cmb_left.currentData()
+        if left and left in sig.columns:
+            y = sig[left].to_numpy(dtype=float)
+            self._left_curve = self._pw.plot(t, y, pen="k")
+            pi.setLabel("left", left)
+
+        right = self.cmb_right.currentData()
+        if right and right in sig.columns:
+            pi.showAxis("right")
+            pi.setLabel("right", right)
+            self._right_curve = pg.PlotCurveItem(pen=pg.mkPen("r", width=1))
+            self._vb2.addItem(self._right_curve)
+            self._right_curve.setData(t, sig[right].to_numpy(dtype=float))
+            self._sync_vb2()
+            self._vb2.enableAutoRange("y", True)
+
+        # event indication: pressure nadir inside the model window
+        if "pressure_kpa" in sig.columns and len(t):
+            pres = sig["pressure_kpa"].to_numpy(dtype=float)
+            if np.isfinite(pres).any():
+                t_nadir = float(t[int(np.nanargmin(pres))])
+                self._nadir_line = pg.InfiniteLine(
+                    pos=t_nadir, angle=90, movable=False,
+                    pen=pg.mkPen(color=(255, 220, 0), width=2),
+                    label="Nadir",
+                    labelOpts={"position": 0.92, "color": (180, 150, 0)})
+                pi.addItem(self._nadir_line)
+
+        self._reset_view()
+
+    def _reset_view(self):
+        pi = self._pw.plotItem
+        pi.enableAutoRange("x", True)
+        pi.enableAutoRange("y", True)
+        if self._right_curve is not None:
+            self._vb2.enableAutoRange("y", True)
+
+    def _sync_vb2(self):
+        pi = self._pw.plotItem
+        self._vb2.setGeometry(pi.vb.sceneBoundingRect())
+        self._vb2.linkedViewChanged(pi.vb, self._vb2.XAxis)

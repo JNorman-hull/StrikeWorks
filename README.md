@@ -8,6 +8,26 @@ Prof. Jeffrey Tuhtan (University of Talinn)
 
 Copyright University of Hull (2026)
 
+## Pages
+
+* **Sensor Processing** — Prepare, Process, Validate & segment, Dataset creation.
+* **Machine Learning Analysis** — Model training and Model performance
+  (placeholders for now) and **Model Prediction**, which applies the deployed
+  blade-strike models to a curated dataset through three tabs sharing one
+  analysis state (`modules/ml_state.py`):
+  * **Predict** — model/dataset cards, compatibility validation, prediction
+    configuration and the asynchronous run (`modules/predict_worker.py` in a
+    subprocess, so the sktime/numba model stack never loads into the GUI
+    process);
+  * **Inspect** — per-recording prediction browser with filters, class
+    probabilities, ground-truth comparison and the exact model-input signal;
+  * **Report** — Blade Strike Analysis report with provenance, plus table,
+    figure and one-click self-contained analysis-package export.
+
+  Datasets created on the Dataset creation page feed Model Prediction
+  automatically (`DatasetPage.dataset_ready`); a saved `model_features.csv`
+  can also be loaded directly.
+
 ## Development
 
 Environment: Python 3.13 (`.venv/`), PySide6.

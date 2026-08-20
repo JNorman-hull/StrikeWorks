@@ -279,6 +279,10 @@ class DatasetPage(QObject):
     """Binds dataset-creation behaviour to the widgets defined in main.ui."""
 
     status = Signal(str, int)
+    # emitted whenever a dataset is created or annotated, so downstream
+    # pages (Machine Learning Analysis) can consume the curated dataset
+    # without re-running any sensor-processing logic
+    dataset_ready = Signal(object, str)   # (DataFrame, source description)
 
     def __init__(self, ui, window):
         super().__init__(window)
@@ -513,6 +517,9 @@ class DatasetPage(QObject):
             self.ui.btn_ds_save.setEnabled(True)
             self.status.emit(
                 f"Dataset created - {n_ok} files, {n_rows:,} rows.", 5000)
+            self.dataset_ready.emit(
+                self._result,
+                "Sensor Processing — Dataset creation")
         else:
             self.status.emit("Dataset creation produced no output.", 6000)
         self._refresh_append_enabled()
@@ -610,6 +617,9 @@ class DatasetPage(QObject):
         self.status.emit(
             f"Annotations appended - {len(keep)} files, "
             f"{len(dropped)} dropped, {len(merged):,} rows.", 6000)
+        self.dataset_ready.emit(
+            self._result,
+            "Sensor Processing — Dataset creation (annotated)")
 
     # ── figure ───────────────────────────────────────────────────────────────
     def _bar(self, ax, labels, heights, title, ylabel, fmt, ymax=None):

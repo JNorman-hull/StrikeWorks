@@ -7,3 +7,6 @@ scipy
 scikit-learn
 joblib
 matplotlib
+# model stack for the prediction worker subprocess
+sktime
+numba

@@ -685,6 +685,18 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_8.addWidget(self.btn_sensor)
 
+        self.btn_ml = QPushButton(self.topMenu)
+        self.btn_ml.setObjectName(u"btn_ml")
+        sizePolicy.setHeightForWidth(self.btn_ml.sizePolicy().hasHeightForWidth())
+        self.btn_ml.setSizePolicy(sizePolicy)
+        self.btn_ml.setMinimumSize(QSize(0, 45))
+        self.btn_ml.setFont(font)
+        self.btn_ml.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_ml.setLayoutDirection(Qt.LeftToRight)
+        self.btn_ml.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-chart-line.png);")
+
+        self.verticalLayout_8.addWidget(self.btn_ml)
+
         self.btn_widgets = QPushButton(self.topMenu)
         self.btn_widgets.setObjectName(u"btn_widgets")
         sizePolicy.setHeightForWidth(self.btn_widgets.sizePolicy().hasHeightForWidth())
@@ -863,6 +875,42 @@ class Ui_MainWindow(object):
         self.btn_dataset.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-library-add.png);")
 
         self.verticalLayout_11.addWidget(self.btn_dataset)
+
+        self.btn_ml_training = QPushButton(self.extraTopMenu)
+        self.btn_ml_training.setObjectName(u"btn_ml_training")
+        sizePolicy.setHeightForWidth(self.btn_ml_training.sizePolicy().hasHeightForWidth())
+        self.btn_ml_training.setSizePolicy(sizePolicy)
+        self.btn_ml_training.setMinimumSize(QSize(0, 45))
+        self.btn_ml_training.setFont(font)
+        self.btn_ml_training.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_ml_training.setLayoutDirection(Qt.LeftToRight)
+        self.btn_ml_training.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-equalizer.png);")
+
+        self.verticalLayout_11.addWidget(self.btn_ml_training)
+
+        self.btn_ml_performance = QPushButton(self.extraTopMenu)
+        self.btn_ml_performance.setObjectName(u"btn_ml_performance")
+        sizePolicy.setHeightForWidth(self.btn_ml_performance.sizePolicy().hasHeightForWidth())
+        self.btn_ml_performance.setSizePolicy(sizePolicy)
+        self.btn_ml_performance.setMinimumSize(QSize(0, 45))
+        self.btn_ml_performance.setFont(font)
+        self.btn_ml_performance.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_ml_performance.setLayoutDirection(Qt.LeftToRight)
+        self.btn_ml_performance.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-speedometer.png);")
+
+        self.verticalLayout_11.addWidget(self.btn_ml_performance)
+
+        self.btn_ml_prediction = QPushButton(self.extraTopMenu)
+        self.btn_ml_prediction.setObjectName(u"btn_ml_prediction")
+        sizePolicy.setHeightForWidth(self.btn_ml_prediction.sizePolicy().hasHeightForWidth())
+        self.btn_ml_prediction.setSizePolicy(sizePolicy)
+        self.btn_ml_prediction.setMinimumSize(QSize(0, 45))
+        self.btn_ml_prediction.setFont(font)
+        self.btn_ml_prediction.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_ml_prediction.setLayoutDirection(Qt.LeftToRight)
+        self.btn_ml_prediction.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-lightbulb.png);")
+
+        self.verticalLayout_11.addWidget(self.btn_ml_prediction)
 
 
         self.verticalLayout_12.addWidget(self.extraTopMenu, 0, Qt.AlignTop)
@@ -2357,6 +2405,141 @@ class Ui_MainWindow(object):
         self.layout_dataset.addWidget(self.content_dataset)
 
         self.stackedWidget.addWidget(self.page_dataset)
+        self.page_ml_training = QWidget()
+        self.page_ml_training.setObjectName(u"page_ml_training")
+        self.layout_ml_training = QVBoxLayout(self.page_ml_training)
+        self.layout_ml_training.setSpacing(10)
+        self.layout_ml_training.setObjectName(u"layout_ml_training")
+        self.layout_ml_training.setContentsMargins(10, 10, 10, 10)
+        self.title_ml_training = QLabel(self.page_ml_training)
+        self.title_ml_training.setObjectName(u"title_ml_training")
+        self.title_ml_training.setMaximumSize(QSize(16777215, 30))
+        self.title_ml_training.setFont(font)
+
+        self.layout_ml_training.addWidget(self.title_ml_training)
+
+        self.subtitle_ml_training = QLabel(self.page_ml_training)
+        self.subtitle_ml_training.setObjectName(u"subtitle_ml_training")
+        self.subtitle_ml_training.setMaximumSize(QSize(16777215, 20))
+        self.subtitle_ml_training.setWordWrap(True)
+
+        self.layout_ml_training.addWidget(self.subtitle_ml_training)
+
+        self.content_ml_training = QFrame(self.page_ml_training)
+        self.content_ml_training.setObjectName(u"content_ml_training")
+        self.content_ml_training.setFrameShape(QFrame.NoFrame)
+        self.content_ml_training.setFrameShadow(QFrame.Raised)
+
+        self.layout_ml_training.addWidget(self.content_ml_training)
+
+        self.stackedWidget.addWidget(self.page_ml_training)
+        self.page_ml_performance = QWidget()
+        self.page_ml_performance.setObjectName(u"page_ml_performance")
+        self.layout_ml_performance = QVBoxLayout(self.page_ml_performance)
+        self.layout_ml_performance.setSpacing(10)
+        self.layout_ml_performance.setObjectName(u"layout_ml_performance")
+        self.layout_ml_performance.setContentsMargins(10, 10, 10, 10)
+        self.title_ml_performance = QLabel(self.page_ml_performance)
+        self.title_ml_performance.setObjectName(u"title_ml_performance")
+        self.title_ml_performance.setMaximumSize(QSize(16777215, 30))
+        self.title_ml_performance.setFont(font)
+
+        self.layout_ml_performance.addWidget(self.title_ml_performance)
+
+        self.subtitle_ml_performance = QLabel(self.page_ml_performance)
+        self.subtitle_ml_performance.setObjectName(u"subtitle_ml_performance")
+        self.subtitle_ml_performance.setMaximumSize(QSize(16777215, 20))
+        self.subtitle_ml_performance.setWordWrap(True)
+
+        self.layout_ml_performance.addWidget(self.subtitle_ml_performance)
+
+        self.content_ml_performance = QFrame(self.page_ml_performance)
+        self.content_ml_performance.setObjectName(u"content_ml_performance")
+        self.content_ml_performance.setFrameShape(QFrame.NoFrame)
+        self.content_ml_performance.setFrameShadow(QFrame.Raised)
+
+        self.layout_ml_performance.addWidget(self.content_ml_performance)
+
+        self.stackedWidget.addWidget(self.page_ml_performance)
+        self.page_ml_prediction = QWidget()
+        self.page_ml_prediction.setObjectName(u"page_ml_prediction")
+        self.layout_ml_prediction = QVBoxLayout(self.page_ml_prediction)
+        self.layout_ml_prediction.setSpacing(10)
+        self.layout_ml_prediction.setObjectName(u"layout_ml_prediction")
+        self.layout_ml_prediction.setContentsMargins(10, 10, 10, 10)
+        self.title_ml_prediction = QLabel(self.page_ml_prediction)
+        self.title_ml_prediction.setObjectName(u"title_ml_prediction")
+        self.title_ml_prediction.setMaximumSize(QSize(16777215, 30))
+        self.title_ml_prediction.setFont(font)
+
+        self.layout_ml_prediction.addWidget(self.title_ml_prediction)
+
+        self.subtitle_ml_prediction = QLabel(self.page_ml_prediction)
+        self.subtitle_ml_prediction.setObjectName(u"subtitle_ml_prediction")
+        self.subtitle_ml_prediction.setMaximumSize(QSize(16777215, 20))
+        self.subtitle_ml_prediction.setWordWrap(True)
+
+        self.layout_ml_prediction.addWidget(self.subtitle_ml_prediction)
+
+        self.content_ml_prediction = QFrame(self.page_ml_prediction)
+        self.content_ml_prediction.setObjectName(u"content_ml_prediction")
+        self.content_ml_prediction.setFrameShape(QFrame.NoFrame)
+        self.content_ml_prediction.setFrameShadow(QFrame.Raised)
+        self.layout_content_ml_prediction = QVBoxLayout(self.content_ml_prediction)
+        self.layout_content_ml_prediction.setSpacing(0)
+        self.layout_content_ml_prediction.setObjectName(u"layout_content_ml_prediction")
+        self.layout_content_ml_prediction.setContentsMargins(0, 0, 0, 0)
+        self.tabs_ml_prediction = QTabWidget(self.content_ml_prediction)
+        self.tabs_ml_prediction.setObjectName(u"tabs_ml_prediction")
+        self.tab_ml_predict = QWidget()
+        self.tab_ml_predict.setObjectName(u"tab_ml_predict")
+        self.layout_tab_ml_predict = QVBoxLayout(self.tab_ml_predict)
+        self.layout_tab_ml_predict.setSpacing(0)
+        self.layout_tab_ml_predict.setObjectName(u"layout_tab_ml_predict")
+        self.layout_tab_ml_predict.setContentsMargins(0, 0, 0, 0)
+        self.frame_ml_predict = QFrame(self.tab_ml_predict)
+        self.frame_ml_predict.setObjectName(u"frame_ml_predict")
+        self.frame_ml_predict.setFrameShape(QFrame.NoFrame)
+        self.frame_ml_predict.setFrameShadow(QFrame.Raised)
+
+        self.layout_tab_ml_predict.addWidget(self.frame_ml_predict)
+
+        self.tabs_ml_prediction.addTab(self.tab_ml_predict, "")
+        self.tab_ml_inspect = QWidget()
+        self.tab_ml_inspect.setObjectName(u"tab_ml_inspect")
+        self.layout_tab_ml_inspect = QVBoxLayout(self.tab_ml_inspect)
+        self.layout_tab_ml_inspect.setSpacing(0)
+        self.layout_tab_ml_inspect.setObjectName(u"layout_tab_ml_inspect")
+        self.layout_tab_ml_inspect.setContentsMargins(0, 0, 0, 0)
+        self.frame_ml_inspect = QFrame(self.tab_ml_inspect)
+        self.frame_ml_inspect.setObjectName(u"frame_ml_inspect")
+        self.frame_ml_inspect.setFrameShape(QFrame.NoFrame)
+        self.frame_ml_inspect.setFrameShadow(QFrame.Raised)
+
+        self.layout_tab_ml_inspect.addWidget(self.frame_ml_inspect)
+
+        self.tabs_ml_prediction.addTab(self.tab_ml_inspect, "")
+        self.tab_ml_report = QWidget()
+        self.tab_ml_report.setObjectName(u"tab_ml_report")
+        self.layout_tab_ml_report = QVBoxLayout(self.tab_ml_report)
+        self.layout_tab_ml_report.setSpacing(0)
+        self.layout_tab_ml_report.setObjectName(u"layout_tab_ml_report")
+        self.layout_tab_ml_report.setContentsMargins(0, 0, 0, 0)
+        self.frame_ml_report = QFrame(self.tab_ml_report)
+        self.frame_ml_report.setObjectName(u"frame_ml_report")
+        self.frame_ml_report.setFrameShape(QFrame.NoFrame)
+        self.frame_ml_report.setFrameShadow(QFrame.Raised)
+
+        self.layout_tab_ml_report.addWidget(self.frame_ml_report)
+
+        self.tabs_ml_prediction.addTab(self.tab_ml_report, "")
+
+        self.layout_content_ml_prediction.addWidget(self.tabs_ml_prediction)
+
+
+        self.layout_ml_prediction.addWidget(self.content_ml_prediction)
+
+        self.stackedWidget.addWidget(self.page_ml_prediction)
 
         self.verticalLayout_15.addWidget(self.stackedWidget)
 
@@ -2498,6 +2681,7 @@ class Ui_MainWindow(object):
 
         self.stackedWidget.setCurrentIndex(4)
         self.tabs_process.setCurrentIndex(1)
+        self.tabs_ml_prediction.setCurrentIndex(0)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -2510,6 +2694,7 @@ class Ui_MainWindow(object):
         self.toggleButton.setText(QCoreApplication.translate("MainWindow", u"Hide", None))
         self.btn_home.setText(QCoreApplication.translate("MainWindow", u"Home", None))
         self.btn_sensor.setText(QCoreApplication.translate("MainWindow", u"Sensor processing", None))
+        self.btn_ml.setText(QCoreApplication.translate("MainWindow", u"Machine learning analysis", None))
         self.btn_widgets.setText(QCoreApplication.translate("MainWindow", u"Widgets", None))
         self.btn_new.setText(QCoreApplication.translate("MainWindow", u"New", None))
         self.btn_save.setText(QCoreApplication.translate("MainWindow", u"Save", None))
@@ -2523,6 +2708,9 @@ class Ui_MainWindow(object):
         self.btn_process.setText(QCoreApplication.translate("MainWindow", u"Process", None))
         self.btn_validate.setText(QCoreApplication.translate("MainWindow", u"Validate & segment", None))
         self.btn_dataset.setText(QCoreApplication.translate("MainWindow", u"Dataset creation", None))
+        self.btn_ml_training.setText(QCoreApplication.translate("MainWindow", u"Model training", None))
+        self.btn_ml_performance.setText(QCoreApplication.translate("MainWindow", u"Model performance", None))
+        self.btn_ml_prediction.setText(QCoreApplication.translate("MainWindow", u"Model prediction", None))
         self.titleRightInfo.setText("")
 #if QT_CONFIG(tooltip)
         self.settingsTopBtn.setToolTip(QCoreApplication.translate("MainWindow", u"Settings", None))
@@ -2733,6 +2921,15 @@ class Ui_MainWindow(object):
         self.btn_ds_append.setText(QCoreApplication.translate("MainWindow", u"Append features", None))
         self.btn_ds_save_annotated.setText(QCoreApplication.translate("MainWindow", u"Save annotated dataset", None))
         self.grp_ds_figure.setTitle(QCoreApplication.translate("MainWindow", u"Annotation summary", None))
+        self.title_ml_training.setText(QCoreApplication.translate("MainWindow", u"Model training", None))
+        self.subtitle_ml_training.setText(QCoreApplication.translate("MainWindow", u"Train and version blade-strike models from curated sensor datasets.", None))
+        self.title_ml_performance.setText(QCoreApplication.translate("MainWindow", u"Model performance", None))
+        self.subtitle_ml_performance.setText(QCoreApplication.translate("MainWindow", u"Evaluate trained models: metrics, confusion matrices, ROC/PR curves and threshold analysis.", None))
+        self.title_ml_prediction.setText(QCoreApplication.translate("MainWindow", u"Model prediction", None))
+        self.subtitle_ml_prediction.setText(QCoreApplication.translate("MainWindow", u"Apply a deployed blade-strike model to a curated sensor dataset. Predict, inspect, report.", None))
+        self.tabs_ml_prediction.setTabText(self.tabs_ml_prediction.indexOf(self.tab_ml_predict), QCoreApplication.translate("MainWindow", u"Predict", None))
+        self.tabs_ml_prediction.setTabText(self.tabs_ml_prediction.indexOf(self.tab_ml_inspect), QCoreApplication.translate("MainWindow", u"Inspect", None))
+        self.tabs_ml_prediction.setTabText(self.tabs_ml_prediction.indexOf(self.tab_ml_report), QCoreApplication.translate("MainWindow", u"Report", None))
         self.btn_adjustments.setText(QCoreApplication.translate("MainWindow", u"Adjustments", None))
         self.btn_about.setText(QCoreApplication.translate("MainWindow", u"About", None))
         self.btn_more.setText(QCoreApplication.translate("MainWindow", u"More", None))
