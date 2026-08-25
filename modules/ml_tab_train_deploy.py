@@ -13,6 +13,7 @@ binary*/multiclass* naming that Model Prediction auto-discovers, together
 with a fully self-describing package folder (model card, config, channels,
 CV predictions).
 """
+import json
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -71,12 +72,12 @@ class DeployTab:
             "&nbsp;&nbsp;&nbsp;&nbsp;↓<br/>"
             "<b>Deploy</b> — registered in the models folder for Model "
             "Prediction.")
-        lab.setStyleSheet(f"color:{TEXT};font-size:10px;")
+        lab.setStyleSheet(f"color:{TEXT};")
         lab.setTextFormat(Qt.TextFormat.RichText)
         fv.addWidget(lab)
         self.lbl_flow_status = QLabel("")
         self.lbl_flow_status.setWordWrap(True)
-        self.lbl_flow_status.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        self.lbl_flow_status.setStyleSheet(f"color:{MUTED};")
         fv.addWidget(self.lbl_flow_status)
         lv.addWidget(grp_flow)
 
@@ -95,7 +96,7 @@ class DeployTab:
         gv.addLayout(run_row)
         self.lbl_final_status = QLabel("")
         self.lbl_final_status.setWordWrap(True)
-        self.lbl_final_status.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        self.lbl_final_status.setStyleSheet(f"color:{MUTED};")
         gv.addWidget(self.lbl_final_status)
         self.card_final = MetaCard("Deployment model")
         gv.addWidget(self.card_final)
@@ -106,7 +107,7 @@ class DeployTab:
         dv.setSpacing(8)
         ver_row = QHBoxLayout()
         lab_v = QLabel("Model version")
-        lab_v.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        lab_v.setStyleSheet(f"color:{MUTED};")
         self.ed_version = QLineEdit()
         self.ed_version.setFixedWidth(90)
         self.ed_version.setToolTip("major_minor, e.g. 1_2 → binary1_2.joblib")
@@ -117,7 +118,7 @@ class DeployTab:
 
         dir_row = QHBoxLayout()
         self.lbl_models_dir = QLabel("")
-        self.lbl_models_dir.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        self.lbl_models_dir.setStyleSheet(f"color:{MUTED};")
         self.lbl_models_dir.setWordWrap(True)
         btn_dir = QPushButton("Change…")
         btn_dir.setFixedWidth(80)
@@ -137,7 +138,7 @@ class DeployTab:
         dv.addWidget(self.btn_deploy)
         self.lbl_deploy_status = QLabel("")
         self.lbl_deploy_status.setWordWrap(True)
-        self.lbl_deploy_status.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        self.lbl_deploy_status.setStyleSheet(f"color:{MUTED};")
         self.lbl_deploy_status.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
         dv.addWidget(self.lbl_deploy_status)
@@ -153,7 +154,7 @@ class DeployTab:
         lab = QLabel("Written to model_card.json inside the deployment "
                      "package; shown later in Model Prediction → Predict → "
                      "Model metadata.")
-        lab.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        lab.setStyleSheet(f"color:{MUTED};")
         lab.setWordWrap(True)
         cv.addWidget(lab)
         cv.addStretch()
@@ -181,9 +182,9 @@ class DeployTab:
 
         if not s.cv_done:
             self.lbl_flow_status.setText(
-                "Run cross-validation first (Cross-validate tab), review the "
-                "results (Evaluate tab), then accept them here by training "
-                "the final models.")
+                "Train a model first (Train tab), review the results "
+                "(Evaluate tab), then accept them here by training the "
+                "final models.")
             self.card_final.set_rows([])
             self.card_prov.set_rows([])
             self.lbl_final_status.setText("")
@@ -207,6 +208,7 @@ class DeployTab:
         if not self.ed_version.text():
             self.ed_version.setText(s.suggest_version(self.models_dir))
         self._fill_card()
+        self._fill_final_card()
 
     def _fill_card(self):
         s = self.state
@@ -255,10 +257,57 @@ class DeployTab:
         self.btn_final.setEnabled(False)
         self.btn_final.setText("Training…")
         self.spinner.start()
-        self.lbl_final_status.setStyleSheet(f"color:{ACCENT};font-size:10px;")
+        self.lbl_final_status.setStyleSheet(f"color:{ACCENT};")
         self.lbl_final_status.setText(
             "Training the final deployment model on all training data… "
             "(progress in the Cross-validate console)")
+
+    def _fill_final_card(self):
+        """Deployment-model details, read from the run's final-model
+        artefacts so the card reflects what will actually be deployed."""
+        s = self.state
+        if not s.final_done or s.out_dir is None:
+            self.card_final.set_rows([])
+            return
+
+        rows = []
+        for kind in ("binary", "multiclass"):
+            d = s.out_dir / kind
+            model_file = d / "final_model_for_deployment.joblib"
+            if not model_file.exists():
+                continue
+            cfg = {}
+            cfg_path = d / "model_config.json"
+            if cfg_path.exists():
+                try:
+                    with open(cfg_path, encoding="utf-8") as f:
+                        cfg = json.load(f)
+                except Exception:
+                    cfg = {}
+            metrics = (s.model_results(kind) or {}).get("metrics", {})
+            perf = metrics.get("out_of_fold_performance", {})
+
+            title = "Binary" if kind == "binary" else "Multiclass"
+            rows.append((f"{title} model", metrics.get("model")))
+            rows.append((f"{title} observations",
+                         cfg.get("n_training_observations")
+                         or metrics.get("n_samples")))
+            if cfg.get("class_names") and kind == "multiclass":
+                rows.append((f"{title} classes", cfg["class_names"]))
+            if "optimal_threshold" in perf:
+                rows.append((f"{title} threshold",
+                             f"{perf['optimal_threshold']:.4f}"))
+            size_mb = model_file.stat().st_size / (1024 * 1024)
+            rows.append((f"{title} file",
+                         f"{kind}<version>.joblib  ({size_mb:.1f} MB)"))
+
+        bin_cfg_metrics = (s.model_results("binary") or {}).get("metrics", {})
+        rows += [
+            ("Channels", bin_cfg_metrics.get("n_channels")),
+            ("Sequence length", bin_cfg_metrics.get("max_sequence_length")),
+            ("Run directory", str(s.out_dir)),
+        ]
+        self.card_final.set_rows(rows)
 
     def _on_final_finished(self):
         s = self.state
@@ -266,36 +315,18 @@ class DeployTab:
         self.btn_final.setText("TRAIN FINAL MODEL")
         self.btn_final.setEnabled(True)
         self.btn_deploy.setEnabled(True)
-        bin_m = (s.model_results("binary") or {}).get("metrics", {})
         mc_m = (s.model_results("multiclass") or {}).get("metrics", {})
-        perf = bin_m.get("out_of_fold_performance", {})
-        self.lbl_final_status.setStyleSheet(f"color:{OK};font-size:10px;")
+        self.lbl_final_status.setStyleSheet(f"color:{OK};")
         self.lbl_final_status.setText(
             "✓ Final models trained" if mc_m else "✓ Final model trained")
-        rows = [
-            ("Binary model", bin_m.get("model")),
-            ("Binary observations", bin_m.get("n_samples")),
-        ]
-        if "optimal_threshold" in perf:
-            rows.append(("Binary threshold",
-                         f"{perf['optimal_threshold']:.3f}"))
-        if mc_m:
-            rows += [
-                ("Multiclass model", mc_m.get("model")),
-                ("Multiclass observations", mc_m.get("n_samples")),
-            ]
-        rows += [
-            ("Channels", bin_m.get("n_channels")),
-            ("Sequence length", bin_m.get("max_sequence_length")),
-        ]
-        self.card_final.set_rows(rows)
+        self._fill_final_card()
         s.status.emit("Final deployment model(s) trained.", 5000)
 
     def _on_final_failed(self, msg):
         self.spinner.stop()
         self.btn_final.setText("TRAIN FINAL MODEL")
         self.btn_final.setEnabled(self.state.cv_done)
-        self.lbl_final_status.setStyleSheet(f"color:{BAD};font-size:10px;")
+        self.lbl_final_status.setStyleSheet(f"color:{BAD};")
         first = msg.strip().splitlines()[-1] if msg.strip() else "Unknown error"
         self.lbl_final_status.setText(f"✗ Final training failed: {first}")
         dlg = QMessageBox(self.window)
@@ -328,7 +359,7 @@ class DeployTab:
             QMessageBox.critical(self.window, "Deploy model", str(e))
             return
         names = ", ".join(p.name for p in deployed)
-        self.lbl_deploy_status.setStyleSheet(f"color:{OK};font-size:10px;")
+        self.lbl_deploy_status.setStyleSheet(f"color:{OK};")
         self.lbl_deploy_status.setText(
             f"✓ Deployed {names}\n"
             f"Package: {pkg}\n"

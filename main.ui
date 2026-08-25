@@ -4833,7 +4833,7 @@ background-repeat: no-repeat;</string>
                             </property>
                             <widget class="QWidget" name="tab_train_configure">
                              <attribute name="title">
-                              <string>Configure</string>
+                              <string>Train</string>
                              </attribute>
                              <layout class="QVBoxLayout" name="layout_tab_train_configure">
                               <property name="spacing">
@@ -4853,38 +4853,6 @@ background-repeat: no-repeat;</string>
                               </property>
                               <item>
                                <widget class="QFrame" name="frame_train_configure">
-                                <property name="frameShape">
-                                 <enum>QFrame::NoFrame</enum>
-                                </property>
-                                <property name="frameShadow">
-                                 <enum>QFrame::Raised</enum>
-                                </property>
-                               </widget>
-                              </item>
-                             </layout>
-                            </widget>
-                            <widget class="QWidget" name="tab_train_cv">
-                             <attribute name="title">
-                              <string>Cross-validate</string>
-                             </attribute>
-                             <layout class="QVBoxLayout" name="layout_tab_train_cv">
-                              <property name="spacing">
-                               <number>0</number>
-                              </property>
-                              <property name="leftMargin">
-                               <number>0</number>
-                              </property>
-                              <property name="topMargin">
-                               <number>0</number>
-                              </property>
-                              <property name="rightMargin">
-                               <number>0</number>
-                              </property>
-                              <property name="bottomMargin">
-                               <number>0</number>
-                              </property>
-                              <item>
-                               <widget class="QFrame" name="frame_train_cv">
                                 <property name="frameShape">
                                  <enum>QFrame::NoFrame</enum>
                                 </property>

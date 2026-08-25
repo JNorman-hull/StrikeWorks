@@ -21,16 +21,20 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox, QDoubleSpinBox, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
-    QLineEdit, QPushButton, QSizePolicy, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QLineEdit, QPushButton, QSizePolicy, QSplitter, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from . import settings
 from .ml_state import STRIKE_TYPES
 from .ml_tab_predict import _NumItem
 from .ml_widgets import (
     BAD, INFO, MUTED, OK, PALETTE, PINK, TEXT, WARN, ProbBars,
 )
-from .page_validate import _NavViewBox
+from .page_validate import _CsvLoadThread, _NavViewBox
+
+_VIEW_WINDOW = "window"   # exact model-input segment
+_VIEW_FULL   = "full"     # full sensor passage from the library
 
 _FILTER_ALL       = "all"
 _FILTER_STRIKES   = "strikes"
@@ -49,6 +53,11 @@ class InspectTab:
         self._left_curve = None
         self._right_curve = None
         self._nadir_line = None
+        self._window_region = None
+        self._full_cache = {}       # recording id -> full-passage DataFrame
+        self._full_missing = set()  # recordings with no library CSV
+        self._loaders = []
+        self._pending_full = None
 
         self._build(frame)
         self._connect_state()
@@ -60,12 +69,17 @@ class InspectTab:
     def _build(self, frame):
         root = QHBoxLayout(frame)
         root.setContentsMargins(4, 6, 4, 6)
-        root.setSpacing(10)
+        root.setSpacing(0)
+
+        # A splitter rather than fixed widths, so the user can rebalance the
+        # browser against the signal view at any window size.
+        split = QSplitter(Qt.Orientation.Horizontal)
+        split.setChildrenCollapsible(False)
+        root.addWidget(split)
 
         # ── left: browser ───────────────────────────────────────────────────
         left = QWidget()
-        left.setMinimumWidth(430)
-        left.setMaximumWidth(560)
+        left.setMinimumWidth(360)
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 0, 0)
         lv.setSpacing(8)
@@ -103,7 +117,7 @@ class InspectTab:
         fv.addWidget(self.ed_search)
 
         self.lbl_count = QLabel("No prediction run yet.")
-        self.lbl_count.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        self.lbl_count.setStyleSheet(f"color:{MUTED};")
         fv.addWidget(self.lbl_count)
         lv.addWidget(grp_filter)
 
@@ -118,12 +132,14 @@ class InspectTab:
         self.tbl.horizontalHeader().setStretchLastSection(True)
         self.tbl.itemSelectionChanged.connect(self._on_row_selected)
         lv.addWidget(self.tbl, stretch=1)
-        root.addWidget(left)
+        lv.setContentsMargins(0, 0, 5, 0)
+        split.addWidget(left)
 
         # ── right: detail ───────────────────────────────────────────────────
         right = QWidget()
+        right.setMinimumWidth(420)
         rv = QVBoxLayout(right)
-        rv.setContentsMargins(0, 0, 0, 0)
+        rv.setContentsMargins(5, 0, 0, 0)
         rv.setSpacing(8)
 
         top = QHBoxLayout()
@@ -134,18 +150,18 @@ class InspectTab:
         sv.setSpacing(3)
         self.lbl_rec = QLabel("No prediction selected")
         self.lbl_rec.setStyleSheet(
-            f"color:{TEXT};font-weight:bold;font-size:12px;")
+            f"color:{TEXT};font-weight:bold;")
         self.lbl_tx = QLabel("")
-        self.lbl_tx.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        self.lbl_tx.setStyleSheet(f"color:{MUTED};")
         self.lbl_verdict = QLabel("")
         self.lbl_verdict.setStyleSheet(
             f"color:{PINK};font-weight:bold;font-size:16px;")
         self.lbl_prob = QLabel("")
-        self.lbl_prob.setStyleSheet(f"color:{TEXT};font-size:10px;")
+        self.lbl_prob.setStyleSheet(f"color:{TEXT};")
         self.lbl_region = QLabel("")
-        self.lbl_region.setStyleSheet(f"color:{TEXT};font-size:10px;")
+        self.lbl_region.setStyleSheet(f"color:{TEXT};")
         self.lbl_gt = QLabel("")
-        self.lbl_gt.setStyleSheet(f"color:{TEXT};font-size:10px;")
+        self.lbl_gt.setStyleSheet(f"color:{TEXT};")
         self.lbl_gt.setWordWrap(True)
         self.lbl_gt.setTextFormat(Qt.TextFormat.RichText)
         for w in (self.lbl_rec, self.lbl_tx, self.lbl_verdict,
@@ -167,16 +183,25 @@ class InspectTab:
         gv.setSpacing(6)
 
         ctl = QHBoxLayout()
+        self.cmb_view = QComboBox()
+        self.cmb_view.addItem("Blade interaction only", _VIEW_WINDOW)
+        self.cmb_view.addItem("Full sensor passage", _VIEW_FULL)
+        self.cmb_view.setToolTip(
+            "Blade interaction only: the exact segmented window supplied to "
+            "the model.\nFull sensor passage: the recording's complete "
+            "sensor file from the library, with the model window marked.")
+        self.cmb_view.currentIndexChanged.connect(self._refresh_signal)
         lab_l = QLabel("Left axis")
-        lab_l.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        lab_l.setStyleSheet(f"color:{MUTED};")
         self.cmb_left = QComboBox()
         self.cmb_left.currentIndexChanged.connect(self._refresh_signal)
         lab_r = QLabel("Right axis")
-        lab_r.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        lab_r.setStyleSheet(f"color:{MUTED};")
         self.cmb_right = QComboBox()
         self.cmb_right.currentIndexChanged.connect(self._refresh_signal)
         self.btn_reset_view = QPushButton("Reset view")
         self.btn_reset_view.clicked.connect(self._reset_view)
+        ctl.addWidget(self.cmb_view, stretch=1)
         ctl.addWidget(lab_l)
         ctl.addWidget(self.cmb_left, stretch=1)
         ctl.addWidget(lab_r)
@@ -204,7 +229,7 @@ class InspectTab:
         self.lbl_sig_note = QLabel(
             "This is the exact segmented window supplied to the model. "
             "Drag to box-zoom, wheel to pan, Shift+wheel to pan vertically.")
-        self.lbl_sig_note.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        self.lbl_sig_note.setStyleSheet(f"color:{MUTED};")
         self.lbl_sig_note.setWordWrap(True)
         gv.addWidget(self.lbl_sig_note)
         rv.addWidget(grp_sig, stretch=1)
@@ -550,46 +575,142 @@ class InspectTab:
         if self._nadir_line is not None:
             pi.removeItem(self._nadir_line)
             self._nadir_line = None
+        if self._window_region is not None:
+            pi.removeItem(self._window_region)
+            self._window_region = None
         pi.hideAxis("right")
+
+    # ── full-passage lookup (library CSVs, loaded off the GUI thread) ────────
+    def _find_full_csv(self, stem):
+        lib_dir = settings.get_libraries_dir()
+        roots = [lib_dir]
+        try:
+            roots += [p for p in lib_dir.iterdir() if p.is_dir()]
+        except OSError:
+            pass
+        for root in roots:
+            csv_dir = root / "processed_sens_data" / "csv"
+            if not csv_dir.exists():
+                continue
+            direct = csv_dir / f"{stem}.csv"
+            if direct.exists():
+                return direct
+            hits = list(csv_dir.rglob(f"{stem}.csv"))
+            if hits:
+                return hits[0]
+        return None
+
+    def _request_full(self, file_id):
+        """Start loading the full sensor CSV; returns True if now loading."""
+        if file_id in self._full_missing:
+            return False
+        path = self._find_full_csv(file_id)
+        if path is None:
+            self._full_missing.add(file_id)
+            return False
+        if self._pending_full == file_id:
+            return True
+        self._pending_full = file_id
+        loader = _CsvLoadThread(path)
+        loader.loaded.connect(
+            lambda p, df, fid=file_id: self._on_full_loaded(fid, df))
+        loader.failed.connect(
+            lambda p, msg, fid=file_id: self._on_full_failed(fid, msg))
+        loader.finished.connect(lambda lt=loader: self._loaders.remove(lt))
+        self._loaders.append(loader)
+        loader.start()
+        return True
+
+    def _on_full_loaded(self, file_id, df):
+        if self._pending_full == file_id:
+            self._pending_full = None
+        self._full_cache[file_id] = df
+        if self.state.selected_file == file_id:
+            self._refresh_signal()
+
+    def _on_full_failed(self, file_id, msg):
+        if self._pending_full == file_id:
+            self._pending_full = None
+        self._full_missing.add(file_id)
+        self.state.status.emit(f"Full sensor file load failed: {msg}", 6000)
+        if self.state.selected_file == file_id:
+            self._refresh_signal()
 
     def _refresh_signal(self):
         s = self.state
         self._clear_signal()
 
-        sig = s.file_signal(s.selected_file)
-        if sig is None:
+        window_sig = s.file_signal(s.selected_file)
+        if window_sig is None:
+            self.lbl_sig_note.setText(
+                "Select a prediction to view its sensor signal.")
             return
+
+        mode = self.cmb_view.currentData() or _VIEW_WINDOW
+        sig = window_sig
+        note = ("This is the exact segmented window supplied to the model. "
+                "Drag to box-zoom, wheel to pan, Shift+wheel to pan "
+                "vertically.")
+
+        if mode == _VIEW_FULL:
+            full = self._full_cache.get(s.selected_file)
+            if full is not None:
+                sig = full.sort_values("time_s")
+                note = ("Full sensor passage from the library; the shaded "
+                        "band is the model-input window.")
+            elif self._request_full(s.selected_file):
+                self.lbl_sig_note.setText(
+                    "Loading the full sensor file from the library…")
+                return
+            else:
+                note = ("Full sensor file not found in the configured "
+                        "libraries - showing the model-input window instead.")
+
         pi = self._pw.plotItem
         t = sig["time_s"].to_numpy(dtype=float)
 
         left = self.cmb_left.currentData()
         if left and left in sig.columns:
             y = sig[left].to_numpy(dtype=float)
-            self._left_curve = self._pw.plot(t, y, pen="k")
+            self._left_curve = self._pw.plot(
+                t, y, pen=pg.mkPen("#dddddd", width=1))
+            self._left_curve.setDownsampling(auto=True, method="peak")
+            self._left_curve.setClipToView(True)
             pi.setLabel("left", left)
 
         right = self.cmb_right.currentData()
         if right and right in sig.columns:
             pi.showAxis("right")
             pi.setLabel("right", right)
-            self._right_curve = pg.PlotCurveItem(pen=pg.mkPen("r", width=1))
+            self._right_curve = pg.PlotCurveItem(
+                pen=pg.mkPen("#ff5555", width=1))
             self._vb2.addItem(self._right_curve)
             self._right_curve.setData(t, sig[right].to_numpy(dtype=float))
             self._sync_vb2()
             self._vb2.enableAutoRange("y", True)
 
+        # model-input window: shaded when viewing the full passage
+        w_t = window_sig["time_s"].to_numpy(dtype=float)
+        if sig is not window_sig and len(w_t):
+            self._window_region = pg.LinearRegionItem(
+                values=[float(w_t[0]), float(w_t[-1])], movable=False,
+                brush=pg.mkBrush(85, 170, 255, 35),
+                pen=pg.mkPen(85, 170, 255, 90))
+            pi.addItem(self._window_region)
+
         # event indication: pressure nadir inside the model window
-        if "pressure_kpa" in sig.columns and len(t):
-            pres = sig["pressure_kpa"].to_numpy(dtype=float)
+        if "pressure_kpa" in window_sig.columns and len(w_t):
+            pres = window_sig["pressure_kpa"].to_numpy(dtype=float)
             if np.isfinite(pres).any():
-                t_nadir = float(t[int(np.nanargmin(pres))])
+                t_nadir = float(w_t[int(np.nanargmin(pres))])
                 self._nadir_line = pg.InfiniteLine(
                     pos=t_nadir, angle=90, movable=False,
                     pen=pg.mkPen(color=(255, 220, 0), width=2),
                     label="Nadir",
-                    labelOpts={"position": 0.92, "color": (180, 150, 0)})
+                    labelOpts={"position": 0.92, "color": (200, 170, 0)})
                 pi.addItem(self._nadir_line)
 
+        self.lbl_sig_note.setText(note)
         self._reset_view()
 
     def _reset_view(self):

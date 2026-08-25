@@ -35,7 +35,9 @@ from . import settings
 from .page_process import _DirsOnlyProxy
 
 # Global pyqtgraph config - set once, before any PlotWidget is created.
-pg.setConfigOptions(antialias=False, background="w", foreground="k")
+# Dark theme + antialiasing so signal plots match the application styling.
+pg.setConfigOptions(antialias=True, background="#21252b",
+                    foreground="#c8cdd6")
 
 _INDEX_REL = Path("processed_sens_data") / "index" / "global_sensor_index.csv"
 _CSV_DIR = Path("processed_sens_data") / "csv"
@@ -568,7 +570,8 @@ class ValidatePage(QObject):
             self._curve = None
         y = self._channel(self._left_key)
         if y is not None:
-            self._curve = self._pw.plot(self._time, y, pen="k")
+            self._curve = self._pw.plot(self._time, y,
+                                        pen=pg.mkPen("#dddddd", width=1))
             self._curve.setDownsampling(auto=True, method="peak")
             self._curve.setClipToView(True)
         pi.setLabel("left", _CHANNELS[self._left_key][1])
@@ -587,7 +590,8 @@ class ValidatePage(QObject):
 
         pi.showAxis("right")
         pi.setLabel("right", _CHANNELS[self._right_key][1])
-        self._right_curve = pg.PlotCurveItem(pen=pg.mkPen("r", width=1))
+        self._right_curve = pg.PlotCurveItem(
+            pen=pg.mkPen("#ff5555", width=1))
         self._vb2.addItem(self._right_curve)
         self._update_right_data()
         self._sync_vb2()

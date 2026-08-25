@@ -127,7 +127,7 @@ class PredictTab:
         self.btn_models = QPushButton("Change models folder…")
         self.btn_models.clicked.connect(self._change_models_folder)
         self.lbl_models_dir = QLabel("")
-        self.lbl_models_dir.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        self.lbl_models_dir.setStyleSheet(f"color:{MUTED};")
         self.lbl_models_dir.setWordWrap(True)
         mdl_btn_row.addWidget(self.btn_models)
         mdl_btn_row.addWidget(self.lbl_models_dir, stretch=1)
@@ -146,7 +146,7 @@ class PredictTab:
         self.lbl_ds_source = QLabel(
             "Datasets created on the Sensor Processing → Dataset creation "
             "page are used automatically.")
-        self.lbl_ds_source.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        self.lbl_ds_source.setStyleSheet(f"color:{MUTED};")
         self.lbl_ds_source.setWordWrap(True)
         ds_btn_row.addWidget(self.btn_load_csv)
         ds_btn_row.addWidget(self.lbl_ds_source, stretch=1)
@@ -171,7 +171,7 @@ class PredictTab:
 
         mode_row = QHBoxLayout()
         lab_mode = QLabel("Model mode")
-        lab_mode.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        lab_mode.setStyleSheet(f"color:{MUTED};")
         self.cmb_mode = QComboBox()
         self.cmb_mode.currentIndexChanged.connect(self._on_mode_changed)
         mode_row.addWidget(lab_mode)
@@ -179,7 +179,7 @@ class PredictTab:
         gv.addLayout(mode_row)
 
         self.lbl_thresh = QLabel("Decision threshold: —")
-        self.lbl_thresh.setStyleSheet(f"color:{TEXT};font-size:10px;")
+        self.lbl_thresh.setStyleSheet(f"color:{TEXT};")
         gv.addWidget(self.lbl_thresh)
 
         th_row = QHBoxLayout()
@@ -198,13 +198,13 @@ class PredictTab:
 
         self.lbl_override_note = QLabel(
             "⚠ You are overriding the deployed model threshold.")
-        self.lbl_override_note.setStyleSheet(f"color:{WARN};font-size:9px;")
+        self.lbl_override_note.setStyleSheet(f"color:{WARN};")
         self.lbl_override_note.setVisible(False)
         gv.addWidget(self.lbl_override_note)
 
         lab_out = QLabel("Outputs: strike probability, confidence, predicted "
                          "class; treatment summaries with Wilson 95% CIs.")
-        lab_out.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        lab_out.setStyleSheet(f"color:{MUTED};")
         lab_out.setWordWrap(True)
         gv.addWidget(lab_out)
         gv.addStretch()
@@ -226,7 +226,7 @@ class PredictTab:
 
         self.lbl_run_status = QLabel("")
         self.lbl_run_status.setWordWrap(True)
-        self.lbl_run_status.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        self.lbl_run_status.setStyleSheet(f"color:{MUTED};")
         self.lbl_run_status.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
         rv.addWidget(self.lbl_run_status)
@@ -271,7 +271,7 @@ class PredictTab:
         tv.addWidget(self.tbl)
         lab_sel = QLabel("Selecting a treatment focuses the Inspect tab's "
                          "treatment filter.")
-        lab_sel.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        lab_sel.setStyleSheet(f"color:{MUTED};")
         tv.addWidget(lab_sel)
         v.addWidget(grp_tbl)
 
@@ -285,8 +285,8 @@ class PredictTab:
 
         v.addStretch()
 
-        ml_figures.draw_strike_rate(self.fig_bin, None)
-        ml_figures.draw_region(self.fig_mc, None, [])
+        ml_figures.draw_strike_rate(self.fig_bin, None, dark=True)
+        ml_figures.draw_region(self.fig_mc, None, [], dark=True)
 
     # ── state wiring ─────────────────────────────────────────────────────────
     def _connect_state(self):
@@ -491,7 +491,7 @@ class PredictTab:
         self.spinner.start()
         self._elapsed.start()
         self._tick.start()
-        self.lbl_run_status.setStyleSheet(f"color:{ACCENT};font-size:10px;")
+        self.lbl_run_status.setStyleSheet(f"color:{ACCENT};")
         self.lbl_run_status.setText(f"Predicting {n} recordings…")
 
     def _update_elapsed(self):
@@ -514,7 +514,7 @@ class PredictTab:
         k = meta.get("n_strike", 0)
         rate = meta.get("strike_rate", 0.0) * 100
         secs = self._elapsed.elapsed() / 1000
-        self.lbl_run_status.setStyleSheet(f"color:{OK};font-size:10px;")
+        self.lbl_run_status.setStyleSheet(f"color:{OK};")
         self.lbl_run_status.setText(
             f"✓ Prediction complete ({secs:.1f} s)\n"
             f"{n} recordings processed\n"
@@ -534,18 +534,18 @@ class PredictTab:
 
         self._populate_summary_cards()
         self._populate_table()
-        ml_figures.draw_strike_rate(self.fig_bin, s.summary)
+        ml_figures.draw_strike_rate(self.fig_bin, s.summary, dark=True)
         self.canvas_bin.draw()
         mc_run = s.run_meta.get("mode") == "multiclass"
         ml_figures.draw_region(self.fig_mc, s.summary,
-                               s.class_names if mc_run else [])
+                               s.class_names if mc_run else [], dark=True)
         self.canvas_mc.draw()
         s.status.emit(f"Prediction complete — {k} strikes in {n} recordings.",
                       6000)
 
     def _on_run_failed(self, msg):
         self._stop_run_ui()
-        self.lbl_run_status.setStyleSheet(f"color:{BAD};font-size:10px;")
+        self.lbl_run_status.setStyleSheet(f"color:{BAD};")
         first = msg.strip().splitlines()[-1] if msg.strip() else "Unknown error"
         self.lbl_run_status.setText(f"✗ Prediction failed: {first}")
         dlg = QMessageBox(self.window)

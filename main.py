@@ -21,7 +21,7 @@ from modules.page_validate import ValidatePage
 from modules.page_dataset import DatasetPage
 from modules.page_ml_prediction import MLPredictionPage
 from modules.page_ml_training import MLTrainingPage
-from modules import page_ml_placeholders
+from modules.page_ml_performance import MLPerformancePage
 os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
 
 # SET AS GLOBAL WIDGETS
@@ -89,16 +89,21 @@ class MainWindow(QMainWindow):
         self.ml_training_page = MLTrainingPage(widgets, self)
         self.ml_training_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
-        page_ml_placeholders.build_performance_page(widgets)
+        self.ml_performance_page = MLPerformancePage(widgets, self)
+        self.ml_performance_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
 
         # the curated dataset from Sensor Processing feeds Model Prediction
         self.dataset_page.dataset_ready.connect(
             self.ml_prediction_page.on_dataset_ready)
 
         # a freshly deployed model becomes available to Model Prediction
+        # and appears in the Model Performance model list
         self.ml_training_page.model_deployed.connect(
             lambda _p: self.ml_prediction_page.state.load_models_from_dir(
                 self.ml_prediction_page.state.models_dir))
+        self.ml_training_page.model_deployed.connect(
+            lambda _p: self.ml_performance_page.reload())
 
         # BUTTONS CLICK
         # ///////////////////////////////////////////////////////////////

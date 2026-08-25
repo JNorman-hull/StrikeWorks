@@ -11,7 +11,7 @@ recoloured for the StrikeWorks dark theme. MetaCard, CheckList and ProbBars
 are new but follow the same card language as page_process.StatCard.
 """
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
     QFrame, QGridLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
 )
@@ -32,13 +32,15 @@ EMPTY   = "#3a4150"
 # category palette for ring segments / stacked bars
 PALETTE = [INFO, PINK, WARN, OK, ACCENT, "#00bcd4"]
 
-CARD_W, CARD_H   = 300, 120
-CARD_W2, CARD_H2 = 108, 108
+# Minimum widths only - every card expands to share the row, so a page
+# never forces a horizontal scrollbar at a sensible window size.
+CARD_W, CARD_H   = 205, 124
+CARD_W2, CARD_H2 = 112, 112
 
 
 # ── ring card (ported from the MVP, dark theme) ──────────────────────────────
 class RingCard(QFrame):
-    """Fixed-size card with a donut ring.
+    """Card with a donut ring; fixed height, expands horizontally.
 
     Metric mode   (set_value):    single arc fills 0-1, value in the centre.
     Category mode (set_segments): segmented colour ring with legend.
@@ -51,7 +53,10 @@ class RingCard(QFrame):
 
     def __init__(self, title, w=None, h=None, parent=None):
         super().__init__(parent)
-        self.setFixedSize(w or CARD_W, h or CARD_H)
+        self.setMinimumWidth(w or CARD_W)
+        self.setFixedHeight(h or CARD_H)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,
+                           QSizePolicy.Policy.Fixed)
         self.setFrameShape(QFrame.Shape.NoFrame)
 
         self._title    = title
@@ -94,13 +99,17 @@ class RingCard(QFrame):
         p.setBrush(QColor(CARD_BG))
         p.drawRoundedRect(1, 1, w - 2, h - 2, 8, 8)
 
-        tf = QFont("Segoe UI", 9)
+        tf = QFont("Segoe UI", 10)
         tf.setBold(True)
         p.setFont(tf)
         p.setPen(QColor(TEXT))
-        p.drawText(self.PAD, 0, w - self.PAD * 2, 26,
+        # elide rather than clip - metric cards can be narrow
+        title_w = w - self.PAD * 2
+        title = QFontMetrics(tf).elidedText(
+            self._title, Qt.TextElideMode.ElideRight, title_w)
+        p.drawText(self.PAD, 0, title_w, 26,
                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                   self._title)
+                   title)
 
         rx = w - self.RING_D - self.PAD
         ry = (h - self.RING_D) // 2 + 4
@@ -120,7 +129,7 @@ class RingCard(QFrame):
                           Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
             p.drawArc(rx, ry, self.RING_D, self.RING_D, 90 * 16, -span)
 
-            vf = QFont("Segoe UI", 10)
+            vf = QFont("Segoe UI", 11)
             vf.setBold(True)
             p.setFont(vf)
             p.setPen(QColor(TEXT))
@@ -137,27 +146,27 @@ class RingCard(QFrame):
                 p.drawArc(rx, ry, self.RING_D, self.RING_D, angle, -span)
                 angle -= span
 
-            lf = QFont("Segoe UI", 8)
+            lf = QFont("Segoe UI", 9)
             p.setFont(lf)
             text_w = rx - self.PAD * 2
             y = 28
             for label, val, colour in self._segments:
-                if y + 26 > h - 4:
+                if y + 28 > h - 4:
                     break
                 pct = val / total * 100
                 p.setBrush(QColor(colour))
                 p.setPen(Qt.PenStyle.NoPen)
-                p.drawEllipse(self.PAD, y + 3, 8, 8)
+                p.drawEllipse(self.PAD, y + 4, 8, 8)
 
                 p.setPen(QColor(TEXT))
-                p.drawText(self.PAD + 12, y, text_w, 13,
+                p.drawText(self.PAD + 13, y, text_w, 15,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                            label)
                 p.setPen(QColor(MUTED))
-                p.drawText(self.PAD + 12, y + 13, text_w, 12,
+                p.drawText(self.PAD + 13, y + 15, text_w, 14,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                            f"n={int(val)}  ({pct:.0f}%)")
-                y += 28
+                y += 31
 
         p.end()
 
@@ -218,7 +227,7 @@ class MetaCard(QFrame):
 
         self._title = QLabel(title)
         self._title.setStyleSheet(
-            f"color:{TEXT};font-weight:bold;font-size:11px;border:none;")
+            f"color:{TEXT};font-weight:bold;border:none;")
         v.addWidget(self._title)
 
         self._grid = QGridLayout()
@@ -246,10 +255,10 @@ class MetaCard(QFrame):
 
         for i, (label, value) in enumerate(rows):
             lab = QLabel(label)
-            lab.setStyleSheet(f"color:{MUTED};font-size:10px;border:none;")
+            lab.setStyleSheet(f"color:{MUTED};border:none;")
             lab.setAlignment(Qt.AlignmentFlag.AlignTop)
             val = QLabel(self._fmt(value))
-            val.setStyleSheet(f"color:{TEXT};font-size:10px;border:none;")
+            val.setStyleSheet(f"color:{TEXT};border:none;")
             val.setWordWrap(True)
             val.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -306,9 +315,10 @@ class CheckList(QFrame):
             icon, colour = self._ICON.get(state, self._ICON["off"])
             row = QLabel(f"<span style='color:{colour};'>{icon}</span>&nbsp; "
                          f"<span style='color:{TEXT};'>{label}</span>"
-                         + (f"<br/><span style='color:{MUTED};font-size:9px;'>"
-                            f"&nbsp;&nbsp;&nbsp;{detail}</span>" if detail else ""))
-            row.setStyleSheet("border:none;font-size:10px;")
+                         + (f"<br/><span style='color:{MUTED};'>"
+                            f"&nbsp;&nbsp;&nbsp;{detail}</span>"
+                            if detail else ""))
+            row.setStyleSheet("border:none;")
             row.setWordWrap(True)
             self._v.addWidget(row)
             self._items.append(row)
@@ -333,9 +343,9 @@ class ProbBars(QWidget):
     set_probs([(label, prob, colour), ...]) - probs in 0-1.
     """
 
-    ROW_H  = 24
-    LAB_W  = 110
-    VAL_W  = 44
+    ROW_H  = 26
+    LAB_W  = 130
+    VAL_W  = 48
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -360,7 +370,7 @@ class ProbBars(QWidget):
         w = self.width()
         bar_w = max(30, w - self.LAB_W - self.VAL_W - 16)
 
-        f = QFont("Segoe UI", 8)
+        f = QFont("Segoe UI", 9)
         p.setFont(f)
         for i, (label, prob, colour) in enumerate(self._probs):
             y = i * self.ROW_H

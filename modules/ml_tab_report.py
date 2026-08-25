@@ -73,7 +73,7 @@ class ReportTab:
             "The report uses exactly the prediction results and metadata "
             "shown on the Predict and Inspect tabs. The exported report.html "
             "is self-contained and prints/saves to PDF from any browser.")
-        self.lbl_note.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        self.lbl_note.setStyleSheet(f"color:{MUTED};")
         self.lbl_note.setWordWrap(True)
         v.addWidget(self.lbl_note)
 

@@ -4,31 +4,35 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Configure tab - everything that defines a training run.
+"""Train tab - everything that defines and runs a training run.
 
 Dataset loading and filtering, target/label definition with live class
-distribution, input-channel selection, sequence preparation, validation
-(hold-out + stratified CV), class balancing, model configuration and the
-pre-training readiness checklist. All configuration lives in the shared
-TrainingState; the Cross-validate tab consumes it unchanged.
+distributions, input-channel selection, sequence preparation, validation
+(hold-out + stratified CV), class balancing and model configuration, then
+the training run itself: the TRAIN MODEL control, the streaming training
+console and the out-of-fold performance of both pipeline stages.
+
+All configuration and results live in the shared TrainingState; the
+Evaluate and Deploy tabs consume them unchanged.
 """
 from pathlib import Path
 
 import pandas as pd
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QElapsedTimer, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout, QGroupBox,
-    QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton, QRadioButton,
-    QScrollArea, QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPlainTextEdit,
+    QProgressBar, QPushButton, QRadioButton, QScrollArea, QSizePolicy,
+    QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import settings
 from .ml_train_state import COLLAPSE_SCHEMES
 from .ml_widgets import (
-    BORDER, CARD_BG, EMPTY, MUTED, OK, PALETTE, TEXT, CheckList, MetaCard,
+    ACCENT, BAD, BORDER, CARD_BG, EMPTY, MUTED, OK, PALETTE, TEXT, MetaCard,
+    Spinner,
 )
 
 _PREVIEW_ROWS = 200
@@ -84,16 +88,21 @@ class _ClassDist(QWidget):
         p.end()
 
 
-class ConfigureTab:
-    """Builds the Configure tab UI into `frame` and binds it to `state`."""
+class TrainTab:
+    """Builds the Train tab UI into `frame` and binds it to `state`."""
 
-    def __init__(self, frame, state, window, goto_cv=None):
+    def __init__(self, frame, state, window, goto_evaluate=None):
         self.state = state
         self.window = window
-        self._goto_cv = goto_cv
+        self._goto_evaluate = goto_evaluate
         self._updating = False
         self._include_checks = {}
         self._channel_checks = {}
+
+        self._elapsed = QElapsedTimer()
+        self._tick = QTimer()
+        self._tick.setInterval(500)
+        self._tick.timeout.connect(self._update_elapsed)
 
         self._build(frame)
         self._connect_state()
@@ -134,7 +143,7 @@ class ConfigureTab:
         self.card_dataset = MetaCard("TRAINING DATASET")
         dv.addWidget(self.card_dataset)
         self.lbl_compat = QLabel("")
-        self.lbl_compat.setStyleSheet(f"color:{OK};font-size:10px;")
+        self.lbl_compat.setStyleSheet(f"color:{OK};")
         dv.addWidget(self.lbl_compat)
         row1.addWidget(grp_ds, stretch=2)
 
@@ -152,19 +161,14 @@ class ConfigureTab:
         self.tbl_preview.setVisible(False)
         pv.addWidget(self.tbl_preview)
         self.grp_preview.toggled.connect(self._toggle_preview)
-        row1.addWidget(self.grp_preview, stretch=3)
-        v.addLayout(row1)
-
-        # ── row 2: filtering + labels ───────────────────────────────────────
-        row2 = QHBoxLayout()
-        row2.setSpacing(10)
+        self._toggle_preview(False)
 
         grp_filter = QGroupBox("Dataset filtering")
         fv = QVBoxLayout(grp_filter)
         fv.setSpacing(4)
         lab = QLabel("Include records (by target value). The resulting "
                      "training population is recorded in the model provenance.")
-        lab.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        lab.setStyleSheet(f"color:{MUTED};")
         lab.setWordWrap(True)
         fv.addWidget(lab)
         self.include_box = QVBoxLayout()
@@ -172,10 +176,10 @@ class ConfigureTab:
         fv.addLayout(self.include_box)
         self.lbl_population = QLabel("")
         self.lbl_population.setStyleSheet(
-            f"color:{TEXT};font-size:10px;font-weight:bold;")
+            f"color:{TEXT};font-weight:bold;")
         fv.addWidget(self.lbl_population)
         fv.addStretch()
-        row2.addWidget(grp_filter, stretch=1)
+        row1.addWidget(grp_filter, stretch=1)
 
         grp_target = QGroupBox("Labels / target — two-stage pipeline")
         tv = QVBoxLayout(grp_target)
@@ -195,7 +199,7 @@ class ConfigureTab:
         tv.addLayout(tr)
 
         self.lbl_positive = QLabel("")
-        self.lbl_positive.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        self.lbl_positive.setStyleSheet(f"color:{MUTED};")
         self.lbl_positive.setWordWrap(True)
         tv.addWidget(self.lbl_positive)
 
@@ -219,7 +223,7 @@ class ConfigureTab:
         tv.addLayout(mc_row)
 
         self.lbl_derived = QLabel("")
-        self.lbl_derived.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        self.lbl_derived.setStyleSheet(f"color:{MUTED};")
         self.lbl_derived.setWordWrap(True)
         tv.addWidget(self.lbl_derived)
 
@@ -234,8 +238,9 @@ class ConfigureTab:
         self.class_dist_mc = _ClassDist()
         tv.addWidget(self.class_dist_mc)
         tv.addStretch()
-        row2.addWidget(grp_target, stretch=2)
-        v.addLayout(row2)
+        row1.addWidget(grp_target, stretch=3)
+        v.addLayout(row1)
+        v.addWidget(self.grp_preview)
 
         # ── row 3: channels + sequence ──────────────────────────────────────
         row3 = QHBoxLayout()
@@ -250,7 +255,7 @@ class ConfigureTab:
         cv.addLayout(self.chan_grid)
         self.lbl_chan_count = QLabel("")
         self.lbl_chan_count.setStyleSheet(
-            f"color:{TEXT};font-size:10px;font-weight:bold;")
+            f"color:{TEXT};font-weight:bold;")
         cv.addWidget(self.lbl_chan_count)
         cv.addStretch()
         row3.addWidget(grp_chan, stretch=1)
@@ -280,7 +285,7 @@ class ConfigureTab:
         sv.addWidget(self.cmb_trunc, 3, 1)
         self.lbl_tensor = QLabel("")
         self.lbl_tensor.setStyleSheet(
-            f"color:{TEXT};font-size:10px;font-weight:bold;")
+            f"color:{TEXT};font-weight:bold;")
         sv.addWidget(self.lbl_tensor, 4, 0, 1, 2)
         row3.addWidget(grp_seq, stretch=1)
         v.addLayout(row3)
@@ -341,11 +346,11 @@ class ConfigureTab:
         bv.addWidget(self.rb_w_none)
         bv.addWidget(self.rb_w_balanced)
         self.lbl_weights = QLabel("")
-        self.lbl_weights.setStyleSheet(f"color:{TEXT};font-size:10px;")
+        self.lbl_weights.setStyleSheet(f"color:{TEXT};")
         bv.addWidget(self.lbl_weights)
         lab = QLabel("Minority-class observations are weighted during "
                      "training to compensate for class imbalance.")
-        lab.setStyleSheet(f"color:{MUTED};font-size:9px;")
+        lab.setStyleSheet(f"color:{MUTED};")
         lab.setWordWrap(True)
         bv.addWidget(lab)
         bv.addStretch()
@@ -391,26 +396,80 @@ class ConfigureTab:
         row4.addWidget(grp_model, stretch=1)
         v.addLayout(row4)
 
-        # ── row 5: readiness ────────────────────────────────────────────────
-        grp_ready = QGroupBox("Ready to train")
-        rv = QHBoxLayout(grp_ready)
-        self.checklist = CheckList()
-        rv.addWidget(self.checklist, stretch=1)
-        side = QVBoxLayout()
-        self.btn_go_cv = QPushButton("Go to Cross-validate →")
-        self.btn_go_cv.setMinimumHeight(34)
-        self.btn_go_cv.clicked.connect(
-            lambda: self._goto_cv() if self._goto_cv else None)
-        side.addWidget(self.btn_go_cv)
-        side.addStretch()
-        rv.addLayout(side)
-        v.addWidget(grp_ready)
+        # ── row 5: train + console + out-of-fold performance ────────────────
+        row5 = QHBoxLayout()
+        row5.setSpacing(10)
+
+        grp_run = QGroupBox("Train")
+        gv = QVBoxLayout(grp_run)
+        gv.setSpacing(8)
+        run_row = QHBoxLayout()
+        self.btn_train = QPushButton("TRAIN MODEL")
+        self.btn_train.setMinimumHeight(38)
+        self.btn_train.setEnabled(False)
+        self.btn_train.clicked.connect(self.state.run_cv)
+        self.spinner = Spinner(size=26)
+        self.spinner.setVisible(False)
+        run_row.addWidget(self.btn_train, stretch=1)
+        run_row.addWidget(self.spinner)
+        gv.addLayout(run_row)
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 1)
+        self.progress.setValue(0)
+        self.progress.setTextVisible(True)
+        self.progress.setFormat("%v/%m folds")
+        self.progress.setVisible(False)
+        gv.addWidget(self.progress)
+
+        self.lbl_status = QLabel(
+            "Cross-validation estimates performance before any deployment "
+            "model is built.")
+        self.lbl_status.setWordWrap(True)
+        self.lbl_status.setStyleSheet(f"color:{MUTED};")
+        gv.addWidget(self.lbl_status)
+
+        self.card_bin = MetaCard("Binary strike model — out of fold")
+        gv.addWidget(self.card_bin)
+        self.card_mc = MetaCard("Multiclass region model — out of fold")
+        self.card_mc.setVisible(False)
+        gv.addWidget(self.card_mc)
+
+        self.btn_evaluate = QPushButton("Evaluate results →")
+        self.btn_evaluate.setVisible(False)
+        self.btn_evaluate.clicked.connect(
+            lambda: self._goto_evaluate() if self._goto_evaluate else None)
+        gv.addWidget(self.btn_evaluate)
+        gv.addStretch()
+        row5.addWidget(grp_run, stretch=2)
+
+        grp_console = QGroupBox("Training console")
+        cv = QVBoxLayout(grp_console)
+        cv.setSpacing(4)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_clear = QPushButton("Clear")
+        btn_clear.setFixedWidth(70)
+        btn_clear.clicked.connect(lambda: self.console.clear())
+        btn_row.addWidget(btn_clear)
+        cv.addLayout(btn_row)
+        self.console = QPlainTextEdit()
+        self.console.setReadOnly(True)
+        self.console.setMaximumBlockCount(5000)
+        self.console.setMinimumHeight(280)
+        self.console.setStyleSheet(
+            "QPlainTextEdit{background:#1b1e23;color:#d4d4d4;"
+            "border:1px solid #2c313a;border-radius:4px;"
+            "font-family:Consolas,monospace;font-size:9pt;}")
+        cv.addWidget(self.console, stretch=1)
+        row5.addWidget(grp_console, stretch=3)
+        v.addLayout(row5)
         v.addStretch()
 
     @staticmethod
     def _muted(text):
         lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        lab.setStyleSheet(f"color:{MUTED};")
         return lab
 
     # ── state wiring ─────────────────────────────────────────────────────────
@@ -418,7 +477,16 @@ class ConfigureTab:
         s = self.state
         s.dataset_changed.connect(self._rebuild_dataset_widgets)
         s.config_changed.connect(self._refresh_all)
-        s.validation_changed.connect(self._refresh_checklist)
+        s.validation_changed.connect(self._refresh_ready)
+        s.cv_started.connect(self._on_started)
+        s.cv_line.connect(self._on_line)
+        s.cv_progress.connect(self._on_progress)
+        s.cv_finished.connect(self._on_finished)
+        s.cv_failed.connect(self._on_failed)
+        # the final-model run streams into the same console
+        s.final_started.connect(self._on_final_started)
+        s.final_finished.connect(self._stop_run_ui)
+        s.final_failed.connect(lambda _m: self._stop_run_ui())
 
     # ── dataset loading ──────────────────────────────────────────────────────
     def _load_dataset(self):
@@ -538,7 +606,11 @@ class ConfigureTab:
                 self.tbl_preview.setItem(r, c, QTableWidgetItem(text))
 
     def _toggle_preview(self, checked):
+        """Collapse to the title bar when unchecked, rather than leaving a
+        large empty frame."""
         self.tbl_preview.setVisible(checked)
+        self.grp_preview.setMaximumHeight(
+            16777215 if checked else self.grp_preview.sizeHint().height())
 
     # ── widget -> state ──────────────────────────────────────────────────────
     def _target_changed(self):
@@ -638,7 +710,7 @@ class ConfigureTab:
         self._refresh_channels()
         self._refresh_sequence()
         self._refresh_weights()
-        self._refresh_checklist()
+        self._refresh_ready()
 
     def _refresh_dataset_card(self):
         s = self.state
@@ -669,9 +741,9 @@ class ConfigureTab:
         ok = m.get("missing_in_channels", 0) == 0 and s.target_column
         self.lbl_compat.setText(
             "✓ Dataset compatible with training pipeline" if ok
-            else "⚠ Dataset needs attention - see the checklist below")
+            else "⚠ Dataset needs attention before training")
         self.lbl_compat.setStyleSheet(
-            f"color:{OK if ok else '#f59e0b'};font-size:10px;")
+            f"color:{OK if ok else '#f59e0b'};")
 
     def _refresh_target(self):
         s = self.state
@@ -769,8 +841,139 @@ class ConfigureTab:
                           else f"{lab}:  —" for lab, c in mc_counts]
         self.lbl_weights.setText("\n".join(lines))
 
-    def _refresh_checklist(self):
+    def _refresh_ready(self):
+        """Gate the train button, and surface any blocking problem inline."""
         s = self.state
-        self.checklist.set_checks(s.checks, s.ready,
-                                  ready_text="READY TO TRAIN",
-                                  blocked_text="TRAINING UNAVAILABLE")
+        self.btn_train.setEnabled(s.ready and not s.running)
+        if s.running:
+            return
+        blockers = [c for c in s.checks if c[0] == "fail"]
+        if blockers:
+            state, label, detail = blockers[0]
+            self.lbl_status.setStyleSheet(f"color:{BAD};")
+            self.lbl_status.setText(
+                f"✗ {label}: {detail}" if detail else f"✗ {label}")
+        elif not s.cv_done:
+            self.lbl_status.setStyleSheet(f"color:{MUTED};")
+            self.lbl_status.setText(
+                "Cross-validation estimates performance before any "
+                "deployment model is built.")
+
+    # ── run lifecycle ────────────────────────────────────────────────────────
+    def _on_started(self):
+        self.console.clear()
+        self.btn_train.setEnabled(False)
+        self.btn_train.setText("Training…")
+        self.btn_evaluate.setVisible(False)
+        self.card_bin.set_rows([])
+        self.card_mc.set_rows([])
+        self.card_mc.setVisible(False)
+        self.spinner.start()
+        self.progress.setVisible(True)
+        n_models = 2 if self.state.train_multiclass else 1
+        self.progress.setRange(0, max(1, self.state.n_folds * n_models))
+        self.progress.setValue(0)
+        self._elapsed.start()
+        self._tick.start()
+        self.lbl_status.setStyleSheet(f"color:{ACCENT};")
+        self.lbl_status.setText("Training binary strike model…")
+
+    def _on_final_started(self):
+        self.console.appendPlainText("\n" + "─" * 60)
+        self.spinner.start()
+        self._elapsed.start()
+        self._tick.start()
+        self.lbl_status.setStyleSheet(f"color:{ACCENT};")
+        self.lbl_status.setText("Training final deployment model(s)…")
+
+    def _on_line(self, ln):
+        self.console.appendPlainText(ln)
+        sb = self.console.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _on_progress(self, fold, total, model):
+        n_models = 2 if self.state.train_multiclass else 1
+        offset = total if model == "multiclass" else 0
+        self.progress.setRange(0, total * n_models)
+        self.progress.setValue(offset + fold)
+        name = ("multiclass region" if model == "multiclass"
+                else "binary strike")
+        self.lbl_status.setText(
+            f"Training {name} model…  fold {fold}/{total}  "
+            f"({self._elapsed.elapsed() // 1000} s elapsed)")
+
+    def _update_elapsed(self):
+        if not self.state.running:
+            return
+        secs = self._elapsed.elapsed() // 1000
+        self.lbl_status.setText(
+            self.lbl_status.text().split("(")[0].strip()
+            + f"  ({secs} s elapsed)")
+
+    def _stop_run_ui(self):
+        self._tick.stop()
+        self.spinner.stop()
+        self.btn_train.setText("TRAIN MODEL")
+        self.btn_train.setEnabled(self.state.ready and not self.state.running)
+
+    def _on_finished(self):
+        self._stop_run_ui()
+        self.progress.setValue(self.progress.maximum())
+        s = self.state
+        secs = self._elapsed.elapsed() / 1000
+        self.lbl_status.setStyleSheet(f"color:{OK};")
+        self.lbl_status.setText(
+            f"✓ Cross-validation complete ({secs:.1f} s). Review the "
+            "performance on Evaluate, then accept it on Deploy to train the "
+            "final model(s).")
+        self._fill_performance()
+        self.btn_evaluate.setVisible(True)
+        s.status.emit("Cross-validation complete.", 5000)
+
+    def _on_failed(self, msg):
+        self._stop_run_ui()
+        self.progress.setVisible(False)
+        self.lbl_status.setStyleSheet(f"color:{BAD};")
+        first = msg.strip().splitlines()[-1] if msg.strip() else "Unknown error"
+        self.lbl_status.setText(f"✗ Training failed: {first}")
+        dlg = QMessageBox(self.window)
+        dlg.setWindowTitle("Training error")
+        dlg.setIcon(QMessageBox.Icon.Critical)
+        dlg.setText("The training worker failed.\n\n"
+                    f"{first}\n\nFull details below.")
+        dlg.setDetailedText(msg)
+        dlg.exec()
+
+    @staticmethod
+    def _perf_rows(metrics):
+        perf = (metrics or {}).get("out_of_fold_performance", {})
+        rows = []
+        for key, label in (("roc_auc", "AUC"), ("pr_auc", "PR-AUC"),
+                           ("overall_accuracy", "Accuracy"),
+                           ("sensitivity", "Sensitivity"),
+                           ("specificity", "Specificity"),
+                           ("precision", "Precision"),
+                           ("macro_precision", "Macro precision"),
+                           ("macro_recall", "Macro recall"),
+                           ("f1_score", "F1-Score"),
+                           ("macro_f1", "Macro F1"),
+                           ("mcc", "MCC"),
+                           ("optimal_threshold", "Optimal threshold")):
+            if key in perf:
+                rows.append((label, f"{perf[key]:.3f}"))
+        ho = (metrics or {}).get("holdout_performance")
+        if ho:
+            rows.append(("Hold-out test",
+                         f"n={ho.get('n_test')}, "
+                         f"accuracy={ho.get('accuracy'):.3f}"))
+        return rows
+
+    def _fill_performance(self):
+        s = self.state
+        bin_res = s.model_results("binary")
+        self.card_bin.set_rows(
+            self._perf_rows(bin_res["metrics"]) if bin_res else [])
+        mc_res = s.model_results("multiclass")
+        self.card_mc.setVisible(mc_res is not None)
+        if mc_res:
+            self.card_mc.set_rows(self._perf_rows(mc_res["metrics"]))

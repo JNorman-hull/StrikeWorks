@@ -4,41 +4,47 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Evaluate tab - interrogate the cross-validated performance.
+"""Evaluate tab - interrogate any model's cross-validated performance.
 
-Performance cards, the CV mean±SD table, the evaluation figures ported from
-the pipeline scripts, the misclassification (error-analysis) table and the
-performance stratification by strike type and treatment. Everything reads
-from the shared TrainingState results; nothing is recomputed by the model
-stack.
+Evaluates either a model trained in this session or any model already
+deployed in the models folder (discovered by ``ml_model_library``), so a
+previously deployed model can be reviewed without retraining it.
+
+Shows performance cards, the CV mean±SD table, the evaluation figures
+ported from the pipeline scripts, the misclassification (error-analysis)
+table and performance stratification, and exports a complete model report.
 """
-import pandas as pd
+from pathlib import Path
 
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
-    QScrollArea, QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout,
-    QWidget,
+    QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView,
+    QLabel, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSplitter,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from . import ml_train_figures
+from . import ml_model_library, ml_train_figures
 from .ml_tab_predict import _NumItem
+from .ml_train_state import DEFAULT_MODELS_DIR
 from .ml_widgets import (
     BAD, MUTED, OK, TEXT, WARN, CARD_W2, CARD_H2, MetaCard, RingCard,
 )
 
-FIG_MIN_W, FIG_MIN_H = 300, 260
+FIG_MIN_W, FIG_MIN_H = 300, 250
 
 
 class EvaluateTab:
     """Builds the Evaluate tab UI into `frame`, bound to `state`."""
 
-    def __init__(self, frame, state, window):
+    def __init__(self, frame, state, window, models_dir=None):
         self.state = state
         self.window = window
+        self.models_dir = Path(models_dir or DEFAULT_MODELS_DIR)
+        self._entries = []
+        self._entry = None
 
         self.figures = {}
         self.canvases = {}
@@ -52,8 +58,9 @@ class EvaluateTab:
             self.canvases[name] = canvas
 
         self._build(frame)
-        state.cv_finished.connect(self._refresh)
-        self._refresh()
+        if state is not None:
+            state.cv_finished.connect(self._reload_sources)
+        self._reload_sources()
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
@@ -70,18 +77,31 @@ class EvaluateTab:
         v.setContentsMargins(4, 6, 4, 6)
         v.setSpacing(10)
 
-        # ── model selector (the pipeline trains two models) ─────────────────
+        # ── model source ────────────────────────────────────────────────────
         sel_row = QHBoxLayout()
         lab_sel = QLabel("Model")
-        lab_sel.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        lab_sel.setStyleSheet(f"color:{MUTED};")
         self.cmb_model = QComboBox()
-        self.cmb_model.addItem("Binary — strike / no contact", "binary")
-        self.cmb_model.addItem("Multiclass — strike region", "multiclass")
-        self.cmb_model.currentIndexChanged.connect(self._refresh)
+        self.cmb_model.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                     QSizePolicy.Policy.Fixed)
+        self.cmb_model.currentIndexChanged.connect(self._on_model_changed)
+        btn_refresh = QPushButton("Refresh")
+        btn_refresh.clicked.connect(self._reload_sources)
+        btn_folder = QPushButton("Models folder…")
+        btn_folder.clicked.connect(self._change_models_dir)
+        self.btn_report = QPushButton("Export model report…")
+        self.btn_report.clicked.connect(self._export_report)
         sel_row.addWidget(lab_sel)
-        sel_row.addWidget(self.cmb_model)
-        sel_row.addStretch()
+        sel_row.addWidget(self.cmb_model, stretch=1)
+        sel_row.addWidget(btn_refresh)
+        sel_row.addWidget(btn_folder)
+        sel_row.addWidget(self.btn_report)
         v.addLayout(sel_row)
+
+        self.lbl_source = QLabel("")
+        self.lbl_source.setStyleSheet(f"color:{MUTED};")
+        self.lbl_source.setWordWrap(True)
+        v.addWidget(self.lbl_source)
 
         # ── performance cards ───────────────────────────────────────────────
         grp_perf = QGroupBox("Performance (out-of-fold)")
@@ -89,39 +109,41 @@ class EvaluateTab:
         pv.setSpacing(8)
         self.rings = []
         for _ in range(5):
-            ring = RingCard("", w=CARD_W2, h=CARD_H2)
+            ring = RingCard("", w=CARD_W2 + 30, h=CARD_H2)
+            ring.setMaximumWidth(CARD_W2 + 90)
             self.rings.append(ring)
             pv.addWidget(ring)
         self.card_detail = MetaCard("Details")
         pv.addWidget(self.card_detail, stretch=1)
         v.addWidget(grp_perf)
 
-        # ── CV summary table ────────────────────────────────────────────────
-        row2 = QHBoxLayout()
-        row2.setSpacing(10)
+        # ── CV summary + error analysis ─────────────────────────────────────
+        split2 = QSplitter(Qt.Orientation.Horizontal)
+        split2.setChildrenCollapsible(False)
         grp_cv = QGroupBox("Cross-validation (mean ± SD across folds)")
         cv = QVBoxLayout(grp_cv)
         self.tbl_cv = self._make_table(["Metric", "Mean", "SD"])
-        self.tbl_cv.setMinimumHeight(180)
+        self.tbl_cv.setMinimumHeight(190)
         cv.addWidget(self.tbl_cv)
-        row2.addWidget(grp_cv, stretch=1)
+        split2.addWidget(grp_cv)
 
         grp_err = QGroupBox("Error analysis")
         ev = QVBoxLayout(grp_err)
-        self.lbl_mis = QLabel("No cross-validation run.")
-        self.lbl_mis.setStyleSheet(f"color:{TEXT};font-size:10px;")
+        self.lbl_mis = QLabel("No model selected.")
+        self.lbl_mis.setStyleSheet(f"color:{TEXT};")
         ev.addWidget(self.lbl_mis)
         self.tbl_err = self._make_table([])
-        self.tbl_err.setMinimumHeight(180)
+        self.tbl_err.setMinimumHeight(190)
         ev.addWidget(self.tbl_err)
-        lab = QLabel("Misclassified recordings can be reviewed against their "
-                     "sensor signals via Model Prediction → Inspect once the "
-                     "model is deployed.")
-        lab.setStyleSheet(f"color:{MUTED};font-size:9px;")
-        lab.setWordWrap(True)
-        ev.addWidget(lab)
-        row2.addWidget(grp_err, stretch=2)
-        v.addLayout(row2)
+        self.lbl_err_note = QLabel("")
+        self.lbl_err_note.setStyleSheet(f"color:{MUTED};")
+        self.lbl_err_note.setWordWrap(True)
+        ev.addWidget(self.lbl_err_note)
+        ev.addStretch()
+        split2.addWidget(grp_err)
+        split2.setStretchFactor(0, 1)
+        split2.setStretchFactor(1, 2)
+        v.addWidget(split2)
 
         # ── figures ─────────────────────────────────────────────────────────
         grp_figs = QGroupBox("Evaluation figures")
@@ -132,28 +154,32 @@ class EvaluateTab:
         fg.addWidget(self.canvases["fig3"], 0, 2)
         fg.addWidget(self.canvases["fig4"], 1, 0)
         fg.addWidget(self.canvases["fig5"], 1, 1, 1, 2)
+        for c in range(3):
+            fg.setColumnStretch(c, 1)
         v.addWidget(grp_figs)
 
         # ── stratification ──────────────────────────────────────────────────
-        row4 = QHBoxLayout()
-        row4.setSpacing(10)
-        grp_type = QGroupBox("Performance by strike type")
+        split3 = QSplitter(Qt.Orientation.Horizontal)
+        split3.setChildrenCollapsible(False)
+        grp_type = QGroupBox("Performance by strike type / class")
         tv = QVBoxLayout(grp_type)
         self.tbl_type = self._make_table(["Strike type", "N", "Accuracy"])
-        self.tbl_type.setMinimumHeight(150)
+        self.tbl_type.setMinimumHeight(160)
         tv.addWidget(self.tbl_type)
-        row4.addWidget(grp_type, stretch=1)
+        split3.addWidget(grp_type)
 
         grp_tx = QGroupBox("Performance by treatment")
         xv = QVBoxLayout(grp_tx)
         self.tbl_tx = self._make_table([])
-        self.tbl_tx.setMinimumHeight(150)
+        self.tbl_tx.setMinimumHeight(160)
         xv.addWidget(self.tbl_tx)
-        row4.addWidget(grp_tx, stretch=2)
-        v.addLayout(row4)
+        split3.addWidget(grp_tx)
+        split3.setStretchFactor(0, 1)
+        split3.setStretchFactor(1, 2)
+        v.addWidget(split3)
         v.addStretch()
 
-        ml_train_figures.draw_all(self.figures, None, None, None)
+        ml_train_figures.draw_all(self.figures, None, None, None, dark=True)
 
     @staticmethod
     def _make_table(headers):
@@ -186,21 +212,62 @@ class EvaluateTab:
                 tbl.setItem(r, c, item)
         tbl.setSortingEnabled(True)
 
+    # ── model sources ────────────────────────────────────────────────────────
+    def _change_models_dir(self):
+        path = QFileDialog.getExistingDirectory(
+            self.window, "Select models folder", str(self.models_dir))
+        if path:
+            self.models_dir = Path(path)
+            self._reload_sources()
+
+    def _reload_sources(self):
+        """Session results first, then every deployed model on disk."""
+        keep = self.cmb_model.currentText()
+        self._entries = []
+        if self.state is not None:
+            self._entries += ml_model_library.session_entries(self.state)
+        self._entries += ml_model_library.discover_models(self.models_dir)
+
+        self.cmb_model.blockSignals(True)
+        self.cmb_model.clear()
+        for e in self._entries:
+            self.cmb_model.addItem(e.label)
+        idx = self.cmb_model.findText(keep)
+        self.cmb_model.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_model.blockSignals(False)
+        self._on_model_changed()
+
+    def _on_model_changed(self):
+        idx = self.cmb_model.currentIndex()
+        self._entry = (self._entries[idx]
+                       if 0 <= idx < len(self._entries) else None)
+        self.btn_report.setEnabled(self._entry is not None)
+        self._refresh()
+
     # ── refresh ──────────────────────────────────────────────────────────────
     def _refresh(self):
-        s = self.state
-        trained = s.trained_kinds()
-        self.cmb_model.setVisible(len(trained) > 1)
-        kind = self.cmb_model.currentData() or "binary"
-        if trained and kind not in trained:
-            kind = trained[0]
-        res = s.model_results(kind)
-        m = res["metrics"] if res else {}
-        cv_predictions = res["cv_predictions"] if res else None
-        curves = res["curves"] if res else None
-
+        entry = self._entry
+        m = entry.metrics if entry else {}
+        cv_predictions = entry.cv_predictions if entry else None
+        curves = entry.curves if entry else None
         perf = m.get("out_of_fold_performance", {})
         binary = "roc_auc" in perf or not m
+
+        if entry is None:
+            self.lbl_source.setText(
+                f"No models found in {self.models_dir}. Train a model, or "
+                "point at a different models folder.")
+        elif entry.source == "deployed":
+            extra = ("" if entry.cv_predictions is not None else
+                     "  Cross-validation predictions are not available for "
+                     "this model, so error analysis and per-recording "
+                     "figures are omitted.")
+            self.lbl_source.setText(
+                f"Deployed model: {entry.model_path}{extra}")
+        else:
+            self.lbl_source.setText(
+                "Cross-validation results from the model trained in this "
+                "session.")
 
         # rings
         if binary:
@@ -244,6 +311,8 @@ class EvaluateTab:
             if "macro_f1" in ho:
                 txt += f", macro-F1={ho['macro_f1']:.3f}"
             rows.append(("Hold-out test set", txt))
+        if m.get("n_samples"):
+            rows.append(("Training observations", m["n_samples"]))
         self.card_detail.set_rows(rows)
 
         # CV table
@@ -259,7 +328,7 @@ class EvaluateTab:
 
         # figures
         ml_train_figures.draw_all(self.figures, m or None, cv_predictions,
-                                  curves)
+                                  curves, dark=True)
         for canvas in self.canvases.values():
             canvas.draw()
 
@@ -267,20 +336,35 @@ class EvaluateTab:
         self._refresh_stratification(binary, m, cv_predictions)
 
     def _refresh_errors(self, binary, metrics, df):
-        if df is None:
-            self.lbl_mis.setText("No cross-validation run.")
-            self._fill(self.tbl_err, [], [])
-            return
-        m = metrics.get("misclassified", {})
+        mis = (metrics or {}).get("misclassified", {})
         if binary:
             self.lbl_mis.setText(
-                f"MISCLASSIFICATION   total: {m.get('total', 0)}    "
-                f"false positives: {m.get('false_positives', 0)}    "
-                f"false negatives: {m.get('false_negatives', 0)}")
+                f"MISCLASSIFICATION   total: {mis.get('total', 0)}    "
+                f"false positives: {mis.get('false_positives', 0)}    "
+                f"false negatives: {mis.get('false_negatives', 0)}"
+                if mis else "No model selected.")
         else:
             self.lbl_mis.setText(
-                f"MISCLASSIFICATION   total: {m.get('total', 0)} of "
-                f"{len(df)}")
+                f"MISCLASSIFICATION   total: {mis.get('total', 0)}"
+                + (f" of {len(df)}" if df is not None else "")
+                if mis else "No model selected.")
+
+        if df is None:
+            # no per-recording predictions: an empty grid would just be a
+            # stray header, so hide the table and let the note explain
+            self._fill(self.tbl_err, [], [])
+            self.tbl_err.setVisible(False)
+            self.lbl_err_note.setText(
+                "Per-recording cross-validation predictions were not saved "
+                "with this model, so the individual misclassifications "
+                "cannot be listed. Models trained and deployed from this "
+                "page keep them in their deployment package.")
+            return
+        self.tbl_err.setVisible(True)
+        self.lbl_err_note.setText(
+            "Misclassified recordings can be reviewed against their sensor "
+            "signals via Model Prediction → Inspect once the model is "
+            "deployed.")
 
         rows = []
         if binary and "error_type" in df.columns:
@@ -309,7 +393,7 @@ class EvaluateTab:
             headers = ["File", "True class", "Predicted class",
                        "Confidence", "Treatment"]
         else:
-            headers = []
+            headers = ["Recording"]
         self._fill(self.tbl_err, headers, rows)
 
     def _refresh_stratification(self, binary, metrics, df):
@@ -319,13 +403,19 @@ class EvaluateTab:
         type_rows = [[st, (str(d["n_files"]), d["n_files"]),
                       (f"{d['accuracy']:.3f}", d["accuracy"])]
                      for st, d in by_type.items()]
-        if not type_rows and df is not None \
-                and "true_class" in df.columns:
+        if not type_rows and df is not None and "true_class" in df.columns:
             for cn, grp in df.groupby("true_class"):
                 type_rows.append([cn, (str(len(grp)), len(grp)),
                                   (f"{grp['correct'].mean():.3f}",
                                    grp["correct"].mean())])
-        self._fill(self.tbl_type, ["Strike type / class", "N", "Accuracy"],
+        if not type_rows:
+            per_class = m.get("out_of_fold_performance", {}).get(
+                "per_class_metrics", {})
+            type_rows = [[cn, (str(d["support"]), d["support"]),
+                          (f"{d['recall']:.3f}", d["recall"])]
+                         for cn, d in per_class.items()]
+        self._fill(self.tbl_type,
+                   ["Strike type / class", "N", "Accuracy / recall"],
                    type_rows)
 
         tx_rows = []
@@ -348,3 +438,26 @@ class EvaluateTab:
                     "Predicted strike rate"] if binary
                    else ["Treatment", "N strikes", "Accuracy"])
         self._fill(self.tbl_tx, headers, tx_rows)
+
+    # ── report ───────────────────────────────────────────────────────────────
+    def _export_report(self):
+        if self._entry is None:
+            return
+        dirpath = QFileDialog.getExistingDirectory(
+            self.window, "Export model report to folder…", "")
+        if not dirpath:
+            return
+        app_version = getattr(self.state, "app_version", "") if self.state \
+            else ""
+        try:
+            out = ml_model_library.export_model_report(
+                self._entry, dirpath, app_version=app_version)
+        except Exception as e:
+            QMessageBox.critical(self.window, "Export failed", str(e))
+            return
+        if self.state is not None:
+            self.state.status.emit(f"Model report exported to {out}", 6000)
+        QMessageBox.information(
+            self.window, "Model report",
+            f"Report written to:\n\n{out}\n\n"
+            + "\n".join(f"  • {p.name}" for p in sorted(out.glob('*'))))
