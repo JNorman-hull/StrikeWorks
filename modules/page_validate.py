@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import settings
+from . import sensor_config, settings
 from .page_process import _DirsOnlyProxy
 
 # Global pyqtgraph config - set once, before any PlotWidget is created.
@@ -43,8 +43,11 @@ _INDEX_REL = Path("processed_sens_data") / "index" / "global_sensor_index.csv"
 _CSV_DIR = Path("processed_sens_data") / "csv"
 _WIN_DIR = Path("processed_sens_data") / "nadir_window"
 
+# Sampling rate and the default ROI window come from the sensor
+# configuration chosen on the Prepare page; these are only the fallbacks
+# used if a configuration is somehow unreadable.
 _FS = 2000        # Hz
-_WIN_SEC = 0.2    # seconds - default ROI window width (centered on nadir)
+_WIN_SEC = 0.2    # seconds - ROI window width (centered on nadir)
 
 _NADIR_T_COL = "pres_min.time."
 _NADIR_V_COL = "pres_min.kPa."
@@ -214,7 +217,7 @@ class ValidatePage(QObject):
         self._right_curve = None
         self._left_key = "pressure"
         self._right_key = None
-        self._win_sec = _WIN_SEC
+        self._win_sec = sensor_config.active().window_sec
         self._updating_right = False
         self._loaders = []
         self._pending_path = None
@@ -297,11 +300,7 @@ class ValidatePage(QObject):
             u.cmb_val_right.addItem(_CHANNELS[k][1], k)
         u.cmb_val_right.setCurrentIndex(0)
 
-        u.cmb_val_window.clear()
-        for ms in range(100, 1001, 100):
-            u.cmb_val_window.addItem(f"{ms} ms", ms)
-        u.cmb_val_window.setCurrentIndex(
-            u.cmb_val_window.findData(int(round(self._win_sec * 1000))))
+        self._fill_window_combo()
 
         for b in (u.btn_val_save_next, u.btn_val_reset, u.btn_val_jump):
             b.setEnabled(False)
@@ -318,6 +317,7 @@ class ValidatePage(QObject):
         u.btn_val_save_next.clicked.connect(self._save_and_next)
         u.btn_val_reset.clicked.connect(self._reset_current)
         u.btn_val_jump.clicked.connect(self._jump_next_unvalidated)
+        sensor_config.notifier.changed.connect(self._on_sensor_changed)
 
     def _init_tree(self):
         self._lib_dir = settings.get_libraries_dir()
@@ -493,7 +493,7 @@ class ValidatePage(QObject):
         pres_col = _find_col(df, ["pressure_kpa", _NADIR_V_COL], keyword="pressure")
 
         time = (df[time_col].to_numpy(dtype=float) if time_col
-                else np.arange(len(df), dtype=float) / _FS)
+                else np.arange(len(df), dtype=float) / self._fs())
 
         if pres_col is None:
             QMessageBox.warning(self.window, "No pressure column",
@@ -644,8 +644,30 @@ class ValidatePage(QObject):
     def _update_region(self, t: float):
         self._region.setRegion([t - self._win_sec / 2, t + self._win_sec / 2])
 
+    def _fill_window_combo(self):
+        """Offer 100-1000 ms plus the active sensor's own window width."""
+        cmb = self.ui.cmb_val_window
+        want = int(round(self._win_sec * 1000))
+        options = sorted(set(range(100, 1001, 100)) | {want})
+        cmb.blockSignals(True)
+        cmb.clear()
+        for ms in options:
+            cmb.addItem(f"{ms} ms", ms)
+        cmb.setCurrentIndex(max(0, cmb.findData(want)))
+        cmb.blockSignals(False)
+
+    def _on_sensor_changed(self, _key):
+        """Follow the window width of the sensor selected on Prepare."""
+        self._win_sec = sensor_config.active().window_sec
+        self._fill_window_combo()
+        if self._time is not None and self._nadir_idx is not None:
+            self._update_region(float(self._time[self._nadir_idx]))
+
     def _on_win_size_changed(self):
-        self._win_sec = self.ui.cmb_val_window.currentData() / 1000.0
+        ms = self.ui.cmb_val_window.currentData()
+        if ms is None:
+            return
+        self._win_sec = ms / 1000.0
         if self._time is not None and self._nadir_idx is not None:
             self._update_region(float(self._time[self._nadir_idx]))
 
@@ -675,9 +697,14 @@ class ValidatePage(QObject):
             return
         self._jump_next_unvalidated()
 
+    @staticmethod
+    def _fs():
+        """Sample rate of the processed CSVs for the active sensor."""
+        return sensor_config.active().output_rate_hz or _FS
+
     def _window_bounds(self):
         n = len(self._df)
-        half_n = int(round(self._win_sec / 2 * _FS))
+        half_n = int(round(self._win_sec / 2 * self._fs()))
         start = max(0, self._nadir_idx - half_n)
         end = min(n - 1, self._nadir_idx + half_n)
         return start, end

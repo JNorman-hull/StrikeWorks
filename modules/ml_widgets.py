@@ -409,6 +409,18 @@ class ProbBars(QWidget):
 # anything not listed defaults to open. Set a title to False here to have that
 # panel start collapsed.
 SECTION_DEFAULTS = {
+    # Prepare - Sensor configuration
+    "Session sensor": True,
+    "Acquisition": True,
+    "Filename pattern": True,
+    "Channels": True,
+    "Analysis window and interpolation": True,
+    "Parser": True,
+    # Prepare - Study design (placeholders)
+    "Sample size and power": True,
+    "Treatment allocation": True,
+    "Operating points": True,
+    "Deployment schedule": True,
     # Model Prediction - Predict
     "Model": True,
     "Dataset": True,

@@ -1451,6 +1451,43 @@ class Ui_MainWindow(object):
         self.content_prepare.setObjectName(u"content_prepare")
         self.content_prepare.setFrameShape(QFrame.NoFrame)
         self.content_prepare.setFrameShadow(QFrame.Raised)
+        self.layout_content_prepare = QVBoxLayout(self.content_prepare)
+        self.layout_content_prepare.setSpacing(0)
+        self.layout_content_prepare.setObjectName(u"layout_content_prepare")
+        self.layout_content_prepare.setContentsMargins(0, 0, 0, 0)
+        self.tabs_prepare = QTabWidget(self.content_prepare)
+        self.tabs_prepare.setObjectName(u"tabs_prepare")
+        self.tab_prepare_sensor = QWidget()
+        self.tab_prepare_sensor.setObjectName(u"tab_prepare_sensor")
+        self.layout_tab_prepare_sensor = QVBoxLayout(self.tab_prepare_sensor)
+        self.layout_tab_prepare_sensor.setSpacing(0)
+        self.layout_tab_prepare_sensor.setObjectName(u"layout_tab_prepare_sensor")
+        self.layout_tab_prepare_sensor.setContentsMargins(0, 0, 0, 0)
+        self.frame_prepare_sensor = QFrame(self.tab_prepare_sensor)
+        self.frame_prepare_sensor.setObjectName(u"frame_prepare_sensor")
+        self.frame_prepare_sensor.setFrameShape(QFrame.NoFrame)
+        self.frame_prepare_sensor.setFrameShadow(QFrame.Raised)
+
+        self.layout_tab_prepare_sensor.addWidget(self.frame_prepare_sensor)
+
+        self.tabs_prepare.addTab(self.tab_prepare_sensor, "")
+        self.tab_prepare_study = QWidget()
+        self.tab_prepare_study.setObjectName(u"tab_prepare_study")
+        self.layout_tab_prepare_study = QVBoxLayout(self.tab_prepare_study)
+        self.layout_tab_prepare_study.setSpacing(0)
+        self.layout_tab_prepare_study.setObjectName(u"layout_tab_prepare_study")
+        self.layout_tab_prepare_study.setContentsMargins(0, 0, 0, 0)
+        self.frame_prepare_study = QFrame(self.tab_prepare_study)
+        self.frame_prepare_study.setObjectName(u"frame_prepare_study")
+        self.frame_prepare_study.setFrameShape(QFrame.NoFrame)
+        self.frame_prepare_study.setFrameShadow(QFrame.Raised)
+
+        self.layout_tab_prepare_study.addWidget(self.frame_prepare_study)
+
+        self.tabs_prepare.addTab(self.tab_prepare_study, "")
+
+        self.layout_content_prepare.addWidget(self.tabs_prepare)
+
 
         self.layout_prepare.addWidget(self.content_prepare)
 
@@ -2731,6 +2768,7 @@ class Ui_MainWindow(object):
         self.retranslateUi(MainWindow)
 
         self.stackedWidget.setCurrentIndex(4)
+        self.tabs_prepare.setCurrentIndex(0)
         self.tabs_process.setCurrentIndex(1)
         self.tabs_ml_training.setCurrentIndex(0)
         self.tabs_ml_prediction.setCurrentIndex(0)
@@ -2848,7 +2886,9 @@ class Ui_MainWindow(object):
 
         self.label.setText(QCoreApplication.translate("MainWindow", u"NEW PAGE TEST", None))
         self.title_prepare.setText(QCoreApplication.translate("MainWindow", u"Prepare", None))
-        self.subtitle_prepare.setText(QCoreApplication.translate("MainWindow", u"Import raw sensor files and check their integrity before processing.", None))
+        self.subtitle_prepare.setText(QCoreApplication.translate("MainWindow", u"Choose the sensor this session works with, and plan the study it feeds.", None))
+        self.tabs_prepare.setTabText(self.tabs_prepare.indexOf(self.tab_prepare_sensor), QCoreApplication.translate("MainWindow", u"Sensor configuration", None))
+        self.tabs_prepare.setTabText(self.tabs_prepare.indexOf(self.tab_prepare_study), QCoreApplication.translate("MainWindow", u"Study design", None))
         self.title_process.setText(QCoreApplication.translate("MainWindow", u"Process", None))
         self.subtitle_process.setText(QCoreApplication.translate("MainWindow", u"Import and process raw sensor data", None))
         self.grp_library.setTitle(QCoreApplication.translate("MainWindow", u"Library", None))
@@ -2866,7 +2906,7 @@ class Ui_MainWindow(object):
         ___qtablewidgetitem28 = self.table_inventory.horizontalHeaderItem(4)
         ___qtablewidgetitem28.setText(QCoreApplication.translate("MainWindow", u"Time", None))
         ___qtablewidgetitem29 = self.table_inventory.horizontalHeaderItem(5)
-        ___qtablewidgetitem29.setText(QCoreApplication.translate("MainWindow", u"Paired", None))
+        ___qtablewidgetitem29.setText(QCoreApplication.translate("MainWindow", u"Complete", None))
         ___qtablewidgetitem30 = self.table_inventory.horizontalHeaderItem(6)
         ___qtablewidgetitem30.setText(QCoreApplication.translate("MainWindow", u"Status", None))
         self.chk_select_all.setText(QCoreApplication.translate("MainWindow", u"Select / unselect all", None))

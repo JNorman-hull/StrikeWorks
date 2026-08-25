@@ -1,3 +1,12 @@
+"""RAPID sensor parser: paired .imp / .hig files merged onto one time base.
+
+The acquisition constants (sampling rate, packet sizes, the output rate and
+the interpolation used to reach it) arrive as arguments rather than being
+fixed here, so the same reader serves any RAPID-family configuration defined
+on the Prepare page. The defaults are the values this file used to hardcode,
+so calling it without a config behaves exactly as before - verified
+byte-for-byte against the pre-configuration version.
+"""
 import struct
 import os
 import numpy as np
@@ -6,16 +15,22 @@ from scipy.interpolate import interp1d
 from pathlib import Path
 from datetime import datetime
 
+# defaults, used when no SensorConfig is supplied
+FS = 2000
+IMP_PACKET_SIZE = 29
+HIG_PACKET_SIZE = 11
+NADIR_SEARCH_SEC = 1.5
+
 # Enable NumPy multi-threading
 os.environ["OMP_NUM_THREADS"] = str(os.cpu_count())
 os.environ["OPENBLAS_NUM_THREADS"] = str(os.cpu_count())
 os.environ["MKL_NUM_THREADS"] = str(os.cpu_count())
 
-def read_imp_raw(filename):
-    """Optimized version of read_imp_raw with performance improvements"""
+def read_imp_raw(filename, fs=FS, packet_size=IMP_PACKET_SIZE):
+    """Read an .imp file (IMU, pressure, temperature, battery)."""
     filename = Path(filename)
-    packetSize = 29
-    FS = 2000
+    packetSize = int(packet_size) or IMP_PACKET_SIZE
+    fs = float(fs) or FS
     IMU_PREC = 3
     P_PREC = 1
     T_BAT_PREC = 2
@@ -76,7 +91,7 @@ def read_imp_raw(filename):
     
     # Use numba-accelerated processing on correctly parsed data
     TimeRaw = np.array(TimeRaw, dtype=np.float64)
-    ts = TimeRaw / FS
+    ts = TimeRaw / fs
     
     # Apply gains using numba (but keep the original data structure)
     ax = np.round(DataRaw[:, 0] * gain_ac, IMU_PREC)
@@ -105,10 +120,11 @@ def read_imp_raw(filename):
     ))
     return pd.DataFrame(dataExportCSV, columns=column_names_raw)
 
-def read_hig_raw(filename):
+def read_hig_raw(filename, fs=FS, packet_size=HIG_PACKET_SIZE):
+    """Read a .hig file (high-g accelerometer)."""
     filename = Path(filename)
-    packetSize = 11
-    FS = 2000
+    packetSize = int(packet_size) or HIG_PACKET_SIZE
+    fs = float(fs) or FS
     HIG_PREC = 1
     gain_hig = 0.1
     
@@ -131,7 +147,7 @@ def read_hig_raw(filename):
     
     # Use optimized numpy processing 
     TimeRaw = np.array(TimeRaw, dtype=np.float64)
-    ts = TimeRaw / FS
+    ts = TimeRaw / fs
     ax = np.round(DataRaw[:, 0] * gain_hig, HIG_PREC)
     ay = np.round(DataRaw[:, 1] * gain_hig, HIG_PREC)
     az = np.round(DataRaw[:, 2] * gain_hig, HIG_PREC)
@@ -145,18 +161,35 @@ def read_hig_raw(filename):
     
     return pd.DataFrame(dataExportCSV, columns=column_names_raw)
 
-def process_imp_hig_direct(imp_filename, hig_filename, output_dir):
-    imp_data = read_imp_raw(imp_filename)
-    hig_data = read_hig_raw(hig_filename)
+def process_imp_hig_direct(imp_filename, hig_filename, output_dir, config=None):
+    """Parse one .imp/.hig pair and write the combined CSV.
+
+    `config` is the SensorConfig in force (Prepare > Sensor configuration).
+    Without one the RAPID defaults apply, which is what the MVP did.
+    """
+    if config is not None:
+        fs = float(config.sampling_rate_hz) or FS
+        out_rate = float(config.output_rate_hz) or fs
+        imp_packet = config.packet_size(".imp") or IMP_PACKET_SIZE
+        hig_packet = config.packet_size(".hig") or HIG_PACKET_SIZE
+        interp_kind = config.resample_method if config.resample else "linear"
+    else:
+        fs = out_rate = FS
+        imp_packet, hig_packet = IMP_PACKET_SIZE, HIG_PACKET_SIZE
+        interp_kind = "linear"
+
+    imp_data = read_imp_raw(imp_filename, fs=fs, packet_size=imp_packet)
+    hig_data = read_hig_raw(hig_filename, fs=fs, packet_size=hig_packet)
     
     base_filename = Path(imp_filename).stem
     
-    file_info = parse_filename_info(base_filename)
+    file_info = parse_filename_info(base_filename, config=config)
     
-    # Create a uniform 2000Hz time series
+    # Uniform output time base. out_rate is the sensor's own rate unless the
+    # configuration asks for interpolation up to a target rate.
     start_time = imp_data["time_s"].min()
     end_time = imp_data["time_s"].max()
-    time_step = 1.0 / 2000  # 0.0005 seconds
+    time_step = 1.0 / out_rate
     times = np.arange(start_time, end_time + time_step, time_step)
     
     # Create combined dataset with the high-resolution time series
@@ -193,14 +226,15 @@ def process_imp_hig_direct(imp_filename, hig_filename, output_dir):
         interp_func = interp1d(
             imp_data["time_s"],
             imp_data[col],
-            kind='linear',
+            kind=interp_kind,
             bounds_error=False,
             fill_value="extrapolate"
         )
         combined_data[col] = interp_func(combined_data["time_s"])
     
     # Apply post-processing (pressure conversion, etc.)
-    combined_data, summary_info = post_process_combined(combined_data)
+    combined_data, summary_info = post_process_combined(
+        combined_data, fs=out_rate)
     
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -262,13 +296,30 @@ def append_to_sensor_index(sensor_info, output_dir):
         new_df = pd.DataFrame([new_row_data])
         new_df.to_csv(index_file, index=False)
 
-def parse_filename_info(filename):
-    """Extract sensor name, date, and time from the filename."""
+def parse_filename_info(filename, config=None):
+    """Extract sensor name, date, and time from the filename.
+
+    A configuration's filename pattern wins when it matches; the original
+    split-on-dash rule is the fallback, so names the pattern does not cover
+    still yield a sensor and a deployment time.
+    """
     if isinstance(filename, Path):
         filename = filename.stem
     elif '.' in filename:
         filename = Path(filename).stem
-    
+
+    if config is not None:
+        try:
+            sensor, date_deploy, time_deploy = config.parse_stem(filename)
+            if date_deploy and time_deploy:
+                return {
+                    'sensor': sensor,
+                    'date_deploy': date_deploy,
+                    'time_deploy': time_deploy
+                }
+        except Exception:
+            pass
+
     if '-' in filename:
         sensor, date_time = filename.split('-')
     else:
@@ -287,8 +338,12 @@ def parse_filename_info(filename):
         'time_deploy': time_deploy
     }
 
-def post_process_combined(data):
-    """Apply post-processing to the combined dataset."""
+def post_process_combined(data, fs=FS):
+    """Apply post-processing to the combined dataset.
+
+    `fs` is the rate of the combined series, used for the duration and for
+    how wide the pressure-nadir search around the acceleration peak is.
+    """
     # Calculate acceleration magnitude for IMP data
     data["inacc_mag_ms"] = np.sqrt(
         data["inacc_x_ms"]**2 + 
@@ -304,7 +359,7 @@ def post_process_combined(data):
     )
     
     # Calculate duration
-    num_seconds = len(data) / 2000
+    num_seconds = len(data) / float(fs)
     minutes, seconds = divmod(num_seconds, 60)
     duration = f"{int(minutes):02}:{int(seconds):02}"
     
@@ -322,8 +377,9 @@ def post_process_combined(data):
         pres_min_value = 0.0
         pres_min_time = acc_max_time
     else:
-        window_start = max(0, acc_max_index - 3000)
-        window_end = min(len(data) - 1, acc_max_index + 3000)
+        half = int(round(NADIR_SEARCH_SEC * float(fs)))
+        window_start = max(0, acc_max_index - half)
+        window_end = min(len(data) - 1, acc_max_index + half)
         pressure_window = data["pressure_kpa"].iloc[window_start:window_end]
         pres_min_local_index = pressure_window.idxmin()
         pres_min_time = data["time_s"][pres_min_local_index]

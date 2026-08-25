@@ -7,8 +7,10 @@
 """Behaviour for the Process page.
 
 Tab 1 (Raw data processing) is a port of the MVP's ``bsm/pages/data_prep.py``.
-The file-pairing rules, the "processed" definition, and the call into
-``rapid_functions.process_imp_hig_direct`` are unchanged from the MVP.
+The "processed" definition is unchanged from the MVP; the file extensions,
+how many files make a recording, the filename pattern and which parser runs
+come from the sensor configuration selected on the Prepare page
+(``sensor_config.active()``), which for RAPID reproduces the MVP exactly.
 
 Tab 2 (Metadata) reads the library's ``global_sensor_index.csv`` and writes
 deployment information back into it.
@@ -16,9 +18,7 @@ deployment information back into it.
 The widgets themselves live in ``main.ui`` (edit them in Qt Designer); this
 module only binds behaviour to them.
 """
-import importlib.util
 import os
-import re
 import shutil
 from collections import Counter
 from datetime import datetime
@@ -34,15 +34,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from . import settings
+from . import sensor_config, settings
 
 # ── paths inside a library root (unchanged from the MVP) ─────────────────────
 _INDEX_REL = Path("processed_sens_data") / "index" / "global_sensor_index.csv"
 _RAW_REL = Path("raw_sens_data")
 _CSV_DIR = Path("processed_sens_data") / "csv"
-
-# filename pattern: SENSOR-MMDDHHMMSS  e.g. B61-0703140718
-_FNAME_RE = re.compile(r"^([A-Za-z0-9]{2,4})-(\d{4})(\d{6})$", re.IGNORECASE)
 
 # theme colours (match the PyDracula palette used by the app)
 _ACCENT = "#ff79c6"
@@ -68,38 +65,33 @@ DEPLOYMENT_FIELDS = [
 ]
 
 
-def _parse_name(stem: str):
-    """Split a sensor filename stem into (sensor, DD/MM, HH:MM:SS)."""
-    m = _FNAME_RE.match(stem)
-    if not m:
-        return stem, "", ""
-    sensor = m.group(1).upper()
-    date = f"{m.group(2)[2:4]}/{m.group(2)[:2]}"   # DD/MM
-    t = m.group(3)
-    time = f"{t[:2]}:{t[2:4]}:{t[4:6]}"
-    return sensor, date, time
+def _parse_name(stem: str, config=None):
+    """Split a sensor filename stem into (sensor, DD/MM, HH:MM:SS).
+
+    The pattern belongs to the sensor configuration, so a device that names
+    its files differently needs only its pattern edited on Prepare.
+    """
+    return (config or sensor_config.active()).parse_stem(stem)
 
 
-# ── processing thread (ported unchanged from the MVP) ────────────────────────
+# ── processing thread (ported from the MVP; reader chosen by config) ─────────
 class _ProcessThread(QThread):
     log = Signal(str)
     done = Signal(int)          # 0 = all ok, 1 = some failed
     processed = Signal(str)     # stem of each successfully processed file
 
-    def __init__(self, files, out_dir, root):
+    def __init__(self, files, out_dir, root, config):
         super().__init__()
         self._files = files
         self._out_dir = out_dir
         self._root = root
+        self._config = config
 
     def run(self):
-        # load rapid_functions from the modules folder
-        target = Path(__file__).parent / "rapid_functions.py"
-        spec = importlib.util.spec_from_file_location("rapid_functions", target)
-        rf = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(rf)
+        # the reader is whichever one the sensor configuration names
+        parse = sensor_config.get_parser(self._config.parser)
 
-        # rapid_functions reads config/index_config.txt relative to cwd
+        # parsers read config/index_config.txt relative to cwd
         prev_cwd = os.getcwd()
         os.chdir(str(self._root))
 
@@ -108,13 +100,15 @@ class _ProcessThread(QThread):
             for f in self._files:
                 self.log.emit(f"\n-- Processing: {f['stem']}")
                 try:
-                    _, summary = rf.process_imp_hig_direct(
-                        f["imp_path"], f["hig_path"], self._out_dir)
+                    _, summary = parse(f["paths"], self._out_dir, self._config)
                     msg = summary.get("messages", "")
                     bad = summary.get("bad_sens", "N")
                     self.log.emit(f"   Done.  bad_sens={bad}  {msg}")
                     self.processed.emit(f["stem"])
                     n_ok += 1
+                except NotImplementedError as e:
+                    self.log.emit(f"   FAILED: {e}")
+                    n_fail += 1
                 except FileNotFoundError as e:
                     if "index_config" in str(e):
                         self.log.emit(
@@ -195,8 +189,13 @@ class ProcessPage(QObject):
         self._raw_dir = None
         self._index_df = None
         self._files = []
+        self._scan_dir = None
         self._thread = None
         self._session_processed = []
+
+        # a different sensor means different extensions and filename rules,
+        # so the inventory is re-scanned when the Prepare page changes it
+        sensor_config.notifier.changed.connect(self._on_sensor_changed)
 
         self._fs_model = QFileSystemModel()
         self._fs_model.setFilter(QDir.Filter.Dirs | QDir.Filter.NoDotAndDotDot)
@@ -220,7 +219,7 @@ class ProcessPage(QObject):
         holder.setSpacing(6)
         self.card_deployments = StatCard("Deployments")
         self.card_files = StatCard("Sensor files")
-        self.card_paired = StatCard("File pairing")
+        self.card_paired = StatCard("Complete recordings")
         self.card_processed = StatCard("Processed")
         for c in (self.card_deployments, self.card_files,
                   self.card_paired, self.card_processed):
@@ -394,18 +393,24 @@ class ProcessPage(QObject):
             self._index_df = None
 
     # ── scanning (unchanged rules) ───────────────────────────────────────────
+    def _on_sensor_changed(self, _key):
+        if self._scan_dir is not None:
+            self._scan_and_refresh(self._scan_dir)
+
     def _scan_and_refresh(self, folder: Path):
+        self._scan_dir = folder
         self._files = self._scan(folder)
         self._refresh_cards()
         self._refresh_table()
 
     def _scan(self, folder: Path):
-        imp_files = {p.stem.upper(): p for p in folder.rglob("*.IMP")}
-        hig_files = {p.stem.upper(): p for p in folder.rglob("*.HIG")}
-        for p in folder.rglob("*.imp"):
-            imp_files.setdefault(p.stem.upper(), p)
-        for p in folder.rglob("*.hig"):
-            hig_files.setdefault(p.stem.upper(), p)
+        cfg = sensor_config.active()
+        exts = cfg.required_extensions or [".imp"]
+        primary, secondary = exts[0], exts[1:]
+
+        # one map per extension, keyed by upper-case stem so a recording's
+        # files pair however the device cased them
+        found = {ext: self._files_by_stem(folder, ext) for ext in exts}
 
         index_names = set()
         if self._index_df is not None and "file" in self._index_df.columns:
@@ -418,20 +423,33 @@ class ProcessPage(QObject):
         processed_names = index_names & csv_names
 
         records = []
-        for stem_up, imp_path in sorted(imp_files.items()):
-            sensor, date, time = _parse_name(imp_path.stem)
+        for stem_up, main_path in sorted(found[primary].items()):
+            sensor, date, time = _parse_name(main_path.stem, cfg)
+            paths = {primary: main_path}
+            for ext in secondary:
+                match = found[ext].get(stem_up)
+                if match is not None:
+                    paths[ext] = match
             records.append(dict(
-                stem=imp_path.stem,
+                stem=main_path.stem,
                 stem_up=stem_up,
                 sensor=sensor,
                 date=date,
                 time=time,
-                paired=stem_up in hig_files,
+                complete=len(paths) == len(exts),
                 processed=stem_up in processed_names,
-                imp_path=imp_path,
-                hig_path=hig_files.get(stem_up),
+                paths=paths,
             ))
         return records
+
+    @staticmethod
+    def _files_by_stem(folder: Path, ext: str):
+        """Every file with `ext` under `folder`, keyed by upper-case stem."""
+        suffix = ext.lstrip(".")
+        out = {p.stem.upper(): p for p in folder.rglob(f"*.{suffix.upper()}")}
+        for p in folder.rglob(f"*.{suffix.lower()}"):
+            out.setdefault(p.stem.upper(), p)
+        return out
 
     # ── cards ────────────────────────────────────────────────────────────────
     def _refresh_cards(self):
@@ -443,16 +461,21 @@ class ProcessPage(QObject):
                 c.clear()
             return
 
+        cfg = sensor_config.active()
         sensors = Counter(f["sensor"] for f in files)
         top = ", ".join(f"{s} ({c})" for s, c in sensors.most_common(3))
         self.card_deployments.set(len(sensors), top, _INFO)
 
-        self.card_files.set(n, f"{n} IMP file(s) found", _ACCENT)
+        primary = cfg.primary_extension.lstrip(".").upper()
+        self.card_files.set(n, f"{n} {primary} file(s) found", _ACCENT)
 
-        n_paired = sum(1 for f in files if f["paired"])
+        n_complete = sum(1 for f in files if f["complete"])
+        n_needed = len(cfg.required_extensions)
         self.card_paired.set(
-            f"{n_paired}/{n}", f"{n - n_paired} unpaired",
-            _OK if n_paired == n else _WARN)
+            f"{n_complete}/{n}",
+            (f"{n - n_complete} incomplete" if n_needed > 1
+             else f"{n_needed} file per recording"),
+            _OK if n_complete == n else _WARN)
 
         n_proc = sum(1 for f in files if f["processed"])
         self.card_processed.set(
@@ -465,13 +488,13 @@ class ProcessPage(QObject):
         t.setRowCount(len(self._files))
         for row, f in enumerate(self._files):
             vals = [str(row + 1), f["stem"], f["sensor"], f["date"], f["time"],
-                    "Yes" if f["paired"] else "No",
+                    "Yes" if f["complete"] else "No",
                     "Processed" if f["processed"] else "Unprocessed"]
             for col, v in enumerate(vals):
                 it = QTableWidgetItem(v)
                 it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if col == 5:
-                    it.setForeground(QColor(_OK if f["paired"] else _BAD))
+                    it.setForeground(QColor(_OK if f["complete"] else _BAD))
                 if col == 6:
                     it.setForeground(QColor(_OK if f["processed"] else _WARN))
                 t.setItem(row, col, it)
@@ -494,21 +517,24 @@ class ProcessPage(QObject):
         if not files:
             return
 
-        paired = [f for f in files if f["paired"]]
-        skipped = len(files) - len(paired)
-        if not paired:
-            self.status.emit("No paired files selected.", 4000)
-            self._log("No paired files selected.")
+        cfg = sensor_config.active()
+        complete = [f for f in files if f["complete"]]
+        skipped = len(files) - len(complete)
+        if not complete:
+            self.status.emit("No complete recordings selected.", 4000)
+            self._log("No complete recordings selected.")
             return
 
         out_dir = self._root / "processed_sens_data"
         self.ui.console_output.clear()
         if skipped:
-            self._log(f"Note: {skipped} unpaired file(s) skipped.")
+            self._log(f"Note: {skipped} incomplete recording(s) skipped.")
+        self._log(f"Sensor: {cfg.name}  ({cfg.output_rate_hz:g} Hz, "
+                  f"parser '{cfg.parser}')")
         self._log(f"Output -> {out_dir}\n")
         self.ui.btn_process_selected.setEnabled(False)
 
-        self._thread = _ProcessThread(paired, out_dir, self._root)
+        self._thread = _ProcessThread(complete, out_dir, self._root, cfg)
         self._thread.log.connect(self._log)
         self._thread.processed.connect(self._on_file_processed)
         self._thread.done.connect(self._on_process_done)

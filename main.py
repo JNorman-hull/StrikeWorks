@@ -16,6 +16,7 @@ import platform
 # ///////////////////////////////////////////////////////////////
 from modules import *
 from widgets import *
+from modules.page_prepare import PreparePage
 from modules.page_process import ProcessPage
 from modules.page_validate import ValidatePage
 from modules.page_dataset import DatasetPage
@@ -72,6 +73,11 @@ class MainWindow(QMainWindow):
 
         # PAGE CONTROLLERS
         # ///////////////////////////////////////////////////////////////
+        # Prepare comes first: the sensor chosen here drives raw import,
+        # validation and dataset creation on the pages that follow.
+        self.prepare_page = PreparePage(widgets, self)
+        self.prepare_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
         self.process_page = ProcessPage(widgets, self)
         self.process_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))

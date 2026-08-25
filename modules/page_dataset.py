@@ -11,19 +11,25 @@ reduced to the two creation methods that are still wanted:
 
   Create from unsegmented (auto)
       MVP "Quick" option. Uses ``pres_min.time.`` from the global index,
-      slices +/- 0.1 s out of the full sensor CSV, standardises to 400 rows.
+      slices half the analysis window either side of the nadir out of the
+      full sensor CSV and standardises to the window's row count.
 
   Create from segmented
-      MVP "Bind nadir windows" option. Binds the ``*_200ms.csv`` files the
+      MVP "Bind nadir windows" option. Binds the saved window files the
       Validate page wrote into ``processed_sens_data/nadir_window``, keeping
       only sensors present in the index with ``bad_sens == N``.
 
+Window width, row count and the ``*_200ms.csv`` suffix all come from the
+active sensor configuration (Prepare page); the RAPID values are 0.2 s,
+400 rows and ``_200ms``.
+
 The MVP's third method (segmented ROI from ``*_delineated.csv``) is dropped.
 
-Extraction maths, the 400-row standardisation, the meta columns carried over
+Extraction maths, the row standardisation, the meta columns carried over
 from the index, the annotation join and the three-panel summary figure are
 unchanged from the MVP.
 """
+import re
 from pathlib import Path
 
 import numpy as np
@@ -36,7 +42,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QFileSystemModel, QTreeWidgetItem, QVBoxLayout,
 )
 
-from . import settings
+from . import sensor_config, settings
 from .page_process import _DirsOnlyProxy
 
 # paths relative to a library root
@@ -44,9 +50,14 @@ _CSV_DIR = Path("processed_sens_data") / "csv"
 _INDEX_REL = Path("processed_sens_data") / "index" / "global_sensor_index.csv"
 _NADIR_WIN_DIR = Path("processed_sens_data") / "nadir_window"
 
+# The window length and its filename suffix follow the active sensor
+# configuration (Prepare page): 400 rows / "_200ms" for RAPID at 2000 Hz,
+# a different count for a device sampled at another rate. These constants
+# are the fallbacks only.
 _TARGET_ROWS = 400        # 200 ms @ 2000 Hz
 _NADIR_COL = "pres_min.time."
 _NADIR_WIN_SUFFIX = "_200ms"
+_WIN_SUFFIX_RE = re.compile(r"_\d+ms$")
 _BAD_SENS_COL = "bad_sens"
 
 # columns carried through from the index into the output
@@ -90,13 +101,33 @@ class _ExtractThread(QThread):
     log = Signal(str)
     done = Signal(int, int, int)   # n_ok, n_skip, n_rows
 
-    def __init__(self, root, option, selected_files, index_df):
+    def __init__(self, root, option, selected_files, index_df, config=None):
         super().__init__()
         self._root = root
         self._option = option
         self._selected_files = selected_files
         self._index_df = index_df
+        self._config = config or sensor_config.active()
         self._result_df = None
+
+    @property
+    def _target_rows(self):
+        return self._config.window_samples or _TARGET_ROWS
+
+    @property
+    def _win_suffix(self):
+        return self._config.window_suffix or _NADIR_WIN_SUFFIX
+
+    def _strip_window_suffix(self, stem):
+        """Recover the sensor stem from a saved window filename.
+
+        Validate names the file after the width it was saved at, which need
+        not be the width configured now, so any '_<n>ms' tail is removed -
+        otherwise a window saved at 300 ms would never match the index.
+        """
+        if stem.endswith(self._win_suffix):
+            return stem[: -len(self._win_suffix)]
+        return _WIN_SUFFIX_RE.sub("", stem)
 
     @property
     def result(self):
@@ -130,7 +161,7 @@ class _ExtractThread(QThread):
                 insert_at += 1
         return df
 
-    # ── auto nadir +/- 0.1 s out of the full sensor CSV ─────────────────────
+    # ── auto nadir +/- half a window out of the full sensor CSV ─────────────
     def _run_unsegmented(self):
         index_path = self._root / _INDEX_REL
         csv_dir = self._root / _CSV_DIR
@@ -179,14 +210,15 @@ class _ExtractThread(QThread):
                 continue
 
             try:
-                t_start = float(nadir_time) - 0.1
-                t_end = float(nadir_time) + 0.1
+                half_sec = self._config.window_sec / 2
+                t_start = float(nadir_time) - half_sec
+                t_end = float(nadir_time) + half_sec
 
                 sensor = pd.read_csv(sensor_path, low_memory=False)
                 sliced = sensor[(sensor["time_s"] >= t_start)
                                 & (sensor["time_s"] <= t_end)].copy()
 
-                out = _standardise(sliced, _TARGET_ROWS)
+                out = _standardise(sliced, self._target_rows)
                 if out is None:
                     self.log.emit(
                         f"  SKIP {stem} - only {len(sliced)} rows in window "
@@ -239,9 +271,7 @@ class _ExtractThread(QThread):
         parts, n_ok, n_skip = [], 0, 0
 
         for win_path in win_files:
-            stem = win_path.stem
-            if stem.endswith(_NADIR_WIN_SUFFIX):
-                stem = stem[: -len(_NADIR_WIN_SUFFIX)]
+            stem = self._strip_window_suffix(win_path.stem)
 
             if self._selected_files and stem not in self._selected_files:
                 continue
@@ -252,11 +282,11 @@ class _ExtractThread(QThread):
 
             try:
                 win = pd.read_csv(win_path, low_memory=False)
-                out = _standardise(win, _TARGET_ROWS)
+                out = _standardise(win, self._target_rows)
                 if out is None:
                     self.log.emit(
                         f"  SKIP {stem} - only {len(win)} rows "
-                        f"(expected >= {_TARGET_ROWS - 1})")
+                        f"(expected >= {self._target_rows - 1})")
                     n_skip += 1
                     continue
 
@@ -498,13 +528,17 @@ class DatasetPage(QObject):
         self.canvas.draw()
         self.ui.console_ds.clear()
 
-        label = {OPT_UNSEGMENTED: "Unsegmented (auto nadir +/- 0.1 s)",
+        cfg = sensor_config.active()
+        half = cfg.window_sec / 2
+        label = {OPT_UNSEGMENTED: f"Unsegmented (auto nadir +/- {half:g} s)",
                  OPT_SEGMENTED: "Segmented (bind saved nadir windows)"}[option]
         n_sel = len(selected) if selected else "all"
-        self._log(f"Method: {label}\nFiles selected: {n_sel}\n")
+        self._log(f"Method: {label}\nFiles selected: {n_sel}\n"
+                  f"Sensor: {cfg.name} - {cfg.window_samples} rows per "
+                  f"window at {cfg.output_rate_hz:g} Hz\n")
 
         self._thread = _ExtractThread(
-            self._root, option, selected or set(), self._index)
+            self._root, option, selected or set(), self._index, cfg)
         self._thread.log.connect(self._log)
         self._thread.done.connect(self._on_done)
         self._thread.start()

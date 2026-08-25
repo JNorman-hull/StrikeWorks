@@ -2870,7 +2870,7 @@ background-repeat: no-repeat;</string>
                           </size>
                          </property>
                          <property name="text">
-                          <string>Import raw sensor files and check their integrity before processing.</string>
+                          <string>Choose the sensor this session works with, and plan the study it feeds.</string>
                          </property>
                          <property name="wordWrap">
                           <bool>true</bool>
@@ -2885,6 +2885,94 @@ background-repeat: no-repeat;</string>
                          <property name="frameShadow">
                           <enum>QFrame::Raised</enum>
                          </property>
+                         <layout class="QVBoxLayout" name="layout_content_prepare">
+                          <property name="spacing">
+                           <number>0</number>
+                          </property>
+                          <property name="leftMargin">
+                           <number>0</number>
+                          </property>
+                          <property name="topMargin">
+                           <number>0</number>
+                          </property>
+                          <property name="rightMargin">
+                           <number>0</number>
+                          </property>
+                          <property name="bottomMargin">
+                           <number>0</number>
+                          </property>
+                          <item>
+                           <widget class="QTabWidget" name="tabs_prepare">
+                            <property name="currentIndex">
+                             <number>0</number>
+                            </property>
+                            <widget class="QWidget" name="tab_prepare_sensor">
+                             <attribute name="title">
+                              <string>Sensor configuration</string>
+                             </attribute>
+                             <layout class="QVBoxLayout" name="layout_tab_prepare_sensor">
+                              <property name="spacing">
+                               <number>0</number>
+                              </property>
+                              <property name="leftMargin">
+                               <number>0</number>
+                              </property>
+                              <property name="topMargin">
+                               <number>0</number>
+                              </property>
+                              <property name="rightMargin">
+                               <number>0</number>
+                              </property>
+                              <property name="bottomMargin">
+                               <number>0</number>
+                              </property>
+                              <item>
+                               <widget class="QFrame" name="frame_prepare_sensor">
+                                <property name="frameShape">
+                                 <enum>QFrame::NoFrame</enum>
+                                </property>
+                                <property name="frameShadow">
+                                 <enum>QFrame::Raised</enum>
+                                </property>
+                               </widget>
+                              </item>
+                             </layout>
+                            </widget>
+                            <widget class="QWidget" name="tab_prepare_study">
+                             <attribute name="title">
+                              <string>Study design</string>
+                             </attribute>
+                             <layout class="QVBoxLayout" name="layout_tab_prepare_study">
+                              <property name="spacing">
+                               <number>0</number>
+                              </property>
+                              <property name="leftMargin">
+                               <number>0</number>
+                              </property>
+                              <property name="topMargin">
+                               <number>0</number>
+                              </property>
+                              <property name="rightMargin">
+                               <number>0</number>
+                              </property>
+                              <property name="bottomMargin">
+                               <number>0</number>
+                              </property>
+                              <item>
+                               <widget class="QFrame" name="frame_prepare_study">
+                                <property name="frameShape">
+                                 <enum>QFrame::NoFrame</enum>
+                                </property>
+                                <property name="frameShadow">
+                                 <enum>QFrame::Raised</enum>
+                                </property>
+                               </widget>
+                              </item>
+                             </layout>
+                            </widget>
+                           </widget>
+                          </item>
+                         </layout>
                         </widget>
                        </item>
                       </layout>
@@ -3119,7 +3207,7 @@ background-repeat: no-repeat;</string>
                                    </column>
                                    <column>
                                     <property name="text">
-                                     <string>Paired</string>
+                                     <string>Complete</string>
                                     </property>
                                    </column>
                                    <column>

@@ -1,8 +1,8 @@
 # StrikeWorks roadmap
 
-Outstanding work, in the order agreed. Chunks 1 and 2 are done and
-committed; 3 and 4 are not started. Each chunk is independent enough to be
-picked up cold from this file plus the code.
+Outstanding work, in the order agreed. Chunks 1 to 3 are done; 4 is not
+started. Each chunk is independent enough to be picked up cold from this
+file plus the code.
 
 ## Done
 
@@ -24,48 +24,27 @@ column; `GROUPING_PRESETS` are templates applied to observed levels;
 `level_key()` shared by `ml_train_state` and `train_worker`; editable class
 names and positive-class name.
 
-## Chunk 3 — Prepare page: sensor configurations
+**Chunk 3 — Prepare page: sensor configurations**
+`modules/sensor_config.py` is the single source of truth: a `SensorConfig`
+dataclass (rate, files per recording, extensions, packet sizes, filename
+pattern, channels, analysis window, interpolation, parser key), the shipped
+`rapid` and `micro_eel` configurations, a JSON store in
+`~/.strikeworks_sensors.json`, a `PARSERS` registry and a `notifier` the
+pages follow. Prepare gained the two tabs (`modules/page_prepare.py`,
+`prepare_tab_sensor.py`, `prepare_tab_study.py`).
 
-New content on the existing `page_prepare` (currently an empty placeholder
-in `main.ui`). Two tabs.
+The hardcoding is ported: `page_process` scans the configured extensions,
+parses names with the configured pattern and calls the registered parser;
+`page_validate` takes its rate and window width from the configuration;
+`page_dataset` derives target rows and the window suffix from it;
+`rapid_functions` takes rate, packet sizes, interpolation kind and the
+nadir-search width as arguments (RAPID output is byte-for-byte unchanged).
+Adding a third sensor is a New/Duplicate plus a Save; only its reader is
+code, registered under `PARSERS`.
 
-### Tab 1 — Sensor configuration
-
-Select the session's sensor type; the choice drives raw import and
-processing. Ship two configurations and make adding a third a data edit,
-not a code change.
-
-`rapid` (the current setup — derive the values from
-`modules/rapid_functions.py`, which currently hardcodes them):
-- sampling rate 2000 Hz
-- two input files per recording: `.imp` and `.hig`, paired by stem
-- filename pattern `SENSOR-MMDDHHMMSS` (`_FNAME_RE` in `page_process.py`)
-- channel set = `DEFAULT_CHANNELS` in `ml_train_state.py`
-
-`micro_eel` (anticipated, not yet real):
-- sampling rate ~6000 Hz
-- likely a single file per recording rather than a pair
-- file extension(s) TBD
-- packet size / parser differences TBD
-
-Expose now: sensor name, sampling rate, files-per-recording, file
-extensions, channel list, filename pattern, packet size. Leave a clear
-code point for the per-sensor parser; `rapid` keeps calling
-`rapid_functions.process_imp_hig_direct`.
-
-Also expose interpolation: resample a lower-rate sensor up to a target rate
-(e.g. 100 Hz to 6000 Hz), since model input length depends on rate.
-
-Where the current hardcoding lives, for the port:
-- `modules/rapid_functions.py` — the RAPID parser and its constants
-- `modules/page_process.py` — `_FNAME_RE`, `_RAW_REL`, `_CSV_DIR`, the
-  imp/hig pairing in `ProcessPage`
-- `modules/page_validate.py` — `_FS = 2000`, `_WIN_SEC = 0.2`
-- `modules/page_dataset.py` — `_TARGET_ROWS = 400`, `_NADIR_WIN_SUFFIX`
-
-### Tab 2 — Study design tools
-
-Placeholder page for study-design helpers. Structure only for now.
+Study design is structure only, as agreed: four described-but-unbuilt
+panels (sample size and power, treatment allocation, operating points,
+deployment schedule).
 
 ## Chunk 4 — Annotation & Video Analysis page tree
 

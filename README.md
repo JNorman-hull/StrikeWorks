@@ -11,6 +11,21 @@ Copyright University of Hull (2026)
 ## Pages
 
 * **Sensor Processing** — Prepare, Process, Validate & segment, Dataset creation.
+
+  **Prepare** sets the session's sensor and plans the study around it:
+  * **Sensor configuration** — the active `sensor_config.SensorConfig`
+    (`modules/sensor_config.py`): sampling rate, files per recording and
+    their extensions, packet sizes, filename pattern, channel list, analysis
+    window, optional interpolation onto a target rate, and the registered
+    parser. Everything downstream reads it — Process scans for those
+    extensions and runs that parser, Validate plots at that rate, Dataset
+    creation cuts windows of that length. Two configurations ship (`rapid`,
+    the current device, and `micro_eel`, anticipated); a third is a New or
+    Duplicate plus a Save, stored in `~/.strikeworks_sensors.json`. Only a
+    new device's reader is code: write it and register it under
+    `sensor_config.PARSERS`;
+  * **Study design** — placeholder panels for the deployment planning tools
+    (sample size, treatment allocation, operating points, schedule).
 * **Machine Learning Analysis** — **Model Training**, **Model Performance**
   and **Model Prediction**.
 

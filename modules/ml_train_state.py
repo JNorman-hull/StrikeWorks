@@ -34,7 +34,7 @@ import pandas as pd
 
 from PySide6.QtCore import QObject, QThread, Signal
 
-from . import settings
+from . import sensor_config, settings
 
 _WORKER = Path(__file__).parent / "train_worker.py"
 _APP_ROOT = Path(__file__).parent.parent
@@ -43,13 +43,25 @@ DEFAULT_MODELS_DIR = _APP_ROOT / "models"
 
 MODEL_KINDS = ("binary", "multiclass")
 
-# canonical model input channels (the deployed models' channel set)
+# canonical model input channels (the deployed models' channel set).
+# The RAPID sensor configuration carries the same list; a device with a
+# different channel set supplies its own through sensor_config, and this
+# stays as the fallback for a dataset from an unknown source.
 DEFAULT_CHANNELS = [
     "higacc_x_g", "higacc_y_g", "higacc_z_g",
     "inacc_x_ms", "inacc_y_ms", "inacc_z_ms",
     "rot_x_degs", "rot_y_degs", "rot_z_degs",
     "pressure_kpa",
 ]
+
+
+def canonical_channels():
+    """Channel set for the active sensor, or the RAPID default."""
+    try:
+        return list(sensor_config.active().channels) or list(DEFAULT_CHANNELS)
+    except Exception:
+        return list(DEFAULT_CHANNELS)
+
 
 def level_key(value):
     """Stable key for a raw level value.
@@ -186,7 +198,7 @@ class TrainingState(QObject):
         self.include_surface = False
 
         # variables
-        self.channels = list(DEFAULT_CHANNELS)
+        self.channels = canonical_channels()
         self.seq_auto = True
         self.seq_length = 400
 
@@ -304,7 +316,7 @@ class TrainingState(QObject):
         # keep only channels that exist; fall back to the canonical defaults
         present = [c for c in self.channels if c in df.columns]
         if not present:
-            present = [c for c in DEFAULT_CHANNELS if c in df.columns]
+            present = [c for c in canonical_channels() if c in df.columns]
         self.channels = present
 
     def _autodetect_negative(self):
@@ -367,8 +379,9 @@ class TrainingState(QObject):
             if pd.api.types.is_numeric_dtype(df[col]):
                 out.append(col)
         # canonical channels first, in canonical order
-        canonical = [c for c in DEFAULT_CHANNELS if c in out]
-        extra = [c for c in out if c not in DEFAULT_CHANNELS]
+        wanted = canonical_channels()
+        canonical = [c for c in wanted if c in out]
+        extra = [c for c in out if c not in wanted]
         return canonical + extra
 
     def _compute_meta(self):
