@@ -1,0 +1,121 @@
+{
+  "model_id": "pipeline 1",
+  "pipeline": "binary + multiclass",
+  "binary_model": "MiniRocket + RidgeClassifierCV (Binary)",
+  "multiclass_model": "MiniRocket + RidgeClassifierCV (collapsed: region_1 | region_2+3 | region_4+5)",
+  "training_dataset": "C:\\python_projects\\StrikeWorks\\input_data\\Pumpflow_2024_and_2026_datatset_.csv",
+  "trained": "2026-08-24T17:08:25",
+  "application": "StrikeWorks v0.1.0",
+  "python_version": "3.13.3",
+  "package_versions": {
+    "numpy": "2.4.6",
+    "pandas": "2.3.3",
+    "scikit-learn": "1.7.2",
+    "sktime": "1.1.0",
+    "joblib": "1.5.3"
+  },
+  "target_column": "passage_type",
+  "negative_class": "No contact",
+  "include_values": "all",
+  "region_column": "concentric_pump_region",
+  "collapse_scheme": "model_1_1",
+  "class_names": [
+    "region_1",
+    "region_2_3",
+    "region_4_5"
+  ],
+  "input_channels": [
+    "higacc_x_g",
+    "higacc_y_g",
+    "higacc_z_g",
+    "inacc_x_ms",
+    "inacc_y_ms",
+    "inacc_z_ms",
+    "rot_x_degs",
+    "rot_y_degs",
+    "rot_z_degs",
+    "pressure_kpa"
+  ],
+  "sequence_length": 401,
+  "padding": "repeat_last",
+  "class_weighting": "balanced",
+  "cv_method": "Stratified K-Fold",
+  "n_folds": 5,
+  "random_seed": 42,
+  "split_mode": "cv_only",
+  "test_size": 0.2,
+  "minirocket": {
+    "random_state": 42,
+    "n_jobs": -1
+  },
+  "ridge": {
+    "alpha_min_exp": -3,
+    "alpha_max_exp": 3,
+    "n_alphas": 100
+  },
+  "threshold_selection": "Youden's J on out-of-fold ROC",
+  "binary_performance": {
+    "roc_auc": 0.9893033323265881,
+    "pr_auc": 0.9904714212310263,
+    "overall_accuracy": 0.95929203539823,
+    "sensitivity": 0.9659090909090909,
+    "specificity": 0.9534883720930233,
+    "precision": 0.9479553903345725,
+    "f1_score": 0.9568480300187618,
+    "mcc": 0.9184732594482565,
+    "FNR": 0.03409090909090909,
+    "FPR": 0.046511627906976744,
+    "optimal_threshold": 0.4541156002479093,
+    "confusion_matrix": {
+      "tn": 287,
+      "fp": 14,
+      "fn": 9,
+      "tp": 255
+    }
+  },
+  "multiclass_performance": {
+    "overall_accuracy": 0.5991902834008097,
+    "macro_precision": 0.5876164875818564,
+    "macro_recall": 0.576849199854519,
+    "macro_f1": 0.5799535827287058,
+    "confusion_matrix": [
+      [
+        23,
+        15,
+        9
+      ],
+      [
+        13,
+        49,
+        34
+      ],
+      [
+        5,
+        23,
+        76
+      ]
+    ],
+    "per_class_metrics": {
+      "region_1": {
+        "precision": 0.5609756097560976,
+        "recall": 0.48936170212765956,
+        "f1_score": 0.5227272727272727,
+        "support": 47
+      },
+      "region_2_3": {
+        "precision": 0.5632183908045977,
+        "recall": 0.5104166666666666,
+        "f1_score": 0.5355191256830601,
+        "support": 96
+      },
+      "region_4_5": {
+        "precision": 0.6386554621848739,
+        "recall": 0.7307692307692307,
+        "f1_score": 0.6816143497757847,
+        "support": 104
+      }
+    }
+  },
+  "binary_holdout": null,
+  "multiclass_holdout": null
+}

@@ -1,0 +1,122 @@
+{
+  "model": "MiniRocket + RidgeClassifierCV (Binary)",
+  "n_samples": 565,
+  "n_strikes": 264,
+  "n_no_strikes": 301,
+  "strike_rate": 0.4672566371681416,
+  "class_weight": 1.1401515151515151,
+  "n_channels": 10,
+  "max_sequence_length": 401,
+  "channels": [
+    "higacc_x_g",
+    "higacc_y_g",
+    "higacc_z_g",
+    "inacc_x_ms",
+    "inacc_y_ms",
+    "inacc_z_ms",
+    "rot_x_degs",
+    "rot_y_degs",
+    "rot_z_degs",
+    "pressure_kpa"
+  ],
+  "cross_validation": {
+    "n_folds": 5,
+    "mean_auc": 0.9886754383877798,
+    "mean_accuracy": 0.9681415929203538,
+    "mean_sensitivity": 0.973367198838897,
+    "mean_specificity": 0.9633333333333333,
+    "mean_precision": 0.9599254449254448,
+    "mean_f1": 0.9662287544024917,
+    "std_auc": 0.008926110704720411,
+    "std_accuracy": 0.01542973077359528,
+    "std_sensitivity": 0.02293408156641645,
+    "std_specificity": 0.02449489742783178,
+    "std_precision": 0.026678304356237408,
+    "std_f1": 0.016091325234217094
+  },
+  "out_of_fold_performance": {
+    "roc_auc": 0.9893033323265881,
+    "pr_auc": 0.9904714212310263,
+    "overall_accuracy": 0.95929203539823,
+    "sensitivity": 0.9659090909090909,
+    "specificity": 0.9534883720930233,
+    "precision": 0.9479553903345725,
+    "f1_score": 0.9568480300187618,
+    "mcc": 0.9184732594482565,
+    "FNR": 0.03409090909090909,
+    "FPR": 0.046511627906976744,
+    "optimal_threshold": 0.4541156002479093,
+    "confusion_matrix": {
+      "tn": 287,
+      "fp": 14,
+      "fn": 9,
+      "tp": 255
+    }
+  },
+  "performance_by_strike_type": {
+    "leading_direct": {
+      "n_files": 168,
+      "accuracy": 0.9821428571428571
+    },
+    "leading_indirect": {
+      "n_files": 32,
+      "accuracy": 1.0
+    },
+    "no_contact": {
+      "n_files": 301,
+      "accuracy": 0.9534883720930233
+    },
+    "other_impeller_hub": {
+      "n_files": 47,
+      "accuracy": 0.9574468085106383
+    },
+    "other_impeller_surface": {
+      "n_files": 17,
+      "accuracy": 0.7647058823529411
+    }
+  },
+  "misclassified": {
+    "total": 23,
+    "false_positives": 14,
+    "false_negatives": 9
+  },
+  "training": {
+    "timestamp": "2026-08-24T17:08:25",
+    "elapsed_s": 39.03,
+    "dataset": "C:\\python_projects\\StrikeWorks\\input_data\\Pumpflow_2024_and_2026_datatset_.csv",
+    "dataset_name": "Pumpflow_2024_and_2026_datatset_.csv",
+    "pipeline": "binary + multiclass",
+    "target_kind": "binary",
+    "target_column": "passage_type",
+    "negative_class": "No contact",
+    "include_values": null,
+    "n_missing_target_excluded": 0,
+    "class_weighting": "balanced",
+    "split_mode": "cv_only",
+    "test_size": 0.2,
+    "n_folds": 5,
+    "shuffle": true,
+    "random_seed": 42,
+    "sequence_length": 401,
+    "padding": "repeat_last",
+    "truncation": "truncate",
+    "minirocket": {
+      "random_state": 42,
+      "n_jobs": -1
+    },
+    "ridge": {
+      "alpha_min_exp": -3,
+      "alpha_max_exp": 3,
+      "n_alphas": 100
+    },
+    "application": "StrikeWorks v0.1.0",
+    "python_version": "3.13.3",
+    "package_versions": {
+      "numpy": "2.4.6",
+      "pandas": "2.3.3",
+      "scikit-learn": "1.7.2",
+      "sktime": "1.1.0",
+      "joblib": "1.5.3"
+    }
+  }
+}

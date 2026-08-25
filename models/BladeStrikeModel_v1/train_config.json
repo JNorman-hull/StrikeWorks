@@ -1,0 +1,58 @@
+{
+  "data": "C:\\python_projects\\StrikeWorks\\input_data\\Pumpflow_2024_and_2026_datatset_.csv",
+  "out_dir": "C:\\python_projects\\StrikeWorks\\training_runs\\pipeline_20260824_170730",
+  "target_column": "passage_type",
+  "negative_class": "No contact",
+  "positive_label": "blade_strike",
+  "leading_type_column": "leading_type",
+  "other_type_column": "other_type",
+  "include_values": null,
+  "channels": [
+    "higacc_x_g",
+    "higacc_y_g",
+    "higacc_z_g",
+    "inacc_x_ms",
+    "inacc_y_ms",
+    "inacc_z_ms",
+    "rot_x_degs",
+    "rot_y_degs",
+    "rot_z_degs",
+    "pressure_kpa"
+  ],
+  "seq_length": null,
+  "padding": "repeat_last",
+  "truncation": "truncate",
+  "class_weighting": "balanced",
+  "split_mode": "cv_only",
+  "test_size": 0.2,
+  "n_folds": 5,
+  "shuffle": true,
+  "random_seed": 42,
+  "minirocket": {
+    "random_state": 42,
+    "n_jobs": -1
+  },
+  "ridge": {
+    "alpha_min_exp": -3,
+    "alpha_max_exp": 3,
+    "n_alphas": 100
+  },
+  "app_version": "StrikeWorks v0.1.0",
+  "train_multiclass": true,
+  "region_column": "concentric_pump_region",
+  "collapse_scheme": "model_1_1",
+  "collapse_desc": "region_1 | region_2+3 | region_4+5",
+  "region_to_class": {
+    "1": 0,
+    "2": 1,
+    "3": 1,
+    "4": 2,
+    "5": 2
+  },
+  "class_names": [
+    "region_1",
+    "region_2_3",
+    "region_4_5"
+  ],
+  "include_surface_as_region1": false
+}

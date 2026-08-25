@@ -1,0 +1,566 @@
+file,blade_strike,strike_type,treatment,passage_type,leading_type,other_type,probability,y_pred,y_true,cv_fold,correct,error_type
+B300-0519082300,1,leading_direct,400_model,Leading edge strike,Direct,,0.734969732648315,1,1,1,True,correct
+B300-0519091455,0,no_contact,400_model,No contact,,,0.26136596731524125,0,0,3,True,correct
+B300-0520125514,0,no_contact,400_model,No contact,,,0.2979689793101618,0,0,1,True,correct
+B300-0520131059,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.7211633993407579,1,1,3,True,correct
+B300-0529093000,0,no_contact,400_model,No contact,,,0.2876006505448354,0,0,1,True,correct
+B300-0529095859,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.6090874930609718,1,1,1,True,correct
+B300-0529102203,1,leading_direct,400_model,Leading edge strike,Direct,,0.8251956428214624,1,1,4,True,correct
+B300-0601121738,1,leading_direct,400_model,Leading edge strike,Direct,,0.8443223824512525,1,1,2,True,correct
+B300-0601122729,0,no_contact,400_model,No contact,,,0.3996139754069967,0,0,2,True,correct
+B300-0601125311,1,leading_direct,400_model,Leading edge strike,Direct,,0.660838818204082,1,1,2,True,correct
+B300-0601131026,1,leading_direct,400_model,Leading edge strike,Direct,,0.5664123253755365,1,1,2,True,correct
+B300-0601132024,1,leading_direct,400_model,Leading edge strike,Direct,,0.7773252647672746,1,1,3,True,correct
+B300-0605120324,0,no_contact,400_model,No contact,,,0.2931840318122132,0,0,4,True,correct
+B300-0605122840,1,leading_direct,400_model,Leading edge strike,Direct,,0.6994241234349774,1,1,0,True,correct
+B300-0608105547,1,leading_direct,400_model,Leading edge strike,Direct,,0.8635935093105984,1,1,4,True,correct
+B300-0608111427,0,no_contact,400_model,No contact,,,0.31360732864773516,0,0,2,True,correct
+B300-0608114314,0,no_contact,400_model,No contact,,,0.2546591657464354,0,0,2,True,correct
+B300-0608120502,0,no_contact,400_model,No contact,,,0.4043094329244665,0,0,0,True,correct
+B300-0608122456,0,no_contact,400_model,No contact,,,0.2013353013181023,0,0,4,True,correct
+B300-0609142227,1,other_impeller_surface,400_model,Other impeller collision,,Impeller surface,0.5204107844112136,1,1,3,True,correct
+B300-0609143754,1,leading_direct,400_model,Leading edge strike,Direct,,0.7066485463990793,1,1,3,True,correct
+B300-0609144514,0,no_contact,400_model,No contact,,,0.23031329025500238,0,0,0,True,correct
+B300-0609150319,0,no_contact,400_model,No contact,,,0.2970691908465159,0,0,3,True,correct
+B300-0609151756,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.6085748108757835,1,1,4,True,correct
+B300-0609153238,1,leading_direct,400_model,Leading edge strike,Direct,,0.7387542289760536,1,1,1,True,correct
+B300-0609155240,0,no_contact,400_model,No contact,,,0.2854039279151419,0,0,3,True,correct
+B300-0610102810,0,no_contact,400_model,No contact,,,0.33272462979288503,0,0,1,True,correct
+B300-0610103513,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.6009294189405339,1,1,4,True,correct
+B300-0610105254,0,no_contact,400_model,No contact,,,0.2759896367737363,0,0,1,True,correct
+B300-0610110656,0,no_contact,400_model,No contact,,,0.2977191218674511,0,0,0,True,correct
+B300-0610113539,0,no_contact,400_model,No contact,,,0.27568136474099186,0,0,0,True,correct
+B300-0610120759,0,no_contact,400_model,No contact,,,0.34443302783155355,0,0,4,True,correct
+B300-0611135117,1,leading_direct,400_model,Leading edge strike,Direct,,0.6201662511135623,1,1,2,True,correct
+B300-0611140159,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.6014979725754561,1,1,3,True,correct
+B300-0611141517,1,other_impeller_surface,400_model,Other impeller collision,,Impeller surface,0.7222923806017209,1,1,3,True,correct
+B300-0611142017,0,no_contact,400_model,No contact,,,0.4296335063119082,0,0,3,True,correct
+B300-0611143403,0,no_contact,400_model,No contact,,,0.24951033641734965,0,0,1,True,correct
+B300-0611145724,0,no_contact,400_model,No contact,,,0.4372473054767427,0,0,2,True,correct
+B300-0611152152,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.5818750545504495,1,1,1,True,correct
+B300-0611152646,0,no_contact,400_model,No contact,,,0.26554693461142836,0,0,3,True,correct
+B300-0611154156,1,leading_direct,400_model,Leading edge strike,Direct,,0.7206045667209843,1,1,4,True,correct
+B301-0519093744,1,leading_direct,400_model,Leading edge strike,Direct,,0.741308881148975,1,1,0,True,correct
+B301-0519100123,1,leading_direct,400_model,Leading edge strike,Direct,,0.6528180292250294,1,1,0,True,correct
+B301-0519102732,0,no_contact,400_model,No contact,,,0.3290514948193533,0,0,1,True,correct
+B301-0520133651,0,no_contact,400_model,No contact,,,0.24168258888823346,0,0,2,True,correct
+B301-0520140454,0,no_contact,400_model,No contact,,,0.3369798597265093,0,0,2,True,correct
+B301-0529093000,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.5490814383830702,1,1,0,True,correct
+B301-0529100315,1,leading_direct,400_model,Leading edge strike,Direct,,0.7611115749337178,1,1,0,True,correct
+B301-0529102753,0,no_contact,400_model,No contact,,,0.22930702333828798,0,0,4,True,correct
+B301-0601114450,1,leading_direct,400_model,Leading edge strike,Direct,,0.6925621677372574,1,1,3,True,correct
+B301-0601122632,0,no_contact,400_model,No contact,,,0.24834605675533594,0,0,4,True,correct
+B301-0601123651,0,no_contact,400_model,No contact,,,0.3926781789608749,0,0,2,True,correct
+B301-0601130509,1,leading_direct,400_model,Leading edge strike,Direct,,0.6460633460164762,1,1,1,True,correct
+B301-0601131712,0,no_contact,400_model,No contact,,,0.37784815787283793,0,0,4,True,correct
+B301-0605120421,0,no_contact,400_model,No contact,,,0.1824932999106984,0,0,4,True,correct
+B301-0605121741,0,no_contact,400_model,No contact,,,0.2267742916912437,0,0,2,True,correct
+B301-0605123722,0,no_contact,400_model,No contact,,,0.17754770237736037,0,0,4,True,correct
+B302-0519102428,1,leading_direct,400_model,Leading edge strike,Direct,,0.7412551394177819,1,1,0,True,correct
+B302-0519105817,0,no_contact,400_model,No contact,,,0.17970528399232302,0,0,2,True,correct
+B302-0519111905,0,no_contact,400_model,No contact,,,0.24023564187715585,0,0,0,True,correct
+B302-0520145526,0,no_contact,400_model,No contact,,,0.23177900890494285,0,0,1,True,correct
+B302-0520150723,0,no_contact,400_model,No contact,,,0.3074931591993801,0,0,0,True,correct
+B302-0529093000,0,no_contact,400_model,No contact,,,0.252195001285259,0,0,1,True,correct
+B302-0529094404,0,no_contact,400_model,No contact,,,0.2758760501475416,0,0,4,True,correct
+B302-0529101329,0,no_contact,400_model,No contact,,,0.28764332940509485,0,0,3,True,correct
+B302-0601122602,0,no_contact,400_model,No contact,,,0.2366660157934631,0,0,0,True,correct
+B302-0601123550,1,leading_direct,400_model,Leading edge strike,Direct,,0.6732797139732575,1,1,2,True,correct
+B302-0601125831,0,no_contact,400_model,No contact,,,0.27753508622869383,0,0,4,True,correct
+B302-0601131206,1,leading_direct,400_model,Leading edge strike,Direct,,0.7420898775910337,1,1,2,True,correct
+B302-0601133838,0,no_contact,400_model,No contact,,,0.28963505009490365,0,0,2,True,correct
+B302-0605115737,0,no_contact,400_model,No contact,,,0.3236949474034735,0,0,1,True,correct
+B302-0605121556,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.6109544172988195,1,1,2,True,correct
+B302-0605123314,0,no_contact,400_model,No contact,,,0.32184218310803286,0,0,4,True,correct
+B302-0608110104,0,no_contact,400_model,No contact,,,0.3158850239037067,0,0,1,True,correct
+B302-0608111250,1,leading_direct,400_model,Leading edge strike,Direct,,0.8096208856155085,1,1,3,True,correct
+B302-0608112944,1,leading_direct,400_model,Leading edge strike,Direct,,0.6913716651150885,1,1,2,True,correct
+B302-0608120017,0,no_contact,400_model,No contact,,,0.21189358426563112,0,0,4,True,correct
+B302-0608122300,0,no_contact,400_model,No contact,,,0.3457703256417078,0,0,1,True,correct
+B302-0609142649,0,no_contact,400_model,No contact,,,0.3300973003041779,0,0,4,True,correct
+B302-0609144109,1,leading_direct,400_model,Leading edge strike,Direct,,0.692713561857584,1,1,2,True,correct
+B302-0609145525,0,no_contact,400_model,No contact,,,0.2820439892689285,0,0,0,True,correct
+B302-0609150521,1,leading_direct,400_model,Leading edge strike,Direct,,0.6752392449890021,1,1,4,True,correct
+B302-0609151941,0,no_contact,400_model,No contact,,,0.19667311942538268,0,0,0,True,correct
+B302-0609153539,1,leading_indirect,400_model,Leading edge strike,Indirect,,0.611701047119712,1,1,0,True,correct
+B302-0609154610,1,leading_direct,400_model,Leading edge strike,Direct,,0.7897041972459402,1,1,3,True,correct
+B302-0610102445,0,no_contact,400_model,No contact,,,0.2740976140342594,0,0,2,True,correct
+B302-0610104341,0,no_contact,400_model,No contact,,,0.22690777911101936,0,0,4,True,correct
+B302-0610105001,1,leading_direct,400_model,Leading edge strike,Direct,,0.7685990073550721,1,1,4,True,correct
+B302-0610112748,1,leading_indirect,400_model,Leading edge strike,Indirect,,0.7644265807363079,1,1,0,True,correct
+B302-0610114342,0,no_contact,400_model,No contact,,,0.25969847866677187,0,0,0,True,correct
+B302-0610121618,0,no_contact,400_model,No contact,,,0.45453938688613554,1,0,2,False,false_positive
+B302-0611135025,0,no_contact,400_model,No contact,,,0.3808868847102155,0,0,1,True,correct
+B302-0611140355,1,leading_direct,400_model,Leading edge strike,Direct,,0.7590933835039603,1,1,0,True,correct
+B302-0611141209,0,no_contact,400_model,No contact,,,0.2761673042929035,0,0,0,True,correct
+B302-0611144303,1,leading_direct,400_model,Leading edge strike,Direct,,0.6600549141484623,1,1,2,True,correct
+B302-0611150142,0,no_contact,400_model,No contact,,,0.38708746988415804,0,0,2,True,correct
+B302-0611151726,1,leading_direct,400_model,Leading edge strike,Direct,,0.8120798953042927,1,1,1,True,correct
+B302-0611152903,0,no_contact,400_model,No contact,,,0.30340974392674347,0,0,3,True,correct
+B302-0611154125,1,leading_direct,400_model,Leading edge strike,Direct,,0.7179091659474672,1,1,4,True,correct
+B304-0519082600,1,leading_direct,400_model,Leading edge strike,Direct,,0.7293149916709037,1,1,4,True,correct
+B304-0519091826,0,no_contact,400_model,No contact,,,0.26179251446585367,0,0,0,True,correct
+B304-0519093128,0,no_contact,400_model,No contact,,,0.26790153472855066,0,0,4,True,correct
+B304-0520130400,0,no_contact,400_model,No contact,,,0.2430206366283925,0,0,4,True,correct
+B304-0520133332,0,no_contact,400_model,No contact,,,0.29854749837276245,0,0,3,True,correct
+B304-0529093000,0,no_contact,400_model,No contact,,,0.21774230963956706,0,0,1,True,correct
+B304-0529101748,0,no_contact,400_model,No contact,,,0.4365678978211822,0,0,3,True,correct
+B304-0601124844,0,no_contact,400_model,No contact,,,0.29312240132918105,0,0,2,True,correct
+B304-0601130130,0,no_contact,400_model,No contact,,,0.2378856952076001,0,0,1,True,correct
+B304-0601132446,0,no_contact,400_model,No contact,,,0.2550394553944979,0,0,4,True,correct
+B304-0601134704,1,leading_direct,400_model,Leading edge strike,Direct,,0.8041253440703001,1,1,0,True,correct
+B304-0605120655,0,no_contact,400_model,No contact,,,0.29706658379131246,0,0,3,True,correct
+B304-0605123934,1,leading_direct,400_model,Leading edge strike,Direct,,0.7936395386952382,1,1,2,True,correct
+B304-0608105526,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.6956090000909043,1,1,2,True,correct
+B304-0608111054,1,leading_direct,400_model,Leading edge strike,Direct,,0.6776391520750248,1,1,2,True,correct
+B304-0608113050,1,leading_direct,400_model,Leading edge strike,Direct,,0.6875918741698962,1,1,4,True,correct
+B304-0608115616,1,leading_direct,400_model,Leading edge strike,Direct,,0.871873733433247,1,1,0,True,correct
+B304-0608121300,1,leading_direct,400_model,Leading edge strike,Direct,,0.7279176317788991,1,1,3,True,correct
+B304-0609142414,1,leading_direct,400_model,Leading edge strike,Direct,,0.7705629423247708,1,1,3,True,correct
+B304-0609143711,0,no_contact,400_model,No contact,,,0.5145696810952278,1,0,4,False,false_positive
+B304-0609145359,1,other_impeller_surface,400_model,Other impeller collision,,Impeller surface,0.5035208766024046,1,1,0,True,correct
+B304-0609150244,0,no_contact,400_model,No contact,,,0.23890423177392334,0,0,1,True,correct
+B304-0609151738,1,leading_direct,400_model,Leading edge strike,Direct,,0.7677466672538978,1,1,1,True,correct
+B304-0609152827,0,no_contact,400_model,No contact,,,0.28417641287369866,0,0,2,True,correct
+B304-0609154346,1,leading_direct,400_model,Leading edge strike,Direct,,0.788636753150345,1,1,2,True,correct
+B304-0610104218,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.7789302167300711,1,1,1,True,correct
+B304-0610105507,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.5420252699609027,1,1,1,True,correct
+B304-0610111017,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.6406425887606029,1,1,4,True,correct
+B304-0610114122,0,no_contact,400_model,No contact,,,0.34225702547492537,0,0,4,True,correct
+B304-0610120622,0,no_contact,400_model,No contact,,,0.3010974215284887,0,0,3,True,correct
+B304-0611135337,1,leading_indirect,400_model,Leading edge strike,Indirect,,0.569981208702985,1,1,3,True,correct
+B304-0611135809,1,other_impeller_surface,400_model,Other impeller collision,,Impeller surface,0.46438182064815986,1,1,1,True,correct
+B304-0611141056,0,no_contact,400_model,No contact,,,0.3512253773486322,0,0,2,True,correct
+B304-0611142647,0,no_contact,400_model,No contact,,,0.306585843243147,0,0,4,True,correct
+B304-0611144937,1,other_impeller_surface,400_model,Other impeller collision,,Impeller surface,0.4541156002479093,1,1,1,True,correct
+B304-0611145300,1,leading_direct,400_model,Leading edge strike,Direct,,0.7656413246848711,1,1,1,True,correct
+B304-0611151824,0,no_contact,400_model,No contact,,,0.32825847075978126,0,0,1,True,correct
+B304-0611153214,0,no_contact,400_model,No contact,,,0.45123527707894046,0,0,4,True,correct
+B304-0611154016,0,no_contact,400_model,No contact,,,0.35204616722352766,0,0,2,True,correct
+B307-0519082500,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.6051038034709075,1,1,4,True,correct
+B307-0519084742,0,no_contact,400_model,No contact,,,0.47874594737163007,1,0,2,False,false_positive
+B307-0519091535,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.5015549338126378,1,1,3,True,correct
+B307-0520124123,1,leading_direct,400_model,Leading edge strike,Direct,,0.8149960441921262,1,1,0,True,correct
+B307-0520131010,0,no_contact,400_model,No contact,,,0.22586766214441167,0,0,1,True,correct
+B307-0529113816,0,no_contact,400_model,No contact,,,0.3809579066097443,0,0,4,True,correct
+B307-0601121649,0,no_contact,400_model,No contact,,,0.2823874646688376,0,0,1,True,correct
+B307-0601122706,1,leading_direct,400_model,Leading edge strike,Direct,,0.7269403216612612,1,1,1,True,correct
+B307-0601130844,1,leading_direct,400_model,Leading edge strike,Direct,,0.7783654814097144,1,1,1,True,correct
+B307-0601132728,0,no_contact,400_model,No contact,,,0.3049954732117,0,0,1,True,correct
+B307-0605120134,0,no_contact,400_model,No contact,,,0.22717736164842683,0,0,0,True,correct
+B307-0605122702,0,no_contact,400_model,No contact,,,0.27403854121608723,0,0,3,True,correct
+B307-0605123359,1,other_impeller_surface,400_model,Other impeller collision,,Impeller surface,0.4313010629136147,0,1,3,False,false_negative
+B307-0608111545,0,no_contact,400_model,No contact,,,0.3804977846490593,0,0,4,True,correct
+B307-0608113106,1,leading_direct,400_model,Leading edge strike,Direct,,0.7598233609972305,1,1,0,True,correct
+B307-0608115056,0,no_contact,400_model,No contact,,,0.3196308031202439,0,0,3,True,correct
+B307-0608121120,1,leading_direct,400_model,Leading edge strike,Direct,,0.5564514409447306,1,1,3,True,correct
+B307-0608123519,0,no_contact,400_model,No contact,,,0.37206383336624393,0,0,1,True,correct
+B307-0609141800,0,no_contact,400_model,No contact,,,0.3781961014902709,0,0,3,True,correct
+B307-0609143304,1,leading_direct,400_model,Leading edge strike,Direct,,0.8096533428995478,1,1,3,True,correct
+B307-0609145112,1,leading_direct,400_model,Leading edge strike,Direct,,0.7079982839595449,1,1,4,True,correct
+B307-0609150914,0,no_contact,400_model,No contact,,,0.2519984191823906,0,0,2,True,correct
+B307-0609152009,0,no_contact,400_model,No contact,,,0.263415869736075,0,0,1,True,correct
+B307-0609153722,0,no_contact,400_model,No contact,,,0.3413581213039486,0,0,3,True,correct
+B307-0609155013,1,leading_direct,400_model,Leading edge strike,Direct,,0.5772415189132784,1,1,1,True,correct
+B307-0610102523,0,no_contact,400_model,No contact,,,0.2442468890803449,0,0,3,True,correct
+B307-0610104048,0,no_contact,400_model,No contact,,,0.2833012318806524,0,0,3,True,correct
+B307-0610105208,0,no_contact,400_model,No contact,,,0.2243704756000965,0,0,1,True,correct
+B307-0610111517,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.7248304071878459,1,1,4,True,correct
+B307-0610121317,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.7413928635688908,1,1,2,True,correct
+B307-0611135031,0,no_contact,400_model,No contact,,,0.2481238522856915,0,0,2,True,correct
+B307-0611140003,0,no_contact,400_model,No contact,,,0.24629660353787183,0,0,1,True,correct
+B307-0611141424,0,no_contact,400_model,No contact,,,0.3601767422009947,0,0,0,True,correct
+B307-0611142551,1,leading_direct,400_model,Leading edge strike,Direct,,0.7426719609435039,1,1,4,True,correct
+B307-0611144458,0,no_contact,400_model,No contact,,,0.34256184849241367,0,0,4,True,correct
+B307-0611145458,1,leading_direct,400_model,Leading edge strike,Direct,,0.6528799605706679,1,1,3,True,correct
+B307-0611151853,0,no_contact,400_model,No contact,,,0.32702969566693,0,0,2,True,correct
+B307-0611152735,0,no_contact,400_model,No contact,,,0.36450830887218855,0,0,2,True,correct
+B307-0611154656,1,leading_direct,400_model,Leading edge strike,Direct,,0.6928272915704553,1,1,2,True,correct
+B309-0519101738,1,leading_direct,400_model,Leading edge strike,Direct,,0.7656500864859189,1,1,2,True,correct
+B309-0519112323,0,no_contact,400_model,No contact,,,0.3922688403882391,0,0,4,True,correct
+B309-0520144114,0,no_contact,400_model,No contact,,,0.24410452740606192,0,0,3,True,correct
+B309-0520151950,1,leading_indirect,400_model,Leading edge strike,Indirect,,0.529143040343245,1,1,2,True,correct
+B309-0605114959,0,no_contact,400_model,No contact,,,0.3379215909234605,0,0,1,True,correct
+B309-0608111735,1,leading_direct,400_model,Leading edge strike,Direct,,0.7284111543014047,1,1,1,True,correct
+B309-0608113825,0,no_contact,400_model,No contact,,,0.422632477159285,0,0,3,True,correct
+B309-0608115848,0,no_contact,400_model,No contact,,,0.40734404363746846,0,0,3,True,correct
+B309-0608121837,1,leading_direct,400_model,Leading edge strike,Direct,,0.7228092914791634,1,1,4,True,correct
+B309-0608124015,1,leading_direct,400_model,Leading edge strike,Direct,,0.7313553505716327,1,1,3,True,correct
+B309-0609144529,1,other_impeller_surface,400_model,Other impeller collision,,Impeller surface,0.7395096826839946,1,1,2,True,correct
+B309-0609150616,1,leading_direct,400_model,Leading edge strike,Direct,,0.7635583868790243,1,1,1,True,correct
+B309-0610102825,1,leading_direct,400_model,Leading edge strike,Direct,,0.77026549227159,1,1,0,True,correct
+B309-0610103638,0,no_contact,400_model,No contact,,,0.2680031708157585,0,0,4,True,correct
+B309-0610104925,1,leading_direct,400_model,Leading edge strike,Direct,,0.5273919631843482,1,1,2,True,correct
+B309-0610111150,1,leading_direct,400_model,Leading edge strike,Direct,,0.8260310466948242,1,1,2,True,correct
+B309-0610114915,1,leading_indirect,400_model,Leading edge strike,Indirect,,0.6510066787082579,1,1,2,True,correct
+B309-0610120935,1,leading_direct,400_model,Leading edge strike,Direct,,0.6835770719857941,1,1,4,True,correct
+B309-0611134538,1,leading_direct,400_model,Leading edge strike,Direct,,0.5928215971787628,1,1,1,True,correct
+B309-0611140008,1,leading_direct,400_model,Leading edge strike,Direct,,0.7490507007948428,1,1,3,True,correct
+B309-0611140800,0,no_contact,400_model,No contact,,,0.22040779845489938,0,0,1,True,correct
+B309-0611142315,1,leading_direct,400_model,Leading edge strike,Direct,,0.6935991343634043,1,1,4,True,correct
+B309-0611143514,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.5026250598153292,1,1,2,True,correct
+B309-0611150404,1,leading_direct,400_model,Leading edge strike,Direct,,0.8385672642686453,1,1,0,True,correct
+B309-0611151321,0,no_contact,400_model,No contact,,,0.23764108886200322,0,0,2,True,correct
+B309-0611152826,0,no_contact,400_model,No contact,,,0.3600534399330362,0,0,1,True,correct
+B309-0611154305,1,leading_indirect,400_model,Leading edge strike,Indirect,,0.7268197484888647,1,1,3,True,correct
+B312-0519082100,1,leading_direct,400_model,Leading edge strike,Direct,,0.7761087213911538,1,1,3,True,correct
+B312-0519085745,0,no_contact,400_model,No contact,,,0.27718658345410907,0,0,2,True,correct
+B312-0519091258,1,leading_direct,400_model,Leading edge strike,Direct,,0.7366419480392273,1,1,1,True,correct
+B312-0520124339,1,leading_direct,400_model,Leading edge strike,Direct,,0.5883413717073602,1,1,1,True,correct
+B312-0520130735,0,no_contact,400_model,No contact,,,0.20213811197343864,0,0,4,True,correct
+B312-0529093000,0,no_contact,400_model,No contact,,,0.2357846262440546,0,0,0,True,correct
+B312-0529095608,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.5844194603660339,1,1,0,True,correct
+B312-0529101039,1,leading_direct,400_model,Leading edge strike,Direct,,0.8370133040964182,1,1,1,True,correct
+B312-0601130336,0,no_contact,400_model,No contact,,,0.3052506966318681,0,0,2,True,correct
+B312-0601132648,1,leading_direct,400_model,Leading edge strike,Direct,,0.825564816857958,1,1,2,True,correct
+B312-0601133931,1,leading_direct,400_model,Leading edge strike,Direct,,0.6518381563968398,1,1,3,True,correct
+B312-0605120240,0,no_contact,400_model,No contact,,,0.29682987357551927,0,0,2,True,correct
+B312-0605122327,0,no_contact,400_model,No contact,,,0.32104139248752617,0,0,3,True,correct
+B312-0605123154,1,leading_direct,400_model,Leading edge strike,Direct,,0.6887975974769346,1,1,3,True,correct
+B312-0608110827,1,other_impeller_surface,400_model,Other impeller collision,,Impeller surface,0.6429159128148203,1,1,1,True,correct
+B312-0608115526,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.4643828786167038,1,1,2,True,correct
+B312-0608121818,0,no_contact,400_model,No contact,,,0.23404998290149795,0,0,1,True,correct
+B312-0608124004,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.6648241859882499,1,1,1,True,correct
+B312-0609142005,0,no_contact,400_model,No contact,,,0.30934739563840485,0,0,4,True,correct
+B312-0609143859,0,no_contact,400_model,No contact,,,0.29194115332926773,0,0,1,True,correct
+B312-0609145225,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.8422557844447441,1,1,4,True,correct
+B312-0609150543,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.26500426476279476,0,1,3,False,false_negative
+B312-0609151455,0,no_contact,400_model,No contact,,,0.3498236397379449,0,0,0,True,correct
+B312-0609153341,1,leading_direct,400_model,Leading edge strike,Direct,,0.7423356950844495,1,1,0,True,correct
+B312-0609154419,0,no_contact,400_model,No contact,,,0.3947075073553735,0,0,4,True,correct
+B312-0610102612,1,leading_direct,400_model,Leading edge strike,Direct,,0.7379082944875447,1,1,0,True,correct
+B312-0610103935,0,no_contact,400_model,No contact,,,0.28647682846765427,0,0,2,True,correct
+B312-0610104757,0,no_contact,400_model,No contact,,,0.2657448134433655,0,0,4,True,correct
+B312-0610113751,1,leading_direct,400_model,Leading edge strike,Direct,,0.750015702483535,1,1,0,True,correct
+B312-0610120037,0,no_contact,400_model,No contact,,,0.2972317031348692,0,0,0,True,correct
+B312-0611134748,1,leading_direct,400_model,Leading edge strike,Direct,,0.7865017042553052,1,1,0,True,correct
+B312-0611140502,0,no_contact,400_model,No contact,,,0.28630980879937934,0,0,2,True,correct
+B312-0611140928,1,leading_direct,400_model,Leading edge strike,Direct,,0.7180178116450099,1,1,0,True,correct
+B312-0611142446,0,no_contact,400_model,No contact,,,0.21450746281480632,0,0,0,True,correct
+B312-0611143757,1,leading_direct,400_model,Leading edge strike,Direct,,0.7514134848284731,1,1,4,True,correct
+B312-0611150533,0,no_contact,400_model,No contact,,,0.2816655459017178,0,0,4,True,correct
+B312-0611151453,0,no_contact,400_model,No contact,,,0.24058739636064982,0,0,0,True,correct
+B312-0611153455,1,leading_indirect,400_model,Leading edge strike,Indirect,,0.5455922735308085,1,1,2,True,correct
+B312-0611154249,0,no_contact,400_model,No contact,,,0.3112593180409865,0,0,1,True,correct
+B315-0519082900,0,no_contact,400_model,No contact,,,0.37290307802122036,0,0,3,True,correct
+B315-0519085300,1,leading_direct,400_model,Leading edge strike,Direct,,0.7587332318483163,1,1,2,True,correct
+B315-0519092432,0,no_contact,400_model,No contact,,,0.36589744267267127,0,0,1,True,correct
+B315-0520124203,1,leading_indirect,400_model,Leading edge strike,Indirect,,0.5186294087430092,1,1,0,True,correct
+B315-0520131009,0,no_contact,400_model,No contact,,,0.34729612761461953,0,0,3,True,correct
+B315-0529093000,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.6898011103004333,1,1,2,True,correct
+B315-0529100617,1,leading_direct,400_model,Leading edge strike,Direct,,0.5585310480925294,1,1,1,True,correct
+B315-0529102326,0,no_contact,400_model,No contact,,,0.25132622341793404,0,0,2,True,correct
+B315-0601113357,0,no_contact,400_model,No contact,,,0.20726121919735968,0,0,0,True,correct
+B315-0601114952,0,no_contact,400_model,No contact,,,0.5237484044658627,1,0,2,False,false_positive
+B315-0601120808,1,leading_direct,400_model,Leading edge strike,Direct,,0.8799699699598256,1,1,3,True,correct
+B315-0601122506,0,no_contact,400_model,No contact,,,0.27928438663307165,0,0,4,True,correct
+B315-0601124827,0,no_contact,400_model,No contact,,,0.2920055604065932,0,0,1,True,correct
+B315-0605120836,1,leading_direct,400_model,Leading edge strike,Direct,,0.701249971414555,1,1,2,True,correct
+B315-0605122133,0,no_contact,400_model,No contact,,,0.33496610543424754,0,0,3,True,correct
+B315-0605124249,1,leading_direct,400_model,Leading edge strike,Direct,,0.6494197686715566,1,1,0,True,correct
+B315-0608111725,0,no_contact,400_model,No contact,,,0.30026872424938583,0,0,3,True,correct
+B315-0608114630,0,no_contact,400_model,No contact,,,0.25816025649502705,0,0,3,True,correct
+B315-0608120539,1,leading_direct,400_model,Leading edge strike,Direct,,0.6294452423803175,1,1,2,True,correct
+B315-0608123046,1,leading_direct,400_model,Leading edge strike,Direct,,0.6310851133717529,1,1,3,True,correct
+B315-0608124356,1,leading_indirect,400_model,Leading edge strike,Indirect,,0.8184425338251679,1,1,1,True,correct
+B315-0609141909,1,leading_direct,400_model,Leading edge strike,Direct,,0.6955694885742131,1,1,3,True,correct
+B315-0609143407,1,leading_direct,400_model,Leading edge strike,Direct,,0.8487338861835616,1,1,4,True,correct
+B315-0609144811,1,leading_direct,400_model,Leading edge strike,Direct,,0.2791969364239147,0,1,1,False,false_negative
+B315-0609150023,1,leading_direct,400_model,Leading edge strike,Direct,,0.7334357944606896,1,1,3,True,correct
+B321-0519103455,0,no_contact,400_model,No contact,,,0.2803142815498814,0,0,0,True,correct
+B321-0519112506,0,no_contact,400_model,No contact,,,0.40213153350481345,0,0,0,True,correct
+B321-0520145018,1,other_impeller_surface,400_model,Other impeller collision,,Impeller surface,0.6509889172380955,1,1,0,True,correct
+B321-0520152109,1,leading_direct,400_model,Leading edge strike,Direct,,0.5824513687714782,1,1,4,True,correct
+B321-0529093000,0,no_contact,400_model,No contact,,,0.3785042071127227,0,0,3,True,correct
+B321-0529094518,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.558832960199033,1,1,3,True,correct
+B321-0529100555,1,leading_direct,400_model,Leading edge strike,Direct,,0.5923888524970604,1,1,0,True,correct
+B321-0601124942,0,no_contact,400_model,No contact,,,0.23083618014303453,0,0,0,True,correct
+B321-0601130048,1,leading_direct,400_model,Leading edge strike,Direct,,0.592393850698195,1,1,4,True,correct
+B321-0601132409,0,no_contact,400_model,No contact,,,0.3419067932140247,0,0,1,True,correct
+B321-0601133633,0,no_contact,400_model,No contact,,,0.31014989842564594,0,0,3,True,correct
+B321-0605122146,1,other_impeller_surface,400_model,Other impeller collision,,Impeller surface,0.7362304406920462,1,1,2,True,correct
+B321-0605123601,0,no_contact,400_model,No contact,,,0.24437301393210784,0,0,1,True,correct
+B321-0605124405,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.4941302998171423,1,1,0,True,correct
+B321-0608110538,0,no_contact,400_model,No contact,,,0.28256887934552477,0,0,4,True,correct
+B321-0608113011,1,leading_direct,400_model,Leading edge strike,Direct,,0.5687045090469504,1,1,4,True,correct
+B321-0608114906,0,no_contact,400_model,No contact,,,0.3132104793514803,0,0,1,True,correct
+B321-0608121411,1,leading_direct,400_model,Leading edge strike,Direct,,0.7729372106785808,1,1,1,True,correct
+B321-0608123352,0,no_contact,400_model,No contact,,,0.264837680399721,0,0,0,True,correct
+B321-0609142519,0,no_contact,400_model,No contact,,,0.42974787926166375,0,0,1,True,correct
+B321-0609143213,0,no_contact,400_model,No contact,,,0.30252173081397277,0,0,3,True,correct
+B321-0609145009,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.73193399669289,1,1,3,True,correct
+B321-0609150138,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.43255514985140586,0,1,4,False,false_negative
+B321-0609151626,1,leading_direct,400_model,Leading edge strike,Direct,,0.5866923568950186,1,1,1,True,correct
+B321-0609153202,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.6087911315747435,1,1,0,True,correct
+B321-0609155132,1,leading_direct,400_model,Leading edge strike,Direct,,0.761283570578306,1,1,1,True,correct
+B321-0610102734,0,no_contact,400_model,No contact,,,0.26230232333901776,0,0,0,True,correct
+B321-0610103643,0,no_contact,400_model,No contact,,,0.27705189462332014,0,0,4,True,correct
+B321-0610105407,0,no_contact,400_model,No contact,,,0.2651680871537128,0,0,1,True,correct
+B321-0610111808,1,leading_direct,400_model,Leading edge strike,Direct,,0.8066957426204016,1,1,3,True,correct
+B321-0610120317,0,no_contact,400_model,No contact,,,0.25644070835936195,0,0,3,True,correct
+B321-0611135223,0,no_contact,400_model,No contact,,,0.26749762285712336,0,0,0,True,correct
+B321-0611135853,0,no_contact,400_model,No contact,,,0.25415177860112836,0,0,1,True,correct
+B321-0611141250,0,no_contact,400_model,No contact,,,0.3514315828340829,0,0,4,True,correct
+B321-0611142123,0,no_contact,400_model,No contact,,,0.2944033691713313,0,0,2,True,correct
+B321-0611144643,1,other_impeller_hub,400_model,Other impeller collision,,Impeller hub,0.5083384452823357,1,1,2,True,correct
+B321-0611145926,0,no_contact,400_model,No contact,,,0.1664905597669239,0,0,4,True,correct
+B321-0611153018,0,no_contact,400_model,No contact,,,0.2791938304132726,0,0,3,True,correct
+B321-0611154541,1,leading_direct,400_model,Leading edge strike,Direct,,0.7444117974789026,1,1,0,True,correct
+B61-0102000014,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.7663400317952103,1,1,4,True,correct
+B61-0102002256,0,no_contact,400 (70%),No contact,,,0.26496885555536087,0,0,2,True,correct
+B61-0102003600,0,no_contact,400 (70%),No contact,,,0.4151430290902242,0,0,2,True,correct
+B61-0102005624,0,no_contact,400 (70%),No contact,,,0.5343102677068673,1,0,1,False,false_positive
+B61-0102011935,0,no_contact,400 (70%),No contact,,,0.2423314364214162,0,0,3,True,correct
+B61-0102024730,0,no_contact,400 (70%),No contact,,,0.26793550844985503,0,0,4,True,correct
+B61-0102031847,0,no_contact,400 (70%),No contact,,,0.32298734626372805,0,0,3,True,correct
+B61-0102033828,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.7047242808478844,1,1,4,True,correct
+B61-0102041430,1,leading_indirect,400 (70%),Leading edge strike,Indirect,,0.7864844194445267,1,1,0,True,correct
+B61-0102042637,0,no_contact,400 (70%),No contact,,,0.5838055775971065,1,0,3,False,false_positive
+B61-0703140718,0,no_contact,500 (100%),No contact,,,0.25244754193835317,0,0,1,True,correct
+B61-0703180049,0,no_contact,500 (100%),No contact,,,0.4121848831091612,0,0,1,True,correct
+B61-0704133030,0,no_contact,500 (100%),No contact,,,0.3484618008199114,0,0,1,True,correct
+B61-0716112326,0,no_contact,400 (100%),No contact,,,0.29148753020128176,0,0,2,True,correct
+B61-0716132030,0,no_contact,400 (100%),No contact,,,0.4122589531228451,0,0,1,True,correct
+B61-0716141431,0,no_contact,400 (100%),No contact,,,0.2728403685647566,0,0,2,True,correct
+B61-0716150441,0,no_contact,400 (100%),No contact,,,0.26661205979443453,0,0,4,True,correct
+B61-0716152814,1,other_impeller_surface,400 (100%),Other impeller collision,,Impeller surface,0.4952278454055757,1,1,3,True,correct
+B61-0716164322,0,no_contact,400 (100%),No contact,,,0.3892810561603089,0,0,0,True,correct
+B61-0717094833,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.7907832236216016,1,1,0,True,correct
+B61-0717102503,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.6276835555652343,1,1,2,True,correct
+B61-0717111652,0,no_contact,400 (100%),No contact,,,0.31322179863013816,0,0,1,True,correct
+B61-0717130215,0,no_contact,400 (70%),No contact,,,0.2865045087771894,0,0,0,True,correct
+B61-0717133143,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.6702817421736673,1,1,0,True,correct
+B62-0703140412,0,no_contact,500 (100%),No contact,,,0.36908873945664405,0,0,2,True,correct
+B62-0703174721,0,no_contact,500 (100%),No contact,,,0.24716136031391062,0,0,0,True,correct
+B62-0703183930,1,other_impeller_hub,500 (100%),Other impeller collision,,Impeller hub,0.46781235400991245,1,1,4,True,correct
+B62-0704114942,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.7183543434269721,1,1,3,True,correct
+B62-0704123518,0,no_contact,500 (100%),No contact,,,0.18634916762740075,0,0,0,True,correct
+B62-0704135530,0,no_contact,500 (100%),No contact,,,0.35474299445491986,0,0,4,True,correct
+B62-0716153057,0,no_contact,400 (100%),No contact,,,0.3899579023255235,0,0,4,True,correct
+B63-0101005446,1,other_impeller_hub,400 (100%),Other impeller collision,,Impeller hub,0.6015850584132131,1,1,2,True,correct
+B63-0101014350,0,no_contact,400 (100%),No contact,,,0.24752516193265717,0,0,0,True,correct
+B63-0101023149,0,no_contact,400 (100%),No contact,,,0.232719683784001,0,0,4,True,correct
+B63-0101030528,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.7043031252031949,1,1,1,True,correct
+B63-0101034413,1,other_impeller_surface,400 (100%),Other impeller collision,,Impeller surface,0.6358349558216897,1,1,2,True,correct
+B63-0101042001,0,no_contact,400 (100%),No contact,,,0.26121365832512455,0,0,4,True,correct
+B63-0703134337,0,no_contact,500 (100%),No contact,,,0.2876968746097061,0,0,0,True,correct
+B63-0703175355,0,no_contact,500 (100%),No contact,,,0.2834003213481606,0,0,3,True,correct
+B63-0703183412,0,no_contact,500 (100%),No contact,,,0.3694982207377986,0,0,0,True,correct
+B63-0704115450,1,other_impeller_hub,500 (100%),Other impeller collision,,Impeller hub,0.6400954499124558,1,1,2,True,correct
+B63-0704134638,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.7612930605005955,1,1,4,True,correct
+B63-0717111035,0,no_contact,400 (100%),No contact,,,0.24114096361051388,0,0,2,True,correct
+B63-0717130205,0,no_contact,400 (70%),No contact,,,0.5619072357447338,1,0,0,False,false_positive
+B63-0717133134,0,no_contact,400 (70%),No contact,,,0.2669607039515335,0,0,4,True,correct
+B64-0703134039,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.7272903211721347,1,1,3,True,correct
+B64-0703174041,0,no_contact,500 (100%),No contact,,,0.29093864725084034,0,0,0,True,correct
+B64-0703182655,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.7437646027901663,1,1,1,True,correct
+B64-0704125625,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.6712873197078976,1,1,4,True,correct
+B64-0704135354,0,no_contact,500 (100%),No contact,,,0.44472289432942375,0,0,2,True,correct
+B64-0716133843,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.6771738622746817,1,1,1,True,correct
+B64-0716151334,0,no_contact,400 (100%),No contact,,,0.3434988086679573,0,0,3,True,correct
+B64-0716161049,0,no_contact,400 (100%),No contact,,,0.2567047639923018,0,0,3,True,correct
+B64-0716165138,0,no_contact,400 (100%),No contact,,,0.25710106474046857,0,0,3,True,correct
+B64-0716171843,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.7966476454989405,1,1,0,True,correct
+B64-0716180551,0,no_contact,400 (100%),No contact,,,0.31817508061439725,0,0,2,True,correct
+B64-0716190017,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.8425116499338507,1,1,3,True,correct
+B64-0717120236,0,no_contact,400 (100%),No contact,,,0.27158853120328985,0,0,2,True,correct
+B64-0717123232,0,no_contact,400 (100%),No contact,,,0.2680736170189347,0,0,2,True,correct
+B64-0717132327,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.7071012416204991,1,1,2,True,correct
+B64-0717145537,0,no_contact,400 (70%),No contact,,,0.29458446808134037,0,0,4,True,correct
+B64-0717152526,0,no_contact,400 (70%),No contact,,,0.41683248418041996,0,0,2,True,correct
+B65-0703141218,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.7567536391889067,1,1,0,True,correct
+B65-0703175656,0,no_contact,500 (100%),No contact,,,0.16092546459843968,0,0,1,True,correct
+B65-0703184425,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.5795125194792231,1,1,2,True,correct
+B65-0704113651,0,no_contact,500 (100%),No contact,,,0.2571786770907559,0,0,2,True,correct
+B65-0704122454,0,no_contact,500 (100%),No contact,,,0.2840461631031602,0,0,0,True,correct
+B65-0704135758,1,leading_indirect,500 (100%),Leading edge strike,Indirect,,0.5348984695248808,1,1,2,True,correct
+B65-0716132835,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.70982367300279,1,1,0,True,correct
+B65-0716152854,1,leading_indirect,400 (100%),Leading edge strike,Indirect,,0.6002162070748244,1,1,4,True,correct
+B65-0716160219,0,no_contact,400 (100%),No contact,,,0.37905615340931814,0,0,1,True,correct
+B65-0716165935,0,no_contact,400 (100%),No contact,,,0.39121886818868246,0,0,3,True,correct
+B65-0716173841,0,no_contact,400 (100%),No contact,,,0.3972859330709602,0,0,2,True,correct
+B65-0716180839,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.9050786229952837,1,1,3,True,correct
+B65-0716183453,0,no_contact,400 (100%),No contact,,,0.36978717794864646,0,0,4,True,correct
+B67-0703134817,0,no_contact,500 (100%),No contact,,,0.326130406372418,0,0,3,True,correct
+B67-0703174220,1,other_impeller_surface,500 (100%),Other impeller collision,,Impeller surface,0.43638103535693273,0,1,1,False,false_negative
+B67-0703182811,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.6975690683586925,1,1,0,True,correct
+B67-0704112406,1,other_impeller_hub,500 (100%),Other impeller collision,,Impeller hub,0.6523489296566126,1,1,4,True,correct
+B67-0704122929,1,leading_indirect,500 (100%),Leading edge strike,Indirect,,0.7039397893877989,1,1,0,True,correct
+B67-0704133245,0,no_contact,500 (100%),No contact,,,0.27114841087174163,0,0,0,True,correct
+B67-0716152748,1,leading_indirect,400 (100%),Leading edge strike,Indirect,,0.5400414375081857,1,1,1,True,correct
+B67-0716170117,0,no_contact,400 (100%),No contact,,,0.41090361812089954,0,0,4,True,correct
+B67-0716172919,0,no_contact,400 (100%),No contact,,,0.22873376043662083,0,0,0,True,correct
+B67-0716181841,0,no_contact,400 (100%),No contact,,,0.2629365133992619,0,0,0,True,correct
+B67-0716183814,0,no_contact,400 (100%),No contact,,,0.4066549351936111,0,0,4,True,correct
+B67-0717115729,0,no_contact,400 (100%),No contact,,,0.3440042639845775,0,0,1,True,correct
+B67-0717124104,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.6981791511394022,1,1,3,True,correct
+B67-0717131322,0,no_contact,400 (100%),No contact,,,0.26762979612556237,0,0,4,True,correct
+B67-0717145407,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.43064218240284846,0,1,3,False,false_negative
+B67-0717152051,0,no_contact,400 (70%),No contact,,,0.27069193614262343,0,0,3,True,correct
+B67-0806132225,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.6615665398988786,1,1,0,True,correct
+B67-0806134156,0,no_contact,400 (70%),No contact,,,0.33951741726161294,0,0,4,True,correct
+B67-0806140643,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.740318910105551,1,1,2,True,correct
+B67-0806143112,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.6945164937262052,1,1,3,True,correct
+B67-0806145234,1,other_impeller_hub,400 (70%),Other impeller collision,,Impeller hub,0.7565028669102386,1,1,0,True,correct
+B67-0806155637,0,no_contact,400 (70%),No contact,,,0.5311381177147552,1,0,3,False,false_positive
+B67-0806161636,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.677196389462588,1,1,1,True,correct
+B67-0806171411,0,no_contact,400 (70%),No contact,,,0.258729115050022,0,0,3,True,correct
+B67-0806173643,0,no_contact,400 (70%),No contact,,,0.4924809681096884,1,0,4,False,false_positive
+B67-0806180334,0,no_contact,400 (70%),No contact,,,0.3223607090044694,0,0,3,True,correct
+B68-0703133905,0,no_contact,500 (100%),No contact,,,0.3859552012574271,0,0,3,True,correct
+B68-0703175851,0,no_contact,500 (100%),No contact,,,0.3522180896297921,0,0,1,True,correct
+B68-0703184621,1,other_impeller_hub,500 (100%),Other impeller collision,,Impeller hub,0.5927430573623006,1,1,1,True,correct
+B68-0704115116,1,leading_indirect,500 (100%),Leading edge strike,Indirect,,0.6993745766878359,1,1,2,True,correct
+B68-0704134408,0,no_contact,500 (100%),No contact,,,0.4258164309905096,0,0,3,True,correct
+B68-0716134028,0,no_contact,400 (100%),No contact,,,0.32807171454426026,0,0,3,True,correct
+B68-0716151507,0,no_contact,400 (100%),No contact,,,0.2025072155587946,0,0,1,True,correct
+B68-0716161555,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.8088604765103138,1,1,4,True,correct
+B69-0703140920,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.6890199810884611,1,1,3,True,correct
+B69-0703174917,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.6404144615362732,1,1,4,True,correct
+B69-0703182956,0,no_contact,500 (100%),No contact,,,0.4265379091670856,0,0,0,True,correct
+B69-0704114624,0,no_contact,500 (100%),No contact,,,0.44145186298356925,0,0,4,True,correct
+B69-0704124202,0,no_contact,500 (100%),No contact,,,0.2141932601731061,0,0,2,True,correct
+B69-0704134239,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.5859255215033206,1,1,0,True,correct
+B69-0716112716,0,no_contact,400 (100%),No contact,,,0.3784682810675032,0,0,4,True,correct
+B69-0716131707,0,no_contact,400 (100%),No contact,,,0.3837748857738137,0,0,0,True,correct
+B69-0716135923,0,no_contact,400 (100%),No contact,,,0.3407424989292268,0,0,1,True,correct
+B69-0716144306,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.8323757916415515,1,1,3,True,correct
+B69-0716153730,1,other_impeller_hub,400 (100%),Other impeller collision,,Impeller hub,0.4809762618485126,1,1,1,True,correct
+B69-0716160245,1,other_impeller_hub,400 (100%),Other impeller collision,,Impeller hub,0.518550019977674,1,1,0,True,correct
+B69-0716164624,1,leading_indirect,400 (100%),Leading edge strike,Indirect,,0.662240395928022,1,1,4,True,correct
+B74-0703135949,0,no_contact,500 (100%),No contact,,,0.3767347217505296,0,0,0,True,correct
+B74-0703183215,1,other_impeller_hub,500 (100%),Other impeller collision,,Impeller hub,0.7112576898500742,1,1,0,True,correct
+B74-0704112054,1,leading_indirect,500 (100%),Leading edge strike,Indirect,,0.8170619839920689,1,1,3,True,correct
+B74-0704125002,0,no_contact,500 (100%),No contact,,,0.27634084612814785,0,0,3,True,correct
+B74-0704134740,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.7427894615265416,1,1,4,True,correct
+B74-0716131340,0,no_contact,400 (100%),No contact,,,0.28741701795849184,0,0,4,True,correct
+B74-0716152423,0,no_contact,400 (100%),No contact,,,0.4149331369377921,0,0,3,True,correct
+B74-0716155726,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.7149422732029744,1,1,2,True,correct
+B74-0716165614,0,no_contact,400 (100%),No contact,,,0.32293109900246386,0,0,2,True,correct
+B74-0716173017,0,no_contact,400 (100%),No contact,,,0.3044004400248583,0,0,0,True,correct
+B74-0716181134,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.7570881993944155,1,1,1,True,correct
+B74-0717115102,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.6583773759567293,1,1,1,True,correct
+B74-0717124215,0,no_contact,400 (100%),No contact,,,0.26681976386207945,0,0,0,True,correct
+B74-0717132458,0,no_contact,400 (100%),No contact,,,0.2601366294167153,0,0,4,True,correct
+B74-0717145659,1,other_impeller_hub,400 (70%),Other impeller collision,,Impeller hub,0.7211327698930167,1,1,4,True,correct
+B74-0717152640,0,no_contact,400 (70%),No contact,,,0.26479663292311106,0,0,0,True,correct
+B75-0703173825,0,no_contact,500 (100%),No contact,,,0.347595378595572,0,0,0,True,correct
+B75-0703185450,0,no_contact,500 (100%),No contact,,,0.21507614009298173,0,0,4,True,correct
+B75-0704113004,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.718709126787611,1,1,4,True,correct
+B75-0704125416,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.7617879034609762,1,1,1,True,correct
+B75-0704134011,1,other_impeller_hub,500 (100%),Other impeller collision,,Impeller hub,0.6379234502758351,1,1,0,True,correct
+B75-0716133640,0,no_contact,400 (100%),No contact,,,0.24248783690375197,0,0,0,True,correct
+B75-0716152557,0,no_contact,400 (100%),No contact,,,0.28661182298772314,0,0,1,True,correct
+B75-0716155312,1,leading_indirect,400 (100%),Leading edge strike,Indirect,,0.5343171586980796,1,1,0,True,correct
+B75-0716165306,0,no_contact,400 (100%),No contact,,,0.2935162610666179,0,0,3,True,correct
+B75-0716174014,1,other_impeller_hub,400 (100%),Other impeller collision,,Impeller hub,0.5288965019977594,1,1,1,True,correct
+B75-0716181322,0,no_contact,400 (100%),No contact,,,0.42319333339275716,0,0,3,True,correct
+B75-0716185258,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.7712435715321555,1,1,4,True,correct
+B75-0717115540,0,no_contact,400 (100%),No contact,,,0.25313044865386375,0,0,3,True,correct
+B75-0717124403,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.6203604084298082,1,1,2,True,correct
+B75-0717131745,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.5819179751255582,1,1,0,True,correct
+B75-0717145832,1,leading_indirect,400 (70%),Leading edge strike,Indirect,,0.6394253096715937,1,1,3,True,correct
+B75-0717152936,0,no_contact,400 (70%),No contact,,,0.32949029564323945,0,0,1,True,correct
+B75-0806132845,0,no_contact,400 (70%),No contact,,,0.3343173915256242,0,0,0,True,correct
+B75-0806134558,1,leading_indirect,400 (70%),Leading edge strike,Indirect,,0.7816883902477522,1,1,1,True,correct
+B75-0806141032,0,no_contact,400 (70%),No contact,,,0.49187783236245664,1,0,1,False,false_positive
+B75-0806142519,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.7142460757584165,1,1,4,True,correct
+B75-0806144357,1,other_impeller_hub,400 (70%),Other impeller collision,,Impeller hub,0.8708946549845551,1,1,2,True,correct
+B75-0806160726,1,leading_indirect,400 (70%),Leading edge strike,Indirect,,0.6395105385087247,1,1,4,True,correct
+B75-0806162232,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.874832009035829,1,1,4,True,correct
+B75-0806164125,1,leading_indirect,400 (70%),Leading edge strike,Indirect,,0.4773071675585663,1,1,1,True,correct
+B75-0806171105,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.8303336787993281,1,1,1,True,correct
+B75-0806173815,0,no_contact,400 (70%),No contact,,,0.3856646384751894,0,0,0,True,correct
+B75-0806180444,0,no_contact,400 (70%),No contact,,,0.2547993055149276,0,0,0,True,correct
+B75-0806181311,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.7694441472884075,1,1,2,True,correct
+B76-0703140137,0,no_contact,500 (100%),No contact,,,0.538995424906908,1,0,3,False,false_positive
+B76-0703175218,1,other_impeller_surface,500 (100%),Other impeller collision,,Impeller surface,0.5293398023144373,1,1,0,True,correct
+B76-0703184838,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.7327890089945347,1,1,4,True,correct
+B76-0704113249,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.7747034077777989,1,1,3,True,correct
+B76-0704123317,1,leading_indirect,500 (100%),Leading edge strike,Indirect,,0.538237557474389,1,1,4,True,correct
+B76-0704132834,0,no_contact,500 (100%),No contact,,,0.45406925108219953,0,0,0,True,correct
+B76-0716131853,0,no_contact,400 (100%),No contact,,,0.30100354748750313,0,0,0,True,correct
+B76-0716152314,0,no_contact,400 (100%),No contact,,,0.3202853893344308,0,0,3,True,correct
+B76-0716155619,1,other_impeller_surface,400 (100%),Other impeller collision,,Impeller surface,0.3914819989094343,0,1,3,False,false_negative
+B76-0716165809,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.7152159230313379,1,1,0,True,correct
+B76-0716172344,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.7477578317898468,1,1,3,True,correct
+B76-0716180414,0,no_contact,400 (100%),No contact,,,0.20960498881225437,0,0,0,True,correct
+B76-0716185142,1,other_impeller_hub,400 (100%),Other impeller collision,,Impeller hub,0.6899470681755913,1,1,4,True,correct
+B76-0717114435,0,no_contact,400 (100%),No contact,,,0.5566816281016657,1,0,2,False,false_positive
+B76-0717123417,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.7689234471343227,1,1,4,True,correct
+B76-0717132716,0,no_contact,400 (100%),No contact,,,0.2924455031036155,0,0,3,True,correct
+B76-0717150455,1,leading_indirect,400 (70%),Leading edge strike,Indirect,,0.5623196471500949,1,1,3,True,correct
+B76-0717153432,0,no_contact,400 (70%),No contact,,,0.29066047927498845,0,0,0,True,correct
+B76-0806132559,0,no_contact,400 (70%),No contact,,,0.3373633080297416,0,0,2,True,correct
+B76-0806134449,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.40704809657604546,0,1,1,False,false_negative
+B76-0806142702,0,no_contact,400 (70%),No contact,,,0.2873840236967138,0,0,0,True,correct
+B76-0806144250,0,no_contact,400 (70%),No contact,,,0.293384654507752,0,0,2,True,correct
+B76-0806155800,0,no_contact,400 (70%),No contact,,,0.20078614746249107,0,0,3,True,correct
+B76-0806161900,0,no_contact,400 (70%),No contact,,,0.2603082812237313,0,0,2,True,correct
+B76-0806164443,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.6587503463504021,1,1,4,True,correct
+B76-0806170715,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.6945359908098141,1,1,0,True,correct
+B76-0806172759,0,no_contact,400 (70%),No contact,,,0.19945366217624902,0,0,1,True,correct
+B76-0806175906,1,leading_indirect,400 (70%),Leading edge strike,Indirect,,0.7311982221553598,1,1,1,True,correct
+B76-0806182401,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.724507929076147,1,1,0,True,correct
+B77-0102020905,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.7060668510914515,1,1,1,True,correct
+B77-0102022635,0,no_contact,400 (70%),No contact,,,0.3576260497255682,0,0,4,True,correct
+B77-0102023924,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.6755042550698146,1,1,3,True,correct
+B77-0102031024,0,no_contact,400 (70%),No contact,,,0.40333760939421875,0,0,2,True,correct
+B77-0102032311,1,leading_indirect,400 (70%),Leading edge strike,Indirect,,0.7226555403684145,1,1,3,True,correct
+B77-0102052047,1,other_impeller_hub,400 (70%),Other impeller collision,,Impeller hub,0.6000399273548078,1,1,4,True,correct
+B77-0102054611,0,no_contact,400 (70%),No contact,,,0.4759323311180992,1,0,4,False,false_positive
+B77-0102061252,0,no_contact,400 (70%),No contact,,,0.3937674628712063,0,0,2,True,correct
+B77-0102063308,1,other_impeller_hub,400 (70%),Other impeller collision,,Impeller hub,0.8478130311132415,1,1,3,True,correct
+B77-0102065956,1,other_impeller_hub,400 (70%),Other impeller collision,,Impeller hub,0.8359984619027262,1,1,3,True,correct
+B77-0102145837,0,no_contact,400 (100%),No contact,,,0.3330420805519308,0,0,3,True,correct
+B77-0102164216,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.8346263926551454,1,1,2,True,correct
+B77-0102171842,0,no_contact,400 (100%),No contact,,,0.250707347971091,0,0,2,True,correct
+B77-0102181847,0,no_contact,400 (100%),No contact,,,0.29762381202150834,0,0,4,True,correct
+B77-0102185739,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.6732891450565258,1,1,0,True,correct
+B77-0102191805,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.6404755938501185,1,1,2,True,correct
+B77-0102200820,0,no_contact,400 (100%),No contact,,,0.2457854907367344,0,0,4,True,correct
+B77-0103132444,0,no_contact,400 (100%),No contact,,,0.36850769108049547,0,0,3,True,correct
+B77-0103135307,0,no_contact,400 (100%),No contact,,,0.255725292623527,0,0,4,True,correct
+B77-0103143826,1,other_impeller_surface,400 (100%),Other impeller collision,,Impeller surface,0.35485739327686056,0,1,4,False,false_negative
+B77-0103161613,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.738393419224395,1,1,4,True,correct
+B77-0103164602,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.7360816157115261,1,1,0,True,correct
+B77-0703133322,0,no_contact,500 (100%),No contact,,,0.46786038642267236,1,0,1,False,false_positive
+B77-0703173716,1,leading_indirect,500 (100%),Leading edge strike,Indirect,,0.7636080969642284,1,1,0,True,correct
+B77-0703183749,0,no_contact,500 (100%),No contact,,,0.21667717367066847,0,0,1,True,correct
+B77-0704114806,1,leading_indirect,500 (100%),Leading edge strike,Indirect,,0.8451000018578876,1,1,2,True,correct
+B77-0704122348,0,no_contact,500 (100%),No contact,,,0.3216745724476458,0,0,1,True,correct
+B77-0704135945,0,no_contact,500 (100%),No contact,,,0.26620341908637096,0,0,1,True,correct
+B78-0104234903,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.7356823397645226,1,1,2,True,correct
+B78-0105001037,0,no_contact,400 (70%),No contact,,,0.18123564405548107,0,0,2,True,correct
+B78-0105002356,0,no_contact,400 (70%),No contact,,,0.23323224908096524,0,0,1,True,correct
+B78-0105004835,0,no_contact,400 (70%),No contact,,,0.44015284532372,0,0,0,True,correct
+B78-0105010709,0,no_contact,400 (70%),No contact,,,0.30234522615706894,0,0,2,True,correct
+B78-0105024336,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.7784888654234805,1,1,2,True,correct
+B78-0105033431,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.7638096389010198,1,1,1,True,correct
+B78-0105041931,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.6759013019089823,1,1,1,True,correct
+B78-0105043507,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.6203365462806678,1,1,2,True,correct
+B78-0703133546,0,no_contact,500 (100%),No contact,,,0.40314583470514787,0,0,2,True,correct
+B78-0703175537,1,leading_indirect,500 (100%),Leading edge strike,Indirect,,0.7070418607649746,1,1,1,True,correct
+B78-0703185255,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.8285103874269846,1,1,3,True,correct
+B78-0704114429,1,other_impeller_surface,500 (100%),Other impeller collision,,Impeller surface,0.5468276274430457,1,1,1,True,correct
+B78-0704122756,0,no_contact,500 (100%),No contact,,,0.3287340718245398,0,0,3,True,correct
+B78-0704135657,1,other_impeller_hub,500 (100%),Other impeller collision,,Impeller hub,0.6344105542951667,1,1,4,True,correct
+B78-0716131632,0,no_contact,400 (100%),No contact,,,0.25178086038257713,0,0,2,True,correct
+B78-0716152149,0,no_contact,400 (100%),No contact,,,0.29289107598277253,0,0,1,True,correct
+B78-0716160647,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.7235912178729995,1,1,2,True,correct
+B78-0716164443,0,no_contact,400 (100%),No contact,,,0.25081572515640926,0,0,3,True,correct
+B78-0716173218,1,leading_direct,400 (100%),Leading edge strike,Direct,,0.615795878446252,1,1,4,True,correct
+B78-0716181522,0,no_contact,400 (100%),No contact,,,0.2195949855065907,0,0,0,True,correct
+B78-0716184958,0,no_contact,400 (100%),No contact,,,0.3004132531480814,0,0,2,True,correct
+B78-0717115002,0,no_contact,400 (100%),No contact,,,0.2909739260235303,0,0,0,True,correct
+B78-0717122800,0,no_contact,400 (100%),No contact,,,0.3306602303362883,0,0,2,True,correct
+B78-0717132150,0,no_contact,400 (100%),No contact,,,0.3117946752099638,0,0,4,True,correct
+B78-0717150829,1,leading_direct,400 (70%),Leading edge strike,Direct,,0.5908713830197446,1,1,0,True,correct
+B78-0717153803,0,no_contact,400 (70%),No contact,,,0.38189338902159997,0,0,0,True,correct
+B79-0703134159,1,leading_indirect,500 (100%),Leading edge strike,Indirect,,0.5755365803529309,1,1,3,True,correct
+B79-0703175031,0,no_contact,500 (100%),No contact,,,0.2859297161326042,0,0,0,True,correct
+B79-0703185632,1,leading_indirect,500 (100%),Leading edge strike,Indirect,,0.6875402903780311,1,1,1,True,correct
+B79-0704112227,1,leading_direct,500 (100%),Leading edge strike,Direct,,0.7988820467960905,1,1,2,True,correct
+B79-0704122208,0,no_contact,500 (100%),No contact,,,0.30166191478339494,0,0,1,True,correct
+B79-0704135041,0,no_contact,500 (100%),No contact,,,0.2724454439213653,0,0,2,True,correct
+B79-0716132503,1,leading_indirect,400 (100%),Leading edge strike,Indirect,,0.4984963709067654,1,1,1,True,correct

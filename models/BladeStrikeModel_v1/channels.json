@@ -1,0 +1,12 @@
+[
+  "higacc_x_g",
+  "higacc_y_g",
+  "higacc_z_g",
+  "inacc_x_ms",
+  "inacc_y_ms",
+  "inacc_z_ms",
+  "rot_x_degs",
+  "rot_y_degs",
+  "rot_z_degs",
+  "pressure_kpa"
+]
