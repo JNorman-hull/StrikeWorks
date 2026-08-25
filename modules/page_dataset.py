@@ -19,9 +19,9 @@ reduced to the two creation methods that are still wanted:
       Validate page wrote into ``processed_sens_data/nadir_window``, keeping
       only sensors present in the index with ``bad_sens == N``.
 
-Window width, row count and the ``*_200ms.csv`` suffix all come from the
-active sensor configuration (Prepare page); the RAPID values are 0.2 s,
-400 rows and ``_200ms``.
+The window stays 200 ms; the number of rows that becomes follows the rate
+the selected sensor writes at (Prepare page) - 400 rows for RAPID at
+2000 Hz, 1200 for a 6000 Hz device.
 
 The MVP's third method (segmented ROI from ``*_delineated.csv``) is dropped.
 
@@ -42,19 +42,20 @@ from PySide6.QtWidgets import (
     QFileDialog, QFileSystemModel, QTreeWidgetItem, QVBoxLayout,
 )
 
+from . import deployment_index as di
 from . import sensor_config, settings
 from .page_process import _DirsOnlyProxy
 
 # paths relative to a library root
 _CSV_DIR = Path("processed_sens_data") / "csv"
-_INDEX_REL = Path("processed_sens_data") / "index" / "global_sensor_index.csv"
+_INDEX_REL = di.INDEX_REL
 _NADIR_WIN_DIR = Path("processed_sens_data") / "nadir_window"
 
-# The window length and its filename suffix follow the active sensor
-# configuration (Prepare page): 400 rows / "_200ms" for RAPID at 2000 Hz,
-# a different count for a device sampled at another rate. These constants
-# are the fallbacks only.
-_TARGET_ROWS = 400        # 200 ms @ 2000 Hz
+# The window is 200 ms, as it has always been; how many rows that is
+# depends on the rate the selected sensor writes its CSVs at (Prepare
+# page) - 400 for RAPID at 2000 Hz, 1200 for a 6000 Hz device.
+_WIN_SEC = 0.2
+_TARGET_ROWS = 400        # fallback: 200 ms @ 2000 Hz
 _NADIR_COL = "pres_min.time."
 _NADIR_WIN_SUFFIX = "_200ms"
 _WIN_SUFFIX_RE = re.compile(r"_\d+ms$")
@@ -112,11 +113,11 @@ class _ExtractThread(QThread):
 
     @property
     def _target_rows(self):
-        return self._config.window_samples or _TARGET_ROWS
+        return self._config.window_samples(_WIN_SEC) or _TARGET_ROWS
 
     @property
     def _win_suffix(self):
-        return self._config.window_suffix or _NADIR_WIN_SUFFIX
+        return f"_{int(round(_WIN_SEC * 1000))}ms"
 
     def _strip_window_suffix(self, stem):
         """Recover the sensor stem from a saved window filename.
@@ -171,7 +172,7 @@ class _ExtractThread(QThread):
         if not csv_dir.exists():
             raise FileNotFoundError(f"Sensor CSV folder not found:\n  {csv_dir}")
 
-        index = pd.read_csv(index_path, low_memory=False)
+        index = di.sensor_rows(pd.read_csv(index_path, low_memory=False))
 
         if _NADIR_COL not in index.columns:
             alt = next((c for c in index.columns
@@ -210,7 +211,7 @@ class _ExtractThread(QThread):
                 continue
 
             try:
-                half_sec = self._config.window_sec / 2
+                half_sec = _WIN_SEC / 2
                 t_start = float(nadir_time) - half_sec
                 t_end = float(nadir_time) + half_sec
 
@@ -419,7 +420,8 @@ class DatasetPage(QObject):
             return
 
         try:
-            self._index = pd.read_csv(idx_path, low_memory=False)
+            self._index = di.sensor_rows(
+                pd.read_csv(idx_path, low_memory=False))
         except Exception as e:
             self._log(f"Failed to load index: {e}\n")
             self._index = None
@@ -529,13 +531,13 @@ class DatasetPage(QObject):
         self.ui.console_ds.clear()
 
         cfg = sensor_config.active()
-        half = cfg.window_sec / 2
+        half = _WIN_SEC / 2
         label = {OPT_UNSEGMENTED: f"Unsegmented (auto nadir +/- {half:g} s)",
                  OPT_SEGMENTED: "Segmented (bind saved nadir windows)"}[option]
         n_sel = len(selected) if selected else "all"
         self._log(f"Method: {label}\nFiles selected: {n_sel}\n"
-                  f"Sensor: {cfg.name} - {cfg.window_samples} rows per "
-                  f"window at {cfg.output_rate_hz:g} Hz\n")
+                  f"Sensor: {cfg.name} - {cfg.window_samples(_WIN_SEC)} rows "
+                  f"per window at {cfg.output_rate_hz:g} Hz\n")
 
         self._thread = _ExtractThread(
             self._root, option, selected or set(), self._index, cfg)

@@ -3243,6 +3243,26 @@ background-repeat: no-repeat;</string>
                                     </spacer>
                                    </item>
                                    <item>
+                                    <widget class="QLabel" name="lbl_treatment">
+                                     <property name="text">
+                                      <string>Treatment</string>
+                                     </property>
+                                    </widget>
+                                   </item>
+                                   <item>
+                                    <widget class="QComboBox" name="cmb_treatment">
+                                     <property name="minimumSize">
+                                      <size>
+                                       <width>200</width>
+                                       <height>0</height>
+                                      </size>
+                                     </property>
+                                     <property name="toolTip">
+                                      <string>Treatments planned on Prepare &gt; Study design. Selected sensors are labelled with this treatment's conditions when they are processed.</string>
+                                     </property>
+                                    </widget>
+                                   </item>
+                                   <item>
                                     <widget class="QPushButton" name="btn_process_selected">
                                      <property name="cursor">
                                       <cursorShape>PointingHandCursor</cursorShape>

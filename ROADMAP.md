@@ -24,27 +24,45 @@ column; `GROUPING_PRESETS` are templates applied to observed levels;
 `level_key()` shared by `ml_train_state` and `train_worker`; editable class
 names and positive-class name.
 
-**Chunk 3 — Prepare page: sensor configurations**
-`modules/sensor_config.py` is the single source of truth: a `SensorConfig`
-dataclass (rate, files per recording, extensions, packet sizes, filename
-pattern, channels, analysis window, interpolation, parser key), the shipped
-`rapid` and `micro_eel` configurations, a JSON store in
-`~/.strikeworks_sensors.json`, a `PARSERS` registry and a `notifier` the
-pages follow. Prepare gained the two tabs (`modules/page_prepare.py`,
-`prepare_tab_sensor.py`, `prepare_tab_study.py`).
+**Chunk 3 — Prepare page: sensor configurations and study design**
+
+*Tab 1 — Sensor configuration.* `modules/sensor_config.py` is the single
+source of truth: a `SensorConfig` dataclass, the shipped `rapid` and
+`micro_eel` configurations, a JSON store in `~/.strikeworks_sensors.json`,
+a `PARSERS` registry and a `notifier` the pages follow. A sensor is a
+`SensorSource` per raw file (extension, packet size, native rate, how it
+reaches the output grid) plus two rates that are deliberately separate:
+
+  * `timebase_hz` — the counter clock the raw files are stamped from
+  * `output_rate_hz` — the uniform grid the processed CSV is written on
+
+RAPID is 2000/2000, with `.imp` arriving at 100 Hz and interpolated up, and
+`.hig` arriving at 2000 Hz but only in bursts around events (~29% of a run,
+gaps up to 13 s), so each `.hig` sample is placed as recorded and the gaps
+are left empty. The analysis window is *not* here — it is a downstream
+decision; the sensor only answers what a window is worth in samples
+(`window_samples(seconds)`).
 
 The hardcoding is ported: `page_process` scans the configured extensions,
 parses names with the configured pattern and calls the registered parser;
-`page_validate` takes its rate and window width from the configuration;
-`page_dataset` derives target rows and the window suffix from it;
-`rapid_functions` takes rate, packet sizes, interpolation kind and the
-nadir-search width as arguments (RAPID output is byte-for-byte unchanged).
-Adding a third sensor is a New/Duplicate plus a Save; only its reader is
-code, registered under `PARSERS`.
+`page_validate` takes its rate from the configuration and keeps its own
+window; `page_dataset` derives target rows from its 200 ms window and the
+sensor's rate; `rapid_functions` takes clock, packet sizes, output rate and
+per-file method as arguments (RAPID output is byte-for-byte unchanged).
+Adding a sensor is a New/Duplicate plus a Save; only its reader is code,
+registered under `PARSERS`.
 
-Study design is structure only, as agreed: four described-but-unbuilt
-panels (sample size and power, treatment allocation, operating points,
-deployment schedule).
+*Tab 2 — Study design.* Plans a deployment: site, deployment ID, machine and
+type once, then one treatment per row (head, flow, BEP, RPM, runs), each
+`+` copying the row above. Saving writes one row per treatment into the
+library's `global_sensor_index.csv` with `file = label_pad`
+(`modules/deployment_index.py`), alongside any sensor rows already there.
+Process gained a treatment picker: pick the treatment a batch was run
+under, process, and every sensor in the batch is stamped with its
+conditions — so a deployment is processed treatment by treatment rather
+than typed in per file. `sensor_rows()` keeps the plan rows out of every
+sensor listing (Process inventory and metadata, Validate progress, Dataset
+extraction); the Metadata tab still edits individual sensors.
 
 ## Chunk 4 — Annotation & Video Analysis page tree
 

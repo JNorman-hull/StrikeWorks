@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import deployment_index as di
 from . import sensor_config, settings
 from .page_process import _DirsOnlyProxy
 
@@ -39,15 +40,15 @@ from .page_process import _DirsOnlyProxy
 pg.setConfigOptions(antialias=True, background="#21252b",
                     foreground="#c8cdd6")
 
-_INDEX_REL = Path("processed_sens_data") / "index" / "global_sensor_index.csv"
+_INDEX_REL = di.INDEX_REL
 _CSV_DIR = Path("processed_sens_data") / "csv"
 _WIN_DIR = Path("processed_sens_data") / "nadir_window"
 
-# Sampling rate and the default ROI window come from the sensor
-# configuration chosen on the Prepare page; these are only the fallbacks
-# used if a configuration is somehow unreadable.
+# The ROI window is this page's own decision; the rate the processed CSVs
+# are written at belongs to the sensor (Prepare page), so _FS is only the
+# fallback used when no configuration can be read.
 _FS = 2000        # Hz
-_WIN_SEC = 0.2    # seconds - ROI window width (centered on nadir)
+_WIN_SEC = 0.2    # seconds - default ROI window width (centered on nadir)
 
 _NADIR_T_COL = "pres_min.time."
 _NADIR_V_COL = "pres_min.kPa."
@@ -217,7 +218,7 @@ class ValidatePage(QObject):
         self._right_curve = None
         self._left_key = "pressure"
         self._right_key = None
-        self._win_sec = sensor_config.active().window_sec
+        self._win_sec = _WIN_SEC
         self._updating_right = False
         self._loaders = []
         self._pending_path = None
@@ -395,10 +396,13 @@ class ValidatePage(QObject):
         if self._index_df is None:
             self.ui.lbl_val_progress.setText("No index")
             return
-        total = len(self._index_df)
-        done = (int((self._index_df[_VALIDATED_COL]
+        # the deployment plan's treatment rows share this file but are not
+        # sensors, so they are not something to validate
+        sensors = di.sensor_rows(self._index_df)
+        total = len(sensors)
+        done = (int((sensors[_VALIDATED_COL]
                      .astype(str).str.upper() == "Y").sum())
-                if _VALIDATED_COL in self._index_df.columns else 0)
+                if _VALIDATED_COL in sensors.columns else 0)
         self.ui.lbl_val_progress.setText(f"Validated: {done} / {total}")
 
     # ── file tree ────────────────────────────────────────────────────────────
@@ -645,7 +649,7 @@ class ValidatePage(QObject):
         self._region.setRegion([t - self._win_sec / 2, t + self._win_sec / 2])
 
     def _fill_window_combo(self):
-        """Offer 100-1000 ms plus the active sensor's own window width."""
+        """Offer 100-1000 ms, defaulting to this page's own width."""
         cmb = self.ui.cmb_val_window
         want = int(round(self._win_sec * 1000))
         options = sorted(set(range(100, 1001, 100)) | {want})
@@ -657,9 +661,7 @@ class ValidatePage(QObject):
         cmb.blockSignals(False)
 
     def _on_sensor_changed(self, _key):
-        """Follow the window width of the sensor selected on Prepare."""
-        self._win_sec = sensor_config.active().window_sec
-        self._fill_window_combo()
+        """A new sensor means a new rate, so the window spans new samples."""
         if self._time is not None and self._nadir_idx is not None:
             self._update_region(float(self._time[self._nadir_idx]))
 

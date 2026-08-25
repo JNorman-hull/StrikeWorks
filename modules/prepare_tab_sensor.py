@@ -6,22 +6,30 @@
 # ///////////////////////////////////////////////////////////////
 """Sensor configuration tab - pick the device this session works with.
 
-The selection is the app's active ``sensor_config.SensorConfig``: raw
-import (Process), nadir validation (Validate) and dataset creation all read
-it, so switching sensors here changes the extensions scanned for, the
-filename pattern, the parser that runs, the sample rate assumed by the
-signal plots and the number of rows in a model input window.
+The selection becomes the app's ``sensor_config.SensorConfig``: raw import
+on Process reads it for the extensions to scan, the parser to run and the
+packet sizes to unpack, and Validate and Dataset creation read the output
+rate to know what a second of signal is worth in samples.
 
-Every field on this tab is data, not code. A third device is a New (or
-Duplicate) plus a Save; only its reader needs writing, registered under
+The rates panel is the important part, because three different rates are
+easy to conflate: the counter clock the raw files are stamped from, the
+rate each file's channels actually arrive at, and the uniform grid the
+processed CSV is written on. RAPID's .imp channels arrive at 100 Hz and are
+interpolated up onto a 2000 Hz grid, while the .hig channels arrive at
+2000 Hz but only around events, so each sample is placed at its nearest
+grid point. This tab states that rather than leaving it implicit in the
+parser.
+
+Every field here is data, not code. A new device is a New (or Duplicate)
+plus a Save; only its reader needs writing, registered under
 ``sensor_config.PARSERS``.
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QGridLayout,
-    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
-    QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
+    QAbstractItemView, QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout,
+    QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy,
+    QSpinBox, QVBoxLayout, QWidget,
 )
 
 from . import sensor_config
@@ -29,8 +37,6 @@ from .ml_widgets import (
     ACCENT, BAD, MUTED, OK, TEXT, WARN, MetaCard, Section,
     apply_section_defaults,
 )
-
-_EXAMPLE_STEM = "B61-0703140718"
 
 
 class SensorTab:
@@ -42,7 +48,7 @@ class SensorTab:
         self._cfg = sensor_config.active().copy()
         self._loading = False
         self._dirty = False
-        self._packet_rows = {}          # extension -> QSpinBox
+        self._source_rows = []          # [{extension, packet, rate, method}]
 
         self._build(frame)
         self._reload_list()
@@ -63,7 +69,7 @@ class SensorTab:
         v.setContentsMargins(4, 6, 4, 6)
         v.setSpacing(10)
 
-        # ── row 1: the session's sensor + a summary of what it implies ──────
+        # ── row 1: the session's sensor + what it means downstream ──────────
         row1 = QHBoxLayout()
         row1.setSpacing(10)
 
@@ -87,22 +93,18 @@ class SensorTab:
             pick.addWidget(b)
         sv.addLayout(pick)
 
+        name_row = QHBoxLayout()
+        name_row.addWidget(self._muted("Name"))
         self.ed_name = QLineEdit()
         self.ed_name.setPlaceholderText("Display name")
         self.ed_name.textEdited.connect(self._touch)
-        name_row = QHBoxLayout()
-        name_row.addWidget(self._muted("Name"))
         name_row.addWidget(self.ed_name, stretch=1)
-        name_row.addWidget(self._muted("Key"))
-        self.lbl_key = QLabel("")
-        self.lbl_key.setStyleSheet(f"color:{TEXT};")
-        name_row.addWidget(self.lbl_key)
         sv.addLayout(name_row)
 
         self.ed_description = QPlainTextEdit()
         self.ed_description.setPlaceholderText(
             "What this device is and anything a user should know about it.")
-        self.ed_description.setFixedHeight(64)
+        self.ed_description.setFixedHeight(96)
         self.ed_description.textChanged.connect(self._touch)
         sv.addWidget(self.ed_description)
 
@@ -121,7 +123,7 @@ class SensorTab:
         self.btn_save.clicked.connect(self._save)
         self.btn_revert = QPushButton("Discard changes")
         self.btn_revert.clicked.connect(self._revert)
-        self.btn_reset = QPushButton("Restore shipped values")
+        self.btn_reset = QPushButton("Restore defaults")
         self.btn_reset.clicked.connect(self._reset_builtin)
         act.addWidget(self.btn_save)
         act.addWidget(self.btn_revert)
@@ -138,81 +140,86 @@ class SensorTab:
 
         row1.addWidget(grp_sel, stretch=3)
 
-        self.card_summary = MetaCard("In force")
+        self.card_summary = MetaCard("Current sensor")
         self.card_summary.setMinimumWidth(260)
         self.card_summary.setSizePolicy(QSizePolicy.Policy.Preferred,
                                         QSizePolicy.Policy.Expanding)
         row1.addWidget(self.card_summary, stretch=2)
         v.addLayout(row1)
 
-        # ── row 2: acquisition + filename pattern ───────────────────────────
-        row2 = QHBoxLayout()
-        row2.setSpacing(10)
+        # ── row 2: rates and raw files ──────────────────────────────────────
+        grp_acq = Section("Rates and raw files")
+        av = QVBoxLayout(grp_acq)
+        av.setSpacing(6)
 
-        grp_acq = Section("Acquisition")
-        av = QGridLayout(grp_acq)
-        av.setVerticalSpacing(6)
-        av.setColumnStretch(1, 1)
+        rates = QGridLayout()
+        rates.setVerticalSpacing(6)
+        rates.setColumnStretch(3, 1)
 
-        av.addWidget(self._muted("Sampling rate (Hz)"), 0, 0)
-        self.spin_rate = QDoubleSpinBox()
-        self.spin_rate.setRange(1.0, 1_000_000.0)
-        self.spin_rate.setDecimals(1)
-        self.spin_rate.setSingleStep(100.0)
-        self.spin_rate.valueChanged.connect(self._touch)
-        av.addWidget(self.spin_rate, 0, 1)
+        rates.addWidget(self._muted("Timestamp clock (Hz)"), 0, 0)
+        self.spin_clock = QDoubleSpinBox()
+        self.spin_clock.setRange(1.0, 1_000_000.0)
+        self.spin_clock.setDecimals(1)
+        self.spin_clock.setSingleStep(100.0)
+        self.spin_clock.valueChanged.connect(self._touch)
+        rates.addWidget(self.spin_clock, 0, 1)
 
-        av.addWidget(self._muted("Files per recording"), 1, 0)
-        self.spin_files = QSpinBox()
-        self.spin_files.setRange(1, 8)
-        self.spin_files.valueChanged.connect(self._on_files_changed)
-        av.addWidget(self.spin_files, 1, 1)
+        rates.addWidget(self._muted("Output rate (Hz)"), 0, 2)
+        self.spin_output = QDoubleSpinBox()
+        self.spin_output.setRange(1.0, 1_000_000.0)
+        self.spin_output.setDecimals(1)
+        self.spin_output.setSingleStep(100.0)
+        self.spin_output.valueChanged.connect(self._touch)
+        rates.addWidget(self.spin_output, 0, 3)
 
-        av.addWidget(self._muted("File extensions"), 2, 0)
-        self.ed_extensions = QLineEdit()
-        self.ed_extensions.setPlaceholderText(".imp, .hig")
-        self.ed_extensions.editingFinished.connect(self._on_extensions_changed)
-        av.addWidget(self.ed_extensions, 2, 1)
+        clock_note = self._muted(
+            "The clock is what the counter in the raw file ticks at - "
+            "dividing by it turns the counter into seconds. The output rate "
+            "is the uniform grid every channel is brought onto and the "
+            "processed CSV is written at.")
+        clock_note.setWordWrap(True)
+        rates.addWidget(clock_note, 1, 0, 1, 4)
+        av.addLayout(rates)
 
-        hint = self._muted(
-            "The first extension defines a recording; the rest pair to it by "
-            "filename stem.")
-        hint.setWordWrap(True)
-        av.addWidget(hint, 3, 0, 1, 2)
+        header = QGridLayout()
+        header.setVerticalSpacing(4)
+        for col, text in enumerate(
+                ("File", "Packet (bytes)", "Native rate (Hz)",
+                 "Onto the output grid")):
+            lab = self._muted(text)
+            lab.setStyleSheet(f"color:{MUTED};font-size:10px;")
+            header.addWidget(lab, 0, col)
+        self.sources_layout = header
+        holder = QWidget()
+        holder.setLayout(header)
+        av.addWidget(holder)
 
-        av.addWidget(self._muted("Packet size (bytes)"), 4, 0,
-                     Qt.AlignmentFlag.AlignTop)
-        self.packet_holder = QWidget()
-        self.packet_layout = QGridLayout(self.packet_holder)
-        self.packet_layout.setContentsMargins(0, 0, 0, 0)
-        self.packet_layout.setVerticalSpacing(4)
-        av.addWidget(self.packet_holder, 4, 1)
+        src_btns = QHBoxLayout()
+        src_btns.setSpacing(6)
+        self.btn_src_add = QPushButton("Add file")
+        self.btn_src_add.clicked.connect(self._add_source)
+        self.btn_src_remove = QPushButton("Remove last file")
+        self.btn_src_remove.clicked.connect(self._remove_source)
+        src_btns.addWidget(self.btn_src_add)
+        src_btns.addWidget(self.btn_src_remove)
+        src_btns.addStretch()
+        av.addLayout(src_btns)
 
-        row2.addWidget(grp_acq, stretch=1)
+        src_note = self._muted(
+            "The first file defines a recording; the rest pair to it by "
+            "filename stem. Interpolation lifts a slower file onto the "
+            "output grid; nearest sample places a sparse, event-triggered "
+            "file without inventing signal between its samples.")
+        src_note.setWordWrap(True)
+        av.addWidget(src_note)
 
-        grp_name = Section("Filename pattern")
-        nv = QVBoxLayout(grp_name)
-        nv.setSpacing(6)
-        nv.addWidget(self._muted(
-            "Expression matched against a file's stem. Group 1 is the sensor, "
-            "group 2 MMDD, group 3 HHMMSS."))
-        self.ed_pattern = QLineEdit()
-        self.ed_pattern.textEdited.connect(self._on_pattern_changed)
-        nv.addWidget(self.ed_pattern)
-        test_row = QHBoxLayout()
-        test_row.addWidget(self._muted("Test a name"))
-        self.ed_pattern_test = QLineEdit(_EXAMPLE_STEM)
-        self.ed_pattern_test.textEdited.connect(self._update_pattern_preview)
-        test_row.addWidget(self.ed_pattern_test, stretch=1)
-        nv.addLayout(test_row)
-        self.lbl_pattern = QLabel("")
-        self.lbl_pattern.setWordWrap(True)
-        nv.addWidget(self.lbl_pattern)
-        nv.addStretch()
-        row2.addWidget(grp_name, stretch=1)
-        v.addLayout(row2)
+        self.lbl_rates = QLabel("")
+        self.lbl_rates.setStyleSheet(f"color:{TEXT};font-weight:bold;")
+        self.lbl_rates.setWordWrap(True)
+        av.addWidget(self.lbl_rates)
+        v.addWidget(grp_acq)
 
-        # ── row 3: channels + window/resampling ─────────────────────────────
+        # ── row 3: channels + parser ────────────────────────────────────────
         row3 = QHBoxLayout()
         row3.setSpacing(10)
 
@@ -234,7 +241,7 @@ class SensorTab:
         self.btn_ch_add.clicked.connect(self._add_channel)
         self.btn_ch_remove = QPushButton("Remove")
         self.btn_ch_remove.clicked.connect(self._remove_channels)
-        self.btn_ch_default = QPushButton("RAPID defaults")
+        self.btn_ch_default = QPushButton("RAPID channels")
         self.btn_ch_default.clicked.connect(self._default_channels)
         for b in (self.btn_ch_add, self.btn_ch_remove, self.btn_ch_default):
             ch_btns.addWidget(b)
@@ -242,76 +249,25 @@ class SensorTab:
         cv.addLayout(ch_btns)
         row3.addWidget(grp_ch, stretch=1)
 
-        grp_win = Section("Analysis window and interpolation")
-        wv = QGridLayout(grp_win)
-        wv.setVerticalSpacing(6)
-        wv.setColumnStretch(1, 1)
-
-        wv.addWidget(self._muted("Analysis window (s)"), 0, 0)
-        self.spin_window = QDoubleSpinBox()
-        self.spin_window.setRange(0.001, 60.0)
-        self.spin_window.setDecimals(3)
-        self.spin_window.setSingleStep(0.05)
-        self.spin_window.valueChanged.connect(self._touch)
-        wv.addWidget(self.spin_window, 0, 1)
-
-        note = self._muted(
-            "The window is the model's input: it sets the nadir window saved "
-            "on Validate and the rows per recording on Dataset creation.")
-        note.setWordWrap(True)
-        wv.addWidget(note, 1, 0, 1, 2)
-
-        self.chk_resample = QCheckBox(
-            "Interpolate onto a different target rate")
-        self.chk_resample.toggled.connect(self._on_resample_toggled)
-        wv.addWidget(self.chk_resample, 2, 0, 1, 2)
-
-        wv.addWidget(self._muted("Target rate (Hz)"), 3, 0)
-        self.spin_target = QDoubleSpinBox()
-        self.spin_target.setRange(1.0, 1_000_000.0)
-        self.spin_target.setDecimals(1)
-        self.spin_target.setSingleStep(100.0)
-        self.spin_target.valueChanged.connect(self._touch)
-        wv.addWidget(self.spin_target, 3, 1)
-
-        wv.addWidget(self._muted("Method"), 4, 0)
-        self.cmb_method = QComboBox()
-        for label, key in sensor_config.RESAMPLE_METHODS:
-            self.cmb_method.addItem(label, key)
-        self.cmb_method.currentIndexChanged.connect(self._touch)
-        wv.addWidget(self.cmb_method, 4, 1)
-
-        resample_note = self._muted(
-            "A lower-rate device can be lifted to the rate the models were "
-            "trained at - model input length is a sample count, so 100 Hz "
-            "and 6000 Hz do not describe the same window.")
-        resample_note.setWordWrap(True)
-        wv.addWidget(resample_note, 5, 0, 1, 2)
-
-        self.lbl_window = QLabel("")
-        self.lbl_window.setStyleSheet(f"color:{TEXT};font-weight:bold;")
-        self.lbl_window.setWordWrap(True)
-        wv.addWidget(self.lbl_window, 6, 0, 1, 2)
-        row3.addWidget(grp_win, stretch=1)
-        v.addLayout(row3)
-
-        # ── row 4: parser ───────────────────────────────────────────────────
         grp_parser = Section("Parser")
-        pv = QGridLayout(grp_parser)
-        pv.setVerticalSpacing(6)
-        pv.setColumnStretch(1, 1)
-        pv.addWidget(self._muted("Reader for this device"), 0, 0)
+        pv = QVBoxLayout(grp_parser)
+        pv.setSpacing(6)
+        prow = QHBoxLayout()
+        prow.addWidget(self._muted("Reader for this device"))
         self.cmb_parser = QComboBox()
         self.cmb_parser.currentIndexChanged.connect(self._touch)
-        pv.addWidget(self.cmb_parser, 0, 1)
+        prow.addWidget(self.cmb_parser, stretch=1)
+        pv.addLayout(prow)
         parser_note = self._muted(
             "Registered readers only. To add one: write the reader, register "
             "it in modules/sensor_config.py under PARSERS with the signature "
-            "parser(paths, out_dir, config), then select it here. RAPID keeps "
-            "calling rapid_functions.process_imp_hig_direct.")
+            "parser(paths, out_dir, config), then select it here. RAPID "
+            "keeps calling rapid_functions.process_imp_hig_direct.")
         parser_note.setWordWrap(True)
-        pv.addWidget(parser_note, 1, 0, 1, 2)
-        v.addWidget(grp_parser)
+        pv.addWidget(parser_note)
+        pv.addStretch()
+        row3.addWidget(grp_parser, stretch=1)
+        v.addLayout(row3)
 
         v.addStretch()
         apply_section_defaults(frame)
@@ -328,8 +284,7 @@ class SensorTab:
         self._loading = True
         self.cmb_sensor.clear()
         for cfg in sensor_config.all_configs():
-            suffix = " (shipped)" if sensor_config.is_builtin(cfg.key) else ""
-            self.cmb_sensor.addItem(f"{cfg.name}{suffix}", cfg.key)
+            self.cmb_sensor.addItem(cfg.name, cfg.key)
         idx = self.cmb_sensor.findData(select)
         self.cmb_sensor.setCurrentIndex(max(0, idx))
         self._loading = False
@@ -364,117 +319,122 @@ class SensorTab:
         self._loading = True
 
         self.ed_name.setText(cfg.name)
-        self.lbl_key.setText(cfg.key)
         self.ed_description.setPlainText(cfg.description)
-        self.spin_rate.setValue(float(cfg.sampling_rate_hz))
-        self.spin_files.setValue(int(cfg.files_per_recording))
-        self.ed_extensions.setText(", ".join(cfg.file_extensions))
-        self.ed_pattern.setText(cfg.filename_pattern)
-        self.spin_window.setValue(float(cfg.window_sec))
-        self.chk_resample.setChecked(bool(cfg.resample))
-        self.spin_target.setValue(float(cfg.target_rate_hz
-                                        or cfg.sampling_rate_hz))
-        self.spin_target.setEnabled(bool(cfg.resample))
-        self.cmb_method.setEnabled(bool(cfg.resample))
-        m = self.cmb_method.findData(cfg.resample_method)
-        self.cmb_method.setCurrentIndex(max(0, m))
+        self.spin_clock.setValue(float(cfg.timebase_hz))
+        self.spin_output.setValue(float(cfg.output_rate_hz))
 
         self.list_channels.clear()
         for name in cfg.channels:
             self._append_channel(name)
 
         self.cmb_parser.clear()
-        for key in sorted(sensor_config.PARSERS):
-            self.cmb_parser.addItem(key, key)
+        for name in sorted(sensor_config.PARSERS):
+            self.cmb_parser.addItem(name, name)
         if self.cmb_parser.findData(cfg.parser) < 0:
             self.cmb_parser.addItem(cfg.parser, cfg.parser)
         self.cmb_parser.setCurrentIndex(self.cmb_parser.findData(cfg.parser))
 
-        self._rebuild_packet_rows(cfg.file_extensions)
+        self._rebuild_source_rows(cfg.sources)
         self._loading = False
-
-        self._update_pattern_preview()
         self._refresh_state()
 
     def _collect(self):
-        """Read the widgets back into a SensorConfig (unsaved)."""
+        """Read the widgets back into the SensorConfig being edited."""
         cfg = self._cfg
         cfg.name = self.ed_name.text().strip() or cfg.key
         cfg.description = self.ed_description.toPlainText().strip()
-        cfg.sampling_rate_hz = float(self.spin_rate.value())
-        cfg.files_per_recording = int(self.spin_files.value())
-        cfg.file_extensions = self._parse_extensions(self.ed_extensions.text())
-        cfg.packet_sizes = {ext: int(spin.value())
-                            for ext, spin in self._packet_rows.items()}
-        cfg.filename_pattern = self.ed_pattern.text().strip()
+        cfg.timebase_hz = float(self.spin_clock.value())
+        cfg.output_rate_hz = float(self.spin_output.value())
+        cfg.sources = [
+            sensor_config.SensorSource(
+                extension=r["extension"].text().strip(),
+                packet_size=r["packet"].value(),
+                native_rate_hz=r["rate"].value(),
+                method=r["method"].currentData() or "linear")
+            for r in self._source_rows
+            if r["extension"].text().strip()]
         cfg.channels = [self.list_channels.item(i).text().strip()
                         for i in range(self.list_channels.count())
                         if self.list_channels.item(i).text().strip()]
-        cfg.window_sec = float(self.spin_window.value())
-        cfg.resample = self.chk_resample.isChecked()
-        cfg.target_rate_hz = float(self.spin_target.value())
-        cfg.resample_method = self.cmb_method.currentData() or "linear"
         cfg.parser = self.cmb_parser.currentData() or cfg.parser
         return cfg
 
-    @staticmethod
-    def _parse_extensions(text):
-        out = []
-        for part in str(text).replace(";", ",").split(","):
-            part = part.strip().lower()
-            if not part:
-                continue
-            if not part.startswith("."):
-                part = "." + part
-            if part not in out:
-                out.append(part)
-        return out
+    # ── one row per raw file ─────────────────────────────────────────────────
+    def _rebuild_source_rows(self, sources):
+        was_loading = self._loading
+        self._loading = True
 
-    # ── packet sizes follow the extension list ───────────────────────────────
-    def _rebuild_packet_rows(self, extensions):
-        while self.packet_layout.count():
-            item = self.packet_layout.takeAt(0)
+        # drop everything below the header row
+        for i in reversed(range(self.sources_layout.count())):
+            item = self.sources_layout.itemAt(i)
+            row, _, _, _ = self.sources_layout.getItemPosition(i)
+            if row == 0:
+                continue
             w = item.widget()
+            self.sources_layout.takeAt(i)
             if w is not None:
                 w.setParent(None)
                 w.deleteLater()
-        self._packet_rows = {}
+        self._source_rows = []
 
-        if not extensions:
-            self.packet_layout.addWidget(
-                self._muted("No extensions listed."), 0, 0)
-            return
+        for i, src in enumerate(sources, start=1):
+            ext = QLineEdit(src.extension)
+            ext.setPlaceholderText(".imp")
+            ext.setMaximumWidth(90)
+            ext.editingFinished.connect(self._on_extension_edited)
 
-        for i, ext in enumerate(extensions):
-            lab = QLabel(ext)
-            lab.setStyleSheet(f"color:{TEXT};")
-            spin = QSpinBox()
-            spin.setRange(0, 65535)
-            spin.setSpecialValueText("not set")
-            spin.setValue(self._cfg.packet_size(ext))
-            spin.valueChanged.connect(self._touch)
-            self.packet_layout.addWidget(lab, i, 0)
-            self.packet_layout.addWidget(spin, i, 1)
-            self._packet_rows[ext] = spin
-        self.packet_layout.setColumnStretch(1, 1)
+            packet = QSpinBox()
+            packet.setRange(0, 65535)
+            packet.setSpecialValueText("not set")
+            packet.setValue(int(src.packet_size))
+            packet.valueChanged.connect(self._touch)
 
-    def _on_extensions_changed(self):
-        exts = self._parse_extensions(self.ed_extensions.text())
-        if exts == list(self._packet_rows):
-            return
-        # keep the sizes already entered for extensions that survived
-        self._cfg.packet_sizes = {ext: int(spin.value())
-                                  for ext, spin in self._packet_rows.items()}
-        self.ed_extensions.setText(", ".join(exts))
-        self._rebuild_packet_rows(exts)
+            rate = QDoubleSpinBox()
+            rate.setRange(0.0, 1_000_000.0)
+            rate.setDecimals(1)
+            rate.setSingleStep(100.0)
+            rate.setSpecialValueText("not set")
+            rate.setValue(float(src.native_rate_hz))
+            rate.valueChanged.connect(self._touch)
+
+            method = QComboBox()
+            for label, key in sensor_config.METHODS:
+                method.addItem(label, key)
+            method.setCurrentIndex(max(0, method.findData(src.method)))
+            method.currentIndexChanged.connect(self._touch)
+
+            self.sources_layout.addWidget(ext, i, 0)
+            self.sources_layout.addWidget(packet, i, 1)
+            self.sources_layout.addWidget(rate, i, 2)
+            self.sources_layout.addWidget(method, i, 3)
+            self._source_rows.append(
+                dict(extension=ext, packet=packet, rate=rate, method=method))
+
+        self._loading = was_loading
+        self.btn_src_remove.setEnabled(len(self._source_rows) > 1)
+
+    def _on_extension_edited(self):
+        for row in self._source_rows:
+            text = row["extension"].text().strip().lower()
+            if text and not text.startswith("."):
+                text = "." + text
+            row["extension"].setText(text)
         self._touch()
 
-    def _on_files_changed(self, _value):
+    def _add_source(self):
+        cfg = self._collect()
+        cfg.sources.append(sensor_config.SensorSource(
+            extension="", packet_size=0,
+            native_rate_hz=cfg.output_rate_hz, method="linear"))
+        self._rebuild_source_rows(cfg.sources)
         self._touch()
 
-    def _on_resample_toggled(self, on):
-        self.spin_target.setEnabled(on)
-        self.cmb_method.setEnabled(on)
+    def _remove_source(self):
+        cfg = self._collect()
+        if len(cfg.sources) <= 1:
+            return
+        cfg.sources = cfg.sources[:-1]
+        self._rebuild_source_rows(cfg.sources)
         self._touch()
 
     # ── channels ─────────────────────────────────────────────────────────────
@@ -501,32 +461,6 @@ class SensorTab:
             self._append_channel(name)
         self._touch()
 
-    # ── pattern preview ──────────────────────────────────────────────────────
-    def _on_pattern_changed(self, _text):
-        self._update_pattern_preview()
-        self._touch()
-
-    def _update_pattern_preview(self):
-        probe = self._cfg.copy(filename_pattern=self.ed_pattern.text().strip())
-        stem = self.ed_pattern_test.text().strip()
-        if probe.compiled_pattern() is None:
-            self.lbl_pattern.setText("Not a valid expression.")
-            self.lbl_pattern.setStyleSheet(f"color:{BAD};")
-            return
-        if not stem:
-            self.lbl_pattern.setText("")
-            return
-        sensor, date, time = probe.parse_stem(stem)
-        if not date and not time:
-            self.lbl_pattern.setText(
-                "No match - the inventory would show the whole stem and no "
-                "deployment date or time.")
-            self.lbl_pattern.setStyleSheet(f"color:{WARN};")
-            return
-        self.lbl_pattern.setText(
-            f"Sensor {sensor} · date {date} · time {time}")
-        self.lbl_pattern.setStyleSheet(f"color:{OK};")
-
     # ── state ────────────────────────────────────────────────────────────────
     def _touch(self, *_args):
         if self._loading:
@@ -537,13 +471,9 @@ class SensorTab:
 
     def _refresh_state(self):
         cfg = self._cfg
-        active_key = sensor_config.active_key()
         problems = cfg.problems()
 
-        self.lbl_window.setText(
-            f"Model input window: {cfg.window_sec:g} s → "
-            f"{cfg.window_samples} samples at {cfg.output_rate_hz:g} Hz "
-            f"(saved as *{cfg.window_suffix}.csv)")
+        self.lbl_rates.setText(cfg.describe_sources())
 
         if problems:
             self.lbl_state.setText("• " + "<br>• ".join(problems))
@@ -551,10 +481,10 @@ class SensorTab:
         elif self._dirty:
             self.lbl_state.setText("Unsaved changes.")
             self.lbl_state.setStyleSheet(f"color:{WARN};")
-        elif cfg.key == active_key:
+        elif cfg.key == sensor_config.active_key():
             self.lbl_state.setText(
-                "Active - raw import, validation and dataset creation use "
-                "this configuration.")
+                "Selected - raw import, validation and dataset creation use "
+                "this sensor.")
             self.lbl_state.setStyleSheet(f"color:{OK};")
         else:
             self.lbl_state.setText(
@@ -566,21 +496,19 @@ class SensorTab:
         self.btn_revert.setEnabled(self._dirty)
         self.btn_reset.setEnabled(sensor_config.is_builtin(cfg.key))
         self.btn_delete.setEnabled(not sensor_config.is_builtin(cfg.key))
-        self.btn_delete.setText(
-            "Delete" if not sensor_config.is_builtin(cfg.key) else "Shipped")
         self.lbl_file.setText(f"Stored in {sensor_config.config_path()}")
 
-        self.card_summary.set_title(f"In force: {sensor_config.active().name}")
         live = sensor_config.active()
+        self.card_summary.set_title(f"Current sensor: {live.name}")
         self.card_summary.set_rows([
-            ("Sensor", live.name),
-            ("Sampling rate", f"{live.sampling_rate_hz:g} Hz"),
-            ("Processed rate", f"{live.output_rate_hz:g} Hz"),
+            ("Timestamp clock", f"{live.timebase_hz:g} Hz"),
+            ("Output rate", f"{live.output_rate_hz:g} Hz"),
             ("Files per recording",
-             f"{live.files_per_recording} ({', '.join(live.required_extensions)})"),
-            ("Window", f"{live.window_sec:g} s / {live.window_samples} samples"),
+             f"{live.files_per_recording} "
+             f"({', '.join(live.file_extensions)})"),
             ("Channels", f"{len(live.channels)}"),
             ("Parser", live.parser),
+            ("200 ms window", f"{live.window_samples(0.2)} samples"),
         ])
 
     # ── actions ──────────────────────────────────────────────────────────────
@@ -596,9 +524,7 @@ class SensorTab:
         self._dirty = False
         self._reload_list(cfg.key)
         self._refresh_state()
-        self._emit(f"Session sensor: {cfg.name} "
-                   f"({cfg.output_rate_hz:g} Hz, {cfg.window_samples} samples "
-                   f"per window)")
+        self._emit(f"Session sensor: {cfg.name} - {cfg.describe_sources()}")
 
     def _revert(self):
         stored = sensor_config.get(self._cfg.key)
@@ -614,16 +540,16 @@ class SensorTab:
         if not sensor_config.is_builtin(key):
             return
         if QMessageBox.question(
-                self.window, "Restore shipped values",
+                self.window, "Restore defaults",
                 f"Replace '{self._cfg.name}' with the values StrikeWorks "
-                "ships? Your edits to it are lost.") \
+                "provides? Your edits to it are lost.") \
                 != QMessageBox.StandardButton.Yes:
             return
         self._cfg = sensor_config.reset_to_builtin(key).copy()
         self._dirty = False
         self._reload_list(key)
         self._load_into_widgets()
-        self._emit(f"{self._cfg.name} restored to shipped values.")
+        self._emit(f"{self._cfg.name} restored to its default values.")
 
     def _new(self):
         name, ok = QInputDialog.getText(
@@ -632,25 +558,27 @@ class SensorTab:
             return
         if self._dirty and not self._confirm_discard():
             return
-        key = sensor_config.unique_key(name)
-        cfg = sensor_config.SensorConfig(key=key, name=name.strip())
+        cfg = sensor_config.SensorConfig(
+            key=sensor_config.unique_key(name), name=name.strip())
         cfg.description = "New configuration - review every field below."
+        cfg.sources = [sensor_config.SensorSource(
+            extension="", packet_size=0, native_rate_hz=2000.0,
+            method="linear")]
         sensor_config.upsert(cfg)
         self._cfg = cfg.copy()
         self._dirty = False
-        self._reload_list(key)
+        self._reload_list(cfg.key)
         self._load_into_widgets()
         self._emit(f"Created sensor configuration '{cfg.name}'.")
 
     def _duplicate(self):
         source = self._collect()
         name = f"{source.name} copy"
-        key = sensor_config.unique_key(name)
-        cfg = source.copy(key=key, name=name)
+        cfg = source.copy(key=sensor_config.unique_key(name), name=name)
         sensor_config.upsert(cfg)
         self._cfg = cfg
         self._dirty = False
-        self._reload_list(key)
+        self._reload_list(cfg.key)
         self._load_into_widgets()
         self._emit(f"Duplicated to '{cfg.name}'.")
 

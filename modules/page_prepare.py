@@ -7,7 +7,9 @@
 """Controller for the Prepare page (Sensor Processing).
 
 Two tabs: Sensor configuration, which chooses and edits the device this
-session works with, and Study design, a placeholder for the planning tools.
+session works with, and Study design, which plans a deployment - the site,
+the machine and one set of conditions per treatment - and writes it into
+the library so Process can label sensors treatment by treatment.
 
 The page skeleton - title, subtitle and the QTabWidget - lives in main.ui;
 the tab contents are built programmatically into the placeholder frames,

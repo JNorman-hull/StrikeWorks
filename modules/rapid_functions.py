@@ -1,11 +1,23 @@
 """RAPID sensor parser: paired .imp / .hig files merged onto one time base.
 
-The acquisition constants (sampling rate, packet sizes, the output rate and
-the interpolation used to reach it) arrive as arguments rather than being
-fixed here, so the same reader serves any RAPID-family configuration defined
-on the Prepare page. The defaults are the values this file used to hardcode,
-so calling it without a config behaves exactly as before - verified
-byte-for-byte against the pre-configuration version.
+Three rates are involved and they are not the same number:
+
+  * the counter clock both files are stamped from (2000 Hz) - the `fs`
+    argument of the two readers, which turns the raw counter into seconds;
+  * each file's own rate - .imp is 100 Hz, .hig is 2000 Hz but recorded
+    only around events, so it is sparse;
+  * the output grid the combined CSV is written on (2000 Hz).
+
+Getting from the second to the third is the interpolation this parser has
+always done: the 100 Hz .imp channels are interpolated up onto the grid,
+and each sparse .hig sample is written to its nearest grid point (gaps stay
+at zero rather than having signal invented across them).
+
+All of it arrives as arguments from the sensor configuration, so the same
+reader serves any RAPID-family device defined on the Prepare page. The
+defaults are the values this file used to hardcode, so calling it without a
+config behaves exactly as before - verified byte-for-byte against the
+pre-configuration version.
 """
 import struct
 import os
@@ -27,7 +39,11 @@ os.environ["OPENBLAS_NUM_THREADS"] = str(os.cpu_count())
 os.environ["MKL_NUM_THREADS"] = str(os.cpu_count())
 
 def read_imp_raw(filename, fs=FS, packet_size=IMP_PACKET_SIZE):
-    """Read an .imp file (IMU, pressure, temperature, battery)."""
+    """Read an .imp file (IMU, pressure, temperature, battery) at ~100 Hz.
+
+    `fs` is the counter clock the timestamps are stamped from, not the rate
+    the channels arrive at.
+    """
     filename = Path(filename)
     packetSize = int(packet_size) or IMP_PACKET_SIZE
     fs = float(fs) or FS
@@ -121,7 +137,10 @@ def read_imp_raw(filename, fs=FS, packet_size=IMP_PACKET_SIZE):
     return pd.DataFrame(dataExportCSV, columns=column_names_raw)
 
 def read_hig_raw(filename, fs=FS, packet_size=HIG_PACKET_SIZE):
-    """Read a .hig file (high-g accelerometer)."""
+    """Read a .hig file (high-g accelerometer), sampled around events.
+
+    `fs` is the counter clock, as for read_imp_raw.
+    """
     filename = Path(filename)
     packetSize = int(packet_size) or HIG_PACKET_SIZE
     fs = float(fs) or FS
@@ -164,29 +183,33 @@ def read_hig_raw(filename, fs=FS, packet_size=HIG_PACKET_SIZE):
 def process_imp_hig_direct(imp_filename, hig_filename, output_dir, config=None):
     """Parse one .imp/.hig pair and write the combined CSV.
 
-    `config` is the SensorConfig in force (Prepare > Sensor configuration).
-    Without one the RAPID defaults apply, which is what the MVP did.
+    `config` is the SensorConfig selected on Prepare. Without one the RAPID
+    defaults apply, which is what the MVP did.
     """
     if config is not None:
-        fs = float(config.sampling_rate_hz) or FS
-        out_rate = float(config.output_rate_hz) or fs
+        clock = float(config.timebase_hz) or FS
+        out_rate = float(config.output_rate_hz) or clock
         imp_packet = config.packet_size(".imp") or IMP_PACKET_SIZE
         hig_packet = config.packet_size(".hig") or HIG_PACKET_SIZE
-        interp_kind = config.resample_method if config.resample else "linear"
+        imp_method = config.method(".imp", "linear")
+        hig_method = config.method(".hig", "nearest")
     else:
-        fs = out_rate = FS
+        clock = out_rate = FS
         imp_packet, hig_packet = IMP_PACKET_SIZE, HIG_PACKET_SIZE
-        interp_kind = "linear"
+        imp_method, hig_method = "linear", "nearest"
 
-    imp_data = read_imp_raw(imp_filename, fs=fs, packet_size=imp_packet)
-    hig_data = read_hig_raw(hig_filename, fs=fs, packet_size=hig_packet)
+    # `clock` is the counter tick rate both files are stamped from, NOT the
+    # rate their channels arrive at: .imp is 100 Hz and .hig is 2000 Hz but
+    # event-triggered. Each file's own timestamps carry that.
+    imp_data = read_imp_raw(imp_filename, fs=clock, packet_size=imp_packet)
+    hig_data = read_hig_raw(hig_filename, fs=clock, packet_size=hig_packet)
     
     base_filename = Path(imp_filename).stem
     
     file_info = parse_filename_info(base_filename, config=config)
     
-    # Uniform output time base. out_rate is the sensor's own rate unless the
-    # configuration asks for interpolation up to a target rate.
+    # Uniform output grid. Every channel is brought onto this, whatever
+    # rate it arrived at.
     start_time = imp_data["time_s"].min()
     end_time = imp_data["time_s"].max()
     time_step = 1.0 / out_rate
@@ -195,38 +218,50 @@ def process_imp_hig_direct(imp_filename, hig_filename, output_dir, config=None):
     # Create combined dataset with the high-resolution time series
     combined_data = pd.DataFrame({"time_s": times})
     
-    # Add HIG data - vectorized mapping
+    # HIG onto the grid. Its samples are sparse (recorded around events),
+    # so by default each one is written to its nearest grid point and the
+    # rest stay zero - interpolating across the gaps would invent signal.
     for col in hig_data.columns:
         if col != "time_s":
             combined_data[col] = 0.0
-    
-    # vectorized approach
-    hig_indices = np.searchsorted(combined_data["time_s"], hig_data["time_s"], side='left')
-    hig_indices = np.clip(hig_indices, 0, len(combined_data) - 1)
-    
-    # Vectorized nearest neighbor selection
-    valid_left = hig_indices > 0
-    left_indices = np.maximum(hig_indices - 1, 0)
-    
-    left_diffs = np.where(valid_left, 
-                         np.abs(combined_data["time_s"].iloc[left_indices].values - hig_data["time_s"].values),
-                         np.inf)
-    right_diffs = np.abs(combined_data["time_s"].iloc[hig_indices].values - hig_data["time_s"].values)
-    
-    use_left = left_diffs < right_diffs
-    final_indices = np.where(use_left, left_indices, hig_indices)
 
-    for col in hig_data.columns:
-        if col != "time_s":
-            combined_data.loc[final_indices, col] = hig_data[col].values
-    
+    if hig_method == "nearest":
+        # vectorized approach
+        hig_indices = np.searchsorted(combined_data["time_s"], hig_data["time_s"], side='left')
+        hig_indices = np.clip(hig_indices, 0, len(combined_data) - 1)
+
+        # Vectorized nearest neighbor selection
+        valid_left = hig_indices > 0
+        left_indices = np.maximum(hig_indices - 1, 0)
+
+        left_diffs = np.where(valid_left,
+                             np.abs(combined_data["time_s"].iloc[left_indices].values - hig_data["time_s"].values),
+                             np.inf)
+        right_diffs = np.abs(combined_data["time_s"].iloc[hig_indices].values - hig_data["time_s"].values)
+
+        use_left = left_diffs < right_diffs
+        final_indices = np.where(use_left, left_indices, hig_indices)
+
+        for col in hig_data.columns:
+            if col != "time_s":
+                combined_data.loc[final_indices, col] = hig_data[col].values
+    else:
+        # a configuration that asks for interpolation instead gets it
+        for col in hig_data.columns:
+            if col == "time_s":
+                continue
+            f = interp1d(hig_data["time_s"], hig_data[col],
+                         kind=hig_method, bounds_error=False,
+                         fill_value="extrapolate")
+            combined_data[col] = f(combined_data["time_s"])
+
     imp_cols = [col for col in imp_data.columns if col != "time_s"]
 
     for col in imp_cols:
         interp_func = interp1d(
             imp_data["time_s"],
             imp_data[col],
-            kind=interp_kind,
+            kind=imp_method,
             bounds_error=False,
             fill_value="extrapolate"
         )

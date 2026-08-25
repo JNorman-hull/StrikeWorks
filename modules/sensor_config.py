@@ -5,14 +5,38 @@
 #
 # ///////////////////////////////////////////////////////////////
 """Sensor configurations - one source of truth for how a device's raw files
-are named, paired, parsed and sampled.
+are named, paired, parsed and brought onto a common time base.
 
 Everything the rest of the app used to hardcode for the RAPID sensor lives
-here as data: the sampling rate, how many files make one recording and with
-which extensions, the raw packet sizes, the filename pattern, the channel
-list and the analysis window. Pages read the *active* configuration rather
-than module constants, so selecting a different sensor on the Prepare page
-changes raw import, validation and dataset creation together.
+here as data: the timestamp clock, the output rate, the files that make one
+recording with their packet sizes and native rates, the channel list and the
+parser. Pages read the *selected* configuration rather than module constants,
+so choosing a different sensor on the Prepare page changes raw import and the
+rate the processed signals are assumed to be at.
+
+Rates
+-----
+Three different rates matter, and conflating them is the easy mistake:
+
+``timebase_hz``
+    Ticks per second of the raw counter in the file. Dividing the counter by
+    it gives seconds. RAPID stamps both files from one 2000 Hz clock.
+
+``native_rate_hz`` (per file)
+    How fast that file's channels actually arrive. For RAPID the .imp block
+    (IMU, pressure, temperature, battery) is 100 Hz and the .hig block is
+    2000 Hz but event-triggered, so it is sparse rather than continuous.
+
+``output_rate_hz``
+    The uniform grid the processed CSV is written on - 2000 Hz for RAPID.
+
+A file's ``method`` says how it gets onto that grid. The 100 Hz .imp
+channels are interpolated up to 2000 Hz - that is the interpolation the
+RAPID processing has always done. The .hig channels are already at 2000 Hz
+but arrive in bursts around events (about 29% of a typical run, with gaps
+of up to 13 seconds), so each recorded sample is placed in its own grid
+slot and the gaps are left empty rather than having signal invented across
+them. Both are described here rather than left implicit in the parser.
 
 Adding a sensor
 ---------------
@@ -28,15 +52,14 @@ Two ways, neither of which needs a code change to the pages:
 
 Adding a parser
 ---------------
-A configuration names its parser by key. ``PARSERS`` maps that key to a
-callable with the signature
+A configuration names its parser. ``PARSERS`` maps that name to a callable
 
     parser(paths, out_dir, config) -> (DataFrame, summary_dict)
 
 where ``paths`` maps a lowercase file extension to the raw file for one
 recording (``{".imp": Path(...), ".hig": Path(...)}`` for RAPID), ``out_dir``
 is the library's ``processed_sens_data`` folder and ``config`` is the
-SensorConfig in force. This is the single code point a new device needs:
+SensorConfig in use. This is the single code point a new device needs:
 write the reader, register it here, and point a configuration at it.
 """
 import json
@@ -56,21 +79,62 @@ RAPID_CHANNELS = [
     "pressure_kpa",
 ]
 
-# filename pattern: SENSOR-MMDDHHMMSS  e.g. B61-0703140718
+# filename pattern: SENSOR-MMDDHHMMSS  e.g. B61-0703140718. Not exposed on
+# the Prepare page - RAPID and its successors name files the same way - but
+# a device that does not can have this edited in the JSON store.
 RAPID_FNAME_PATTERN = r"^([A-Za-z0-9]{2,4})-(\d{4})(\d{6})$"
 
 # How far either side of the acceleration peak the parser looks for the
 # pressure nadir. 1.5 s each way - the RAPID code's ±3000 samples at 2000 Hz.
 NADIR_SEARCH_SEC = 1.5
 
-RESAMPLE_METHODS = [
-    ("Linear", "linear"),
-    ("Cubic spline", "cubic"),
-    ("Nearest sample", "nearest"),
-    ("Hold previous", "previous"),
+# How a file's channels reach the output grid.
+#
+# "as recorded" is not a resampling: each sample the device wrote is placed
+# in its own slot on the grid and the gaps between bursts are left empty.
+# It is the right choice for an event-triggered file like RAPID's .hig,
+# which records at the full rate but only around events - interpolating
+# would invent signal across the seconds where nothing was recorded.
+METHODS = [
+    ("Interpolate (linear)", "linear"),
+    ("Interpolate (cubic spline)", "cubic"),
+    ("As recorded, gaps left empty", "nearest"),
+    ("Hold previous value", "previous"),
 ]
 
 _SETTINGS_FILE = Path.home() / ".strikeworks_sensors.json"
+
+
+# ── one raw file within a recording ──────────────────────────────────────────
+@dataclass
+class SensorSource:
+    """One of the raw files that together make a recording."""
+
+    extension: str
+    packet_size: int = 0            # bytes per packet, 0 = not known
+    native_rate_hz: float = 0.0     # how fast this file's channels arrive
+    method: str = "linear"          # how it reaches the output grid
+
+    def __post_init__(self):
+        self.extension = str(self.extension).lower()
+        if self.extension and not self.extension.startswith("."):
+            self.extension = "." + self.extension
+        self.packet_size = int(self.packet_size or 0)
+        self.native_rate_hz = float(self.native_rate_hz or 0.0)
+
+    @property
+    def interpolated(self) -> bool:
+        return self.method in ("linear", "cubic")
+
+    def describe(self, output_rate) -> str:
+        rate = (f"{self.native_rate_hz:g} Hz" if self.native_rate_hz
+                else "unknown rate")
+        if self.method == "nearest":
+            return (f"{self.extension} {rate}, placed as recorded on the "
+                    f"{output_rate:g} Hz grid (gaps left empty)")
+        how = dict((v, k) for k, v in METHODS).get(self.method, self.method)
+        return (f"{self.extension} {rate} {how.lower()} onto the "
+                f"{output_rate:g} Hz grid")
 
 
 # ── the configuration record ─────────────────────────────────────────────────
@@ -82,65 +146,62 @@ class SensorConfig:
     name: str
     description: str = ""
 
-    # acquisition
-    sampling_rate_hz: float = 2000.0
-    files_per_recording: int = 2
-    file_extensions: list = field(default_factory=lambda: [".imp", ".hig"])
-    packet_sizes: dict = field(default_factory=dict)   # extension -> bytes
-    filename_pattern: str = RAPID_FNAME_PATTERN
+    # rates (see the module docstring - these are three different things)
+    timebase_hz: float = 2000.0
+    output_rate_hz: float = 2000.0
 
-    # signals and analysis
+    # the raw files that make one recording, primary first
+    sources: list = field(default_factory=list)
+
     channels: list = field(default_factory=lambda: list(RAPID_CHANNELS))
-    window_sec: float = 0.2
-
-    # interpolation: resample a lower-rate device up to a target rate so the
-    # model input length is comparable across sensors
-    resample: bool = False
-    target_rate_hz: float = 0.0        # 0 = no target set
-    resample_method: str = "linear"
+    filename_pattern: str = RAPID_FNAME_PATTERN
 
     # the code point for the device's reader (see PARSERS)
     parser: str = "rapid_imp_hig"
 
     # ── derived values ──────────────────────────────────────────────────────
     @property
-    def output_rate_hz(self) -> float:
-        """Rate of the processed CSV: the target rate when resampling."""
-        if self.resample and self.target_rate_hz > 0:
-            return float(self.target_rate_hz)
-        return float(self.sampling_rate_hz)
+    def files_per_recording(self) -> int:
+        return len(self.sources)
 
     @property
-    def primary_extension(self) -> str:
-        """The extension that defines a recording; others pair to it."""
-        return self.file_extensions[0] if self.file_extensions else ""
+    def file_extensions(self) -> list:
+        return [s.extension for s in self.sources]
 
     @property
     def required_extensions(self) -> list:
         """Extensions that must all be present for a complete recording."""
-        n = max(1, int(self.files_per_recording))
-        return list(self.file_extensions[:n])
+        return self.file_extensions
 
     @property
-    def window_samples(self) -> int:
-        """Rows in one analysis window - the model's input length."""
-        return int(round(self.window_sec * self.output_rate_hz))
+    def primary_extension(self) -> str:
+        """The extension that defines a recording; others pair to it."""
+        return self.sources[0].extension if self.sources else ""
 
-    @property
-    def half_window_samples(self) -> int:
-        return int(round(self.window_sec / 2 * self.output_rate_hz))
+    def source(self, ext: str):
+        ext = str(ext).lower()
+        return next((s for s in self.sources if s.extension == ext), None)
 
-    @property
-    def window_suffix(self) -> str:
-        """Filename suffix for saved windows, e.g. '_200ms'."""
-        return f"_{int(round(self.window_sec * 1000))}ms"
+    def packet_size(self, ext: str, default: int = 0) -> int:
+        s = self.source(ext)
+        return s.packet_size if s and s.packet_size else default
+
+    def method(self, ext: str, default: str = "linear") -> str:
+        s = self.source(ext)
+        return s.method if s else default
+
+    def window_samples(self, seconds: float) -> int:
+        """Rows in `seconds` of processed signal at this sensor's rate.
+
+        The window length itself is a downstream decision (Validate chooses
+        it, Dataset creation follows); the sample count it turns into is a
+        property of the sensor, which is why it is answered here.
+        """
+        return int(round(float(seconds) * self.output_rate_hz))
 
     @property
     def nadir_search_samples(self) -> int:
         return int(round(NADIR_SEARCH_SEC * self.output_rate_hz))
-
-    def packet_size(self, ext: str, default: int = 0) -> int:
-        return int(self.packet_sizes.get(ext.lower(), default))
 
     def compiled_pattern(self):
         """The filename pattern, or None when it does not compile."""
@@ -169,24 +230,29 @@ class SensorConfig:
             time = f"{t[:2]}:{t[2:4]}:{t[4:6]}"
         return sensor, date, time
 
+    def describe_sources(self) -> str:
+        if not self.sources:
+            return "No raw files defined."
+        return "; ".join(s.describe(self.output_rate_hz) for s in self.sources)
+
     # ── serialisation ───────────────────────────────────────────────────────
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> "SensorConfig":
-        fields = {f for f in cls.__dataclass_fields__}
+        data = _upgrade(dict(data))
+        fields = set(cls.__dataclass_fields__)
         clean = {k: v for k, v in data.items() if k in fields}
         clean.setdefault("key", "sensor")
         clean.setdefault("name", clean["key"])
-        cfg = cls(**clean)
-        cfg.file_extensions = [str(e).lower() for e in cfg.file_extensions]
-        cfg.packet_sizes = {str(k).lower(): int(v)
-                            for k, v in dict(cfg.packet_sizes).items()}
-        return cfg
+        clean["sources"] = [
+            s if isinstance(s, SensorSource) else SensorSource(**s)
+            for s in clean.get("sources", [])]
+        return cls(**clean)
 
     def copy(self, **changes) -> "SensorConfig":
-        """A detached copy - asdict() deep-copies the lists and dicts."""
+        """A detached copy - asdict() deep-copies the nested records."""
         data = self.to_dict()
         data.update(changes)
         return SensorConfig.from_dict(data)
@@ -195,27 +261,57 @@ class SensorConfig:
     def problems(self) -> list:
         """Human-readable reasons this configuration cannot be used."""
         out = []
-        if not self.key.strip():
-            out.append("The configuration needs a key.")
-        if self.sampling_rate_hz <= 0:
-            out.append("Sampling rate must be greater than zero.")
-        if self.files_per_recording < 1:
-            out.append("A recording needs at least one file.")
-        if len(self.file_extensions) < self.files_per_recording:
-            out.append(
-                f"{self.files_per_recording} file(s) per recording but only "
-                f"{len(self.file_extensions)} extension(s) listed.")
-        if any(not e.startswith(".") for e in self.file_extensions):
-            out.append("File extensions must start with a dot.")
+        if not str(self.name).strip():
+            out.append("The configuration needs a name.")
+        if self.timebase_hz <= 0:
+            out.append("The timestamp clock must be greater than zero.")
+        if self.output_rate_hz <= 0:
+            out.append("The output rate must be greater than zero.")
+        if not self.sources:
+            out.append("A recording needs at least one raw file.")
+        exts = self.file_extensions
+        if any(len(e) < 2 for e in exts):
+            out.append("Every raw file needs an extension.")
+        if len(set(exts)) != len(exts):
+            out.append("Two raw files share an extension.")
         if self.compiled_pattern() is None:
             out.append("The filename pattern is not a valid expression.")
-        if self.window_sec <= 0:
-            out.append("The analysis window must be longer than zero.")
-        if self.resample and self.target_rate_hz <= 0:
-            out.append("Resampling is on but no target rate is set.")
         if self.parser not in PARSERS:
             out.append(f"No parser registered under '{self.parser}'.")
         return out
+
+
+def _upgrade(data: dict) -> dict:
+    """Bring a stored configuration up to the current shape.
+
+    The first version of this file described a sensor with one
+    ``sampling_rate_hz`` plus an optional resample, which could not say that
+    RAPID's .imp channels arrive at 100 Hz and are interpolated up to the
+    2000 Hz grid. Old records are read into the rates-and-sources shape so a
+    user's saved sensors survive the change.
+    """
+    if "sources" in data or "sampling_rate_hz" not in data:
+        return data
+
+    clock = float(data.pop("sampling_rate_hz", 2000.0)) or 2000.0
+    resample = bool(data.pop("resample", False))
+    target = float(data.pop("target_rate_hz", 0.0) or 0.0)
+    method = data.pop("resample_method", "linear")
+    packets = {str(k).lower(): int(v)
+               for k, v in dict(data.pop("packet_sizes", {})).items()}
+    exts = [str(e).lower() for e in data.pop("file_extensions", [])]
+    n = int(data.pop("files_per_recording", len(exts)) or len(exts))
+    data.pop("window_sec", None)
+
+    data["timebase_hz"] = clock
+    data["output_rate_hz"] = target if (resample and target > 0) else clock
+    data["sources"] = [
+        {"extension": ext,
+         "packet_size": packets.get(ext, 0),
+         "native_rate_hz": clock,
+         "method": method}
+        for ext in exts[:max(1, n)]]
+    return data
 
 
 # ── shipped configurations ───────────────────────────────────────────────────
@@ -226,19 +322,24 @@ BUILTIN = {
         key="rapid",
         name="RAPID",
         description=(
-            "The current setup: paired .imp (IMU, pressure, temperature, "
-            "battery) and .hig (high-g accelerometer) files at 2000 Hz, "
-            "merged onto one uniform time base by the RAPID parser."),
-        sampling_rate_hz=2000.0,
-        files_per_recording=2,
-        file_extensions=[".imp", ".hig"],
-        packet_sizes={".imp": 29, ".hig": 11},
-        filename_pattern=RAPID_FNAME_PATTERN,
+            "The current setup. Two files per recording, stamped from one "
+            "2000 Hz clock: .imp carries the 100 Hz IMU, pressure, "
+            "temperature and battery channels, .hig the high-g "
+            "accelerometer, which records at the full 2000 Hz but only in "
+            "bursts around events. Processing interpolates the .imp "
+            "channels up onto a uniform 2000 Hz grid and drops each .hig "
+            "sample into its slot on the same grid, leaving the gaps "
+            "between bursts empty."),
+        timebase_hz=2000.0,
+        output_rate_hz=2000.0,
+        sources=[
+            dict(extension=".imp", packet_size=29,
+                 native_rate_hz=100.0, method="linear"),
+            dict(extension=".hig", packet_size=11,
+                 native_rate_hz=2000.0, method="nearest"),
+        ],
         channels=list(RAPID_CHANNELS),
-        window_sec=0.2,
-        resample=False,
-        target_rate_hz=0.0,
-        resample_method="linear",
+        filename_pattern=RAPID_FNAME_PATTERN,
         parser="rapid_imp_hig",
     ),
     "micro_eel": dict(
@@ -249,16 +350,14 @@ BUILTIN = {
             "at roughly 6000 Hz. Extension, packet size and parser are "
             "placeholders until a real recording is available - set the "
             "parser once its reader is registered in sensor_config.PARSERS."),
-        sampling_rate_hz=6000.0,
-        files_per_recording=1,
-        file_extensions=[".dat"],
-        packet_sizes={".dat": 0},
-        filename_pattern=RAPID_FNAME_PATTERN,
+        timebase_hz=6000.0,
+        output_rate_hz=6000.0,
+        sources=[
+            dict(extension=".dat", packet_size=0,
+                 native_rate_hz=6000.0, method="linear"),
+        ],
         channels=list(RAPID_CHANNELS),
-        window_sec=0.2,
-        resample=False,
-        target_rate_hz=6000.0,
-        resample_method="linear",
+        filename_pattern=RAPID_FNAME_PATTERN,
         parser="unconfigured",
     ),
 }
@@ -289,7 +388,7 @@ def _load_rapid_module():
 
 
 def _parse_rapid(paths, out_dir, config):
-    """RAPID: one .imp and one .hig, merged onto a uniform time base."""
+    """RAPID: one .imp and one .hig, merged onto a uniform grid."""
     rf = _load_rapid_module()
     return rf.process_imp_hig_direct(
         paths[".imp"], paths[".hig"], out_dir, config=config)
@@ -302,20 +401,20 @@ def _parse_unconfigured(paths, out_dir, config):
         "Prepare page.")
 
 
-#: parser key -> callable(paths, out_dir, config) -> (DataFrame, summary)
+#: parser name -> callable(paths, out_dir, config) -> (DataFrame, summary)
 PARSERS = {
     "rapid_imp_hig": _parse_rapid,
     "unconfigured": _parse_unconfigured,
 }
 
 
-def register_parser(key, fn):
-    """Register a device reader under `key` (see the module docstring)."""
-    PARSERS[key] = fn
+def register_parser(name, fn):
+    """Register a device reader under `name` (see the module docstring)."""
+    PARSERS[name] = fn
 
 
-def get_parser(key):
-    return PARSERS.get(key, _parse_unconfigured)
+def get_parser(name):
+    return PARSERS.get(name, _parse_unconfigured)
 
 
 # ── resampling ───────────────────────────────────────────────────────────────
@@ -326,9 +425,9 @@ _INTERP_KIND = {"linear": "linear", "cubic": "cubic",
 def resample_frame(df, out_rate, time_col="time_s", method="linear"):
     """Put `df` on a uniform grid at `out_rate` Hz.
 
-    Used to lift a lower-rate device (say 100 Hz) up to the rate the models
-    were trained at, since the model input length is a sample count. Returns
-    a new frame; the original is untouched.
+    The generic form of what the RAPID parser does inline: lift a lower-rate
+    block of channels onto the output grid. Available to any parser that
+    does not build its own grid. Returns a new frame.
     """
     import numpy as np
     import pandas as pd
@@ -358,8 +457,8 @@ def resample_frame(df, out_rate, time_col="time_s", method="linear"):
 
 # ── change notification ──────────────────────────────────────────────────────
 class _Notifier(QObject):
-    """Emits when the active configuration changes or is edited."""
-    changed = Signal(str)          # key of the active configuration
+    """Emits when the selected configuration changes or is edited."""
+    changed = Signal(str)          # key of the selected configuration
 
 
 notifier = _Notifier()
@@ -370,7 +469,7 @@ _store = None                      # {"active": key, "configs": {key: cfg}}
 
 
 def config_path() -> Path:
-    """Where user configurations and the active choice are kept."""
+    """Where user configurations and the current choice are kept."""
     return _SETTINGS_FILE
 
 
@@ -434,7 +533,7 @@ def is_builtin(key) -> bool:
 
 
 def active() -> SensorConfig:
-    """The configuration in force for this session."""
+    """The configuration selected for this session."""
     store = _load()
     return store["configs"][store["active"]]
 
@@ -480,7 +579,7 @@ def delete(key) -> bool:
 
 
 def reset_to_builtin(key) -> SensorConfig:
-    """Discard edits to a shipped configuration."""
+    """Discard edits to a configuration StrikeWorks provides."""
     if key not in BUILTIN:
         return get(key)
     store = _load()
@@ -493,7 +592,7 @@ def reset_to_builtin(key) -> SensorConfig:
 
 
 def unique_key(base: str) -> str:
-    """A key not already in use, derived from `base`."""
+    """An internal identifier not already in use, derived from `base`."""
     store = _load()
     slug = re.sub(r"[^a-z0-9_]+", "_", str(base).strip().lower()).strip("_")
     slug = slug or "sensor"

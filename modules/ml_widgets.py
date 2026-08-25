@@ -411,16 +411,13 @@ class ProbBars(QWidget):
 SECTION_DEFAULTS = {
     # Prepare - Sensor configuration
     "Session sensor": True,
-    "Acquisition": True,
-    "Filename pattern": True,
+    "Rates and raw files": True,
     "Channels": True,
-    "Analysis window and interpolation": True,
     "Parser": True,
-    # Prepare - Study design (placeholders)
-    "Sample size and power": True,
-    "Treatment allocation": True,
-    "Operating points": True,
-    "Deployment schedule": True,
+    # Prepare - Study design
+    "Deployment": True,
+    "Treatments": True,
+    "Save to library": True,
     # Model Prediction - Predict
     "Model": True,
     "Dataset": True,

@@ -1604,6 +1604,17 @@ class Ui_MainWindow(object):
 
         self.layout_inventory_controls.addItem(self.spacer_1)
 
+        self.lbl_treatment = QLabel(self.grp_inventory)
+        self.lbl_treatment.setObjectName(u"lbl_treatment")
+
+        self.layout_inventory_controls.addWidget(self.lbl_treatment)
+
+        self.cmb_treatment = QComboBox(self.grp_inventory)
+        self.cmb_treatment.setObjectName(u"cmb_treatment")
+        self.cmb_treatment.setMinimumSize(QSize(200, 0))
+
+        self.layout_inventory_controls.addWidget(self.cmb_treatment)
+
         self.btn_process_selected = QPushButton(self.grp_inventory)
         self.btn_process_selected.setObjectName(u"btn_process_selected")
         self.btn_process_selected.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -2910,6 +2921,10 @@ class Ui_MainWindow(object):
         ___qtablewidgetitem30 = self.table_inventory.horizontalHeaderItem(6)
         ___qtablewidgetitem30.setText(QCoreApplication.translate("MainWindow", u"Status", None))
         self.chk_select_all.setText(QCoreApplication.translate("MainWindow", u"Select / unselect all", None))
+        self.lbl_treatment.setText(QCoreApplication.translate("MainWindow", u"Treatment", None))
+#if QT_CONFIG(tooltip)
+        self.cmb_treatment.setToolTip(QCoreApplication.translate("MainWindow", u"Treatments planned on Prepare > Study design. Selected sensors are labelled with this treatment's conditions when they are processed.", None))
+#endif // QT_CONFIG(tooltip)
         self.btn_process_selected.setText(QCoreApplication.translate("MainWindow", u"Process selected", None))
         self.grp_console.setTitle(QCoreApplication.translate("MainWindow", u"Console output", None))
         self.grp_selection_info.setTitle(QCoreApplication.translate("MainWindow", u"Selection information", None))

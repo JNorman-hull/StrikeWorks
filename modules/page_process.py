@@ -34,10 +34,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from . import deployment_index as di
 from . import sensor_config, settings
 
 # ── paths inside a library root (unchanged from the MVP) ─────────────────────
-_INDEX_REL = Path("processed_sens_data") / "index" / "global_sensor_index.csv"
+_INDEX_REL = di.INDEX_REL
 _RAW_REL = Path("raw_sens_data")
 _CSV_DIR = Path("processed_sens_data") / "csv"
 
@@ -192,10 +193,15 @@ class ProcessPage(QObject):
         self._scan_dir = None
         self._thread = None
         self._session_processed = []
+        self._batch_processed = []
+        self._treatments = []
 
         # a different sensor means different extensions and filename rules,
         # so the inventory is re-scanned when the Prepare page changes it
         sensor_config.notifier.changed.connect(self._on_sensor_changed)
+
+        # a plan saved on Prepare > Study design becomes selectable here
+        di.notifier.plan_saved.connect(self._on_plan_saved)
 
         self._fs_model = QFileSystemModel()
         self._fs_model.setFilter(QDir.Filter.Dirs | QDir.Filter.NoDotAndDotDot)
@@ -211,6 +217,7 @@ class ProcessPage(QObject):
         self._configure_widgets()
         self._connect()
         self._init_tree()
+        self._refresh_treatments()
 
     # ── setup ────────────────────────────────────────────────────────────────
     def _build_cards(self):
@@ -382,15 +389,48 @@ class ProcessPage(QObject):
         self._scan_and_refresh(folder)
 
     def _load_index(self):
-        idx_path = self._root / _INDEX_REL if self._root else None
-        if idx_path and idx_path.exists():
-            try:
-                self._index_df = pd.read_csv(idx_path, low_memory=False)
-            except Exception as e:
-                self._index_df = None
-                self._log(f"   Could not read global index: {e}")
-        else:
+        """Read the index, minus the deployment plan's treatment rows.
+
+        The plan lives in the same file - Prepare > Study design writes one
+        row per treatment - so every sensor listing drops those first.
+        """
+        if self._root is None:
             self._index_df = None
+            self._refresh_treatments()
+            return
+        try:
+            full = di.read_index(self._root)
+        except Exception as e:
+            full = None
+            self._log(f"   Could not read global index: {e}")
+        self._index_df = None if full is None else di.sensor_rows(full)
+        self._refresh_treatments()
+
+    def _on_plan_saved(self, root):
+        if self._root is not None and Path(root) == self._root:
+            self._refresh_treatments()
+
+    def _refresh_treatments(self):
+        """Offer the treatments planned for this library, if any."""
+        cmb = self.ui.cmb_treatment
+        current = cmb.currentData()
+        self._treatments = di.treatments(self._root) if self._root else []
+        cmb.blockSignals(True)
+        cmb.clear()
+        cmb.addItem("No treatment", None)
+        for t in self._treatments:
+            cmb.addItem(di.describe(t), t.get(di.TREATMENT_COL))
+        idx = cmb.findData(current) if current else 0
+        cmb.setCurrentIndex(max(0, idx))
+        cmb.blockSignals(False)
+        cmb.setEnabled(bool(self._treatments))
+
+    def _selected_treatment(self):
+        name = self.ui.cmb_treatment.currentData()
+        if not name:
+            return None
+        return next((t for t in self._treatments
+                     if t.get(di.TREATMENT_COL) == name), None)
 
     # ── scanning (unchanged rules) ───────────────────────────────────────────
     def _on_sensor_changed(self, _key):
@@ -531,6 +571,12 @@ class ProcessPage(QObject):
             self._log(f"Note: {skipped} incomplete recording(s) skipped.")
         self._log(f"Sensor: {cfg.name}  ({cfg.output_rate_hz:g} Hz, "
                   f"parser '{cfg.parser}')")
+        treatment = self._selected_treatment()
+        if treatment:
+            self._log(f"Treatment: {di.describe(treatment)}")
+        else:
+            self._log("Treatment: none - this batch is processed unlabelled.")
+        self._batch_processed = []
         self._log(f"Output -> {out_dir}\n")
         self.ui.btn_process_selected.setEnabled(False)
 
@@ -542,6 +588,7 @@ class ProcessPage(QObject):
 
     def _on_file_processed(self, stem):
         self._session_processed.append(stem)
+        self._batch_processed.append(stem)
         stamp = datetime.now().strftime("%H:%M:%S")
         self.ui.list_processed.addItem(QListWidgetItem(f"{stamp}  {stem}"))
 
@@ -551,6 +598,7 @@ class ProcessPage(QObject):
         self._log(f"\n{msg}")
         self.status.emit(msg, 5000)
 
+        self._apply_treatment()
         self._load_index()
         self._refresh_meta_tab()
 
@@ -561,6 +609,26 @@ class ProcessPage(QObject):
             folder = self._raw_dir or self._root
         if folder:
             self._scan_and_refresh(folder)
+
+    def _apply_treatment(self):
+        """Label this batch with the treatment it was run under.
+
+        The deployment fields come from the plan rather than being typed per
+        file, which is the point of processing treatment by treatment. The
+        Metadata tab still edits individual sensors afterwards.
+        """
+        treatment = self._selected_treatment()
+        if not treatment or not self._batch_processed or self._root is None:
+            return
+        try:
+            n = di.apply_treatment(
+                self._root, self._batch_processed, treatment)
+        except Exception as e:
+            self._log(f"   Could not label the batch: {e}")
+            return
+        if n:
+            self._log(f"Labelled {n} sensor(s) as "
+                      f"'{treatment.get(di.TREATMENT_COL)}'.")
 
     def _log(self, text):
         self.ui.console_output.appendPlainText(text)

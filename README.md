@@ -14,18 +14,31 @@ Copyright University of Hull (2026)
 
   **Prepare** sets the session's sensor and plans the study around it:
   * **Sensor configuration** — the active `sensor_config.SensorConfig`
-    (`modules/sensor_config.py`): sampling rate, files per recording and
-    their extensions, packet sizes, filename pattern, channel list, analysis
-    window, optional interpolation onto a target rate, and the registered
-    parser. Everything downstream reads it — Process scans for those
-    extensions and runs that parser, Validate plots at that rate, Dataset
-    creation cuts windows of that length. Two configurations ship (`rapid`,
-    the current device, and `micro_eel`, anticipated); a third is a New or
-    Duplicate plus a Save, stored in `~/.strikeworks_sensors.json`. Only a
-    new device's reader is code: write it and register it under
+    (`modules/sensor_config.py`). A sensor is two rates plus one entry per
+    raw file: the `timebase_hz` counter clock the files are stamped from,
+    the `output_rate_hz` grid the processed CSV is written on, and for each
+    file its extension, packet size, native rate and how it reaches that
+    grid. RAPID's `.imp` arrives at 100 Hz and is interpolated up to
+    2000 Hz; its `.hig` arrives at 2000 Hz but only in bursts around
+    events, so each sample is placed as recorded and the gaps are left
+    empty. Everything downstream reads it — Process scans those extensions
+    and runs that parser, Validate plots at that rate, Dataset creation
+    turns its 200 ms window into that many rows. Two configurations ship
+    (`rapid`, the current device, and `micro_eel`, anticipated); a third is
+    a New or Duplicate plus a Save, stored in `~/.strikeworks_sensors.json`.
+    Only a new device's reader is code: write it and register it under
     `sensor_config.PARSERS`;
-  * **Study design** — placeholder panels for the deployment planning tools
-    (sample size, treatment allocation, operating points, schedule).
+  * **Study design** — plans a deployment before any sensor is wetted: site,
+    deployment ID, machine and type, then one treatment per row (head,
+    flow, BEP, RPM, runs), each `+` copying the row above. Saving writes one
+    row per treatment into the library's `global_sensor_index.csv` marked
+    `file = label_pad` (`modules/deployment_index.py`). Process then offers
+    those treatments: select a batch of sensors, pick the treatment they
+    were run under, and processing labels every one of them with its
+    conditions — a deployment is worked treatment by treatment instead of
+    typing metadata per file. Plan rows are filtered out of every sensor
+    listing, and the Metadata tab still edits individual sensors.
+
 * **Machine Learning Analysis** — **Model Training**, **Model Performance**
   and **Model Prediction**.
 
