@@ -18,12 +18,12 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
 from .ml_train_state import DEFAULT_MODELS_DIR
-from .ml_widgets import ACCENT, BAD, MUTED, OK, TEXT, MetaCard, Spinner
+from .ml_widgets import ACCENT, BAD, MUTED, OK, TEXT, MetaCard, Spinner, Section, apply_section_defaults
 
 
 class DeployTab:
@@ -62,7 +62,7 @@ class DeployTab:
         lv.setContentsMargins(0, 0, 0, 0)
         lv.setSpacing(10)
 
-        grp_flow = QGroupBox("Workflow")
+        grp_flow = Section("Workflow")
         fv = QVBoxLayout(grp_flow)
         lab = QLabel(
             "<b>Cross-validation model</b> — used to estimate performance.<br/>"
@@ -81,7 +81,7 @@ class DeployTab:
         fv.addWidget(self.lbl_flow_status)
         lv.addWidget(grp_flow)
 
-        grp_final = QGroupBox("Final model")
+        grp_final = Section("Final model")
         gv = QVBoxLayout(grp_final)
         gv.setSpacing(8)
         run_row = QHBoxLayout()
@@ -102,7 +102,7 @@ class DeployTab:
         gv.addWidget(self.card_final)
         lv.addWidget(grp_final)
 
-        grp_deploy = QGroupBox("Deployment")
+        grp_deploy = Section("Deployment")
         dv = QVBoxLayout(grp_deploy)
         dv.setSpacing(8)
         ver_row = QHBoxLayout()
@@ -147,7 +147,7 @@ class DeployTab:
         row.addWidget(left, stretch=1)
 
         # ── right column: model card / provenance ───────────────────────────
-        grp_card = QGroupBox("Model card (provenance)")
+        grp_card = Section("Model card (provenance)")
         cv = QVBoxLayout(grp_card)
         self.card_prov = MetaCard("MODEL PROVENANCE")
         cv.addWidget(self.card_prov)
@@ -162,6 +162,8 @@ class DeployTab:
 
         v.addLayout(row)
         v.addStretch()
+
+        apply_section_defaults(frame)
 
     # ── state wiring ─────────────────────────────────────────────────────────
     def _connect_state(self):

@@ -15,12 +15,12 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFileDialog, QGroupBox, QHBoxLayout, QLabel, QMessageBox, QPushButton,
+    QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton,
     QTextBrowser, QVBoxLayout,
 )
 
 from . import ml_figures, ml_report
-from .ml_widgets import ACCENT, MUTED
+from .ml_widgets import ACCENT, MUTED, Section, apply_section_defaults
 
 
 class ReportTab:
@@ -77,7 +77,7 @@ class ReportTab:
         self.lbl_note.setWordWrap(True)
         v.addWidget(self.lbl_note)
 
-        grp = QGroupBox("Report preview")
+        grp = Section("Report preview")
         gv = QVBoxLayout(grp)
         self.browser = QTextBrowser()
         self.browser.setOpenExternalLinks(False)
@@ -86,6 +86,8 @@ class ReportTab:
             "border:1px solid #2c313a;border-radius:5px;padding:12px;}")
         gv.addWidget(self.browser)
         v.addWidget(grp, stretch=1)
+
+        apply_section_defaults(frame)
 
     def _connect_state(self):
         s = self.state

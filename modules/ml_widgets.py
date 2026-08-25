@@ -13,7 +13,8 @@ are new but follow the same card language as page_process.StatCard.
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
+    QFrame, QGridLayout, QGroupBox, QLabel, QSizePolicy, QVBoxLayout,
+    QWidget,
 )
 
 # theme colours (match the PyDracula palette used by the app)
@@ -303,8 +304,11 @@ class CheckList(QFrame):
         self._verdict.setStyleSheet("border:none;")
         self._items = []
 
-    def set_checks(self, checks, ready, ready_text="READY TO PREDICT",
-                   blocked_text="PREDICTION UNAVAILABLE"):
+    def set_checks(self, checks, ready, ready_text=None,
+                   blocked_text=None):
+        """Render the checks. A verdict banner is drawn only when
+        ready_text/blocked_text are supplied; pages that show the outcome
+        elsewhere (e.g. via a gated Run button) omit it."""
         for w in self._items:
             w.setParent(None)
             w.deleteLater()
@@ -323,11 +327,15 @@ class CheckList(QFrame):
             self._v.addWidget(row)
             self._items.append(row)
 
+        if ready_text is None and blocked_text is None:
+            self._verdict.setVisible(False)
+            return
+        self._verdict.setVisible(True)
         if ready:
-            self._verdict.setText(ready_text)
+            self._verdict.setText(ready_text or "")
             self._verdict.setStyleSheet(f"color:{OK};border:none;")
         else:
-            self._verdict.setText(blocked_text)
+            self._verdict.setText(blocked_text or "")
             self._verdict.setStyleSheet(f"color:{BAD};border:none;")
         self._v.addWidget(self._verdict)
 
@@ -394,3 +402,104 @@ class ProbBars(QWidget):
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                        f"{float(prob):.3f}")
         p.end()
+
+
+# ── collapsible section ──────────────────────────────────────────────────────
+# Which sections start open. Keys are the section titles passed to Section();
+# anything not listed defaults to open. Set a title to False here to have that
+# panel start collapsed.
+SECTION_DEFAULTS = {
+    # Model Prediction - Predict
+    "Model": True,
+    "Dataset": True,
+    "Compatibility": True,
+    "Prediction configuration": True,
+    "Run": True,
+    "Prediction summary": True,
+    "Results by treatment": True,
+    "Prediction figures": True,
+    # Model Prediction - Inspect
+    "Filter predictions": True,
+    "Selected prediction": True,
+    "Class probabilities": True,
+    "Model input signal": True,
+    # Model Prediction - Report
+    "Report preview": True,
+    # Model Training - Train
+    "Training dataset": True,
+    "Dataset filtering": True,
+    "Labels / target — two-stage pipeline": True,
+    "Dataset preview (file-level metadata)": True,
+    "Model input channels": True,
+    "Sequence configuration": True,
+    "Validation": True,
+    "Class balancing": True,
+    "Train": True,
+    "Training console": True,
+    # Model Training / Model Performance - Evaluate
+    "Performance (out-of-fold)": True,
+    "Cross-validation (mean ± SD across folds)": True,
+    "Error analysis": True,
+    "Evaluation figures": True,
+    "Performance by strike type / class": True,
+    "Performance by treatment": True,
+    # Model Training - Deploy
+    "Workflow": True,
+    "Final model": True,
+    "Deployment": True,
+    "Model card (provenance)": True,
+}
+
+
+def _set_layout_visible(layout, visible):
+    for i in range(layout.count()):
+        item = layout.itemAt(i)
+        w = item.widget()
+        if w is not None:
+            w.setVisible(visible)
+            continue
+        sub = item.layout()
+        if sub is not None:
+            _set_layout_visible(sub, visible)
+
+
+class Section(QGroupBox):
+    """Checkable group box that collapses to its title bar when unchecked.
+
+    Used for every panel on the Machine Learning Analysis pages so the user
+    can fold away what they are not working on. Default open/closed state
+    comes from SECTION_DEFAULTS, applied once the contents are built via
+    apply_section_defaults().
+    """
+
+    COLLAPSED_H = 26
+
+    def __init__(self, title, key=None, parent=None):
+        super().__init__(title, parent)
+        self.key = key or title
+        self.setCheckable(True)
+        self.setChecked(True)
+        self.toggled.connect(self._apply)
+
+    def _apply(self, on):
+        lay = self.layout()
+        if lay is not None:
+            _set_layout_visible(lay, on)
+        self.setMaximumHeight(16777215 if on else self.COLLAPSED_H)
+
+    def apply_default(self):
+        want = SECTION_DEFAULTS.get(self.key, True)
+        if self.isChecked() != want:
+            self.setChecked(want)
+        else:
+            self._apply(want)
+
+
+def apply_section_defaults(root):
+    """Apply SECTION_DEFAULTS to every Section under `root`.
+
+    Call after a tab has finished building, so the collapse can measure and
+    hide real contents.
+    """
+    for sec in root.findChildren(Section):
+        sec.apply_default()

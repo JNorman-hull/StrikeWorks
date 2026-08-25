@@ -745,7 +745,14 @@ class TrainingState(QObject):
                     ("performance_metrics.json",
                      f"{kind}_performance_metrics.json"),
                     ("model_config.json", f"{kind}_model_config.json"),
-                    ("cv_predictions.csv", f"{kind}_cv_predictions.csv")]:
+                    ("cv_predictions.csv", f"{kind}_cv_predictions.csv"),
+                    ("cv_curves.json", f"{kind}_cv_curves.json"),
+                    ("misclassified_files_for_review.csv",
+                     f"{kind}_misclassified.csv"),
+                    ("blade_strike_predictions.csv",
+                     f"{kind}_blade_strike_predictions.csv"),
+                    ("class_by_treatment.csv",
+                     f"{kind}_class_by_treatment.csv")]:
                 s = src / name
                 if s.exists():
                     shutil.copy(s, pkg / dst_name)

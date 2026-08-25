@@ -289,6 +289,87 @@ def draw_confidence_by_class(fig, cv_predictions, metrics, dark=False):
     fig.tight_layout()
 
 
+def draw_ovr_roc(fig, cv_predictions, metrics, dark=False):
+    """One-vs-rest ROC per class - the multiclass analogue of the binary
+    ROC curve, built from the per-class probability columns."""
+    from .ml_model_library import roc_pr_from_scores
+
+    fig.clear()
+    ax = _base_axes(fig, dark, "False positive rate", "True positive rate",
+                    "ROC curve (one-vs-rest)")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.grid(alpha=0.3)
+    names = (metrics or {}).get("class_names") or []
+    if cv_predictions is None or not names             or "true_class" not in cv_predictions.columns:
+        _awaiting(ax, "Per-recording CV predictions unavailable")
+        style_axes(fig, ax, dark)
+        fig.tight_layout()
+        return
+
+    fg = fg_colour(dark)
+    ax.plot([0, 1], [0, 1], linestyle="--", color=fg, lw=1.0, alpha=0.5)
+    drew = False
+    for i, cn in enumerate(names):
+        col = f"prob_{cn}"
+        if col not in cv_predictions.columns:
+            continue
+        y = (cv_predictions["true_class"] == cn).astype(int)
+        c = roc_pr_from_scores(y, cv_predictions[col])
+        if c is None:
+            continue
+        auc = np.trapezoid(c["tpr"], c["fpr"]) if hasattr(np, "trapezoid")             else np.trapz(c["tpr"], c["fpr"])
+        ax.plot(c["fpr"], c["tpr"], lw=2.0,
+                color=_PALETTE[i % len(_PALETTE)],
+                label=f"{cn} (AUC = {auc:.3f})")
+        drew = True
+    if drew:
+        leg = ax.legend(loc="lower right", fontsize=7)
+        style_legend(leg, dark)
+    else:
+        _awaiting(ax, "Class probabilities unavailable")
+    style_axes(fig, ax, dark)
+    fig.tight_layout()
+
+
+def draw_accuracy_by_treatment(fig, cv_predictions, metrics, dark=False):
+    """Accuracy per treatment - the stratification the binary page shows as
+    accuracy by strike type."""
+    fig.clear()
+    ax = _base_axes(fig, dark, "Treatment", "Accuracy",
+                    "Accuracy by treatment")
+    ax.set_ylim([0, 1.12])
+    ax.grid(alpha=0.3, axis="y")
+    if cv_predictions is None or "treatment" not in cv_predictions.columns             or "correct" not in cv_predictions.columns:
+        ax.set_xticks([])
+        _awaiting(ax, "Treatment information unavailable")
+        style_axes(fig, ax, dark)
+        fig.tight_layout()
+        return
+
+    fg = fg_colour(dark)
+    grouped = cv_predictions.groupby("treatment")["correct"]
+    names = [str(k) for k in grouped.groups]
+    accs = [float(grouped.get_group(k).mean()) for k in grouped.groups]
+    ns = [int(len(grouped.get_group(k))) for k in grouped.groups]
+    colors = [_PALETTE[i % len(_PALETTE)] for i in range(len(names))]
+    bars = ax.bar(range(len(names)), accs, color=colors, edgecolor=fg,
+                  width=0.6)
+    overall = float(cv_predictions["correct"].mean())
+    ax.axhline(y=overall, color=fg, linestyle="--", lw=1.2,
+               label=f"Overall accuracy ({overall:.3f})")
+    for bar, acc, n in zip(bars, accs, ns):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.02,
+                f"{acc:.2f}\nn={n}", ha="center", fontsize=7,
+                color=fg)
+    ax.set_xticks(range(len(names)))
+    ax.set_xticklabels(names, rotation=30, ha="right", fontsize=8)
+    leg = ax.legend(fontsize=7)
+    style_legend(leg, dark)
+    style_axes(fig, ax, dark)
+    fig.tight_layout()
+
+
 def draw_all(figures, metrics, cv_predictions, curves, dark=False):
     """Redraw every evaluation figure for one model's results.
 
@@ -315,14 +396,9 @@ def draw_all(figures, metrics, cv_predictions, curves, dark=False):
         draw_per_class_recall(figures["fig2"], metrics, dark)
         draw_confidence_by_class(figures["fig3"], cv_predictions, metrics,
                                  dark)
-        for name in ("fig4", "fig5"):
-            fig = figures[name]
-            fig.clear()
-            ax = _base_axes(fig, dark, None, None, None)
-            ax.set_axis_off()
-            _awaiting(ax, "Binary-only figure")
-            style_axes(fig, ax, dark)
-            fig.tight_layout()
+        draw_ovr_roc(figures["fig4"], cv_predictions, metrics, dark)
+        draw_accuracy_by_treatment(figures["fig5"], cv_predictions, metrics,
+                                   dark)
 
 
 def render_model_figures(out_dir, metrics, cv_predictions, curves,
@@ -354,9 +430,14 @@ def render_model_figures(out_dir, metrics, cv_predictions, curves,
                 ("per_class_recall",
                  lambda f: draw_per_class_recall(f, metrics))]
         if cv_predictions is not None:
-            spec.append(("prediction_confidence",
-                         lambda f: draw_confidence_by_class(
-                             f, cv_predictions, metrics)))
+            spec += [("prediction_confidence",
+                      lambda f: draw_confidence_by_class(
+                          f, cv_predictions, metrics)),
+                     ("roc_curve_one_vs_rest",
+                      lambda f: draw_ovr_roc(f, cv_predictions, metrics)),
+                     ("accuracy_by_treatment",
+                      lambda f: draw_accuracy_by_treatment(
+                          f, cv_predictions, metrics))]
 
     out_dir.mkdir(parents=True, exist_ok=True)
     out = {}

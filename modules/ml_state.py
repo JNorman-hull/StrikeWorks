@@ -34,8 +34,38 @@ from PySide6.QtCore import QObject, QThread, Signal
 _WORKER     = Path(__file__).parent / "predict_worker.py"
 _MODELS_DIR = Path(__file__).parent.parent / "models"
 
-# ground truth: overall_passage_type values counted as a strike
-# (same set the Dataset creation page uses for its annotation figure)
+# Ground-truth annotation columns, in preference order. Nothing downstream
+# assumes a particular name: whichever of these a dataset carries is used,
+# and the "no contact" level is detected from the values rather than fixed.
+ANNOTATION_COLUMNS = ["overall_passage_type", "passage_type"]
+
+# Values treated as "no contact"; everything else in the annotation column
+# counts as a strike. Matching is case/spacing insensitive.
+NO_CONTACT_VALUES = {"no_contact", "no contact", "nocontact", "none",
+                     "no-contact"}
+
+
+def _norm(value):
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def annotation_column(df):
+    """The ground-truth annotation column a dataframe carries, if any."""
+    if df is None:
+        return None
+    for col in ANNOTATION_COLUMNS:
+        if col in df.columns and df[col].notna().any():
+            return col
+    return None
+
+
+def is_strike_value(value):
+    """True when an annotation value means a strike (not 'no contact')."""
+    return _norm(value) not in NO_CONTACT_VALUES
+
+
+# Backwards compatibility: the explicit strike levels of the curated
+# datasets. Prefer is_strike_value(), which handles unseen labels.
 STRIKE_TYPES = {"leading_edge", "other"}
 
 _DEFAULT_LOW_CONF = 0.70
@@ -318,13 +348,15 @@ class PredictionState(QObject):
                 meta["sampling_rate_hz"] = round(1.0 / float(dt))
 
         meta["columns"]   = list(df.columns)
-        meta["annotated"] = "overall_passage_type" in df.columns
+        ann = annotation_column(df)
+        meta["annotation_column"] = ann
+        meta["annotated"] = ann is not None
         return meta
 
     def has_ground_truth(self):
         return bool(self.dataset_meta.get("annotated")) or (
             self.predictions is not None
-            and "overall_passage_type" in self.predictions.columns)
+            and annotation_column(self.predictions) is not None)
 
     # ── validation ───────────────────────────────────────────────────────────
     def validate(self):
@@ -522,13 +554,16 @@ class PredictionState(QObject):
         gt_region_class is the collapsed class name matching the multiclass
         model's classes, when the mapping is available.
         """
-        if row is None or "overall_passage_type" not in row.index:
+        if row is None:
             return None, None, None
-        gt_type = row.get("overall_passage_type")
+        col = next((c for c in ANNOTATION_COLUMNS if c in row.index), None)
+        if col is None:
+            return None, None, None
+        gt_type = row.get(col)
         if pd.isna(gt_type) or str(gt_type).strip() == "":
             return None, None, None
         gt_type = str(gt_type)
-        gt_strike = gt_type in STRIKE_TYPES
+        gt_strike = is_strike_value(gt_type)
 
         gt_region_class = None
         region = row.get("concentric_pump_region")

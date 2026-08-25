@@ -21,7 +21,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView,
+    QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QHeaderView,
     QLabel, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSplitter,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -30,7 +30,7 @@ from . import ml_model_library, ml_train_figures
 from .ml_tab_predict import _NumItem
 from .ml_train_state import DEFAULT_MODELS_DIR
 from .ml_widgets import (
-    BAD, MUTED, OK, TEXT, WARN, CARD_W2, CARD_H2, MetaCard, RingCard,
+    BAD, MUTED, OK, TEXT, WARN, CARD_W2, CARD_H2, MetaCard, RingCard, Section, apply_section_defaults,
 )
 
 FIG_MIN_W, FIG_MIN_H = 300, 250
@@ -104,7 +104,7 @@ class EvaluateTab:
         v.addWidget(self.lbl_source)
 
         # ── performance cards ───────────────────────────────────────────────
-        grp_perf = QGroupBox("Performance (out-of-fold)")
+        grp_perf = Section("Performance (out-of-fold)")
         pv = QHBoxLayout(grp_perf)
         pv.setSpacing(8)
         self.rings = []
@@ -120,14 +120,14 @@ class EvaluateTab:
         # ── CV summary + error analysis ─────────────────────────────────────
         split2 = QSplitter(Qt.Orientation.Horizontal)
         split2.setChildrenCollapsible(False)
-        grp_cv = QGroupBox("Cross-validation (mean ± SD across folds)")
+        grp_cv = Section("Cross-validation (mean ± SD across folds)")
         cv = QVBoxLayout(grp_cv)
         self.tbl_cv = self._make_table(["Metric", "Mean", "SD"])
         self.tbl_cv.setMinimumHeight(190)
         cv.addWidget(self.tbl_cv)
         split2.addWidget(grp_cv)
 
-        grp_err = QGroupBox("Error analysis")
+        grp_err = Section("Error analysis")
         ev = QVBoxLayout(grp_err)
         self.lbl_mis = QLabel("No model selected.")
         self.lbl_mis.setStyleSheet(f"color:{TEXT};")
@@ -146,7 +146,7 @@ class EvaluateTab:
         v.addWidget(split2)
 
         # ── figures ─────────────────────────────────────────────────────────
-        grp_figs = QGroupBox("Evaluation figures")
+        grp_figs = Section("Evaluation figures")
         fg = QGridLayout(grp_figs)
         fg.setSpacing(8)
         fg.addWidget(self.canvases["fig1"], 0, 0)
@@ -161,14 +161,14 @@ class EvaluateTab:
         # ── stratification ──────────────────────────────────────────────────
         split3 = QSplitter(Qt.Orientation.Horizontal)
         split3.setChildrenCollapsible(False)
-        grp_type = QGroupBox("Performance by strike type / class")
+        grp_type = Section("Performance by strike type / class")
         tv = QVBoxLayout(grp_type)
         self.tbl_type = self._make_table(["Strike type", "N", "Accuracy"])
         self.tbl_type.setMinimumHeight(160)
         tv.addWidget(self.tbl_type)
         split3.addWidget(grp_type)
 
-        grp_tx = QGroupBox("Performance by treatment")
+        grp_tx = Section("Performance by treatment")
         xv = QVBoxLayout(grp_tx)
         self.tbl_tx = self._make_table([])
         self.tbl_tx.setMinimumHeight(160)
@@ -180,6 +180,8 @@ class EvaluateTab:
         v.addStretch()
 
         ml_train_figures.draw_all(self.figures, None, None, None, dark=True)
+
+        apply_section_defaults(frame)
 
     @staticmethod
     def _make_table(headers):

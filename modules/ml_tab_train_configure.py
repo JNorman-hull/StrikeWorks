@@ -22,8 +22,7 @@ import pandas as pd
 from PySide6.QtCore import Qt, QElapsedTimer, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout, QGroupBox,
-    QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPlainTextEdit,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout,     QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPlainTextEdit,
     QProgressBar, QPushButton, QRadioButton, QScrollArea, QSizePolicy,
     QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -32,7 +31,7 @@ from . import settings
 from .ml_train_state import COLLAPSE_SCHEMES
 from .ml_widgets import (
     ACCENT, BAD, BORDER, CARD_BG, EMPTY, MUTED, OK, PALETTE, TEXT, MetaCard,
-    Spinner,
+    Spinner, Section, apply_section_defaults,
 )
 
 _PREVIEW_ROWS = 200
@@ -128,7 +127,7 @@ class TrainTab:
         row1 = QHBoxLayout()
         row1.setSpacing(10)
 
-        grp_ds = QGroupBox("Training dataset")
+        grp_ds = Section("Training dataset")
         dv = QVBoxLayout(grp_ds)
         dv.setSpacing(8)
         btn_row = QHBoxLayout()
@@ -147,9 +146,7 @@ class TrainTab:
         dv.addWidget(self.lbl_compat)
         row1.addWidget(grp_ds, stretch=2)
 
-        self.grp_preview = QGroupBox("Dataset preview (file-level metadata)")
-        self.grp_preview.setCheckable(True)
-        self.grp_preview.setChecked(False)
+        self.grp_preview = Section("Dataset preview (file-level metadata)")
         pv = QVBoxLayout(self.grp_preview)
         self.tbl_preview = QTableWidget(0, 0)
         self.tbl_preview.verticalHeader().setVisible(False)
@@ -158,12 +155,9 @@ class TrainTab:
             QHeaderView.ResizeMode.ResizeToContents)
         self.tbl_preview.horizontalHeader().setStretchLastSection(True)
         self.tbl_preview.setMinimumHeight(180)
-        self.tbl_preview.setVisible(False)
         pv.addWidget(self.tbl_preview)
-        self.grp_preview.toggled.connect(self._toggle_preview)
-        self._toggle_preview(False)
 
-        grp_filter = QGroupBox("Dataset filtering")
+        grp_filter = Section("Dataset filtering")
         fv = QVBoxLayout(grp_filter)
         fv.setSpacing(4)
         lab = QLabel("Include records (by target value). The resulting "
@@ -181,7 +175,7 @@ class TrainTab:
         fv.addStretch()
         row1.addWidget(grp_filter, stretch=1)
 
-        grp_target = QGroupBox("Labels / target — two-stage pipeline")
+        grp_target = Section("Labels / target — two-stage pipeline")
         tv = QVBoxLayout(grp_target)
         tv.setSpacing(6)
 
@@ -246,7 +240,7 @@ class TrainTab:
         row3 = QHBoxLayout()
         row3.setSpacing(10)
 
-        grp_chan = QGroupBox("Model input channels")
+        grp_chan = Section("Model input channels")
         cv = QVBoxLayout(grp_chan)
         cv.setSpacing(4)
         self.chan_grid = QGridLayout()
@@ -260,7 +254,7 @@ class TrainTab:
         cv.addStretch()
         row3.addWidget(grp_chan, stretch=1)
 
-        grp_seq = QGroupBox("Sequence configuration")
+        grp_seq = Section("Sequence configuration")
         sv = QGridLayout(grp_seq)
         sv.setVerticalSpacing(6)
         self.rb_seq_auto = QRadioButton("Automatically determine from dataset")
@@ -294,7 +288,7 @@ class TrainTab:
         row4 = QHBoxLayout()
         row4.setSpacing(10)
 
-        grp_val = QGroupBox("Validation")
+        grp_val = Section("Validation")
         vv = QGridLayout(grp_val)
         vv.setVerticalSpacing(6)
         self.rb_cv_only = QRadioButton("Cross-validation only")
@@ -336,7 +330,7 @@ class TrainTab:
         vv.addLayout(seed_row, 5, 1)
         row4.addWidget(grp_val, stretch=1)
 
-        grp_bal = QGroupBox("Class balancing")
+        grp_bal = Section("Class balancing")
         bv = QVBoxLayout(grp_bal)
         bv.setSpacing(4)
         self.rb_w_none = QRadioButton("None")
@@ -356,7 +350,7 @@ class TrainTab:
         bv.addStretch()
         row4.addWidget(grp_bal, stretch=1)
 
-        grp_model = QGroupBox("Model")
+        grp_model = Section("Model")
         mv = QGridLayout(grp_model)
         mv.setVerticalSpacing(6)
         mv.addWidget(self._muted("Architecture"), 0, 0)
@@ -400,7 +394,7 @@ class TrainTab:
         row5 = QHBoxLayout()
         row5.setSpacing(10)
 
-        grp_run = QGroupBox("Train")
+        grp_run = Section("Train")
         gv = QVBoxLayout(grp_run)
         gv.setSpacing(8)
         run_row = QHBoxLayout()
@@ -443,7 +437,7 @@ class TrainTab:
         gv.addStretch()
         row5.addWidget(grp_run, stretch=2)
 
-        grp_console = QGroupBox("Training console")
+        grp_console = Section("Training console")
         cv = QVBoxLayout(grp_console)
         cv.setSpacing(4)
         btn_row = QHBoxLayout()
@@ -465,6 +459,8 @@ class TrainTab:
         row5.addWidget(grp_console, stretch=3)
         v.addLayout(row5)
         v.addStretch()
+
+        apply_section_defaults(frame)
 
     @staticmethod
     def _muted(text):
@@ -604,13 +600,6 @@ class TrainTab:
                 val = row[col]
                 text = "—" if pd.isna(val) else str(val)
                 self.tbl_preview.setItem(r, c, QTableWidgetItem(text))
-
-    def _toggle_preview(self, checked):
-        """Collapse to the title bar when unchecked, rather than leaving a
-        large empty frame."""
-        self.tbl_preview.setVisible(checked)
-        self.grp_preview.setMaximumHeight(
-            16777215 if checked else self.grp_preview.sizeHint().height())
 
     # ── widget -> state ──────────────────────────────────────────────────────
     def _target_changed(self):

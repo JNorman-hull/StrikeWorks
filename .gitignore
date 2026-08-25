@@ -5,3 +5,5 @@ __pycache__/
 .idea/
 training_runs/
 exteneral_software/
+ModelReport_*/
+BladeStrike_Analysis_*/

@@ -20,16 +20,16 @@ import pyqtgraph as pg
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+    QComboBox, QDoubleSpinBox, QHBoxLayout, QHeaderView, QLabel,
     QLineEdit, QPushButton, QSizePolicy, QSplitter, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import settings
-from .ml_state import STRIKE_TYPES
+from .ml_state import annotation_column, is_strike_value
 from .ml_tab_predict import _NumItem
 from .ml_widgets import (
-    BAD, INFO, MUTED, OK, PALETTE, PINK, TEXT, WARN, ProbBars,
+    BAD, INFO, MUTED, OK, PALETTE, PINK, TEXT, WARN, ProbBars, Section, apply_section_defaults,
 )
 from .page_validate import _CsvLoadThread, _NavViewBox
 
@@ -84,7 +84,7 @@ class InspectTab:
         lv.setContentsMargins(0, 0, 0, 0)
         lv.setSpacing(8)
 
-        grp_filter = QGroupBox("Filter predictions")
+        grp_filter = Section("Filter predictions")
         fv = QVBoxLayout(grp_filter)
         fv.setSpacing(6)
 
@@ -145,7 +145,7 @@ class InspectTab:
         top = QHBoxLayout()
         top.setSpacing(8)
 
-        grp_sel = QGroupBox("Selected prediction")
+        grp_sel = Section("Selected prediction")
         sv = QVBoxLayout(grp_sel)
         sv.setSpacing(3)
         self.lbl_rec = QLabel("No prediction selected")
@@ -170,7 +170,7 @@ class InspectTab:
         sv.addStretch()
         top.addWidget(grp_sel, stretch=1)
 
-        grp_probs = QGroupBox("Class probabilities")
+        grp_probs = Section("Class probabilities")
         pv = QVBoxLayout(grp_probs)
         self.prob_bars = ProbBars()
         pv.addWidget(self.prob_bars)
@@ -178,7 +178,7 @@ class InspectTab:
         top.addWidget(grp_probs, stretch=1)
         rv.addLayout(top)
 
-        grp_sig = QGroupBox("Model input signal")
+        grp_sig = Section("Model input signal")
         gv = QVBoxLayout(grp_sig)
         gv.setSpacing(6)
 
@@ -235,6 +235,8 @@ class InspectTab:
         rv.addWidget(grp_sig, stretch=1)
 
         root.addWidget(right, stretch=1)
+
+        apply_section_defaults(frame)
 
     # ── state wiring ─────────────────────────────────────────────────────────
     def _connect_state(self):
@@ -294,14 +296,21 @@ class InspectTab:
         self._rebuild_channel_combos()
 
     def _rebuild_channel_combos(self):
+        """Offer the model input channels plus the derived magnitude
+        channels the dataset carries - the magnitudes are what an analyst
+        actually reads a blade interaction from."""
         chans = self.state.required_channels()
         df = self.state.dataset_df
         if df is not None:
             chans = [c for c in chans if c in df.columns]
+            derived = [c for c in df.columns
+                       if c not in chans and "_mag_" in c]
+            chans = derived + chans
 
+        # pressure on the left (white), high-g magnitude on the right (red)
         for cmb, default, extra_none in (
-                (self.cmb_left, "higacc_x_g", False),
-                (self.cmb_right, "pressure_kpa", True)):
+                (self.cmb_left, "pressure_kpa", False),
+                (self.cmb_right, "higacc_mag_g", True)):
             cmb.blockSignals(True)
             current = cmb.currentData()
             cmb.clear()
@@ -355,14 +364,15 @@ class InspectTab:
             out = out[out["predicted_strike"] == 0]
         elif mode == _FILTER_LOW_CONF:
             out = out[out["confidence"] < s.low_conf_threshold]
-        elif mode == _FILTER_MISCLASS and "overall_passage_type" in out.columns:
-            has_gt = (out["overall_passage_type"].notna()
-                      & (out["overall_passage_type"].astype(str).str.strip()
-                         != ""))
-            gt_strike = out["overall_passage_type"].astype(str).isin(
-                STRIKE_TYPES)
-            out = out[has_gt
-                      & (out["predicted_strike"].astype(bool) != gt_strike)]
+        elif mode == _FILTER_MISCLASS:
+            col = annotation_column(out)
+            if col is not None:
+                has_gt = (out[col].notna()
+                          & (out[col].astype(str).str.strip() != ""))
+                gt_strike = out[col].map(is_strike_value)
+                out = out[has_gt
+                          & (out["predicted_strike"].astype(bool)
+                             != gt_strike)]
 
         tx = self.cmb_treatment.currentData()
         if tx is not None and "treatment" in out.columns:

@@ -19,7 +19,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt, QElapsedTimer, QTimer
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGroupBox, QHBoxLayout,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout,
     QHeaderView, QLabel, QMessageBox, QPushButton, QScrollArea, QSizePolicy,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 from . import ml_figures
 from .ml_widgets import (
     ACCENT, BAD, MUTED, OK, PALETTE, PINK, TEXT, WARN,
-    CARD_W2, CARD_H2, CheckList, MetaCard, RingCard, Spinner,
+    CARD_W2, CARD_H2, CheckList, MetaCard, RingCard, Spinner, Section, apply_section_defaults,
 )
 
 FIG_MIN_W, FIG_MIN_H = 320, 300
@@ -106,7 +106,7 @@ class PredictTab:
         row1 = QHBoxLayout()
         row1.setSpacing(10)
 
-        grp_model = QGroupBox("Model")
+        grp_model = Section("Model")
         mv = QVBoxLayout(grp_model)
         mv.setSpacing(8)
         self.card_model = MetaCard("Deployed model")
@@ -134,7 +134,7 @@ class PredictTab:
         mv.addLayout(mdl_btn_row)
         row1.addWidget(grp_model, stretch=1)
 
-        grp_data = QGroupBox("Dataset")
+        grp_data = Section("Dataset")
         dv = QVBoxLayout(grp_data)
         dv.setSpacing(8)
         self.card_dataset = MetaCard("Curated sensor dataset")
@@ -151,21 +151,21 @@ class PredictTab:
         ds_btn_row.addWidget(self.btn_load_csv)
         ds_btn_row.addWidget(self.lbl_ds_source, stretch=1)
         dv.addLayout(ds_btn_row)
+
+        # model-dataset compatibility lives with the dataset it validates
+        lab_compat = QLabel("Compatibility")
+        lab_compat.setStyleSheet(f"color:{MUTED};")
+        dv.addWidget(lab_compat)
+        self.checklist = CheckList()
+        dv.addWidget(self.checklist)
         row1.addWidget(grp_data, stretch=1)
         v.addLayout(row1)
 
-        # ── row 2: compatibility + configuration + run ──────────────────────
+        # ── row 2: configuration + run ──────────────────────────────────────
         row2 = QHBoxLayout()
         row2.setSpacing(10)
 
-        grp_compat = QGroupBox("Compatibility")
-        cv = QVBoxLayout(grp_compat)
-        self.checklist = CheckList()
-        cv.addWidget(self.checklist)
-        cv.addStretch()
-        row2.addWidget(grp_compat, stretch=1)
-
-        grp_cfg = QGroupBox("Prediction configuration")
+        grp_cfg = Section("Prediction configuration")
         gv = QVBoxLayout(grp_cfg)
         gv.setSpacing(8)
 
@@ -210,7 +210,7 @@ class PredictTab:
         gv.addStretch()
         row2.addWidget(grp_cfg, stretch=1)
 
-        grp_run = QGroupBox("Run")
+        grp_run = Section("Run")
         rv = QVBoxLayout(grp_run)
         rv.setSpacing(8)
         run_row = QHBoxLayout()
@@ -240,7 +240,7 @@ class PredictTab:
         v.addLayout(row2)
 
         # ── row 3: prediction summary cards ─────────────────────────────────
-        grp_sum = QGroupBox("Prediction summary")
+        grp_sum = Section("Prediction summary")
         sv = QHBoxLayout(grp_sum)
         sv.setSpacing(8)
         self.card_recordings = RingCard("Recordings (by treatment)")
@@ -255,7 +255,7 @@ class PredictTab:
         v.addWidget(grp_sum)
 
         # ── row 4: results table ────────────────────────────────────────────
-        grp_tbl = QGroupBox("Results by treatment")
+        grp_tbl = Section("Results by treatment")
         tv = QVBoxLayout(grp_tbl)
         self.tbl = QTableWidget(0, 0)
         self.tbl.verticalHeader().setVisible(False)
@@ -276,7 +276,7 @@ class PredictTab:
         v.addWidget(grp_tbl)
 
         # ── row 5: figures ──────────────────────────────────────────────────
-        grp_figs = QGroupBox("Prediction figures")
+        grp_figs = Section("Prediction figures")
         fv = QHBoxLayout(grp_figs)
         fv.setSpacing(8)
         fv.addWidget(self.canvas_bin, stretch=1)
@@ -287,6 +287,8 @@ class PredictTab:
 
         ml_figures.draw_strike_rate(self.fig_bin, None, dark=True)
         ml_figures.draw_region(self.fig_mc, None, [], dark=True)
+
+        apply_section_defaults(frame)
 
     # ── state wiring ─────────────────────────────────────────────────────────
     def _connect_state(self):
@@ -389,8 +391,9 @@ class PredictTab:
             ("Window length", seq),
             ("Model channels",
              f"{n_chan_present}/{len(req)} present" if req else None),
-            ("Annotations",   "ground-truth labels present" if m.get("annotated")
-                              else "none"),
+            ("Annotations",   f"ground-truth labels present "
+                              f"({m['annotation_column']})"
+                              if m.get("annotated") else "none"),
         ])
 
     # ── validation ───────────────────────────────────────────────────────────
@@ -398,7 +401,6 @@ class PredictTab:
         s = self.state
         if s.running:
             self.checklist.set_checks(s.checks, False)
-            self.checklist.set_running()
         else:
             self.checklist.set_checks(s.checks, s.ready)
         self.btn_run.setEnabled(s.ready and not s.running)
