@@ -22,16 +22,18 @@ import pandas as pd
 from PySide6.QtCore import Qt, QElapsedTimer, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout,     QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPlainTextEdit,
-    QProgressBar, QPushButton, QRadioButton, QScrollArea, QSizePolicy,
-    QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout,
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
+    QPlainTextEdit, QProgressBar, QPushButton, QRadioButton, QScrollArea,
+    QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
 from . import settings
-from .ml_train_state import COLLAPSE_SCHEMES
+from .ml_train_state import GROUPING_PRESETS
 from .ml_widgets import (
-    ACCENT, BAD, BORDER, CARD_BG, EMPTY, MUTED, OK, PALETTE, TEXT, MetaCard,
-    Spinner, Section, apply_section_defaults,
+    ACCENT, BAD, BORDER, CARD_BG, EMPTY, MUTED, OK, PALETTE, TEXT,
+    LevelGrouper, MetaCard, Spinner, Section, apply_section_defaults,
 )
 
 _PREVIEW_ROWS = 200
@@ -190,6 +192,12 @@ class TrainTab:
         self.cmb_negative = QComboBox()
         self.cmb_negative.currentIndexChanged.connect(self._negative_changed)
         tr.addWidget(self.cmb_negative, 1, 1)
+
+        tr.addWidget(self._muted("Positive class name"), 2, 0)
+        self.ed_positive = QLineEdit()
+        self.ed_positive.setPlaceholderText("blade_strike")
+        self.ed_positive.editingFinished.connect(self._positive_changed)
+        tr.addWidget(self.ed_positive, 2, 1)
         tv.addLayout(tr)
 
         self.lbl_positive = QLabel("")
@@ -200,21 +208,31 @@ class TrainTab:
         mc_row = QGridLayout()
         mc_row.setVerticalSpacing(4)
         self.chk_multiclass = QCheckBox(
-            "Stage 2 — train the multiclass region model")
+            "Stage 2 — train the multiclass class model")
         self.chk_multiclass.toggled.connect(self._mc_toggled)
-        self.lbl_scheme = self._muted("Region collapse")
-        self.cmb_scheme = QComboBox()
-        for key, sch in COLLAPSE_SCHEMES.items():
-            self.cmb_scheme.addItem(f"{key}: {sch['desc']}", key)
-        self.cmb_scheme.currentIndexChanged.connect(self._scheme_changed)
+        self.lbl_class_col = self._muted("Class variable")
+        self.cmb_class_col = QComboBox()
+        self.cmb_class_col.currentIndexChanged.connect(self._class_col_changed)
+        self.lbl_preset = self._muted("Grouping")
+        self.cmb_preset = QComboBox()
+        for key, spec in GROUPING_PRESETS.items():
+            self.cmb_preset.addItem(spec["desc"], key)
+        self.cmb_preset.currentIndexChanged.connect(self._preset_changed)
         self.chk_surface = QCheckBox(
             "Treat unlabelled impeller-surface strikes as region 1")
         self.chk_surface.toggled.connect(self._surface_changed)
         mc_row.addWidget(self.chk_multiclass, 0, 0, 1, 2)
-        mc_row.addWidget(self.lbl_scheme, 1, 0)
-        mc_row.addWidget(self.cmb_scheme, 1, 1)
-        mc_row.addWidget(self.chk_surface, 2, 0, 1, 2)
+        mc_row.addWidget(self.lbl_class_col, 1, 0)
+        mc_row.addWidget(self.cmb_class_col, 1, 1)
+        mc_row.addWidget(self.lbl_preset, 2, 0)
+        mc_row.addWidget(self.cmb_preset, 2, 1)
+        mc_row.addWidget(self.chk_surface, 3, 0, 1, 2)
         tv.addLayout(mc_row)
+
+        # level -> class grouping, driven by the levels actually in the data
+        self.grouper = LevelGrouper()
+        self.grouper.changed.connect(self._groups_changed)
+        tv.addWidget(self.grouper)
 
         self.lbl_derived = QLabel("")
         self.lbl_derived.setStyleSheet(f"color:{MUTED};")
@@ -628,10 +646,42 @@ class TrainTab:
         if val is not None:
             self.state.update(negative_class=val)
 
-    def _scheme_changed(self):
+    def _positive_changed(self):
         if self._updating:
             return
-        self.state.update(collapse_scheme=self.cmb_scheme.currentData())
+        name = self.ed_positive.text().strip() or "blade_strike"
+        if name != self.state.positive_label:
+            self.state.update(positive_label=name)
+
+    def _class_col_changed(self):
+        if self._updating:
+            return
+        col = self.cmb_class_col.currentData()
+        if col:
+            self.state.update(region_column=col)
+
+    def _preset_changed(self):
+        if self._updating:
+            return
+        self.state.rebuild_region_groups(self.cmb_preset.currentData())
+        self.state.config_changed.emit()
+        self.state.validate()
+
+    def _groups_changed(self):
+        """The user edited the grouping - it is now a custom scheme."""
+        if self._updating:
+            return
+        self.state.region_groups = self.grouper.groups()
+        self.state.grouping_preset = "custom"
+        self._updating = True
+        try:
+            idx = self.cmb_preset.findData("custom")
+            if idx >= 0:
+                self.cmb_preset.setCurrentIndex(idx)
+        finally:
+            self._updating = False
+        self.state.config_changed.emit()
+        self.state.validate()
 
     def _surface_changed(self, checked):
         if self._updating:
@@ -738,31 +788,48 @@ class TrainTab:
         s = self.state
         self._updating = True
         try:
+            self.ed_positive.setText(s.positive_label or "")
             self.chk_multiclass.setChecked(s.train_multiclass)
             self.chk_multiclass.setEnabled(s.region_column is not None)
             if s.region_column is None:
                 self.chk_multiclass.setToolTip(
-                    "No pump-region column in dataset")
-            for w in (self.lbl_scheme, self.cmb_scheme, self.chk_surface):
+                    "No suitable class column found in the dataset")
+
+            # class variable: any per-file column with a few levels
+            cands = s.class_column_candidates()
+            self.cmb_class_col.clear()
+            for c in cands:
+                self.cmb_class_col.addItem(c, c)
+            if s.region_column:
+                idx = self.cmb_class_col.findData(s.region_column)
+                if idx >= 0:
+                    self.cmb_class_col.setCurrentIndex(idx)
+
+            idx = self.cmb_preset.findData(s.grouping_preset)
+            if idx >= 0:
+                self.cmb_preset.setCurrentIndex(idx)
+
+            for w in (self.lbl_class_col, self.cmb_class_col,
+                      self.lbl_preset, self.cmb_preset, self.chk_surface,
+                      self.grouper):
                 w.setEnabled(s.train_multiclass)
             self.chk_surface.setChecked(s.include_surface)
-            idx = self.cmb_scheme.findData(s.collapse_scheme)
-            if idx >= 0:
-                self.cmb_scheme.setCurrentIndex(idx)
+            self.grouper.set_data(s.region_levels(), s.region_groups)
         finally:
             self._updating = False
 
         if s.negative_class:
-            txt = (f"Stage 1 — binary: blade_strike defined as "
+            pos = s.positive_label or "blade_strike"
+            txt = (f"Stage 1 — binary: {pos} defined as "
                    f"{s.target_column} ≠ \"{s.negative_class}\".")
             if s.train_multiclass and s.region_column:
-                txt += (f"   Stage 2 — multiclass: ground-truth strikes "
-                        f"classified by collapsed {s.region_column}.")
+                txt += (f"   Stage 2 — multiclass: strike recordings "
+                        f"classified by {s.region_column}, grouped below.")
             self.lbl_positive.setText(txt)
         else:
             self.lbl_positive.setText("")
 
-        derived = ["blade_strike (0/1)"]
+        derived = [f"{s.positive_label or 'blade_strike'} (0/1)"]
         if s.leading_type_column() or s.other_type_column():
             derived.append("strike_type (no_contact / leading_* / other_*)")
         self.lbl_derived.setText("Derived variables: " + ", ".join(derived))
@@ -771,6 +838,7 @@ class TrainTab:
         show_mc = s.train_multiclass and s.region_column is not None
         self.lbl_dist_mc.setVisible(show_mc)
         self.class_dist_mc.setVisible(show_mc)
+        self.grouper.setVisible(show_mc)
         if show_mc:
             self.class_dist_mc.set_counts(s.region_class_counts())
         n = s.population_size()

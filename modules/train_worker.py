@@ -67,6 +67,18 @@ def log(msg=""):
 
 # ── data preparation (shared by both stages) ─────────────────────────────────
 
+def level_key(value):
+    """Stable key for a raw level value - must match ml_train_state's rule,
+    so the grouping built in the GUI is exactly the one applied here."""
+    try:
+        f = float(value)
+        if f.is_integer():
+            return str(int(f))
+        return repr(f)
+    except (TypeError, ValueError):
+        return str(value).strip()
+
+
 def pad_time_series(ts, target_length):
     if len(ts) >= target_length:
         return ts[:target_length]
@@ -178,7 +190,9 @@ def prepare_data(cfg, kind):
             log(f"Dropping {n_surface} unlabeled surface file(s).")
 
         df = df[df[rcol].notna()].copy()
-        df["region"] = df[rcol].astype(float).astype(int)
+        # levels are kept as normalised keys, so a class column may be
+        # numeric (pump region) or categorical (e.g. hub_type)
+        df["region"] = df[rcol].map(level_key)
 
         agg = {"region": "first"}
         for col in ("treatment", tcol, cfg.get("leading_type_column"),
@@ -187,13 +201,13 @@ def prepare_data(cfg, kind):
                 agg[col] = "first"
         file_metadata = df.groupby("file").agg(agg).reset_index()
 
-        region_to_class = {int(k): int(v)
+        region_to_class = {level_key(k): int(v)
                            for k, v in cfg["region_to_class"].items()}
         known = file_metadata["region"].isin(region_to_class)
         n_unknown = int((~known).sum())
         if n_unknown:
-            log(f"Dropping {n_unknown} file(s) with regions outside the "
-                "collapse scheme.")
+            log(f"Dropping {n_unknown} file(s) whose level is excluded "
+                "from the class grouping.")
             keep_files = set(file_metadata.loc[known, "file"])
             file_metadata = file_metadata[known].reset_index(drop=True)
             df = df[df["file"].isin(keep_files)].copy()

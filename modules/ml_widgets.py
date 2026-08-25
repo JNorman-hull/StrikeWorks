@@ -10,11 +10,11 @@ The RingCard and Spinner are ports of the MVP prediction page's widgets,
 recoloured for the StrikeWorks dark theme. MetaCard, CheckList and ProbBars
 are new but follow the same card language as page_process.StatCard.
 """
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QGroupBox, QLabel, QSizePolicy, QVBoxLayout,
-    QWidget,
+    QComboBox, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
+    QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 # theme colours (match the PyDracula palette used by the app)
@@ -503,3 +503,183 @@ def apply_section_defaults(root):
     """
     for sec in root.findChildren(Section):
         sec.apply_default()
+
+
+# ── level grouping ───────────────────────────────────────────────────────────
+class LevelGrouper(QWidget):
+    """Assign the observed levels of a variable to named classes.
+
+    The levels come from the data, so a column gaining a new level (a sixth
+    pump region, a new hub_type) simply appears here. Each level is mapped
+    to a named group or excluded from training, and the group names are
+    free text - they become the model's class names.
+
+    Reused wherever levels need collapsing or recoding, so the behaviour is
+    defined once.
+    """
+
+    changed = Signal()
+    EXCLUDE = -1
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._levels = []
+        self._groups = []          # [{"name": str, "levels": [key, ...]}]
+        self._updating = False
+        self._name_edits = []
+        self._level_combos = {}
+
+        v = QVBoxLayout(self)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(6)
+
+        self._names_box = QVBoxLayout()
+        self._names_box.setSpacing(2)
+        v.addLayout(self._names_box)
+
+        btn_row = QHBoxLayout()
+        self.btn_add = QPushButton("Add class")
+        self.btn_add.clicked.connect(self._add_group)
+        btn_row.addWidget(self.btn_add)
+        btn_row.addStretch()
+        v.addLayout(btn_row)
+
+        self._grid = QGridLayout()
+        self._grid.setHorizontalSpacing(12)
+        self._grid.setVerticalSpacing(2)
+        v.addLayout(self._grid)
+
+        self.lbl_summary = QLabel("")
+        self.lbl_summary.setStyleSheet(f"color:{MUTED};")
+        self.lbl_summary.setWordWrap(True)
+        v.addWidget(self.lbl_summary)
+
+    # ── public API ───────────────────────────────────────────────────────────
+    def set_data(self, levels, groups):
+        """levels: [(key, display, count)]; groups: [{"name", "levels"}]"""
+        self._levels = list(levels)
+        self._groups = [{"name": g["name"], "levels": list(g["levels"])}
+                        for g in groups]
+        self._rebuild()
+
+    def groups(self):
+        return [{"name": g["name"], "levels": list(g["levels"])}
+                for g in self._groups]
+
+    # ── rebuild ──────────────────────────────────────────────────────────────
+    def _clear(self, layout):
+        while layout.count():
+            item = layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+            elif item.layout() is not None:
+                self._clear(item.layout())
+
+    def _rebuild(self):
+        self._updating = True
+        try:
+            self._clear(self._names_box)
+            self._clear(self._grid)
+            self._name_edits = []
+            self._level_combos = {}
+
+            for i, g in enumerate(self._groups):
+                row = QHBoxLayout()
+                lab = QLabel(f"Class {i + 1}")
+                lab.setStyleSheet(f"color:{MUTED};")
+                lab.setMinimumWidth(56)
+                ed = QLineEdit(g["name"])
+                ed.setPlaceholderText("class name")
+                ed.textChanged.connect(
+                    lambda text, idx=i: self._name_changed(idx, text))
+                btn = QPushButton("✕")
+                btn.setFixedWidth(28)
+                btn.setToolTip("Remove this class")
+                btn.setEnabled(len(self._groups) > 1)
+                btn.clicked.connect(lambda _c=False, idx=i:
+                                    self._remove_group(idx))
+                row.addWidget(lab)
+                row.addWidget(ed, stretch=1)
+                row.addWidget(btn)
+                self._names_box.addLayout(row)
+                self._name_edits.append(ed)
+
+            assign = self._assignment()
+            for r, (key, display, count) in enumerate(self._levels):
+                lab = QLabel(f"{display}   (n={count})" if count is not None
+                             else str(display))
+                lab.setStyleSheet(f"color:{TEXT};")
+                cmb = QComboBox()
+                for i, g in enumerate(self._groups):
+                    cmb.addItem(g["name"] or f"Class {i + 1}", i)
+                cmb.addItem("Exclude", self.EXCLUDE)
+                idx = cmb.findData(assign.get(key, self.EXCLUDE))
+                cmb.setCurrentIndex(idx if idx >= 0 else cmb.count() - 1)
+                cmb.currentIndexChanged.connect(
+                    lambda _i, k=key: self._level_changed(k))
+                self._grid.addWidget(lab, r, 0)
+                self._grid.addWidget(cmb, r, 1)
+                self._level_combos[key] = cmb
+        finally:
+            self._updating = False
+        self._refresh_summary()
+
+    def _assignment(self):
+        out = {}
+        for i, g in enumerate(self._groups):
+            for key in g["levels"]:
+                out[key] = i
+        return out
+
+    def _refresh_summary(self):
+        counts = {key: c for key, _d, c in self._levels}
+        parts = []
+        for g in self._groups:
+            n = sum(counts.get(k) or 0 for k in g["levels"])
+            parts.append(f"{g['name'] or '(unnamed)'}: {n}")
+        excluded = [d for k, d, _c in self._levels
+                    if k not in self._assignment()]
+        text = "   ".join(parts)
+        if excluded:
+            text += f"    excluded: {', '.join(str(e) for e in excluded)}"
+        self.lbl_summary.setText(text)
+
+    # ── edits ────────────────────────────────────────────────────────────────
+    def _name_changed(self, idx, text):
+        if self._updating or idx >= len(self._groups):
+            return
+        self._groups[idx]["name"] = text
+        for key, cmb in self._level_combos.items():
+            cmb.setItemText(idx, text or f"Class {idx + 1}")
+        self._refresh_summary()
+        self.changed.emit()
+
+    def _level_changed(self, key):
+        if self._updating:
+            return
+        cmb = self._level_combos.get(key)
+        if cmb is None:
+            return
+        target = cmb.currentData()
+        for g in self._groups:
+            if key in g["levels"]:
+                g["levels"].remove(key)
+        if target != self.EXCLUDE and target < len(self._groups):
+            self._groups[target]["levels"].append(key)
+        self._refresh_summary()
+        self.changed.emit()
+
+    def _add_group(self):
+        self._groups.append({"name": f"class_{len(self._groups) + 1}",
+                             "levels": []})
+        self._rebuild()
+        self.changed.emit()
+
+    def _remove_group(self, idx):
+        if len(self._groups) <= 1 or idx >= len(self._groups):
+            return
+        del self._groups[idx]
+        self._rebuild()
+        self.changed.emit()

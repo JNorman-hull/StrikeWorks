@@ -51,19 +51,69 @@ DEFAULT_CHANNELS = [
     "pressure_kpa",
 ]
 
-# collapse schemes ported from 05_multiclass_collapsed.py
-COLLAPSE_SCHEMES = {
+def level_key(value):
+    """Stable key for a raw level value.
+
+    Numeric levels normalise to their integer form ("2.0" -> "2") so a
+    column read as float and one read as int group identically; anything
+    else is used as trimmed text. The training worker uses the same rule,
+    so the mapping the GUI builds is exactly the mapping applied.
+    """
+    try:
+        f = float(value)
+        if f.is_integer():
+            return str(int(f))
+        return repr(f)
+    except (TypeError, ValueError):
+        return str(value).strip()
+
+
+# Starting points for grouping the levels of the multiclass target. These
+# are templates, not fixed schemes: each is applied to whatever levels the
+# chosen column actually has, and the result is fully editable afterwards
+# (levels can be regrouped, renamed, added to or excluded).
+GROUPING_PRESETS = {
+    "each": {
+        "desc": "Each level its own class",
+        "build": lambda keys: [{"name": f"region_{k}", "levels": [k]}
+                               for k in keys],
+    },
     "model_1_1": {
-        "desc":            "region_1 | region_2+3 | region_4+5",
-        "region_to_class": {1: 0, 2: 1, 3: 1, 4: 2, 5: 2},
-        "class_names":     ["region_1", "region_2_3", "region_4_5"],
+        "desc": "Pipeline model_1_1 — 1 | 2+3 | 4+5",
+        "build": lambda keys: _template(
+            keys, [("region_1", ["1"]), ("region_2_3", ["2", "3"]),
+                   ("region_4_5", ["4", "5"])]),
     },
     "model_1_2": {
-        "desc":            "region_1 | region_2+3+4+5",
-        "region_to_class": {1: 0, 2: 1, 3: 1, 4: 1, 5: 1},
-        "class_names":     ["region_1", "region_2_5"],
+        "desc": "Pipeline model_1_2 — 1 | 2+3+4+5",
+        "build": lambda keys: _template(
+            keys, [("region_1", ["1"]), ("region_2_5", ["2", "3", "4", "5"])]),
+    },
+    "custom": {
+        "desc": "Custom grouping",
+        "build": None,          # keeps whatever the user has built
     },
 }
+
+
+def _template(keys, spec):
+    """Apply a named template to the levels actually present.
+
+    Levels the template does not mention are appended as their own class
+    rather than silently dropped, so a dataset with an extra level (a sixth
+    region, say) still starts from a complete, sensible grouping.
+    """
+    present = set(keys)
+    groups, claimed = [], set()
+    for name, wanted in spec:
+        levels = [k for k in keys if k in wanted and k in present]
+        if levels:
+            groups.append({"name": name, "levels": levels})
+            claimed.update(levels)
+    for k in keys:
+        if k not in claimed:
+            groups.append({"name": f"class_{k}", "levels": [k]})
+    return groups or [{"name": "class_1", "levels": list(keys)}]
 
 # preferred target columns, in order
 _TARGET_PREFERENCE = ["passage_type", "overall_passage_type"]
@@ -129,8 +179,10 @@ class TrainingState(QObject):
         self.negative_class = None
         self.include_values = None           # None = all values included
         self.train_multiclass = True         # stage 2 on/off
-        self.region_column = None
-        self.collapse_scheme = "model_1_1"
+        self.positive_label = "blade_strike"
+        self.region_column = None            # any level column, not just region
+        self.grouping_preset = "model_1_1"
+        self.region_groups = []              # [{"name", "levels": [key]}]
         self.include_surface = False
 
         # variables
@@ -203,6 +255,10 @@ class TrainingState(QObject):
         settings.add_recent_training_dataset(path)
 
         self._autodetect_columns()
+        # a new dataset invalidates any hand-built grouping
+        self.grouping_preset = self.default_preset_for(
+            [k for k, _d, _c in self.region_levels()])
+        self.rebuild_region_groups()
         self.dataset_meta = self._compute_meta()
         # a fresh dataset invalidates any previous run
         self._reset_results()
@@ -237,6 +293,10 @@ class TrainingState(QObject):
 
         self.region_column = next(
             (c for c in df.columns if "region" in c.lower()), None)
+        if self.region_column is None:
+            cands = [c for c in self.class_column_candidates()
+                     if c != self.target_column]
+            self.region_column = cands[0] if cands else None
         # the full pipeline (binary + region model) is the default whenever
         # the dataset can support it
         self.train_multiclass = self.region_column is not None
@@ -355,14 +415,31 @@ class TrainingState(QObject):
         n_pos = int((s != neg).sum())
         return [(neg, n_neg), ("blade_strike (all others)", n_pos)]
 
-    def region_class_counts(self):
-        """[(collapsed class, count)] for the multiclass region target."""
+    def class_column_candidates(self):
+        """Columns usable as the multiclass target: any per-file column with
+        a small number of levels (numeric or categorical)."""
         df = self.dataset_df
-        if (df is None or self.region_column is None
+        if df is None:
+            return []
+        per_file = df.groupby("file").first()
+        out = []
+        for col in per_file.columns:
+            if col in _NON_TARGET_COLS or col == self.target_column:
+                continue
+            n = per_file[col].dropna().nunique()
+            if 2 <= n <= 20:
+                out.append(col)
+        out.sort(key=lambda c: ("region" not in c.lower(), c))
+        return out
+
+    def region_levels(self):
+        """[(key, display, n_files)] for the multiclass target column,
+        restricted to strike recordings under the current filter."""
+        df = self.dataset_df
+        if (df is None or not self.region_column
                 or self.region_column not in df.columns
                 or not self.target_column):
             return []
-        scheme = COLLAPSE_SCHEMES[self.collapse_scheme]
         per_file = df.groupby("file").agg(
             {self.target_column: "first", self.region_column: "first"})
         per_file = per_file[per_file[self.target_column].notna()]
@@ -371,13 +448,76 @@ class TrainingState(QObject):
         if self.include_values is not None:
             per_file = per_file[per_file[self.target_column].astype(str)
                                 .isin([str(v) for v in self.include_values])]
-        regions = pd.to_numeric(per_file[self.region_column],
-                                errors="coerce").dropna().astype(int)
-        counts = {cn: 0 for cn in scheme["class_names"]}
-        for r in regions:
-            idx = scheme["region_to_class"].get(int(r))
-            if idx is not None:
-                counts[scheme["class_names"][idx]] += 1
+        vals = per_file[self.region_column].dropna()
+        counts = {}
+        for raw in vals:
+            k = level_key(raw)
+            counts[k] = counts.get(k, 0) + 1
+
+        def _sort(k):
+            try:
+                return (0, float(k))
+            except ValueError:
+                return (1, k)
+        return [(k, k, counts[k]) for k in sorted(counts, key=_sort)]
+
+    def default_preset_for(self, keys):
+        """The preset that best fits the levels present: the pipeline's
+        pump-region template when the levels look like regions 1-5,
+        otherwise one class per level."""
+        if keys and set(keys) <= {"1", "2", "3", "4", "5"}:
+            return "model_1_1"
+        return "each"
+
+    def rebuild_region_groups(self, preset=None):
+        """Regenerate the level grouping from a preset (or keep custom).
+
+        A custom grouping only makes sense for the levels it was built
+        against; when the column or dataset changes underneath it and no
+        level is left assigned, fall back to a generated grouping rather
+        than leaving the user with nothing selected.
+        """
+        if preset is not None:
+            self.grouping_preset = preset
+        keys = [k for k, _d, _c in self.region_levels()]
+        build = GROUPING_PRESETS.get(self.grouping_preset, {}).get("build")
+        if build is None:
+            groups = [{"name": g["name"],
+                       "levels": [k for k in g["levels"] if k in keys]}
+                      for g in self.region_groups]
+            if any(g["levels"] for g in groups):
+                self.region_groups = groups
+                return
+            self.grouping_preset = self.default_preset_for(keys)
+            build = GROUPING_PRESETS[self.grouping_preset]["build"]
+        self.region_groups = build(keys)
+
+    def region_to_class(self):
+        """{level key: class index} for the worker."""
+        out = {}
+        for i, g in enumerate(self.region_groups):
+            for k in g["levels"]:
+                out[k] = i
+        return out
+
+    def region_class_names(self):
+        return [g["name"] or f"class_{i + 1}"
+                for i, g in enumerate(self.region_groups)]
+
+    def region_class_counts(self):
+        """[(collapsed class, count)] for the multiclass region target."""
+        df = self.dataset_df
+        if (df is None or self.region_column is None
+                or self.region_column not in df.columns
+                or not self.target_column):
+            return []
+        mapping = self.region_to_class()
+        names = self.region_class_names()
+        counts = {cn: 0 for cn in names}
+        for key, _display, n in self.region_levels():
+            idx = mapping.get(key)
+            if idx is not None and idx < len(names):
+                counts[names[idx]] += n
         return list(counts.items())
 
     def population_size(self):
@@ -391,6 +531,16 @@ class TrainingState(QObject):
         if "target_column" in kw:
             self.include_values = None
             self._autodetect_negative()
+        # anything that changes which levels exist rebuilds the grouping;
+        # switching the class variable also re-picks the fitting preset,
+        # since a template built for pump regions means nothing for, say,
+        # a hub_type column
+        if {"target_column", "negative_class", "region_column",
+                "include_values"} & set(kw):
+            if "region_column" in kw:
+                self.grouping_preset = self.default_preset_for(
+                    [k for k, _d, _c in self.region_levels()])
+            self.rebuild_region_groups()
         self.config_changed.emit()
         self.validate()
 
@@ -501,7 +651,7 @@ class TrainingState(QObject):
             "out_dir": str(self.out_dir),
             "target_column": self.target_column,
             "negative_class": self.negative_class,
-            "positive_label": "blade_strike",
+            "positive_label": self.positive_label or "blade_strike",
             "leading_type_column": self.leading_type_column(),
             "other_type_column": self.other_type_column(),
             "include_values": (sorted(self.include_values)
@@ -525,14 +675,18 @@ class TrainingState(QObject):
             "train_multiclass": bool(self.train_multiclass),
         }
         if self.train_multiclass:
-            scheme = COLLAPSE_SCHEMES[self.collapse_scheme]
+            names = self.region_class_names()
             cfg.update({
                 "region_column": self.region_column,
-                "collapse_scheme": self.collapse_scheme,
-                "collapse_desc": scheme["desc"],
+                "collapse_scheme": self.grouping_preset,
+                "collapse_desc": " | ".join(
+                    "%s=%s" % (g["name"], "+".join(g["levels"]))
+                    for g in self.region_groups if g["levels"]),
                 "region_to_class": {str(k): v for k, v
-                                    in scheme["region_to_class"].items()},
-                "class_names": list(scheme["class_names"]),
+                                    in self.region_to_class().items()},
+                "class_names": names,
+                "level_groups": [{"name": g["name"], "levels": list(g["levels"])}
+                                 for g in self.region_groups],
                 "include_surface_as_region1": bool(self.include_surface),
             })
         return cfg
@@ -676,6 +830,9 @@ class TrainingState(QObject):
             "include_values": tr.get("include_values") or "all",
             "region_column": self.region_column if mc_m else None,
             "collapse_scheme": mc_m.get("scheme") if mc_m else None,
+            "level_groups": ([{g["name"]: g["levels"]}
+                              for g in self.region_groups]
+                             if mc_m else None),
             "class_names": mc_m.get("class_names") if mc_m else None,
             "input_channels": bin_m.get("channels", na),
             "sequence_length": bin_m.get("max_sequence_length", na),
