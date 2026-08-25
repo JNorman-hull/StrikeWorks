@@ -27,40 +27,57 @@ names and positive-class name.
 **Chunk 3 — Prepare page: sensor configurations and study design**
 
 *Tab 1 — Sensor configuration.* `modules/sensor_config.py` is the single
-source of truth: a `SensorConfig` dataclass, the shipped `rapid` and
-`micro_eel` configurations, a JSON store in `~/.strikeworks_sensors.json`,
-a `PARSERS` registry and a `notifier` the pages follow. A sensor is a
-`SensorSource` per raw file (extension, packet size, native rate, how it
-reaches the output grid) plus two rates that are deliberately separate:
+source of truth: a `SensorConfig`, the shipped `rapid` and `micro_eel`
+configurations, a JSON store in `~/.strikeworks_sensors.json` (which only
+holds a shipped configuration once it has actually been edited, so app
+updates to the defaults are not shadowed), a `PARSERS` registry and a
+`notifier` the pages follow. A sensor is a `SensorSource` per raw file
+(extension, packet size, native rate, how it reaches the grid) plus two
+rates that are deliberately separate:
 
   * `timebase_hz` — the counter clock the raw files are stamped from
   * `output_rate_hz` — the uniform grid the processed CSV is written on
 
-RAPID is 2000/2000, with `.imp` arriving at 100 Hz and interpolated up, and
-`.hig` arriving at 2000 Hz but only in bursts around events (~29% of a run,
-gaps up to 13 s), so each `.hig` sample is placed as recorded and the gaps
-are left empty. The analysis window is *not* here — it is a downstream
-decision; the sensor only answers what a window is worth in samples
-(`window_samples(seconds)`).
+RAPID is 2000/2000. `.imp` arrives at 100 Hz and is interpolated up. `.hig`
+arrives at 2000 Hz but only in bursts around events (~29% of a run, gaps up
+to 13 s), so it is *standardised*: every recorded sample keeps its own slot
+and the gaps are filled with 0. Also on the tab: which three-axis sensors
+get a magnitude channel (`higacc`/`inacc`/`rot`, all on by default) and the
+nadir detection method — one method today, dispatched through
+`rapid_functions.NADIR_METHODS` so a second is a function plus an entry.
+
+The analysis window is *not* here — it is a downstream decision; the sensor
+only answers what a window is worth in samples (`window_samples(seconds)`).
+
+`modules/index_schema.py` holds the index's column list, transcribed from
+the MVP's `config/index_config.txt` and verified column-for-column against
+it. A library therefore needs no configuration at all to be processed, and
+the parser no longer depends on the working directory (the `chdir` in the
+processing thread is gone).
 
 The hardcoding is ported: `page_process` scans the configured extensions,
 parses names with the configured pattern and calls the registered parser;
 `page_validate` takes its rate from the configuration and keeps its own
 window; `page_dataset` derives target rows from its 200 ms window and the
-sensor's rate; `rapid_functions` takes clock, packet sizes, output rate and
-per-file method as arguments (RAPID output is byte-for-byte unchanged).
-Adding a sensor is a New/Duplicate plus a Save; only its reader is code,
-registered under `PARSERS`.
+sensor's rate; `rapid_functions` takes clock, packet sizes, output rate,
+per-file method, magnitudes and nadir method as arguments. RAPID output is
+byte-for-byte unchanged — including `higacc_mag_g`, which the reader
+rounds to the device's precision and post-processing must therefore not
+recompute.
 
-*Tab 2 — Study design.* Plans a deployment: site, deployment ID, machine and
-type once, then one treatment per row (head, flow, BEP, RPM, runs), each
-`+` copying the row above. Saving writes one row per treatment into the
-library's `global_sensor_index.csv` with `file = label_pad`
-(`modules/deployment_index.py`), alongside any sensor rows already there.
-Process gained a treatment picker: pick the treatment a batch was run
-under, process, and every sensor in the batch is stamped with its
-conditions — so a deployment is processed treatment by treatment rather
-than typed in per file. `sensor_rows()` keeps the plan rows out of every
+*Tab 2 — Study design.* Plans a deployment: site, deployment ID, machine
+and type, then one treatment per row (head, flow, BEP, RPM) with a run
+count, each `+` copying the row above. Saving writes one row per treatment
+*per run* into the library's `global_sensor_index.csv` with
+`file = label_pad` (`modules/deployment_index.py`). A library holds as many
+deployments as it needs: the deployment picker lists what it already has,
+and saving replaces only the rows of the one being edited. A library filled
+in before this existed has no plan rows, so deployments and treatments are
+read back from the conditions on its processed sensors instead.
+
+Process gained treatment and run pickers: pick what a batch was recorded
+under, process, and every sensor in it is stamped with the conditions and
+`deployment_info` flipped to Y. `sensor_rows()` keeps plan rows out of every
 sensor listing (Process inventory and metadata, Validate progress, Dataset
 extraction); the Metadata tab still edits individual sensors.
 

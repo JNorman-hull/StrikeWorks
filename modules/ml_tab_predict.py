@@ -143,13 +143,8 @@ class PredictTab:
         ds_btn_row = QHBoxLayout()
         self.btn_load_csv = QPushButton("Load dataset CSV…")
         self.btn_load_csv.clicked.connect(self._load_csv)
-        self.lbl_ds_source = QLabel(
-            "Datasets created on the Sensor Processing → Dataset creation "
-            "page are used automatically.")
-        self.lbl_ds_source.setStyleSheet(f"color:{MUTED};")
-        self.lbl_ds_source.setWordWrap(True)
         ds_btn_row.addWidget(self.btn_load_csv)
-        ds_btn_row.addWidget(self.lbl_ds_source, stretch=1)
+        ds_btn_row.addStretch()
         dv.addLayout(ds_btn_row)
 
         # model-dataset compatibility lives with the dataset it validates
@@ -269,10 +264,6 @@ class PredictTab:
         self.tbl.horizontalHeader().setStretchLastSection(True)
         self.tbl.itemSelectionChanged.connect(self._on_treatment_selected)
         tv.addWidget(self.tbl)
-        lab_sel = QLabel("Selecting a treatment focuses the Inspect tab's "
-                         "treatment filter.")
-        lab_sel.setStyleSheet(f"color:{MUTED};")
-        tv.addWidget(lab_sel)
         v.addWidget(grp_tbl)
 
         # ── row 5: figures ──────────────────────────────────────────────────
@@ -358,11 +349,7 @@ class PredictTab:
         s = self.state
         m = s.dataset_meta
         if not m:
-            self.card_dataset.set_rows([
-                ("Dataset", "No dataset loaded"),
-                ("Hint", "Create one in Sensor Processing → Dataset creation, "
-                         "or load a saved model_features CSV."),
-            ])
+            self.card_dataset.set_rows([("Dataset", "No dataset loaded")])
             return
 
         sr = m.get("sampling_rate_hz")
@@ -518,7 +505,7 @@ class PredictTab:
         secs = self._elapsed.elapsed() / 1000
         self.lbl_run_status.setStyleSheet(f"color:{OK};")
         self.lbl_run_status.setText(
-            f"✓ Prediction complete ({secs:.1f} s)\n"
+            f"Prediction complete ({secs:.1f} s)\n"
             f"{n} recordings processed\n"
             f"{k} strikes detected\n"
             f"{rate:.1f}% predicted strike rate")

@@ -20,24 +20,32 @@ Copyright University of Hull (2026)
     file its extension, packet size, native rate and how it reaches that
     grid. RAPID's `.imp` arrives at 100 Hz and is interpolated up to
     2000 Hz; its `.hig` arrives at 2000 Hz but only in bursts around
-    events, so each sample is placed as recorded and the gaps are left
-    empty. Everything downstream reads it — Process scans those extensions
-    and runs that parser, Validate plots at that rate, Dataset creation
-    turns its 200 ms window into that many rows. Two configurations ship
-    (`rapid`, the current device, and `micro_eel`, anticipated); a third is
-    a New or Duplicate plus a Save, stored in `~/.strikeworks_sensors.json`.
-    Only a new device's reader is code: write it and register it under
-    `sensor_config.PARSERS`;
+    events, so it is standardised onto the same grid with the gaps filled
+    with 0. The tab also carries the computed magnitude channels and the
+    nadir detection method. Everything downstream reads it — Process scans
+    those extensions and runs that parser, Validate plots at that rate,
+    Dataset creation turns its 200 ms window into that many rows. Two
+    configurations ship (`rapid`, the current device, and `micro_eel`,
+    anticipated); a third is a New or Duplicate plus a Save, stored in
+    `~/.strikeworks_sensors.json`. Only a new device's reader is code: write
+    it and register it under `sensor_config.PARSERS`;
   * **Study design** — plans a deployment before any sensor is wetted: site,
     deployment ID, machine and type, then one treatment per row (head,
-    flow, BEP, RPM, runs), each `+` copying the row above. Saving writes one
-    row per treatment into the library's `global_sensor_index.csv` marked
-    `file = label_pad` (`modules/deployment_index.py`). Process then offers
-    those treatments: select a batch of sensors, pick the treatment they
-    were run under, and processing labels every one of them with its
-    conditions — a deployment is worked treatment by treatment instead of
-    typing metadata per file. Plan rows are filtered out of every sensor
-    listing, and the Metadata tab still edits individual sensors.
+    flow, BEP, RPM) with a run count, each `+` copying the row above.
+    Saving writes one row per treatment per run into the library's
+    `global_sensor_index.csv` marked `file = label_pad`
+    (`modules/deployment_index.py`). A library can hold several
+    deployments; one filled in before this existed has its deployments read
+    back from its processed sensors. Process then offers those treatments
+    and runs: select a batch of sensors, pick what they were recorded
+    under, and processing labels every one of them and sets
+    `deployment_info` to Y — a deployment is worked treatment by treatment
+    instead of typing metadata per file. Plan rows are filtered out of
+    every sensor listing, and the Metadata tab still edits individual
+    sensors.
+
+  The index's columns are the app's, in `modules/index_schema.py`, so a
+  library needs no `config/index_config.txt` to be processed.
 
 * **Machine Learning Analysis** — **Model Training**, **Model Performance**
   and **Model Prediction**.

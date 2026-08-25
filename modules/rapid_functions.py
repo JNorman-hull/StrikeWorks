@@ -27,11 +27,69 @@ from scipy.interpolate import interp1d
 from pathlib import Path
 from datetime import datetime
 
+from . import index_schema
+
 # defaults, used when no SensorConfig is supplied
 FS = 2000
 IMP_PACKET_SIZE = 29
 HIG_PACKET_SIZE = 11
 NADIR_SEARCH_SEC = 1.5
+
+
+# ── nadir detection ─────────────────────────────────────────────────────────
+# The passage nadir is the moment every downstream window is cut around, so
+# how it is found is a real choice. One method exists - the MVP's - but it
+# is dispatched through a registry, so a second (a pressure gradient, a
+# model-scored trace) is a function plus an entry here rather than surgery
+# on the parser. A method takes the combined frame, the peak-acceleration
+# index and the output rate, and returns (index, time, value, warnings).
+
+def nadir_pressure_min_near_peak(data, acc_max_index, fs):
+    """Lowest pressure within 1.5 s of the acceleration peak (the MVP's)."""
+    warnings = []
+    half = int(round(NADIR_SEARCH_SEC * float(fs)))
+    window_start = max(0, acc_max_index - half)
+    window_end = min(len(data) - 1, acc_max_index + half)
+    pressure_window = data["pressure_kpa"].iloc[window_start:window_end]
+    idx = pressure_window.idxmin()
+    if pressure_window.nunique() <= 1:
+        warnings.append("PRES: Pressure fault identified (unchanging values)")
+    return idx, data["time_s"][idx], data["pressure_kpa"].iloc[idx], warnings
+
+
+#: method name -> callable(data, acc_max_index, fs)
+NADIR_METHODS = {
+    "pressure_min_near_peak": nadir_pressure_min_near_peak,
+}
+
+DEFAULT_NADIR_METHOD = "pressure_min_near_peak"
+
+
+# ── computed channels ───────────────────────────────────────────────────────
+# Magnitude of each three-axis sensor. Which ones are written is a sensor
+# setting (Prepare > Sensor configuration); the maths lives here.
+#   key -> (output column, axis columns, offset subtracted)
+MAGNITUDES = {
+    "higacc": ("higacc_mag_g",
+               ("higacc_x_g", "higacc_y_g", "higacc_z_g"), 0.0),
+    "inacc": ("inacc_mag_ms",
+              ("inacc_x_ms", "inacc_y_ms", "inacc_z_ms"), 9.81),
+    "rot": ("rot_mag_degs",
+            ("rot_x_degs", "rot_y_degs", "rot_z_degs"), 0.0),
+}
+
+
+def magnitude(data, key):
+    """The magnitude series for one three-axis sensor, or None.
+
+    inacc subtracts g, as the MVP did, so the channel reads as acceleration
+    above rest rather than including gravity.
+    """
+    _name, axes, offset = MAGNITUDES[key]
+    if any(a not in data.columns for a in axes):
+        return None
+    total = sum(data[a] ** 2 for a in axes)
+    return np.sqrt(total) - offset
 
 # Enable NumPy multi-threading
 os.environ["OMP_NUM_THREADS"] = str(os.cpu_count())
@@ -269,7 +327,9 @@ def process_imp_hig_direct(imp_filename, hig_filename, output_dir, config=None):
     
     # Apply post-processing (pressure conversion, etc.)
     combined_data, summary_info = post_process_combined(
-        combined_data, fs=out_rate)
+        combined_data, fs=out_rate,
+        magnitudes=(config.magnitudes if config is not None else None),
+        nadir_method=(config.nadir_method if config is not None else None))
     
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -291,44 +351,32 @@ def process_imp_hig_direct(imp_filename, hig_filename, output_dir, config=None):
     return combined_data, {**file_info, **summary_info}
 
 def append_to_sensor_index(sensor_info, output_dir):
-    """Add or replace sensor in the persistent index file."""
+    """Add or replace this sensor's row in the library's index.
+
+    The column list is the app's (``index_schema``), not the library's - a
+    library needs no config/index_config.txt to be processed, and nothing
+    here depends on the working directory.
+    """
     index_file = Path(output_dir) / "index" / "global_sensor_index.csv"
-    index_config_file = Path("config") / "index_config.txt"
-    
-    # Load sensor config
-    with open(index_config_file, 'r') as f:
-        config_lines = [line.strip() for line in f if line.strip()]
-    
-    # Build new row data
-    new_row_data = {}
-    for line in config_lines:
-        if '=' in line:
-            col_name, default_value = [x.strip() for x in line.split('=', 1)]
-            new_row_data[col_name] = default_value
-        else:
-            col_name = line.strip()
-            key_mapping = {
-                'duration.mm.ss.': 'duration[mm:ss]',
-                'pres_min.kPa.': 'pres_min[kPa]',
-                'pres_min.time.': 'pres_min[time]',
-                'HIG_max.g.': 'HIG_max[g]',
-                'HIG_max.time.': 'HIG_max[time]'
-            }
-            key = key_mapping.get(col_name, col_name)
-            value = sensor_info.get(key, '')
-            new_row_data[col_name] = str(value) if value is not None else ''
-    
-    # Handle the index file
+    index_file.parent.mkdir(parents=True, exist_ok=True)
+
+    new_row_data = index_schema.row_for(sensor_info)
+
     if index_file.exists():
         existing_df = pd.read_csv(index_file)
         sensor_file = sensor_info.get('file', '')
         if sensor_file and sensor_file in existing_df['file'].values:
             existing_df = existing_df[existing_df['file'] != sensor_file]
+        # a column the index has never carried (an older library, or one
+        # written before the schema gained a column) is added, not dropped
+        for col in index_schema.columns():
+            if col not in existing_df.columns:
+                existing_df[col] = index_schema.defaults().get(col, "")
         new_row = pd.DataFrame([new_row_data])
         updated_df = pd.concat([existing_df, new_row], ignore_index=True)
         updated_df.to_csv(index_file, index=False)
     else:
-        new_df = pd.DataFrame([new_row_data])
+        new_df = pd.DataFrame([new_row_data], columns=index_schema.columns())
         new_df.to_csv(index_file, index=False)
 
 def parse_filename_info(filename, config=None):
@@ -373,55 +421,65 @@ def parse_filename_info(filename, config=None):
         'time_deploy': time_deploy
     }
 
-def post_process_combined(data, fs=FS):
+def post_process_combined(data, fs=FS, magnitudes=None, nadir_method=None):
     """Apply post-processing to the combined dataset.
 
-    `fs` is the rate of the combined series, used for the duration and for
-    how wide the pressure-nadir search around the acceleration peak is.
+    `fs` is the rate of the combined series, used for the duration and by
+    the nadir method. `magnitudes` selects which three-axis magnitudes are
+    written (all of them by default); `nadir_method` names an entry in
+    NADIR_METHODS.
     """
-    # Calculate acceleration magnitude for IMP data
-    data["inacc_mag_ms"] = np.sqrt(
-        data["inacc_x_ms"]**2 + 
-        data["inacc_y_ms"]**2 + 
-        data["inacc_z_ms"]**2
-    ) - 9.81
-    
-    # Calculate rotational magnitude
-    data["rot_mag_degs"] = np.sqrt(
-        data["rot_x_degs"]**2 + 
-        data["rot_y_degs"]**2 + 
-        data["rot_z_degs"]**2
-    )
-    
+    wanted = set(MAGNITUDES) if magnitudes is None else set(magnitudes)
+
+    for key in MAGNITUDES:
+        name = MAGNITUDES[key][0]
+        if key not in wanted:
+            if name in data.columns and key != "higacc":
+                del data[name]
+            continue
+        # A reader may already have produced the magnitude - read_hig_raw
+        # does, rounded to the device's precision. Recomputing it from the
+        # merged columns would silently change those values, so a magnitude
+        # is only calculated where one is missing.
+        if name not in data.columns:
+            series = magnitude(data, key)
+            if series is not None:
+                data[name] = series
+
+    # Peak acceleration anchors the nadir search, so higacc magnitude is
+    # computed for that even when it is not wanted as an output column -
+    # and dropped again below, once the summary has been taken.
+    peak_name = MAGNITUDES["higacc"][0]
+    keep_peak = "higacc" in wanted
+    if peak_name not in data.columns:
+        series = magnitude(data, "higacc")
+        if series is not None:
+            data[peak_name] = series
+
     # Calculate duration
     num_seconds = len(data) / float(fs)
     minutes, seconds = divmod(num_seconds, 60)
     duration = f"{int(minutes):02}:{int(seconds):02}"
     
     # Find max acceleration time
-    acc_max_index = data["higacc_mag_g"].idxmax()
+    acc_max_index = data[peak_name].idxmax()
     acc_max_time = data["time_s"][acc_max_index]
-    max_acc_g_force = data["higacc_mag_g"].iloc[acc_max_index]
+    max_acc_g_force = data[peak_name].iloc[acc_max_index]
     
     warnings = []
     
-    # Find pressure nadir around acceleration maxima
+    # Find the nadir with whichever method the configuration names
     if "pressure_kpa" not in data.columns or data["pressure_kpa"].isna().all():
         data["pressure_kpa"] = 0.0
         warnings.append("PRES: No pressure data available")
         pres_min_value = 0.0
         pres_min_time = acc_max_time
     else:
-        half = int(round(NADIR_SEARCH_SEC * float(fs)))
-        window_start = max(0, acc_max_index - half)
-        window_end = min(len(data) - 1, acc_max_index + half)
-        pressure_window = data["pressure_kpa"].iloc[window_start:window_end]
-        pres_min_local_index = pressure_window.idxmin()
-        pres_min_time = data["time_s"][pres_min_local_index]
-        pres_min_value = data["pressure_kpa"].iloc[pres_min_local_index]
-        
-        if pressure_window.nunique() <= 1:
-            warnings.append("PRES: Pressure fault identified (unchanging values)")
+        find = NADIR_METHODS.get(nadir_method or DEFAULT_NADIR_METHOD,
+                                 nadir_pressure_min_near_peak)
+        _idx, pres_min_time, pres_min_value, found = find(
+            data, acc_max_index, fs)
+        warnings.extend(found)
     
     if data["time_s"].max() >= 5000:
         warnings.append("TIME: Time series incorrect")
@@ -429,6 +487,9 @@ def post_process_combined(data, fs=FS):
     if max_acc_g_force >= 400:
         warnings.append("HIG: High impact event >= 400g found")
     
+    if not keep_peak and peak_name in data.columns:
+        del data[peak_name]
+
     warning_message = "; ".join(warnings) if warnings else "No warnings"
     
     bad_sens = "Y" if ("TIME:" in warning_message or "PRES:" in warning_message) else "N"
@@ -447,7 +508,9 @@ def post_process_combined(data, fs=FS):
 
 def create_minimal_csv(data, filename, output_dir):
     """Create a minimal CSV with only selected columns."""
-    minimal_cols = ["time_s", "pressure_kpa", "higacc_mag_g", "inacc_mag_ms", "rot_mag_degs"]
+    minimal_cols = [c for c in ["time_s", "pressure_kpa",
+                                "higacc_mag_g", "inacc_mag_ms",
+                                "rot_mag_degs"] if c in data.columns]
     minimal_data = data[minimal_cols].copy()
     
     output_path = Path(output_dir) / "csv"

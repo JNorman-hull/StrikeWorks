@@ -34,9 +34,18 @@ A file's ``method`` says how it gets onto that grid. The 100 Hz .imp
 channels are interpolated up to 2000 Hz - that is the interpolation the
 RAPID processing has always done. The .hig channels are already at 2000 Hz
 but arrive in bursts around events (about 29% of a typical run, with gaps
-of up to 13 seconds), so each recorded sample is placed in its own grid
-slot and the gaps are left empty rather than having signal invented across
-them. Both are described here rather than left implicit in the parser.
+of up to 13 seconds), so they are *standardised*: each recorded sample goes
+into its own slot and every slot the device did not write is set to 0. The
+result is a continuous 2000 Hz series that reads as zero where nothing was
+recorded, which is honest in a way that interpolating across a 13-second
+gap would not be.
+
+Computed channels
+-----------------
+``magnitudes`` lists which three-axis sensors get a magnitude column -
+``higacc_mag_g``, ``inacc_mag_ms`` (minus g) and ``rot_mag_degs``. All
+three by default. ``nadir_method`` names the passage-nadir detector in
+``rapid_functions.NADIR_METHODS``; one method exists today.
 
 Adding a sensor
 ---------------
@@ -88,17 +97,37 @@ RAPID_FNAME_PATTERN = r"^([A-Za-z0-9]{2,4})-(\d{4})(\d{6})$"
 # pressure nadir. 1.5 s each way - the RAPID code's ±3000 samples at 2000 Hz.
 NADIR_SEARCH_SEC = 1.5
 
+# Three-axis sensors that can have a magnitude channel computed from them.
+# The maths is in rapid_functions.MAGNITUDES; these are the keys and how
+# they read on the Prepare page.
+MAGNITUDE_KEYS = ["higacc", "inacc", "rot"]
+MAGNITUDE_LABELS = {
+    "higacc": "High-g acceleration magnitude (g)",
+    "inacc": "Inertial acceleration magnitude (m/s)",
+    "rot": "Rotational magnitude (degs)",
+}
+
+# Nadir detectors, by name. The callables live in rapid_functions so the
+# parser can be loaded on its own; this is the list the Prepare page shows
+# and the default a new configuration takes.
+NADIR_METHOD_LABELS = {
+    "pressure_min_near_peak":
+        "Pressure minimum near the acceleration peak (current)",
+}
+DEFAULT_NADIR_METHOD = "pressure_min_near_peak"
+
 # How a file's channels reach the output grid.
 #
-# "as recorded" is not a resampling: each sample the device wrote is placed
-# in its own slot on the grid and the gaps between bursts are left empty.
-# It is the right choice for an event-triggered file like RAPID's .hig,
-# which records at the full rate but only around events - interpolating
-# would invent signal across the seconds where nothing was recorded.
+# "standardise" is not a resampling: every sample the device wrote is placed
+# in its own slot on the grid and every slot it did not write is set to 0.
+# That is what RAPID does with .hig, which records at the full rate but only
+# in bursts around events - the output is a continuous 2000 Hz series where
+# the quiet stretches read as zero. Interpolating instead would invent
+# signal across the seconds where nothing was recorded.
 METHODS = [
+    ("Standardise to grid, gaps filled with 0", "nearest"),
     ("Interpolate (linear)", "linear"),
     ("Interpolate (cubic spline)", "cubic"),
-    ("As recorded, gaps left empty", "nearest"),
     ("Hold previous value", "previous"),
 ]
 
@@ -130,8 +159,8 @@ class SensorSource:
         rate = (f"{self.native_rate_hz:g} Hz" if self.native_rate_hz
                 else "unknown rate")
         if self.method == "nearest":
-            return (f"{self.extension} {rate}, placed as recorded on the "
-                    f"{output_rate:g} Hz grid (gaps left empty)")
+            return (f"{self.extension} {rate} standardised to "
+                    f"{output_rate:g} Hz, gaps filled with 0")
         how = dict((v, k) for k, v in METHODS).get(self.method, self.method)
         return (f"{self.extension} {rate} {how.lower()} onto the "
                 f"{output_rate:g} Hz grid")
@@ -155,6 +184,12 @@ class SensorConfig:
 
     channels: list = field(default_factory=lambda: list(RAPID_CHANNELS))
     filename_pattern: str = RAPID_FNAME_PATTERN
+
+    # computed channels: magnitude of each three-axis sensor
+    magnitudes: list = field(default_factory=lambda: list(MAGNITUDE_KEYS))
+
+    # how the passage nadir is found (rapid_functions.NADIR_METHODS)
+    nadir_method: str = DEFAULT_NADIR_METHOD
 
     # the code point for the device's reader (see PARSERS)
     parser: str = "rapid_imp_hig"
@@ -278,6 +313,8 @@ class SensorConfig:
             out.append("The filename pattern is not a valid expression.")
         if self.parser not in PARSERS:
             out.append(f"No parser registered under '{self.parser}'.")
+        if self.nadir_method not in NADIR_METHOD_LABELS:
+            out.append(f"No nadir method called '{self.nadir_method}'.")
         return out
 
 
@@ -322,14 +359,7 @@ BUILTIN = {
         key="rapid",
         name="RAPID",
         description=(
-            "The current setup. Two files per recording, stamped from one "
-            "2000 Hz clock: .imp carries the 100 Hz IMU, pressure, "
-            "temperature and battery channels, .hig the high-g "
-            "accelerometer, which records at the full 2000 Hz but only in "
-            "bursts around events. Processing interpolates the .imp "
-            "channels up onto a uniform 2000 Hz grid and drops each .hig "
-            "sample into its slot on the same grid, leaving the gaps "
-            "between bursts empty."),
+            "Default RAPID sensor - Taltech 100 + 2000hz "),
         timebase_hz=2000.0,
         output_rate_hz=2000.0,
         sources=[
@@ -340,6 +370,8 @@ BUILTIN = {
         ],
         channels=list(RAPID_CHANNELS),
         filename_pattern=RAPID_FNAME_PATTERN,
+        magnitudes=list(MAGNITUDE_KEYS),
+        nadir_method=DEFAULT_NADIR_METHOD,
         parser="rapid_imp_hig",
     ),
     "micro_eel": dict(
@@ -358,6 +390,8 @@ BUILTIN = {
         ],
         channels=list(RAPID_CHANNELS),
         filename_pattern=RAPID_FNAME_PATTERN,
+        magnitudes=list(MAGNITUDE_KEYS),
+        nadir_method=DEFAULT_NADIR_METHOD,
         parser="unconfigured",
     ),
 }
@@ -370,20 +404,17 @@ _rapid_module = None
 
 
 def _load_rapid_module():
-    """Load rapid_functions from the modules folder.
+    """Import rapid_functions, once, on first use.
 
-    Loaded by path rather than imported so the processing thread picks up an
-    edited parser without restarting the app - the behaviour the Process page
-    has always had.
+    Imported lazily rather than at module load so the Prepare page does not
+    drag scipy into a session that never processes anything - and as a
+    package member rather than by path, so the parser can use the app's
+    index schema.
     """
     global _rapid_module
     if _rapid_module is None:
-        import importlib.util
-        target = Path(__file__).parent / "rapid_functions.py"
-        spec = importlib.util.spec_from_file_location("rapid_functions", target)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        _rapid_module = mod
+        from . import rapid_functions
+        _rapid_module = rapid_functions
     return _rapid_module
 
 
@@ -503,11 +534,26 @@ def _load():
     return _store
 
 
+def _is_unmodified_builtin(cfg) -> bool:
+    """True when `cfg` is a shipped configuration nobody has edited."""
+    if cfg.key not in BUILTIN:
+        return False
+    return cfg.to_dict() == SensorConfig.from_dict(BUILTIN[cfg.key]).to_dict()
+
+
 def _write():
+    """Persist the choice, and any configuration that differs from default.
+
+    A shipped configuration is only written out once it has actually been
+    edited. Storing an untouched copy would freeze it: a later release
+    improving RAPID's description or adding a field would be shadowed by the
+    stale copy on disk, and the user would never see the change.
+    """
     store = _load()
     payload = {
         "active": store["active"],
-        "sensors": [c.to_dict() for c in store["configs"].values()],
+        "sensors": [c.to_dict() for c in store["configs"].values()
+                    if not _is_unmodified_builtin(c)],
     }
     try:
         _SETTINGS_FILE.write_text(json.dumps(payload, indent=2),

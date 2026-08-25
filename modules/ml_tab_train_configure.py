@@ -177,7 +177,7 @@ class TrainTab:
         fv.addStretch()
         row1.addWidget(grp_filter, stretch=1)
 
-        grp_target = Section("Labels / target — two-stage pipeline")
+        grp_target = Section("Labelling")
         tv = QVBoxLayout(grp_target)
         tv.setSpacing(6)
 
@@ -193,7 +193,7 @@ class TrainTab:
         self.cmb_negative.currentIndexChanged.connect(self._negative_changed)
         tr.addWidget(self.cmb_negative, 1, 1)
 
-        tr.addWidget(self._muted("Positive class name"), 2, 0)
+        tr.addWidget(self._muted("Positive class"), 2, 0)
         self.ed_positive = QLineEdit()
         self.ed_positive.setPlaceholderText("blade_strike")
         self.ed_positive.editingFinished.connect(self._positive_changed)
@@ -208,7 +208,7 @@ class TrainTab:
         mc_row = QGridLayout()
         mc_row.setVerticalSpacing(4)
         self.chk_multiclass = QCheckBox(
-            "Stage 2 — train the multiclass class model")
+            "Multiclass class model")
         self.chk_multiclass.toggled.connect(self._mc_toggled)
         self.lbl_class_col = self._muted("Class variable")
         self.cmb_class_col = QComboBox()
@@ -218,8 +218,7 @@ class TrainTab:
         for key, spec in GROUPING_PRESETS.items():
             self.cmb_preset.addItem(spec["desc"], key)
         self.cmb_preset.currentIndexChanged.connect(self._preset_changed)
-        self.chk_surface = QCheckBox(
-            "Treat unlabelled impeller-surface strikes as region 1")
+        self.chk_surface = QCheckBox("Unlabelled surface strikes -> region 1")
         self.chk_surface.toggled.connect(self._surface_changed)
         mc_row.addWidget(self.chk_multiclass, 0, 0, 1, 2)
         mc_row.addWidget(self.lbl_class_col, 1, 0)
@@ -240,12 +239,12 @@ class TrainTab:
         tv.addWidget(self.lbl_derived)
 
         self.lbl_dist_bin = self._muted(
-            "CLASS DISTRIBUTION — stage 1 (strike vs no contact)")
+            "Binary class distribution")
         tv.addWidget(self.lbl_dist_bin)
         self.class_dist = _ClassDist()
         tv.addWidget(self.class_dist)
         self.lbl_dist_mc = self._muted(
-            "CLASS DISTRIBUTION — stage 2 (region of ground-truth strikes)")
+            "Multiclass class distribution")
         tv.addWidget(self.lbl_dist_mc)
         self.class_dist_mc = _ClassDist()
         tv.addWidget(self.class_dist_mc)
@@ -360,8 +359,8 @@ class TrainTab:
         self.lbl_weights = QLabel("")
         self.lbl_weights.setStyleSheet(f"color:{TEXT};")
         bv.addWidget(self.lbl_weights)
-        lab = QLabel("Minority-class observations are weighted during "
-                     "training to compensate for class imbalance.")
+        lab = QLabel("Minority-class observations are weighted"
+                     )
         lab.setStyleSheet(f"color:{MUTED};")
         lab.setWordWrap(True)
         bv.addWidget(lab)
@@ -387,13 +386,13 @@ class TrainTab:
         self.spin_njobs.setValue(-1)
         self.spin_njobs.valueChanged.connect(self._model_changed)
         mv.addWidget(self.spin_njobs, 1, 3)
-        mv.addWidget(self._muted("Ridge alphas 10^"), 2, 0)
+        mv.addWidget(self._muted("Ridge alphas"), 2, 0)
         self.spin_a_min = QSpinBox()
         self.spin_a_min.setRange(-8, 0)
         self.spin_a_min.setValue(-3)
         self.spin_a_min.valueChanged.connect(self._model_changed)
         mv.addWidget(self.spin_a_min, 2, 1)
-        mv.addWidget(self._muted("… to 10^"), 2, 2)
+        mv.addWidget(self._muted("to"), 2, 2)
         self.spin_a_max = QSpinBox()
         self.spin_a_max.setRange(0, 8)
         self.spin_a_max.setValue(3)
@@ -416,7 +415,7 @@ class TrainTab:
         gv = QVBoxLayout(grp_run)
         gv.setSpacing(8)
         run_row = QHBoxLayout()
-        self.btn_train = QPushButton("TRAIN MODEL")
+        self.btn_train = QPushButton("Train Model")
         self.btn_train.setMinimumHeight(38)
         self.btn_train.setEnabled(False)
         self.btn_train.clicked.connect(self.state.run_cv)
@@ -435,19 +434,18 @@ class TrainTab:
         gv.addWidget(self.progress)
 
         self.lbl_status = QLabel(
-            "Cross-validation estimates performance before any deployment "
-            "model is built.")
+            "")
         self.lbl_status.setWordWrap(True)
         self.lbl_status.setStyleSheet(f"color:{MUTED};")
         gv.addWidget(self.lbl_status)
 
-        self.card_bin = MetaCard("Binary strike model — out of fold")
+        self.card_bin = MetaCard("Binary OOF")
         gv.addWidget(self.card_bin)
-        self.card_mc = MetaCard("Multiclass region model — out of fold")
+        self.card_mc = MetaCard("Multiclass OOF")
         self.card_mc.setVisible(False)
         gv.addWidget(self.card_mc)
 
-        self.btn_evaluate = QPushButton("Evaluate results →")
+        self.btn_evaluate = QPushButton("Evaluate results")
         self.btn_evaluate.setVisible(False)
         self.btn_evaluate.clicked.connect(
             lambda: self._goto_evaluate() if self._goto_evaluate else None)
@@ -755,11 +753,7 @@ class TrainTab:
         s = self.state
         m = s.dataset_meta
         if not m:
-            self.card_dataset.set_rows([
-                ("Dataset", "No training dataset loaded"),
-                ("Hint", "Load a model_features CSV produced by Sensor "
-                         "Processing (with annotation labels appended)."),
-            ])
+            self.card_dataset.set_rows([("Dataset", "No dataset loaded")])
             self.lbl_compat.setText("")
             return
         seq = (f"{m['seq_min']}–{m['seq_max']}"
@@ -767,7 +761,7 @@ class TrainTab:
                else str(m.get("seq_max")))
         self.card_dataset.set_rows([
             ("Dataset",              m.get("name")),
-            ("Files / observations", m.get("n_files")),
+            ("Files", m.get("n_files")),
             ("Unique sensors",       m.get("n_files")),
             ("Channels",             m.get("n_channel_candidates")),
             ("Treatments",           len(m.get("treatments", []))
@@ -779,8 +773,8 @@ class TrainTab:
         ])
         ok = m.get("missing_in_channels", 0) == 0 and s.target_column
         self.lbl_compat.setText(
-            "✓ Dataset compatible with training pipeline" if ok
-            else "⚠ Dataset needs attention before training")
+            "Dataset ok" if ok
+            else "Dataset incorrect")
         self.lbl_compat.setStyleSheet(
             f"color:{OK if ok else '#f59e0b'};")
 
@@ -820,10 +814,10 @@ class TrainTab:
 
         if s.negative_class:
             pos = s.positive_label or "blade_strike"
-            txt = (f"Stage 1 — binary: {pos} defined as "
+            txt = (f"Binary: {pos} defined as "
                    f"{s.target_column} ≠ \"{s.negative_class}\".")
             if s.train_multiclass and s.region_column:
-                txt += (f"   Stage 2 — multiclass: strike recordings "
+                txt += (f"Multiclass:"
                         f"classified by {s.region_column}, grouped below.")
             self.lbl_positive.setText(txt)
         else:
@@ -842,7 +836,7 @@ class TrainTab:
         if show_mc:
             self.class_dist_mc.set_counts(s.region_class_counts())
         n = s.population_size()
-        self.lbl_population.setText(f"Training population: {n} recordings")
+        self.lbl_population.setText(f"Training (n) = {n}")
 
     def _refresh_channels(self):
         s = self.state
@@ -913,8 +907,7 @@ class TrainTab:
         elif not s.cv_done:
             self.lbl_status.setStyleSheet(f"color:{MUTED};")
             self.lbl_status.setText(
-                "Cross-validation estimates performance before any "
-                "deployment model is built.")
+                "")
 
     # ── run lifecycle ────────────────────────────────────────────────────────
     def _on_started(self):
@@ -933,7 +926,7 @@ class TrainTab:
         self._elapsed.start()
         self._tick.start()
         self.lbl_status.setStyleSheet(f"color:{ACCENT};")
-        self.lbl_status.setText("Training binary strike model…")
+        self.lbl_status.setText("Training binary strike model")
 
     def _on_final_started(self):
         self.console.appendPlainText("\n" + "─" * 60)
@@ -941,7 +934,7 @@ class TrainTab:
         self._elapsed.start()
         self._tick.start()
         self.lbl_status.setStyleSheet(f"color:{ACCENT};")
-        self.lbl_status.setText("Training final deployment model(s)…")
+        self.lbl_status.setText("Training final deployment model")
 
     def _on_line(self, ln):
         self.console.appendPlainText(ln)
@@ -970,7 +963,7 @@ class TrainTab:
     def _stop_run_ui(self):
         self._tick.stop()
         self.spinner.stop()
-        self.btn_train.setText("TRAIN MODEL")
+        self.btn_train.setText("Train Model")
         self.btn_train.setEnabled(self.state.ready and not self.state.running)
 
     def _on_finished(self):
@@ -980,9 +973,7 @@ class TrainTab:
         secs = self._elapsed.elapsed() / 1000
         self.lbl_status.setStyleSheet(f"color:{OK};")
         self.lbl_status.setText(
-            f"✓ Cross-validation complete ({secs:.1f} s). Review the "
-            "performance on Evaluate, then accept it on Deploy to train the "
-            "final model(s).")
+            f"")
         self._fill_performance()
         self.btn_evaluate.setVisible(True)
         s.status.emit("Cross-validation complete.", 5000)

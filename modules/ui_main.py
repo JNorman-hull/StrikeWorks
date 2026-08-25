@@ -1433,20 +1433,6 @@ class Ui_MainWindow(object):
         self.layout_prepare.setSpacing(10)
         self.layout_prepare.setObjectName(u"layout_prepare")
         self.layout_prepare.setContentsMargins(10, 10, 10, 10)
-        self.title_prepare = QLabel(self.page_prepare)
-        self.title_prepare.setObjectName(u"title_prepare")
-        self.title_prepare.setMaximumSize(QSize(16777215, 30))
-        self.title_prepare.setFont(font)
-
-        self.layout_prepare.addWidget(self.title_prepare)
-
-        self.subtitle_prepare = QLabel(self.page_prepare)
-        self.subtitle_prepare.setObjectName(u"subtitle_prepare")
-        self.subtitle_prepare.setMaximumSize(QSize(16777215, 20))
-        self.subtitle_prepare.setWordWrap(True)
-
-        self.layout_prepare.addWidget(self.subtitle_prepare)
-
         self.content_prepare = QFrame(self.page_prepare)
         self.content_prepare.setObjectName(u"content_prepare")
         self.content_prepare.setFrameShape(QFrame.NoFrame)
@@ -1498,20 +1484,6 @@ class Ui_MainWindow(object):
         self.layout_process.setSpacing(10)
         self.layout_process.setObjectName(u"layout_process")
         self.layout_process.setContentsMargins(10, 10, 10, 10)
-        self.title_process = QLabel(self.page_process)
-        self.title_process.setObjectName(u"title_process")
-        self.title_process.setMaximumSize(QSize(16777215, 30))
-        self.title_process.setFont(font)
-
-        self.layout_process.addWidget(self.title_process)
-
-        self.subtitle_process = QLabel(self.page_process)
-        self.subtitle_process.setObjectName(u"subtitle_process")
-        self.subtitle_process.setMaximumSize(QSize(16777215, 20))
-        self.subtitle_process.setWordWrap(True)
-
-        self.layout_process.addWidget(self.subtitle_process)
-
         self.content_process = QFrame(self.page_process)
         self.content_process.setObjectName(u"content_process")
         self.content_process.setFrameShape(QFrame.NoFrame)
@@ -1614,6 +1586,17 @@ class Ui_MainWindow(object):
         self.cmb_treatment.setMinimumSize(QSize(200, 0))
 
         self.layout_inventory_controls.addWidget(self.cmb_treatment)
+
+        self.lbl_run = QLabel(self.grp_inventory)
+        self.lbl_run.setObjectName(u"lbl_run")
+
+        self.layout_inventory_controls.addWidget(self.lbl_run)
+
+        self.cmb_run = QComboBox(self.grp_inventory)
+        self.cmb_run.setObjectName(u"cmb_run")
+        self.cmb_run.setMinimumSize(QSize(90, 0))
+
+        self.layout_inventory_controls.addWidget(self.cmb_run)
 
         self.btn_process_selected = QPushButton(self.grp_inventory)
         self.btn_process_selected.setObjectName(u"btn_process_selected")
@@ -2057,20 +2040,6 @@ class Ui_MainWindow(object):
         self.layout_validate.setSpacing(10)
         self.layout_validate.setObjectName(u"layout_validate")
         self.layout_validate.setContentsMargins(10, 10, 10, 10)
-        self.title_validate = QLabel(self.page_validate)
-        self.title_validate.setObjectName(u"title_validate")
-        self.title_validate.setMaximumSize(QSize(16777215, 30))
-        self.title_validate.setFont(font)
-
-        self.layout_validate.addWidget(self.title_validate)
-
-        self.subtitle_validate = QLabel(self.page_validate)
-        self.subtitle_validate.setObjectName(u"subtitle_validate")
-        self.subtitle_validate.setMaximumSize(QSize(16777215, 20))
-        self.subtitle_validate.setWordWrap(True)
-
-        self.layout_validate.addWidget(self.subtitle_validate)
-
         self.content_validate = QFrame(self.page_validate)
         self.content_validate.setObjectName(u"content_validate")
         self.content_validate.setFrameShape(QFrame.NoFrame)
@@ -2230,20 +2199,6 @@ class Ui_MainWindow(object):
         self.layout_dataset.setSpacing(10)
         self.layout_dataset.setObjectName(u"layout_dataset")
         self.layout_dataset.setContentsMargins(10, 10, 10, 10)
-        self.title_dataset = QLabel(self.page_dataset)
-        self.title_dataset.setObjectName(u"title_dataset")
-        self.title_dataset.setMaximumSize(QSize(16777215, 30))
-        self.title_dataset.setFont(font)
-
-        self.layout_dataset.addWidget(self.title_dataset)
-
-        self.subtitle_dataset = QLabel(self.page_dataset)
-        self.subtitle_dataset.setObjectName(u"subtitle_dataset")
-        self.subtitle_dataset.setMaximumSize(QSize(16777215, 20))
-        self.subtitle_dataset.setWordWrap(True)
-
-        self.layout_dataset.addWidget(self.subtitle_dataset)
-
         self.content_dataset = QFrame(self.page_dataset)
         self.content_dataset.setObjectName(u"content_dataset")
         self.content_dataset.setFrameShape(QFrame.NoFrame)
@@ -2459,20 +2414,6 @@ class Ui_MainWindow(object):
         self.layout_ml_training.setSpacing(10)
         self.layout_ml_training.setObjectName(u"layout_ml_training")
         self.layout_ml_training.setContentsMargins(10, 10, 10, 10)
-        self.title_ml_training = QLabel(self.page_ml_training)
-        self.title_ml_training.setObjectName(u"title_ml_training")
-        self.title_ml_training.setMaximumSize(QSize(16777215, 30))
-        self.title_ml_training.setFont(font)
-
-        self.layout_ml_training.addWidget(self.title_ml_training)
-
-        self.subtitle_ml_training = QLabel(self.page_ml_training)
-        self.subtitle_ml_training.setObjectName(u"subtitle_ml_training")
-        self.subtitle_ml_training.setMaximumSize(QSize(16777215, 20))
-        self.subtitle_ml_training.setWordWrap(True)
-
-        self.layout_ml_training.addWidget(self.subtitle_ml_training)
-
         self.content_ml_training = QFrame(self.page_ml_training)
         self.content_ml_training.setObjectName(u"content_ml_training")
         self.content_ml_training.setFrameShape(QFrame.NoFrame)
@@ -2538,20 +2479,6 @@ class Ui_MainWindow(object):
         self.layout_ml_performance.setSpacing(10)
         self.layout_ml_performance.setObjectName(u"layout_ml_performance")
         self.layout_ml_performance.setContentsMargins(10, 10, 10, 10)
-        self.title_ml_performance = QLabel(self.page_ml_performance)
-        self.title_ml_performance.setObjectName(u"title_ml_performance")
-        self.title_ml_performance.setMaximumSize(QSize(16777215, 30))
-        self.title_ml_performance.setFont(font)
-
-        self.layout_ml_performance.addWidget(self.title_ml_performance)
-
-        self.subtitle_ml_performance = QLabel(self.page_ml_performance)
-        self.subtitle_ml_performance.setObjectName(u"subtitle_ml_performance")
-        self.subtitle_ml_performance.setMaximumSize(QSize(16777215, 20))
-        self.subtitle_ml_performance.setWordWrap(True)
-
-        self.layout_ml_performance.addWidget(self.subtitle_ml_performance)
-
         self.content_ml_performance = QFrame(self.page_ml_performance)
         self.content_ml_performance.setObjectName(u"content_ml_performance")
         self.content_ml_performance.setFrameShape(QFrame.NoFrame)
@@ -2566,20 +2493,6 @@ class Ui_MainWindow(object):
         self.layout_ml_prediction.setSpacing(10)
         self.layout_ml_prediction.setObjectName(u"layout_ml_prediction")
         self.layout_ml_prediction.setContentsMargins(10, 10, 10, 10)
-        self.title_ml_prediction = QLabel(self.page_ml_prediction)
-        self.title_ml_prediction.setObjectName(u"title_ml_prediction")
-        self.title_ml_prediction.setMaximumSize(QSize(16777215, 30))
-        self.title_ml_prediction.setFont(font)
-
-        self.layout_ml_prediction.addWidget(self.title_ml_prediction)
-
-        self.subtitle_ml_prediction = QLabel(self.page_ml_prediction)
-        self.subtitle_ml_prediction.setObjectName(u"subtitle_ml_prediction")
-        self.subtitle_ml_prediction.setMaximumSize(QSize(16777215, 20))
-        self.subtitle_ml_prediction.setWordWrap(True)
-
-        self.layout_ml_prediction.addWidget(self.subtitle_ml_prediction)
-
         self.content_ml_prediction = QFrame(self.page_ml_prediction)
         self.content_ml_prediction.setObjectName(u"content_ml_prediction")
         self.content_ml_prediction.setFrameShape(QFrame.NoFrame)
@@ -2896,12 +2809,8 @@ class Ui_MainWindow(object):
         self.tableWidget.setSortingEnabled(__sortingEnabled)
 
         self.label.setText(QCoreApplication.translate("MainWindow", u"NEW PAGE TEST", None))
-        self.title_prepare.setText(QCoreApplication.translate("MainWindow", u"Prepare", None))
-        self.subtitle_prepare.setText(QCoreApplication.translate("MainWindow", u"Choose the sensor this session works with, and plan the study it feeds.", None))
         self.tabs_prepare.setTabText(self.tabs_prepare.indexOf(self.tab_prepare_sensor), QCoreApplication.translate("MainWindow", u"Sensor configuration", None))
         self.tabs_prepare.setTabText(self.tabs_prepare.indexOf(self.tab_prepare_study), QCoreApplication.translate("MainWindow", u"Study design", None))
-        self.title_process.setText(QCoreApplication.translate("MainWindow", u"Process", None))
-        self.subtitle_process.setText(QCoreApplication.translate("MainWindow", u"Import and process raw sensor data", None))
         self.grp_library.setTitle(QCoreApplication.translate("MainWindow", u"Library", None))
         self.btn_change_libraries.setText(QCoreApplication.translate("MainWindow", u"Change libraries folder\u2026", None))
         self.grp_index.setTitle(QCoreApplication.translate("MainWindow", u"Index", None))
@@ -2924,6 +2833,10 @@ class Ui_MainWindow(object):
         self.lbl_treatment.setText(QCoreApplication.translate("MainWindow", u"Treatment", None))
 #if QT_CONFIG(tooltip)
         self.cmb_treatment.setToolTip(QCoreApplication.translate("MainWindow", u"Treatments planned on Prepare > Study design. Selected sensors are labelled with this treatment's conditions when they are processed.", None))
+#endif // QT_CONFIG(tooltip)
+        self.lbl_run.setText(QCoreApplication.translate("MainWindow", u"Run", None))
+#if QT_CONFIG(tooltip)
+        self.cmb_run.setToolTip(QCoreApplication.translate("MainWindow", u"Which run of the selected treatment this batch of sensors came from.", None))
 #endif // QT_CONFIG(tooltip)
         self.btn_process_selected.setText(QCoreApplication.translate("MainWindow", u"Process selected", None))
         self.grp_console.setTitle(QCoreApplication.translate("MainWindow", u"Console output", None))
@@ -2992,8 +2905,6 @@ class Ui_MainWindow(object):
         self.lbl_dash_treatments_caption.setText(QCoreApplication.translate("MainWindow", u"Distinct treatments", None))
         self.lbl_dash_treatments_detail.setText(QCoreApplication.translate("MainWindow", u"No library selected", None))
         self.tabs_process.setTabText(self.tabs_process.indexOf(self.tab_meta), QCoreApplication.translate("MainWindow", u"Metadata", None))
-        self.title_validate.setText(QCoreApplication.translate("MainWindow", u"Validate & segment", None))
-        self.subtitle_validate.setText(QCoreApplication.translate("MainWindow", u"Review processed signals, flag bad records and cut them into event segments.", None))
         self.grp_val_library.setTitle(QCoreApplication.translate("MainWindow", u"Library", None))
         self.btn_val_change_libraries.setText(QCoreApplication.translate("MainWindow", u"Change libraries folder\u2026", None))
         self.grp_val_files.setTitle(QCoreApplication.translate("MainWindow", u"Sensor files", None))
@@ -3006,8 +2917,6 @@ class Ui_MainWindow(object):
         self.lbl_val_right.setText(QCoreApplication.translate("MainWindow", u"Right axis:", None))
         self.lbl_val_window.setText(QCoreApplication.translate("MainWindow", u"ROI window:", None))
         self.lbl_val_loading.setText("")
-        self.title_dataset.setText(QCoreApplication.translate("MainWindow", u"Dataset creation", None))
-        self.subtitle_dataset.setText(QCoreApplication.translate("MainWindow", u"Assemble validated segments into labelled datasets for model development.", None))
         self.grp_ds_library.setTitle(QCoreApplication.translate("MainWindow", u"Library", None))
         self.btn_ds_change_libraries.setText(QCoreApplication.translate("MainWindow", u"Change libraries folder\u2026", None))
         self.grp_ds_filter.setTitle(QCoreApplication.translate("MainWindow", u"Sensor selection", None))
@@ -3028,15 +2937,9 @@ class Ui_MainWindow(object):
         self.btn_ds_append.setText(QCoreApplication.translate("MainWindow", u"Append features", None))
         self.btn_ds_save_annotated.setText(QCoreApplication.translate("MainWindow", u"Save annotated dataset", None))
         self.grp_ds_figure.setTitle(QCoreApplication.translate("MainWindow", u"Annotation summary", None))
-        self.title_ml_training.setText(QCoreApplication.translate("MainWindow", u"Model training", None))
-        self.subtitle_ml_training.setText(QCoreApplication.translate("MainWindow", u"Train and version blade-strike models from curated sensor datasets.", None))
         self.tabs_ml_training.setTabText(self.tabs_ml_training.indexOf(self.tab_train_configure), QCoreApplication.translate("MainWindow", u"Train", None))
         self.tabs_ml_training.setTabText(self.tabs_ml_training.indexOf(self.tab_train_evaluate), QCoreApplication.translate("MainWindow", u"Evaluate", None))
         self.tabs_ml_training.setTabText(self.tabs_ml_training.indexOf(self.tab_train_deploy), QCoreApplication.translate("MainWindow", u"Deploy", None))
-        self.title_ml_performance.setText(QCoreApplication.translate("MainWindow", u"Model performance", None))
-        self.subtitle_ml_performance.setText(QCoreApplication.translate("MainWindow", u"Evaluate trained models: metrics, confusion matrices, ROC/PR curves and threshold analysis.", None))
-        self.title_ml_prediction.setText(QCoreApplication.translate("MainWindow", u"Model prediction", None))
-        self.subtitle_ml_prediction.setText(QCoreApplication.translate("MainWindow", u"Apply a deployed blade-strike model to a curated sensor dataset. Predict, inspect, report.", None))
         self.tabs_ml_prediction.setTabText(self.tabs_ml_prediction.indexOf(self.tab_ml_predict), QCoreApplication.translate("MainWindow", u"Predict", None))
         self.tabs_ml_prediction.setTabText(self.tabs_ml_prediction.indexOf(self.tab_ml_inspect), QCoreApplication.translate("MainWindow", u"Inspect", None))
         self.tabs_ml_prediction.setTabText(self.tabs_ml_prediction.indexOf(self.tab_ml_report), QCoreApplication.translate("MainWindow", u"Report", None))

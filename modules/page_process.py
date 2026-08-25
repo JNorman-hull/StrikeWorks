@@ -18,7 +18,6 @@ deployment information back into it.
 The widgets themselves live in ``main.ui`` (edit them in Qt Designer); this
 module only binds behaviour to them.
 """
-import os
 import shutil
 from collections import Counter
 from datetime import datetime
@@ -92,37 +91,22 @@ class _ProcessThread(QThread):
         # the reader is whichever one the sensor configuration names
         parse = sensor_config.get_parser(self._config.parser)
 
-        # parsers read config/index_config.txt relative to cwd
-        prev_cwd = os.getcwd()
-        os.chdir(str(self._root))
-
         n_ok = n_fail = 0
-        try:
-            for f in self._files:
-                self.log.emit(f"\n-- Processing: {f['stem']}")
-                try:
-                    _, summary = parse(f["paths"], self._out_dir, self._config)
-                    msg = summary.get("messages", "")
-                    bad = summary.get("bad_sens", "N")
-                    self.log.emit(f"   Done.  bad_sens={bad}  {msg}")
-                    self.processed.emit(f["stem"])
-                    n_ok += 1
-                except NotImplementedError as e:
-                    self.log.emit(f"   FAILED: {e}")
-                    n_fail += 1
-                except FileNotFoundError as e:
-                    if "index_config" in str(e):
-                        self.log.emit(
-                            "   FAILED: this library has no config/index_config.txt "
-                            "- processing cannot update the global index.")
-                    else:
-                        self.log.emit(f"   FAILED: {e}")
-                    n_fail += 1
-                except Exception as e:
-                    self.log.emit(f"   FAILED: {e}")
-                    n_fail += 1
-        finally:
-            os.chdir(prev_cwd)
+        for f in self._files:
+            self.log.emit(f"\n-- Processing: {f['stem']}")
+            try:
+                _, summary = parse(f["paths"], self._out_dir, self._config)
+                msg = summary.get("messages", "")
+                bad = summary.get("bad_sens", "N")
+                self.log.emit(f"   Done.  bad_sens={bad}  {msg}")
+                self.processed.emit(f["stem"])
+                n_ok += 1
+            except NotImplementedError as e:
+                self.log.emit(f"   FAILED: {e}")
+                n_fail += 1
+            except Exception as e:
+                self.log.emit(f"   FAILED: {e}")
+                n_fail += 1
 
         self.log.emit(f"\n-- Complete: {n_ok} succeeded, {n_fail} failed.")
         self.done.emit(0 if n_fail == 0 else 1)
@@ -320,6 +304,9 @@ class ProcessPage(QObject):
         u.table_inventory.itemSelectionChanged.connect(self._on_table_select)
         u.chk_select_all.toggled.connect(self._on_select_all)
         u.btn_process_selected.clicked.connect(self._process)
+        # the runs on offer belong to the selected treatment
+        u.cmb_treatment.currentIndexChanged.connect(
+            lambda _i: self._refresh_runs())
         u.btn_save_deployment.clicked.connect(self._save_deployment)
         u.btn_apply_deployment.clicked.connect(self._load_deployment)
         u.chk_meta_select_all.toggled.connect(self._on_meta_select_all)
@@ -377,9 +364,6 @@ class ProcessPage(QObject):
         self._refresh_meta_tab()
         self.status.emit(f"Library: {root.name}", 4000)
         self._log(f"\nLibrary: {root}")
-        if not (root / "config" / "index_config.txt").exists():
-            self._log("   WARNING: no config/index_config.txt in this library - "
-                      "processing will fail to update the global index.")
 
     def _on_index_select(self, selected, _deselected):
         idxs = selected.indexes()
@@ -424,6 +408,32 @@ class ProcessPage(QObject):
         cmb.setCurrentIndex(max(0, idx))
         cmb.blockSignals(False)
         cmb.setEnabled(bool(self._treatments))
+        self._refresh_runs()
+
+    def _refresh_runs(self):
+        """Offer the runs planned for the selected treatment.
+
+        A treatment planned with 8 runs has 8 rows in the index, so the
+        picker offers 1-8 and the batch is labelled with the one it came
+        from - the level of detail the Metadata tab used to be typed at.
+        """
+        cmb = self.ui.cmb_run
+        current = cmb.currentData()
+        treatment = self._selected_treatment()
+        runs = []
+        if treatment is not None and self._root is not None:
+            runs = di.runs_for(self._root,
+                               treatment.get(di.DEPLOYMENT_COL) or None,
+                               treatment.get(di.TREATMENT_COL))
+        cmb.blockSignals(True)
+        cmb.clear()
+        cmb.addItem("No run", None)
+        for run in runs:
+            cmb.addItem(f"Run {run}", run)
+        idx = cmb.findData(current) if current else 0
+        cmb.setCurrentIndex(max(0, idx))
+        cmb.blockSignals(False)
+        cmb.setEnabled(bool(runs))
 
     def _selected_treatment(self):
         name = self.ui.cmb_treatment.currentData()
@@ -431,6 +441,9 @@ class ProcessPage(QObject):
             return None
         return next((t for t in self._treatments
                      if t.get(di.TREATMENT_COL) == name), None)
+
+    def _selected_run(self):
+        return self.ui.cmb_run.currentData()
 
     # ── scanning (unchanged rules) ───────────────────────────────────────────
     def _on_sensor_changed(self, _key):
@@ -573,7 +586,9 @@ class ProcessPage(QObject):
                   f"parser '{cfg.parser}')")
         treatment = self._selected_treatment()
         if treatment:
-            self._log(f"Treatment: {di.describe(treatment)}")
+            run = self._selected_run()
+            self._log(f"Treatment: {di.describe(treatment)}"
+                      + (f"  |  run {run}" if run else ""))
         else:
             self._log("Treatment: none - this batch is processed unlabelled.")
         self._batch_processed = []
@@ -620,15 +635,19 @@ class ProcessPage(QObject):
         treatment = self._selected_treatment()
         if not treatment or not self._batch_processed or self._root is None:
             return
+        run = self._selected_run()
         try:
             n = di.apply_treatment(
-                self._root, self._batch_processed, treatment)
+                self._root, self._batch_processed, treatment, run=run)
         except Exception as e:
             self._log(f"   Could not label the batch: {e}")
             return
         if n:
-            self._log(f"Labelled {n} sensor(s) as "
-                      f"'{treatment.get(di.TREATMENT_COL)}'.")
+            where = treatment.get(di.TREATMENT_COL)
+            if run:
+                where += f", run {run}"
+            self._log(f"Labelled {n} sensor(s) as '{where}' "
+                      f"({di.DEPLOYMENT_FLAG_COL} = Y).")
 
     def _log(self, text):
         self.ui.console_output.appendPlainText(text)

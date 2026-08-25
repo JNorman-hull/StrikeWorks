@@ -44,7 +44,7 @@ class ReportTab:
         bar = QHBoxLayout()
         bar.setSpacing(6)
 
-        self.btn_export_all = QPushButton("Export analysis…")
+        self.btn_export_all = QPushButton("Export analysis")
         self.btn_export_all.setMinimumHeight(32)
         self.btn_export_all.setStyleSheet(
             f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
@@ -52,11 +52,11 @@ class ReportTab:
             "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
         self.btn_export_all.clicked.connect(self._export_analysis)
 
-        self.btn_save_report = QPushButton("Save report (HTML)…")
+        self.btn_save_report = QPushButton("Save report (HTML)")
         self.btn_save_report.clicked.connect(self._save_report)
-        self.btn_export_tables = QPushButton("Export tables (CSV)…")
+        self.btn_export_tables = QPushButton("Export tables (CSV)")
         self.btn_export_tables.clicked.connect(self._export_tables)
-        self.btn_export_figs = QPushButton("Export figures (PNG/SVG)…")
+        self.btn_export_figs = QPushButton("Export figures (PNG/SVG)")
         self.btn_export_figs.clicked.connect(self._export_figures)
         self.btn_refresh = QPushButton("Refresh report")
         self.btn_refresh.clicked.connect(self._refresh)
@@ -68,14 +68,6 @@ class ReportTab:
         bar.addStretch()
         bar.addWidget(self.btn_refresh)
         v.addLayout(bar)
-
-        self.lbl_note = QLabel(
-            "The report uses exactly the prediction results and metadata "
-            "shown on the Predict and Inspect tabs. The exported report.html "
-            "is self-contained and prints/saves to PDF from any browser.")
-        self.lbl_note.setStyleSheet(f"color:{MUTED};")
-        self.lbl_note.setWordWrap(True)
-        v.addWidget(self.lbl_note)
 
         grp = Section("Report preview")
         gv = QVBoxLayout(grp)
@@ -123,7 +115,7 @@ class ReportTab:
         return QFileDialog.getExistingDirectory(self.window, caption, "")
 
     def _export_analysis(self):
-        dirpath = self._pick_dir("Create analysis package in folder…")
+        dirpath = self._pick_dir("Create analysis package in folder")
         if not dirpath:
             return
         try:
@@ -134,7 +126,7 @@ class ReportTab:
         self.state.status.emit(f"Analysis exported to {out}", 6000)
         QMessageBox.information(
             self.window, "Export analysis",
-            "Self-contained analysis package created:\n\n"
+            ""
             f"{out}\n\n" + "\n".join(
                 f"  • {p.name}" for p in sorted(out.glob('*'))))
 
@@ -159,7 +151,7 @@ class ReportTab:
         self.state.status.emit(f"Report saved: {Path(path).name}", 5000)
 
     def _export_tables(self):
-        dirpath = self._pick_dir("Export tables to folder…")
+        dirpath = self._pick_dir("Export tables to folder")
         if not dirpath:
             return
         try:
@@ -171,7 +163,7 @@ class ReportTab:
             f"Exported {len(written)} table(s) to {dirpath}", 5000)
 
     def _export_figures(self):
-        dirpath = self._pick_dir("Export figures to folder…")
+        dirpath = self._pick_dir("Export figures to folder")
         if not dirpath:
             return
         try:

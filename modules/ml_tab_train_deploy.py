@@ -320,7 +320,7 @@ class DeployTab:
         mc_m = (s.model_results("multiclass") or {}).get("metrics", {})
         self.lbl_final_status.setStyleSheet(f"color:{OK};")
         self.lbl_final_status.setText(
-            "✓ Final models trained" if mc_m else "✓ Final model trained")
+            "Final models trained" if mc_m else "Final model trained")
         self._fill_final_card()
         s.status.emit("Final deployment model(s) trained.", 5000)
 
@@ -363,7 +363,7 @@ class DeployTab:
         names = ", ".join(p.name for p in deployed)
         self.lbl_deploy_status.setStyleSheet(f"color:{OK};")
         self.lbl_deploy_status.setText(
-            f"✓ Deployed {names}\n"
+            f"Deployed {names}\n"
             f"Package: {pkg}\n"
             "Model Prediction will discover them from the models folder.")
         s.status.emit(f"Pipeline deployed: {names}", 6000)

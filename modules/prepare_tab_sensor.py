@@ -15,10 +15,14 @@ The rates panel is the important part, because three different rates are
 easy to conflate: the counter clock the raw files are stamped from, the
 rate each file's channels actually arrive at, and the uniform grid the
 processed CSV is written on. RAPID's .imp channels arrive at 100 Hz and are
-interpolated up onto a 2000 Hz grid, while the .hig channels arrive at
-2000 Hz but only around events, so each sample is placed at its nearest
-grid point. This tab states that rather than leaving it implicit in the
-parser.
+interpolated up onto a 2000 Hz grid; the .hig channels arrive at 2000 Hz
+but only in bursts around events, so they are standardised onto the same
+grid with the gaps filled with 0. This tab states that rather than leaving
+it implicit in the parser.
+
+It also carries the computed channels - which three-axis sensors get a
+magnitude column - and the nadir detection method, both of which change
+what processing writes.
 
 Every field here is data, not code. A new device is a New (or Duplicate)
 plus a Save; only its reader needs writing, registered under
@@ -26,7 +30,8 @@ plus a Save; only its reader needs writing, registered under
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QAbstractItemView, QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout,
+    QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QGridLayout,
+    QHBoxLayout,
     QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy,
     QSpinBox, QVBoxLayout, QWidget,
@@ -73,7 +78,7 @@ class SensorTab:
         row1 = QHBoxLayout()
         row1.setSpacing(10)
 
-        grp_sel = Section("Session sensor")
+        grp_sel = Section("Sensors")
         sv = QVBoxLayout(grp_sel)
         sv.setSpacing(6)
 
@@ -103,7 +108,7 @@ class SensorTab:
 
         self.ed_description = QPlainTextEdit()
         self.ed_description.setPlaceholderText(
-            "What this device is and anything a user should know about it.")
+            "What is this device?")
         self.ed_description.setFixedHeight(96)
         self.ed_description.textChanged.connect(self._touch)
         sv.addWidget(self.ed_description)
@@ -114,7 +119,7 @@ class SensorTab:
 
         act = QHBoxLayout()
         act.setSpacing(6)
-        self.btn_save = QPushButton("Save and use this sensor")
+        self.btn_save = QPushButton("Save sensor")
         self.btn_save.setMinimumHeight(30)
         self.btn_save.setStyleSheet(
             f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
@@ -173,10 +178,8 @@ class SensorTab:
         rates.addWidget(self.spin_output, 0, 3)
 
         clock_note = self._muted(
-            "The clock is what the counter in the raw file ticks at - "
-            "dividing by it turns the counter into seconds. The output rate "
-            "is the uniform grid every channel is brought onto and the "
-            "processed CSV is written at.")
+            "Ticks per second in the raw file."
+        )
         clock_note.setWordWrap(True)
         rates.addWidget(clock_note, 1, 0, 1, 4)
         av.addLayout(rates)
@@ -206,10 +209,8 @@ class SensorTab:
         av.addLayout(src_btns)
 
         src_note = self._muted(
-            "The first file defines a recording; the rest pair to it by "
-            "filename stem. Interpolation lifts a slower file onto the "
-            "output grid; nearest sample places a sparse, event-triggered "
-            "file without inventing signal between its samples.")
+            "RAPID uses paired .imp and .hig files."
+        )
         src_note.setWordWrap(True)
         av.addWidget(src_note)
 
@@ -227,8 +228,8 @@ class SensorTab:
         cv = QVBoxLayout(grp_ch)
         cv.setSpacing(6)
         cv.addWidget(self._muted(
-            "Columns the parser produces that a model may use as input. "
-            "Double-click to rename."))
+            "Double click to rename")
+        )
         self.list_channels = QListWidget()
         self.list_channels.setMinimumHeight(150)
         self.list_channels.setSelectionMode(
@@ -241,30 +242,53 @@ class SensorTab:
         self.btn_ch_add.clicked.connect(self._add_channel)
         self.btn_ch_remove = QPushButton("Remove")
         self.btn_ch_remove.clicked.connect(self._remove_channels)
-        self.btn_ch_default = QPushButton("RAPID channels")
+        self.btn_ch_default = QPushButton("Default")
         self.btn_ch_default.clicked.connect(self._default_channels)
         for b in (self.btn_ch_add, self.btn_ch_remove, self.btn_ch_default):
             ch_btns.addWidget(b)
         ch_btns.addStretch()
         cv.addLayout(ch_btns)
+
+        cv.addWidget(self._muted(
+            "Magnitude of each three-axis sensor"
+            )
+        )
+        self.chk_magnitudes = {}
+        for key in sensor_config.MAGNITUDE_KEYS:
+            chk = QCheckBox(sensor_config.MAGNITUDE_LABELS[key])
+            chk.setChecked(True)
+            chk.toggled.connect(self._touch)
+            cv.addWidget(chk)
+            self.chk_magnitudes[key] = chk
         row3.addWidget(grp_ch, stretch=1)
 
         grp_parser = Section("Parser")
         pv = QVBoxLayout(grp_parser)
         pv.setSpacing(6)
         prow = QHBoxLayout()
-        prow.addWidget(self._muted("Reader for this device"))
+        prow.addWidget(self._muted("Reader"))
         self.cmb_parser = QComboBox()
         self.cmb_parser.currentIndexChanged.connect(self._touch)
         prow.addWidget(self.cmb_parser, stretch=1)
         pv.addLayout(prow)
         parser_note = self._muted(
-            "Registered readers only. To add one: write the reader, register "
-            "it in modules/sensor_config.py under PARSERS with the signature "
-            "parser(paths, out_dir, config), then select it here. RAPID "
-            "keeps calling rapid_functions.process_imp_hig_direct.")
+            "Registered readers only")
         parser_note.setWordWrap(True)
         pv.addWidget(parser_note)
+
+        nrow = QHBoxLayout()
+        nrow.addWidget(self._muted("Nadir detection"))
+        self.cmb_nadir = QComboBox()
+        for key, label in sensor_config.NADIR_METHOD_LABELS.items():
+            self.cmb_nadir.addItem(label, key)
+        self.cmb_nadir.currentIndexChanged.connect(self._touch)
+        nrow.addWidget(self.cmb_nadir, stretch=1)
+        pv.addLayout(nrow)
+
+        nadir_note = self._muted(
+            "How the passage nadir is detected")
+        nadir_note.setWordWrap(True)
+        pv.addWidget(nadir_note)
         pv.addStretch()
         row3.addWidget(grp_parser, stretch=1)
         v.addLayout(row3)
@@ -334,6 +358,11 @@ class SensorTab:
             self.cmb_parser.addItem(cfg.parser, cfg.parser)
         self.cmb_parser.setCurrentIndex(self.cmb_parser.findData(cfg.parser))
 
+        for key, chk in self.chk_magnitudes.items():
+            chk.setChecked(key in cfg.magnitudes)
+        n = self.cmb_nadir.findData(cfg.nadir_method)
+        self.cmb_nadir.setCurrentIndex(max(0, n))
+
         self._rebuild_source_rows(cfg.sources)
         self._loading = False
         self._refresh_state()
@@ -356,6 +385,10 @@ class SensorTab:
         cfg.channels = [self.list_channels.item(i).text().strip()
                         for i in range(self.list_channels.count())
                         if self.list_channels.item(i).text().strip()]
+        cfg.magnitudes = [k for k, chk in self.chk_magnitudes.items()
+                          if chk.isChecked()]
+        cfg.nadir_method = (self.cmb_nadir.currentData()
+                            or sensor_config.DEFAULT_NADIR_METHOD)
         cfg.parser = self.cmb_parser.currentData() or cfg.parser
         return cfg
 
@@ -507,7 +540,10 @@ class SensorTab:
              f"{live.files_per_recording} "
              f"({', '.join(live.file_extensions)})"),
             ("Channels", f"{len(live.channels)}"),
+            ("Magnitudes", ", ".join(live.magnitudes) or "none"),
             ("Parser", live.parser),
+            ("Nadir", sensor_config.NADIR_METHOD_LABELS.get(
+                live.nadir_method, live.nadir_method)),
             ("200 ms window", f"{live.window_samples(0.2)} samples"),
         ])
 

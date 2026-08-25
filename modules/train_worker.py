@@ -825,7 +825,7 @@ def _final_one_model(cfg, kind, out_dir):
     with open(out_dir / "model_config.json", "w") as f:
         json.dump(model_config, f, indent=2, default=str)
 
-    log(f"\n✓ Final {kind} model trained on {len(data['y'])} observations "
+    log(f"\nFinal {kind} model trained on {len(data['y'])} observations "
         f"({time.monotonic() - t0:.1f} s)")
     log(f"  Channels: {len(data['channels'])}")
     log(f"  Sequence length: {data['max_length']}")

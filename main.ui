@@ -2840,44 +2840,6 @@ background-repeat: no-repeat;</string>
                         <number>10</number>
                        </property>
                        <item>
-                        <widget class="QLabel" name="title_prepare">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>30</height>
-                          </size>
-                         </property>
-                         <property name="font">
-                          <font>
-                           <family>Segoe UI</family>
-                           <pointsize>10</pointsize>
-                           <weight>50</weight>
-                           <italic>false</italic>
-                           <bold>false</bold>
-                          </font>
-                         </property>
-                         <property name="text">
-                          <string>Prepare</string>
-                         </property>
-                        </widget>
-                       </item>
-                       <item>
-                        <widget class="QLabel" name="subtitle_prepare">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>20</height>
-                          </size>
-                         </property>
-                         <property name="text">
-                          <string>Choose the sensor this session works with, and plan the study it feeds.</string>
-                         </property>
-                         <property name="wordWrap">
-                          <bool>true</bool>
-                         </property>
-                        </widget>
-                       </item>
-                       <item>
                         <widget class="QFrame" name="content_prepare">
                          <property name="frameShape">
                           <enum>QFrame::NoFrame</enum>
@@ -2994,44 +2956,6 @@ background-repeat: no-repeat;</string>
                        <property name="bottomMargin">
                         <number>10</number>
                        </property>
-                       <item>
-                        <widget class="QLabel" name="title_process">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>30</height>
-                          </size>
-                         </property>
-                         <property name="font">
-                          <font>
-                           <family>Segoe UI</family>
-                           <pointsize>10</pointsize>
-                           <weight>50</weight>
-                           <italic>false</italic>
-                           <bold>false</bold>
-                          </font>
-                         </property>
-                         <property name="text">
-                          <string>Process</string>
-                         </property>
-                        </widget>
-                       </item>
-                       <item>
-                        <widget class="QLabel" name="subtitle_process">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>20</height>
-                          </size>
-                         </property>
-                         <property name="text">
-                          <string>Import and process raw sensor data</string>
-                         </property>
-                         <property name="wordWrap">
-                          <bool>true</bool>
-                         </property>
-                        </widget>
-                       </item>
                        <item>
                         <widget class="QFrame" name="content_process">
                          <property name="frameShape">
@@ -3259,6 +3183,26 @@ background-repeat: no-repeat;</string>
                                      </property>
                                      <property name="toolTip">
                                       <string>Treatments planned on Prepare &gt; Study design. Selected sensors are labelled with this treatment's conditions when they are processed.</string>
+                                     </property>
+                                    </widget>
+                                   </item>
+                                   <item>
+                                    <widget class="QLabel" name="lbl_run">
+                                     <property name="text">
+                                      <string>Run</string>
+                                     </property>
+                                    </widget>
+                                   </item>
+                                   <item>
+                                    <widget class="QComboBox" name="cmb_run">
+                                     <property name="minimumSize">
+                                      <size>
+                                       <width>90</width>
+                                       <height>0</height>
+                                      </size>
+                                     </property>
+                                     <property name="toolTip">
+                                      <string>Which run of the selected treatment this batch of sensors came from.</string>
                                      </property>
                                     </widget>
                                    </item>
@@ -4111,44 +4055,6 @@ background-repeat: no-repeat;</string>
                         <number>10</number>
                        </property>
                        <item>
-                        <widget class="QLabel" name="title_validate">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>30</height>
-                          </size>
-                         </property>
-                         <property name="font">
-                          <font>
-                           <family>Segoe UI</family>
-                           <pointsize>10</pointsize>
-                           <weight>50</weight>
-                           <italic>false</italic>
-                           <bold>false</bold>
-                          </font>
-                         </property>
-                         <property name="text">
-                          <string>Validate &amp; segment</string>
-                         </property>
-                        </widget>
-                       </item>
-                       <item>
-                        <widget class="QLabel" name="subtitle_validate">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>20</height>
-                          </size>
-                         </property>
-                         <property name="text">
-                          <string>Review processed signals, flag bad records and cut them into event segments.</string>
-                         </property>
-                         <property name="wordWrap">
-                          <bool>true</bool>
-                         </property>
-                        </widget>
-                       </item>
-                       <item>
                         <widget class="QFrame" name="content_validate">
                          <property name="frameShape">
                           <enum>QFrame::NoFrame</enum>
@@ -4428,44 +4334,6 @@ background-repeat: no-repeat;</string>
                        <property name="bottomMargin">
                         <number>10</number>
                        </property>
-                       <item>
-                        <widget class="QLabel" name="title_dataset">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>30</height>
-                          </size>
-                         </property>
-                         <property name="font">
-                          <font>
-                           <family>Segoe UI</family>
-                           <pointsize>10</pointsize>
-                           <weight>50</weight>
-                           <italic>false</italic>
-                           <bold>false</bold>
-                          </font>
-                         </property>
-                         <property name="text">
-                          <string>Dataset creation</string>
-                         </property>
-                        </widget>
-                       </item>
-                       <item>
-                        <widget class="QLabel" name="subtitle_dataset">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>20</height>
-                          </size>
-                         </property>
-                         <property name="text">
-                          <string>Assemble validated segments into labelled datasets for model development.</string>
-                         </property>
-                         <property name="wordWrap">
-                          <bool>true</bool>
-                         </property>
-                        </widget>
-                       </item>
                        <item>
                         <widget class="QFrame" name="content_dataset">
                          <property name="frameShape">
@@ -4873,44 +4741,6 @@ background-repeat: no-repeat;</string>
                         <number>10</number>
                        </property>
                        <item>
-                        <widget class="QLabel" name="title_ml_training">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>30</height>
-                          </size>
-                         </property>
-                         <property name="font">
-                          <font>
-                           <family>Segoe UI</family>
-                           <pointsize>10</pointsize>
-                           <weight>50</weight>
-                           <italic>false</italic>
-                           <bold>false</bold>
-                          </font>
-                         </property>
-                         <property name="text">
-                          <string>Model training</string>
-                         </property>
-                        </widget>
-                       </item>
-                       <item>
-                        <widget class="QLabel" name="subtitle_ml_training">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>20</height>
-                          </size>
-                         </property>
-                         <property name="text">
-                          <string>Train and version blade-strike models from curated sensor datasets.</string>
-                         </property>
-                         <property name="wordWrap">
-                          <bool>true</bool>
-                         </property>
-                        </widget>
-                       </item>
-                       <item>
                         <widget class="QFrame" name="content_ml_training">
                          <property name="frameShape">
                           <enum>QFrame::NoFrame</enum>
@@ -5060,44 +4890,6 @@ background-repeat: no-repeat;</string>
                         <number>10</number>
                        </property>
                        <item>
-                        <widget class="QLabel" name="title_ml_performance">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>30</height>
-                          </size>
-                         </property>
-                         <property name="font">
-                          <font>
-                           <family>Segoe UI</family>
-                           <pointsize>10</pointsize>
-                           <weight>50</weight>
-                           <italic>false</italic>
-                           <bold>false</bold>
-                          </font>
-                         </property>
-                         <property name="text">
-                          <string>Model performance</string>
-                         </property>
-                        </widget>
-                       </item>
-                       <item>
-                        <widget class="QLabel" name="subtitle_ml_performance">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>20</height>
-                          </size>
-                         </property>
-                         <property name="text">
-                          <string>Evaluate trained models: metrics, confusion matrices, ROC/PR curves and threshold analysis.</string>
-                         </property>
-                         <property name="wordWrap">
-                          <bool>true</bool>
-                         </property>
-                        </widget>
-                       </item>
-                       <item>
                         <widget class="QFrame" name="content_ml_performance">
                          <property name="frameShape">
                           <enum>QFrame::NoFrame</enum>
@@ -5126,44 +4918,6 @@ background-repeat: no-repeat;</string>
                        <property name="bottomMargin">
                         <number>10</number>
                        </property>
-                       <item>
-                        <widget class="QLabel" name="title_ml_prediction">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>30</height>
-                          </size>
-                         </property>
-                         <property name="font">
-                          <font>
-                           <family>Segoe UI</family>
-                           <pointsize>10</pointsize>
-                           <weight>50</weight>
-                           <italic>false</italic>
-                           <bold>false</bold>
-                          </font>
-                         </property>
-                         <property name="text">
-                          <string>Model prediction</string>
-                         </property>
-                        </widget>
-                       </item>
-                       <item>
-                        <widget class="QLabel" name="subtitle_ml_prediction">
-                         <property name="maximumSize">
-                          <size>
-                           <width>16777215</width>
-                           <height>20</height>
-                          </size>
-                         </property>
-                         <property name="text">
-                          <string>Apply a deployed blade-strike model to a curated sensor dataset. Predict, inspect, report.</string>
-                         </property>
-                         <property name="wordWrap">
-                          <bool>true</bool>
-                         </property>
-                        </widget>
-                       </item>
                        <item>
                         <widget class="QFrame" name="content_ml_prediction">
                          <property name="frameShape">
