@@ -387,3 +387,37 @@ def apply_treatment(root, files, treatment, run=None):
 
     df.to_csv(index_path(root), index=False)
     return n
+
+
+def set_row_values(root, file, values: dict) -> int:
+    """Write `values` onto the index row for `file`.
+
+    The generic form of what `apply_treatment` does for a treatment/run
+    batch: mask by file, widen any numeric column to take a string, write,
+    save. Used for one recording at a time (Annotate's annotation entry and
+    manual `bad_sens` flag), so unlike `apply_treatment` it targets a single
+    file rather than a batch. A column `values` names that the index does
+    not have yet is added, defaulting to "" for every other row - annotation
+    columns are not part of `index_schema.SCHEMA`, so they only appear once
+    something is actually recorded.
+
+    Returns the number of rows changed (0 if the file has no index row -
+    this never creates one; a recording must already be processed).
+    """
+    df = read_index(root)
+    if df is None or FILE_COL not in df.columns:
+        return 0
+
+    mask = df[FILE_COL].astype(str) == str(file)
+    n = int(mask.sum())
+    if not n:
+        return 0
+
+    for col, value in values.items():
+        if col not in df.columns:
+            df[col] = ""
+        df[col] = df[col].astype(object)
+        df.loc[mask, col] = value
+
+    df.to_csv(index_path(root), index=False)
+    return n

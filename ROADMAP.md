@@ -1,8 +1,9 @@
 # StrikeWorks roadmap
 
-Outstanding work, in the order agreed. Chunks 1 to 3 are done; 4 is not
-started. Each chunk is independent enough to be picked up cold from this
-file plus the code.
+Outstanding work, in the order agreed. Chunks 1 to 3 are done. Chunk 4's
+sidebar section and its Annotate page are done; Delineation is shelved and
+the Misclassification tool is not started. Each chunk is independent enough
+to be picked up cold from this file plus the code.
 
 ## Done
 
@@ -81,30 +82,62 @@ under, process, and every sensor in it is stamped with the conditions and
 sensor listing (Process inventory and metadata, Validate progress, Dataset
 extraction); the Metadata tab still edits individual sensors.
 
-## Chunk 4 — Annotation & Video Analysis page tree
+## Done (continued)
 
-New top-level section mirroring Machine Learning Analysis.
+**Chunk 4, Stage 1 — Annotation & Video Analysis section**
+A third top-level sidebar section, wired the same way Sensor Processing and
+Machine Learning Analysis are (`main.py:_PANEL_SECTIONS`/`_configure_panel`/
+`openPanel`, one shared `extraTopMenu` frame in `main.ui`). Dataset creation
+relocated here from Sensor Processing (`btn_dataset` moved sub-menu group
+and click handler; the page widget itself never needed to move - stacked-
+widget children are flat, menu structure is a `main.py`-side concept).
+`modules/page_annotate.py` added as the new page's controller.
+
+**Chunk 4, Stage 2 — the Annotate page**
+Half signal plot / half annotation panel, per the roadmap spec below, built
+fresh (not a refactor of `page_validate.py`, which stays under Sensor
+Processing untouched - it is the page slated to grow into Delineation
+later, so the two temporarily overlap in what they do). Reuses
+`page_validate.py`'s already-standalone `_CsvLoadThread`/`_NavViewBox`/
+`_Spinner` (the same reuse `ml_tab_inspect.py` already makes) and its
+channel/exclusion constants, rather than duplicating them.
+
+New modules:
+- `modules/annotation_schema.py` - annotation variables (name, label, known
+  values), JSON-stored like `sensor_config.py`, defaulting to the four
+  columns the old `model_labels.csv` workflow used
+  (`overall_passage_type`, `leading_edge_type`, `other_type`,
+  `concentric_pump_region`), so nothing already reading them changes.
+- `modules/annotation_widgets.py` - `AnnotationValueEditor` (a combo of
+  known values + add-new + a rename/remove dialog) and
+  `VariableListDialog` (add/rename-label/remove whole variables). Not
+  `LevelGrouper` - that groups many observed levels into few classes for
+  training; this is "pick or add one value for one recording," a different
+  enough shape to warrant its own widget. The reused pattern is
+  LevelGrouper's widget-dumb/state-computes split, not the class itself.
+- `deployment_index.set_row_values(root, file, values)` - the generic form
+  of `apply_treatment`'s write (mask by file, widen dtype, save), used for
+  one recording's annotations and its manual `bad_sens` flag alike.
+
+The saved window (nadir position + width) writes to the exact locations
+`page_validate.py` already uses (`processed_sens_data/nadir_window/*.csv`,
+the same index columns), so Dataset creation's segmented mode binds a
+window produced by either page with no changes to `page_dataset.py` -
+verified end to end against the Chunk 3 scratch library.
+
+The video button globs `<library>/video/<stem>_vid_*.mp4` and launches
+`exteneral_software/LosslessCut.exe` via `subprocess.Popen` (disabled with
+no match; a chooser if more than one) - no new dependency, no embedded
+player.
+
+## Chunk 4 — Annotation & Video Analysis page tree (remaining)
 
 ### Page — Annotate
-Built on the Inspect tab as its base (share the code, do not duplicate):
-- half the width is the signal plot, the other half an annotation panel
-- a button opens `LosslessCut.exe` from `exteneral_software/` (note the
-  existing folder spelling) against the matching video in the library's
-  `video/` folder, named `<sensor_file>_vid_*.mp4`
-- the nadir validation / quick segmentation tool moves here from Sensor
-  Processing, so a user can check the video, segment and validate the
-  sensor file, and enter annotations in one pass
-- annotation variables default to the current set but are user
-  add/remove/rename — reuse `LevelGrouper` and the annotation editing
-  built for the misclassification tool rather than a second implementation
-- checkboxes "Show flags"; Bad unticked by default; "Set flag" writes
-  `bad_sens` (default Good) back to the file
-- dataset creation becomes largely redundant here: the global index already
-  exists from Sensor Processing, and segmented windows can be bound as they
-  are produced
+Done - see above.
 
-### Page — Delineation (replaces Sensor Processing's segment page)
-Full time-series delineation:
+### Page — Delineation (shelved)
+`page_validate.py` ("Validate & segment") stays under Sensor Processing,
+unchanged, until this is picked up. Full time-series delineation:
 - 7 windows covering 100% of the time series
 - the start/end grab handles are the trim markers; the user places these
   first and everything else moves relative to them, staying inside the trim
@@ -116,11 +149,16 @@ Full time-series delineation:
 - same "Show flags" / `bad_sens` behaviour as Annotate
 - anticipate the delineation and passage summary from the old Shiny app
 
-### Misclassification tool
+### Misclassification tool (not started)
 Inspect used as the base again: list misclassified files, click through,
 view the signal, change a file's classification. Collected changes are
 written to a copy of the dataset in the input folder suffixed `_corrected`.
-The same annotation-editing component serves the Labels box.
+Reuses Annotate's `AnnotationValueEditor`/`VariableListDialog` for the
+Labels box - already shaped for this, not a second implementation. The
+misclassified-file list and its columns already exist in every deployed
+model package (`BladeStrikeModel_v<v>/{kind}_misclassified.csv`,
+`{kind}_cv_predictions.csv` - see `modules/ml_model_library.py`), so this is
+mostly wiring, not new data plumbing.
 
 ## Deferred — multiple collision detection
 

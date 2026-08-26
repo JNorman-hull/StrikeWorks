@@ -697,6 +697,18 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_8.addWidget(self.btn_ml)
 
+        self.btn_annotation = QPushButton(self.topMenu)
+        self.btn_annotation.setObjectName(u"btn_annotation")
+        sizePolicy.setHeightForWidth(self.btn_annotation.sizePolicy().hasHeightForWidth())
+        self.btn_annotation.setSizePolicy(sizePolicy)
+        self.btn_annotation.setMinimumSize(QSize(0, 45))
+        self.btn_annotation.setFont(font)
+        self.btn_annotation.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_annotation.setLayoutDirection(Qt.LeftToRight)
+        self.btn_annotation.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-movie.png);")
+
+        self.verticalLayout_8.addWidget(self.btn_annotation)
+
         self.btn_widgets = QPushButton(self.topMenu)
         self.btn_widgets.setObjectName(u"btn_widgets")
         sizePolicy.setHeightForWidth(self.btn_widgets.sizePolicy().hasHeightForWidth())
@@ -864,18 +876,6 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_11.addWidget(self.btn_validate)
 
-        self.btn_dataset = QPushButton(self.extraTopMenu)
-        self.btn_dataset.setObjectName(u"btn_dataset")
-        sizePolicy.setHeightForWidth(self.btn_dataset.sizePolicy().hasHeightForWidth())
-        self.btn_dataset.setSizePolicy(sizePolicy)
-        self.btn_dataset.setMinimumSize(QSize(0, 45))
-        self.btn_dataset.setFont(font)
-        self.btn_dataset.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_dataset.setLayoutDirection(Qt.LeftToRight)
-        self.btn_dataset.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-library-add.png);")
-
-        self.verticalLayout_11.addWidget(self.btn_dataset)
-
         self.btn_ml_training = QPushButton(self.extraTopMenu)
         self.btn_ml_training.setObjectName(u"btn_ml_training")
         sizePolicy.setHeightForWidth(self.btn_ml_training.sizePolicy().hasHeightForWidth())
@@ -911,6 +911,30 @@ class Ui_MainWindow(object):
         self.btn_ml_prediction.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-lightbulb.png);")
 
         self.verticalLayout_11.addWidget(self.btn_ml_prediction)
+
+        self.btn_annotate = QPushButton(self.extraTopMenu)
+        self.btn_annotate.setObjectName(u"btn_annotate")
+        sizePolicy.setHeightForWidth(self.btn_annotate.sizePolicy().hasHeightForWidth())
+        self.btn_annotate.setSizePolicy(sizePolicy)
+        self.btn_annotate.setMinimumSize(QSize(0, 45))
+        self.btn_annotate.setFont(font)
+        self.btn_annotate.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_annotate.setLayoutDirection(Qt.LeftToRight)
+        self.btn_annotate.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-tags.png);")
+
+        self.verticalLayout_11.addWidget(self.btn_annotate)
+
+        self.btn_dataset = QPushButton(self.extraTopMenu)
+        self.btn_dataset.setObjectName(u"btn_dataset")
+        sizePolicy.setHeightForWidth(self.btn_dataset.sizePolicy().hasHeightForWidth())
+        self.btn_dataset.setSizePolicy(sizePolicy)
+        self.btn_dataset.setMinimumSize(QSize(0, 45))
+        self.btn_dataset.setFont(font)
+        self.btn_dataset.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_dataset.setLayoutDirection(Qt.LeftToRight)
+        self.btn_dataset.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-library-add.png);")
+
+        self.verticalLayout_11.addWidget(self.btn_dataset)
 
 
         self.verticalLayout_12.addWidget(self.extraTopMenu, 0, Qt.AlignTop)
@@ -2408,6 +2432,20 @@ class Ui_MainWindow(object):
         self.layout_dataset.addWidget(self.content_dataset)
 
         self.stackedWidget.addWidget(self.page_dataset)
+        self.page_annotate = QWidget()
+        self.page_annotate.setObjectName(u"page_annotate")
+        self.layout_annotate = QVBoxLayout(self.page_annotate)
+        self.layout_annotate.setSpacing(10)
+        self.layout_annotate.setObjectName(u"layout_annotate")
+        self.layout_annotate.setContentsMargins(10, 10, 10, 10)
+        self.content_annotate = QFrame(self.page_annotate)
+        self.content_annotate.setObjectName(u"content_annotate")
+        self.content_annotate.setFrameShape(QFrame.NoFrame)
+        self.content_annotate.setFrameShadow(QFrame.Raised)
+
+        self.layout_annotate.addWidget(self.content_annotate)
+
+        self.stackedWidget.addWidget(self.page_annotate)
         self.page_ml_training = QWidget()
         self.page_ml_training.setObjectName(u"page_ml_training")
         self.layout_ml_training = QVBoxLayout(self.page_ml_training)
@@ -2709,6 +2747,7 @@ class Ui_MainWindow(object):
         self.btn_home.setText(QCoreApplication.translate("MainWindow", u"Home", None))
         self.btn_sensor.setText(QCoreApplication.translate("MainWindow", u"Sensor processing", None))
         self.btn_ml.setText(QCoreApplication.translate("MainWindow", u"Machine learning analysis", None))
+        self.btn_annotation.setText(QCoreApplication.translate("MainWindow", u"Annotation & video analysis", None))
         self.btn_widgets.setText(QCoreApplication.translate("MainWindow", u"Widgets", None))
         self.btn_new.setText(QCoreApplication.translate("MainWindow", u"New", None))
         self.btn_save.setText(QCoreApplication.translate("MainWindow", u"Save", None))
@@ -2721,10 +2760,11 @@ class Ui_MainWindow(object):
         self.btn_prepare.setText(QCoreApplication.translate("MainWindow", u"Prepare", None))
         self.btn_process.setText(QCoreApplication.translate("MainWindow", u"Process", None))
         self.btn_validate.setText(QCoreApplication.translate("MainWindow", u"Validate & segment", None))
-        self.btn_dataset.setText(QCoreApplication.translate("MainWindow", u"Dataset creation", None))
         self.btn_ml_training.setText(QCoreApplication.translate("MainWindow", u"Model training", None))
         self.btn_ml_performance.setText(QCoreApplication.translate("MainWindow", u"Model performance", None))
         self.btn_ml_prediction.setText(QCoreApplication.translate("MainWindow", u"Model prediction", None))
+        self.btn_annotate.setText(QCoreApplication.translate("MainWindow", u"Annotate", None))
+        self.btn_dataset.setText(QCoreApplication.translate("MainWindow", u"Dataset creation", None))
         self.titleRightInfo.setText("")
 #if QT_CONFIG(tooltip)
         self.settingsTopBtn.setToolTip(QCoreApplication.translate("MainWindow", u"Settings", None))

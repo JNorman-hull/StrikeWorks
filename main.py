@@ -20,6 +20,7 @@ from modules.page_prepare import PreparePage
 from modules.page_process import ProcessPage
 from modules.page_validate import ValidatePage
 from modules.page_dataset import DatasetPage
+from modules.page_annotate import AnnotationPage
 from modules.page_ml_prediction import MLPredictionPage
 from modules.page_ml_training import MLTrainingPage
 from modules.page_ml_performance import MLPerformancePage
@@ -88,6 +89,11 @@ class MainWindow(QMainWindow):
         self.dataset_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
 
+        # ANNOTATION & VIDEO ANALYSIS PAGES
+        self.annotation_page = AnnotationPage(widgets, self)
+        self.annotation_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
+
         # MACHINE LEARNING ANALYSIS PAGES
         self.ml_prediction_page = MLPredictionPage(widgets, self)
         self.ml_prediction_page.status.connect(
@@ -120,14 +126,17 @@ class MainWindow(QMainWindow):
         widgets.btn_new.clicked.connect(self.buttonClick)
         widgets.btn_save.clicked.connect(self.buttonClick)
 
-        # SLIDE-OUT PANEL (shared by Sensor processing and Machine learning
-        # analysis - the panel contents swap with the active section)
+        # SLIDE-OUT PANEL (shared by Sensor processing, Machine learning
+        # analysis and Annotation & video analysis - the panel contents
+        # swap with the active section)
         self._panel_mode = "sensor"
         self._panel_btn = widgets.btn_sensor
         self._configure_panel("sensor")
 
         widgets.btn_sensor.clicked.connect(lambda: self.openPanel("sensor"))
         widgets.btn_ml.clicked.connect(lambda: self.openPanel("ml"))
+        widgets.btn_annotation.clicked.connect(
+            lambda: self.openPanel("annotation"))
         widgets.extraCloseColumnBtn.clicked.connect(
             lambda: UIFunctions.toggleLeftBox(self, True))
 
@@ -135,12 +144,15 @@ class MainWindow(QMainWindow):
         widgets.btn_prepare.clicked.connect(self.sensorButtonClick)
         widgets.btn_process.clicked.connect(self.sensorButtonClick)
         widgets.btn_validate.clicked.connect(self.sensorButtonClick)
-        widgets.btn_dataset.clicked.connect(self.sensorButtonClick)
 
         # MACHINE LEARNING ANALYSIS SUB-MENU
         widgets.btn_ml_training.clicked.connect(self.mlButtonClick)
         widgets.btn_ml_performance.clicked.connect(self.mlButtonClick)
         widgets.btn_ml_prediction.clicked.connect(self.mlButtonClick)
+
+        # ANNOTATION & VIDEO ANALYSIS SUB-MENU
+        widgets.btn_annotate.clicked.connect(self.annotationButtonClick)
+        widgets.btn_dataset.clicked.connect(self.annotationButtonClick)
 
         # SETTINGS PANEL (right hand box)
         def openCloseRightBox():
@@ -188,21 +200,32 @@ class MainWindow(QMainWindow):
 
 
     # SLIDE-OUT PANEL MODE
-    # One panel serves both Sensor processing and Machine learning analysis:
-    # its header and sub-menu swap with the requested section.
+    # One panel serves Sensor processing, Machine learning analysis and
+    # Annotation & video analysis: its header and sub-menu swap with the
+    # requested section.
     # ///////////////////////////////////////////////////////////////
+    _PANEL_SECTIONS = {
+        "sensor": ("Sensor processing",
+                  ("btn_prepare", "btn_process", "btn_validate"),
+                  "btn_sensor"),
+        "ml": ("Machine learning",
+              ("btn_ml_training", "btn_ml_performance", "btn_ml_prediction"),
+              "btn_ml"),
+        "annotation": ("Annotation & video analysis",
+                      ("btn_annotate", "btn_dataset"),
+                      "btn_annotation"),
+    }
+
     def _configure_panel(self, mode):
-        ml = mode == "ml"
-        widgets.extraLabel.setText(
-            "Machine learning" if ml else "Sensor processing")
-        for b in (widgets.btn_prepare, widgets.btn_process,
-                  widgets.btn_validate, widgets.btn_dataset):
-            b.setVisible(not ml)
-        for b in (widgets.btn_ml_training, widgets.btn_ml_performance,
-                  widgets.btn_ml_prediction):
-            b.setVisible(ml)
+        label, this_section, top_btn = self._PANEL_SECTIONS[mode]
+        widgets.extraLabel.setText(label)
+        all_sub_buttons = {
+            name for _l, names, _b in self._PANEL_SECTIONS.values()
+            for name in names}
+        for name in all_sub_buttons:
+            getattr(widgets, name).setVisible(name in this_section)
         self._panel_mode = mode
-        self._panel_btn = widgets.btn_ml if ml else widgets.btn_sensor
+        self._panel_btn = getattr(widgets, top_btn)
 
     def openPanel(self, mode):
         is_open = widgets.extraLeftBox.width() > 0
@@ -269,7 +292,6 @@ class MainWindow(QMainWindow):
             "btn_prepare":  widgets.page_prepare,
             "btn_process":  widgets.page_process,
             "btn_validate": widgets.page_validate,
-            "btn_dataset":  widgets.page_dataset,
         }
 
         if btnName in pages:
@@ -309,6 +331,32 @@ class MainWindow(QMainWindow):
             # KEEP "MACHINE LEARNING ANALYSIS" AS THE ACTIVE TOP-LEVEL MENU
             UIFunctions.resetStyle(self, "btn_ml")
             self.setSelected(widgets.btn_ml)
+
+        # PRINT BTN NAME
+        print(f'Button "{btnName}" pressed!')
+
+
+    # ANNOTATION & VIDEO ANALYSIS SUB-MENU CLICK
+    # ///////////////////////////////////////////////////////////////
+    def annotationButtonClick(self):
+        btn = self.sender()
+        btnName = btn.objectName()
+
+        pages = {
+            "btn_annotate": widgets.page_annotate,
+            "btn_dataset":  widgets.page_dataset,
+        }
+
+        if btnName in pages:
+            widgets.stackedWidget.setCurrentWidget(pages[btnName])
+
+            # HIGHLIGHT THE SUB-MENU ENTRY
+            UIFunctions.resetPanelStyle(self, btnName)
+            self.setSelected(btn)
+
+            # KEEP "ANNOTATION & VIDEO ANALYSIS" AS THE ACTIVE TOP-LEVEL MENU
+            UIFunctions.resetStyle(self, "btn_annotation")
+            self.setSelected(widgets.btn_annotation)
 
         # PRINT BTN NAME
         print(f'Button "{btnName}" pressed!')

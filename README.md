@@ -10,7 +10,7 @@ Copyright University of Hull (2026)
 
 ## Pages
 
-* **Sensor Processing** — Prepare, Process, Validate & segment, Dataset creation.
+* **Sensor Processing** — Prepare, Process, Validate & segment.
 
   **Prepare** sets the session's sensor and plans the study around it:
   * **Sensor configuration** — the active `sensor_config.SensorConfig`
@@ -46,6 +46,28 @@ Copyright University of Hull (2026)
 
   The index's columns are the app's, in `modules/index_schema.py`, so a
   library needs no `config/index_config.txt` to be processed.
+
+* **Annotation & Video Analysis** — **Annotate**, **Dataset creation**.
+
+  **Annotate** reviews a recording against its signal - and, where a
+  matching clip exists, its video - and records what happened: a nadir
+  window, a manual `bad_sens` flag, and free-form annotation values, all in
+  one pass. Half the width is the signal plot (built on
+  `page_validate.py`'s already-standalone `_CsvLoadThread`/`_NavViewBox`,
+  not a copy of the page itself - `page_validate.py` stays under Sensor
+  Processing, it is what later grows into the Delineation tool), the other
+  half is the annotation panel. Saved windows land in the same
+  `processed_sens_data/nadir_window/` folder Validate & segment uses, so
+  Dataset creation's segmented mode binds them either way. Annotation
+  variables (`modules/annotation_schema.py`) default to the four columns
+  the old `model_labels.csv` workflow used and are user add/remove/rename;
+  values are written straight onto the sensor's row in
+  `global_sensor_index.csv` (`deployment_index.set_row_values`), no
+  separate CSV. The video button globs `<library>/video/<stem>_vid_*.mp4`
+  and launches `exteneral_software/LosslessCut.exe`.
+
+  **Dataset creation** is unchanged - relocated here from Sensor Processing
+  since it belongs with the rest of the annotation/curation workflow.
 
 * **Machine Learning Analysis** — **Model Training**, **Model Performance**
   and **Model Prediction**.
