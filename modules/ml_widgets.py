@@ -229,6 +229,7 @@ class MetaCard(QFrame):
         self._title = QLabel(title)
         self._title.setStyleSheet(
             f"color:{TEXT};font-weight:bold;border:none;")
+        self._title.setVisible(bool(title))
         v.addWidget(self._title)
 
         self._grid = QGridLayout()
@@ -242,6 +243,7 @@ class MetaCard(QFrame):
 
     def set_title(self, title):
         self._title.setText(title)
+        self._title.setVisible(bool(title))
 
     def set_rows(self, rows):
         """rows: [(label, value)] - value None/'' renders as an em dash."""
@@ -437,7 +439,7 @@ SECTION_DEFAULTS = {
     # Model Training - Train
     "Training dataset": True,
     "Dataset filtering": True,
-    "Labels / target — two-stage pipeline": True,
+    "Labelling": True,
     "Dataset preview (file-level metadata)": True,
     "Model input channels": True,
     "Sequence configuration": True,
@@ -453,10 +455,8 @@ SECTION_DEFAULTS = {
     "Performance by strike type / class": True,
     "Performance by treatment": True,
     # Model Training - Deploy
-    "Workflow": True,
-    "Final model": True,
-    "Deployment": True,
-    "Model card (provenance)": True,
+    "Model deployment": True,
+    "Model information": True,
 }
 
 

@@ -415,7 +415,7 @@ class TrainTab:
         gv = QVBoxLayout(grp_run)
         gv.setSpacing(8)
         run_row = QHBoxLayout()
-        self.btn_train = QPushButton("Train Model")
+        self.btn_train = QPushButton("Train model")
         self.btn_train.setMinimumHeight(38)
         self.btn_train.setEnabled(False)
         self.btn_train.clicked.connect(self.state.run_cv)
@@ -963,7 +963,7 @@ class TrainTab:
     def _stop_run_ui(self):
         self._tick.stop()
         self.spinner.stop()
-        self.btn_train.setText("Train Model")
+        self.btn_train.setText("Train model")
         self.btn_train.setEnabled(self.state.ready and not self.state.running)
 
     def _on_finished(self):

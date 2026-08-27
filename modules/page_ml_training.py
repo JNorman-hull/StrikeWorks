@@ -55,6 +55,6 @@ class MLTrainingPage(QObject):
         self.state.deployed.connect(
             lambda _p: self.tab_evaluate._reload_sources())
 
-    # ── cross-tab navigation ─────────────────────────────────────────────────
+    # ── cross-page navigation ────────────────────────────────────────────────
     def goto_evaluate(self):
-        self.ui.tabs_ml_training.setCurrentWidget(self.ui.tab_train_evaluate)
+        self.window.navigate_to("btn_evaluate_train")

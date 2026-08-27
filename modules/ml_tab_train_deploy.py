@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from .ml_train_state import DEFAULT_MODELS_DIR
-from .ml_widgets import ACCENT, BAD, MUTED, OK, TEXT, MetaCard, Spinner, Section, apply_section_defaults
+from .ml_widgets import ACCENT, BAD, MUTED, OK, MetaCard, Spinner, Section, apply_section_defaults
 
 
 class DeployTab:
@@ -53,39 +53,18 @@ class DeployTab:
         v.setContentsMargins(4, 6, 4, 6)
         v.setSpacing(10)
 
-        row = QHBoxLayout()
-        row.setSpacing(10)
+        # ── Model deployment: final model + deploy, merged ──────────────────
+        grp_deploy = Section("Model deployment")
+        dv = QVBoxLayout(grp_deploy)
+        dv.setSpacing(8)
 
-        # ── left column: workflow ───────────────────────────────────────────
-        left = QWidget()
-        lv = QVBoxLayout(left)
-        lv.setContentsMargins(0, 0, 0, 0)
-        lv.setSpacing(10)
-
-        grp_flow = Section("Workflow")
-        fv = QVBoxLayout(grp_flow)
-        lab = QLabel(
-            "<b>Cross-validation model</b> — used to estimate performance.<br/>"
-            "&nbsp;&nbsp;&nbsp;&nbsp;↓ accept<br/>"
-            "<b>Final deployment model</b> — retrained on all available "
-            "training data.<br/>"
-            "&nbsp;&nbsp;&nbsp;&nbsp;↓<br/>"
-            "<b>Deploy</b> — registered in the models folder for Model "
-            "Prediction.")
-        lab.setStyleSheet(f"color:{TEXT};")
-        lab.setTextFormat(Qt.TextFormat.RichText)
-        fv.addWidget(lab)
         self.lbl_flow_status = QLabel("")
         self.lbl_flow_status.setWordWrap(True)
         self.lbl_flow_status.setStyleSheet(f"color:{MUTED};")
-        fv.addWidget(self.lbl_flow_status)
-        lv.addWidget(grp_flow)
+        dv.addWidget(self.lbl_flow_status)
 
-        grp_final = Section("Final model")
-        gv = QVBoxLayout(grp_final)
-        gv.setSpacing(8)
         run_row = QHBoxLayout()
-        self.btn_final = QPushButton("TRAIN FINAL MODEL")
+        self.btn_final = QPushButton("Train final model")
         self.btn_final.setMinimumHeight(36)
         self.btn_final.setEnabled(False)
         self.btn_final.clicked.connect(self._train_final)
@@ -93,18 +72,14 @@ class DeployTab:
         self.spinner.setVisible(False)
         run_row.addWidget(self.btn_final, stretch=1)
         run_row.addWidget(self.spinner)
-        gv.addLayout(run_row)
+        dv.addLayout(run_row)
         self.lbl_final_status = QLabel("")
         self.lbl_final_status.setWordWrap(True)
         self.lbl_final_status.setStyleSheet(f"color:{MUTED};")
-        gv.addWidget(self.lbl_final_status)
+        dv.addWidget(self.lbl_final_status)
         self.card_final = MetaCard("Deployment model")
-        gv.addWidget(self.card_final)
-        lv.addWidget(grp_final)
+        dv.addWidget(self.card_final)
 
-        grp_deploy = Section("Deployment")
-        dv = QVBoxLayout(grp_deploy)
-        dv.setSpacing(8)
         ver_row = QHBoxLayout()
         lab_v = QLabel("Model version")
         lab_v.setStyleSheet(f"color:{MUTED};")
@@ -127,7 +102,7 @@ class DeployTab:
         dir_row.addWidget(btn_dir)
         dv.addLayout(dir_row)
 
-        self.btn_deploy = QPushButton("DEPLOY MODEL")
+        self.btn_deploy = QPushButton("Deploy model")
         self.btn_deploy.setMinimumHeight(36)
         self.btn_deploy.setEnabled(False)
         self.btn_deploy.setStyleSheet(
@@ -142,25 +117,14 @@ class DeployTab:
         self.lbl_deploy_status.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
         dv.addWidget(self.lbl_deploy_status)
-        lv.addWidget(grp_deploy)
-        lv.addStretch()
-        row.addWidget(left, stretch=1)
+        v.addWidget(grp_deploy)
 
-        # ── right column: model card / provenance ───────────────────────────
-        grp_card = Section("Model card (provenance)")
+        # ── model card / provenance ──────────────────────────────────────────
+        grp_card = Section("Model information")
         cv = QVBoxLayout(grp_card)
-        self.card_prov = MetaCard("MODEL PROVENANCE")
+        self.card_prov = MetaCard("")
         cv.addWidget(self.card_prov)
-        lab = QLabel("Written to model_card.json inside the deployment "
-                     "package; shown later in Model Prediction → Predict → "
-                     "Model metadata.")
-        lab.setStyleSheet(f"color:{MUTED};")
-        lab.setWordWrap(True)
-        cv.addWidget(lab)
-        cv.addStretch()
-        row.addWidget(grp_card, stretch=1)
-
-        v.addLayout(row)
+        v.addWidget(grp_card)
         v.addStretch()
 
         apply_section_defaults(frame)

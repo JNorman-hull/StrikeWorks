@@ -62,11 +62,11 @@ class MLPredictionPage(QObject):
             f"Prediction dataset updated from Sensor Processing "
             f"({df['file'].nunique()} recordings).", 5000)
 
-    # ── cross-tab navigation ─────────────────────────────────────────────────
+    # ── cross-page navigation ────────────────────────────────────────────────
     def goto_inspect(self, preset=None):
-        self.ui.tabs_ml_prediction.setCurrentWidget(self.ui.tab_ml_inspect)
+        self.window.navigate_to("btn_inspect_pred")
         if preset:
             self.tab_inspect.apply_filter_preset(preset)
 
     def goto_report(self):
-        self.ui.tabs_ml_prediction.setCurrentWidget(self.ui.tab_ml_report)
+        self.window.navigate_to("btn_report_pred")

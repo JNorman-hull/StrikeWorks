@@ -5,6 +5,10 @@ sidebar section and its Annotate page are done; Delineation is shelved and
 the Misclassification tool is not started. Each chunk is independent enough
 to be picked up cold from this file plus the code.
 
+A dummy library, "Testbed" (single treatment), exists in the libraries
+folder for exercising the whole pipeline end to end during development -
+see "Future — end-to-end pipeline test bed" below.
+
 ## Done
 
 **Chunk 1 — ML analysis polish** (commit `f05f200`)
@@ -94,13 +98,40 @@ widget children are flat, menu structure is a `main.py`-side concept).
 `modules/page_annotate.py` added as the new page's controller.
 
 **Chunk 4, Stage 2 — the Annotate page**
-Half signal plot / half annotation panel, per the roadmap spec below, built
-fresh (not a refactor of `page_validate.py`, which stays under Sensor
-Processing untouched - it is the page slated to grow into Delineation
-later, so the two temporarily overlap in what they do). Reuses
-`page_validate.py`'s already-standalone `_CsvLoadThread`/`_NavViewBox`/
-`_Spinner` (the same reuse `ml_tab_inspect.py` already makes) and its
-channel/exclusion constants, rather than duplicating them.
+Built on Inspect's own shape (`ml_tab_inspect.py`): a fixed-width browser on
+the left (library -> deployment -> treatment -> sensor, mirroring Inspect's
+filter-combo pattern), a detail area filling the rest, itself split half
+signal-plot / half annotation panel. Not a refactor of `page_validate.py`,
+which stays under Sensor Processing untouched - it is the page slated to
+grow into Delineation later, so the two temporarily overlap in what they
+do. Reuses `page_validate.py`'s already-standalone `_CsvLoadThread`/
+`_NavViewBox`/`_Spinner`/`_decimate` (the same reuse `ml_tab_inspect.py`
+already makes) and its channel/exclusion constants, rather than
+duplicating them.
+
+A sensor's deployment and treatment are read from the folder tree, not the
+index: `raw_sens_data/<deployment>/<treatment>/`, matched case-
+insensitively for the `video`/`VIDEO`/etc. folder inside the treatment
+folder (`<stem>_vid_*.mp4`). A deployment or treatment level that is
+missing (raw files sitting one level higher than expected, or no
+deployment folder at all) buckets under "(ungrouped)" rather than being
+dropped. This is deliberately independent of `deployment_index`'s
+index-based deployments/treatments (Prepare > Study design) - a recording
+can be reviewed before any study-design plan exists for it.
+
+The plot is the full nadir/ROI tool ported from `page_validate.py`: left
+axis + optional right axis with a secondary view box, the ROI window
+combo, the draggable nadir line. "Save + next" (not a separate "Set flag"
+button - the flag and annotations commit together with the window) and
+"Reset sensor" are the two actions, mirroring Validate's "save and next" /
+"reset current".
+
+Two checkboxes, Good and Bad, are mutually exclusive and reflect
+`bad_sens` from the library's index (already an `index_schema.py` column);
+changing which is ticked and pressing Save + next writes it back. A "No
+annotations for this sensor" tick lets a sensor through with no annotation
+values entered - without it, Save + next refuses if every annotation
+field is blank, so a sensor is never silently skipped.
 
 New modules:
 - `modules/annotation_schema.py` - annotation variables (name, label, known
@@ -108,13 +139,14 @@ New modules:
   columns the old `model_labels.csv` workflow used
   (`overall_passage_type`, `leading_edge_type`, `other_type`,
   `concentric_pump_region`), so nothing already reading them changes.
-- `modules/annotation_widgets.py` - `AnnotationValueEditor` (a combo of
-  known values + add-new + a rename/remove dialog) and
-  `VariableListDialog` (add/rename-label/remove whole variables). Not
-  `LevelGrouper` - that groups many observed levels into few classes for
-  training; this is "pick or add one value for one recording," a different
-  enough shape to warrant its own widget. The reused pattern is
-  LevelGrouper's widget-dumb/state-computes split, not the class itself.
+- `modules/annotation_widgets.py` - `AnnotationValueEditor` (a value combo
+  + one "Edit…" button covering add/rename/remove of known values, all in
+  one dialog) and `VariableListDialog` (add/rename-label/remove whole
+  variables). Not `LevelGrouper` - that groups many observed levels into
+  few classes for training; this is "pick or add one value for one
+  recording," a different enough shape to warrant its own widget. The
+  reused pattern is LevelGrouper's widget-dumb/state-computes split, not
+  the class itself.
 - `deployment_index.set_row_values(root, file, values)` - the generic form
   of `apply_treatment`'s write (mask by file, widen dtype, save), used for
   one recording's annotations and its manual `bad_sens` flag alike.
@@ -122,43 +154,172 @@ New modules:
 The saved window (nadir position + width) writes to the exact locations
 `page_validate.py` already uses (`processed_sens_data/nadir_window/*.csv`,
 the same index columns), so Dataset creation's segmented mode binds a
-window produced by either page with no changes to `page_dataset.py` -
-verified end to end against the Chunk 3 scratch library.
+window produced by either page unchanged.
 
-The video button globs `<library>/video/<stem>_vid_*.mp4` and launches
-`exteneral_software/LosslessCut.exe` via `subprocess.Popen` (disabled with
-no match; a chooser if more than one) - no new dependency, no embedded
-player.
+Dataset auto-build: "Save + next" also standardises the window (reusing
+`page_dataset.py`'s own `_standardise`/`_META_COLS`, so the shape matches
+what Dataset creation produces) and appends it to
+`processed_sens_data/model_features.csv` - the first save creates the
+file, a later save of the same sensor replaces its block rather than
+duplicating it. Opening a library reads this file back to know which
+sensors are already done (resume), and "next" skips them. Verified end to
+end against a 2-deployment/2-treatment scratch library: deployment and
+treatment filtering, video matching, dual-axis plotting, the annotation
+gate, save/resume, and interoperation with Dataset creation's segmented
+bind all pass.
+
+The video button globs `<deployment>/<treatment>/<video-folder>/
+<stem>_vid_*.mp4` and launches `exteneral_software/LosslessCut.exe` via
+`subprocess.Popen` (disabled with no match; a chooser if more than one) -
+no new dependency, no embedded player.
 
 ## Chunk 4 — Annotation & Video Analysis page tree (remaining)
 
 ### Page — Annotate
-Done - see above.
+Done - see above. Superseded by Chunk 5: the Annotate page gains a
+Reporting tab and Delineation/Misclassification are now tasks 6/3 below,
+in the new section layout, not standalone additions to the old tree.
 
-### Page — Delineation (shelved)
-`page_validate.py` ("Validate & segment") stays under Sensor Processing,
-unchanged, until this is picked up. Full time-series delineation:
-- 7 windows covering 100% of the time series
-- the start/end grab handles are the trim markers; the user places these
-  first and everything else moves relative to them, staying inside the trim
-- the nadir window is always centred on the nadir and keeps its fixed-width
-  behaviour
-- pre- and post-nadir windows are fixed durations, default 300 ms, same
-  options as the nadir window
-- the remaining handles move ROI 1/2 and 6/7
-- same "Show flags" / `bad_sens` behaviour as Annotate
-- anticipate the delineation and passage summary from the old Shiny app
+## Chunk 5 — app-wide restructure (in progress)
 
-### Misclassification tool (not started)
-Inspect used as the base again: list misclassified files, click through,
-view the signal, change a file's classification. Collected changes are
-written to a copy of the dataset in the input folder suffixed `_corrected`.
-Reuses Annotate's `AnnotationValueEditor`/`VariableListDialog` for the
-Labels box - already shaped for this, not a second implementation. The
-misclassified-file list and its columns already exist in every deployed
-model package (`BladeStrikeModel_v<v>/{kind}_misclassified.csv`,
-`{kind}_cv_predictions.csv` - see `modules/ml_model_library.py`), so this is
-mostly wiring, not new data plumbing.
+A full information-architecture pass: new top-level sections, several
+current tabs promoted to their own sidebar entries, and a handful of
+genuinely new pages (blade strike modelling, misclassification, export
+animations, biological interpretation, final reporting, data analysis).
+Agreed 2026-08-27; worked in the seven-task order below, checking in before
+task 4 and wherever else a design call is needed.
+
+**Navigation mechanics** - `main.ui`'s sidebar is one shared slide-out panel
+(`extraLeftBox`/`extraTopMenu`) whose sub-button list swaps per section via
+`main.py`'s `_PANEL_SECTIONS` dict, and every top-level page is a child of
+one `stackedWidget`. Three of today's "pages" are actually a `QTabWidget`
+wearing a page's clothes (`page_prepare`/`tabs_prepare`,
+`page_ml_training`/`tabs_ml_training`, `page_ml_prediction`/
+`tabs_ml_prediction`) - Prepare's two tabs, Train/Evaluate/Deploy, and
+Predict/Inspect/Report. Promoting those tabs to sidebar entries does **not**
+relocate their content frames (`frame_prepare_sensor`, `frame_train_evaluate`,
+`frame_ml_inspect`, etc. all stay exactly where they are in `main.ui`, so
+every existing controller keeps working unmodified) - instead each tab's
+bar is hidden (`tabBar().hide()`) and a new sidebar sub-button drives
+`setCurrentIndex()` on the same tab widget alongside the usual
+`stackedWidget` switch. Cosmetic renames (Segmentation, Raw data
+processing, Model reporting, ...) are text-only: `objectName`s are left
+alone so no Python needs to change for a label change. The three
+near-identical `sensorButtonClick`/`mlButtonClick`/`annotationButtonClick`
+methods are collapsed into one data-driven dispatch, since six sections now
+share the pattern instead of three. New empty pages share one stub-page
+builder (title + "not built yet" body) rather than one file each.
+
+**Target sidebar** (submenu order as given):
+- Home - unchanged.
+- **Mathematical Blade Strike Modelling** (new) - Calculator, Sensitivity
+  analysis, Reporting (also writes a JSON of the blade strike calcs for
+  Setup and deploy to read).
+- **Setup and deploy** (new; absorbs Prepare) - Study design (95% CI
+  calculator, planned-sensor-count input, optional blade-strike-model
+  result input - may cover only one treatment), Sensor configuration
+  (unchanged content, relabelled), Initiate deployment (new - save the plan,
+  write a basic summary report). Open question, revisit when this task
+  starts: does the global index need a new flag marking which sensor
+  configuration a deployment was locked to, so downstream stages can follow
+  it automatically?
+- **Sensor processing** (kept) - Raw data processing (current Process +
+  Metadata tabs, unchanged), Segmentation (renamed from "Validate &
+  segment"; this *is* the shelved Delineation tool - see task 6), Data
+  analysis (new, empty until task 7 - passage duration, time-series
+  normalisation, barotrauma metrics, acceleration peak finding, ported from
+  the old Shiny app's framework).
+- **Validate and annotate** (renamed from "Annotation & video analysis") -
+  Annotate (gains a Reporting tab - annotation summary rebuilt live from
+  what's on the page, becomes a dataset report once sensors are processed/
+  validated/annotated), Export animations (new - see task 4), Advanced
+  dataset options (renamed from "Dataset creation").
+- **Model training** (new; replaces half of "Machine learning analysis") -
+  Train, Evaluate, Deploy (promoted tabs, unchanged content), Misclassification
+  analysis (new - see task 3), Model reporting (renamed from "Model
+  performance", moved in from the old ML section unchanged).
+- **Model prediction** (new; the other half of "Machine learning analysis")
+  - Predict, Inspect, Report (promoted tabs, unchanged content), Biological
+  interpretation (new - see task 5), Final Reporting (new).
+
+Removed: the PyDracula template's dummy Widgets/New pages and the unwired
+Save/Exit sidebar buttons (real save lives on each page already - "Save
+sensor", "Save deployment plan", Annotate's "Save + next"; real exit is the
+custom title bar's close button).
+
+**Cross-app unification, applies throughout** - one save/export/report
+pattern reused everywhere a page produces a report (BSM Reporting, Annotate
+Reporting, deployment summary, model reporting, final reporting); one
+metadata-card pattern (`MetaCard`, already shared); one plot-styling pass
+across every live pyqtgraph/matplotlib panel (task 2) rather than
+per-page tweaks.
+
+**Task order:**
+1. Page structure - done (commit pending). Every new section/button/page
+   from the target sidebar above is wired and navigable: `main.ui` gained 4
+   new top-level buttons, 14 new sub-menu buttons (8 reused with a text-only
+   rename - `objectName`s untouched), and 9 new stub pages (via one script
+   doing additive-only text surgery, anchored on a single unmodified read so
+   line-number drift couldn't corrupt it - see
+   `restructure_ui.py` in a past session's scratchpad if this needs
+   repeating). Train/Evaluate/Deploy, Predict/Inspect/Report and Sensor
+   configuration/Study design still live in their original `QTabWidget`s
+   with content untouched; only their tab bars are hidden
+   (`main.py`'s startup block) and new sidebar buttons drive
+   `setCurrentIndex()` via `_SUBMENU_TARGETS`. The three old
+   `sensorButtonClick`/`mlButtonClick`/`annotationButtonClick` methods
+   collapsed into one `submenuButtonClick`/`navigate_to` dispatch keyed by
+   `_SUBMENU_TARGETS`; cross-page callbacks (`goto_evaluate`, `goto_inspect`,
+   `goto_report`) now go through `window.navigate_to(...)` instead of
+   touching a tab widget directly. Found and fixed one navigation bug along
+   the way: `navigate_to` needs to swap the *panel-ownership* highlight
+   (`Settings.BTN_LEFT_BOX_COLOR`, applied outside `setSelected`/
+   `resetStyle`) when it crosses sections, or the previous section's top
+   button stays visually "stuck" selected - factored into
+   `_swap_panel_ownership()`, shared with `openPanel`. New stub pages use
+   one shared builder (`modules/page_stub.py`) rather than a file each.
+   Removed the PyDracula template's dummy Widgets/New pages and dead Save/
+   Exit buttons, including the now-orphaned `tableWidget` setup line in
+   `main.py`. Verified headlessly: every button resolves, every
+   `navigate_to`/`openPanel` call is error-free, and screenshots confirm
+   correct submenu ordering and content in every section.
+2. The smaller requested changes: *(next up)* Annotate's Reporting tab content, the
+   live-plot margin fix + PNG(300dpi)/SVG export menu (size in cm, default
+   16x10, white bg/black axis/black pressure/red higacc) applied to every
+   live plot, and any other small items called out inline above.
+3. Misclassification analysis (Model training) - see the old Chunk 4 note
+   above for the approach (Inspect-based, `_corrected` dataset copy, reuses
+   `AnnotationValueEditor`/`VariableListDialog`, model-package
+   misclassified/cv_predictions CSVs already exist).
+4. Export animations page - **check in before starting.** Same skeleton as
+   Annotate (library, sensor/video list, Signal/Notes-shaped boxes) but the
+   annotations box becomes the video-animator's text-field inputs and the
+   notes box becomes its code/process options (frame sync, labels, ...);
+   single sensor only for now; Process + Save buttons; processed video plays
+   (play/pause) in the Signal container; output goes to a library-independent
+   `processed_video/` folder that the page also reads to list what already
+   exists. Ports `video_sync.py`.
+5. Blade strike modelling port, and finalise Model prediction - bring the
+   mathematical model over from the old MVP/Shiny app (Calculator,
+   Sensitivity analysis, Reporting/JSON handoff), then Biological
+   interpretation: compare data-driven vs. mathematical blade-strike
+   predictions per treatment, generate mortality/survival estimates from
+   the BSM output's empirical regressions with a user-adjustable critical
+   mortality threshold, support multiple species (each its own regression +
+   critical velocity), and the simple strike/no-strike proportion input.
+   Longer-term (not this pass): replace the regression's assumed strike
+   distribution with the concentric strike locations the blade-strike model
+   predicts, for direct x%-mortality-from-x%-strikes-in-region-x estimates.
+6. Delineation tool (Segmentation page) - the design already agreed in the
+   old Chunk 4 note: 7 windows covering the full time series, start/end
+   trim handles placed first with everything else relative to them, nadir
+   window fixed-width and centred, pre-/post-nadir windows fixed duration
+   (default 300 ms), ROI 1/2 and 6/7 the remaining handles, same bad-sensor
+   flag behaviour as Annotate, anticipates the old Shiny app's delineation
+   and passage summary.
+7. Data analysis page (Sensor processing) - passage durations, time-series
+   normalisation, barotrauma metrics, acceleration peak finding, per the
+   old Shiny app's framework.
 
 ## Deferred — multiple collision detection
 
@@ -182,3 +343,23 @@ between events; and the deployed `optimal_threshold` was tuned on roughly
 balanced centred windows, whereas scanning is overwhelmingly negative, so
 precision will drop and the threshold needs re-tuning against passages with
 known multiple collisions.
+
+## Future — end-to-end pipeline test bed
+
+Not started. A repeatable full run through every stage, against the
+"Testbed" dummy library (single treatment, small enough to reprocess from
+raw on every run):
+
+  build a fresh index (Prepare) -> process sensors -> validate and
+  annotate sensors (Annotate) -> report -> train model -> evaluate ->
+  misclassification analysis -> retrain -> report -> deploy -> predict ->
+  report
+
+The point is a single library that can be blown away and rebuilt from raw
+files each time something upstream changes, so a change to (say) the
+sensor parser or the index schema surfaces its downstream breakage
+immediately rather than being caught later by hand. Likely shape: a script
+or a "Run full pipeline" dev action that drives each page's existing
+worker/state objects in sequence against the Testbed library, asserting
+each stage's expected output exists before moving to the next - not a new
+UI, mostly wiring together what already exists per page.

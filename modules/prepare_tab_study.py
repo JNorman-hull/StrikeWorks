@@ -62,7 +62,21 @@ class _TreatmentRow(QFrame):
             f"{{background-color:#1b1e23;border:1px solid {BORDER};"
             f"border-radius:4px;padding:3px 6px;color:{TEXT};}}"
             f"#treatmentRow QLineEdit:focus, #treatmentRow QSpinBox:focus"
-            f"{{border:1px solid {ACCENT};}}")
+            f"{{border:1px solid {ACCENT};}}"
+            # Once a stylesheet touches QSpinBox's box model (border/padding
+            # above), Qt stops drawing the native up/down buttons unless the
+            # sub-controls are styled explicitly too - otherwise they, and
+            # the Up/Down arrow keys that rely on the same control, go dead.
+            "#treatmentRow QSpinBox::up-button, "
+            "#treatmentRow QSpinBox::down-button{width:14px;}"
+            "#treatmentRow QSpinBox::up-arrow{"
+            "image:none;border-left:3px solid transparent;"
+            "border-right:3px solid transparent;border-bottom:4px solid "
+            f"{TEXT};width:0;height:0;}}"
+            "#treatmentRow QSpinBox::down-arrow{"
+            "image:none;border-left:3px solid transparent;"
+            "border-right:3px solid transparent;border-top:4px solid "
+            f"{TEXT};width:0;height:0;}}")
 
         values = values or {}
         grid = QGridLayout(self)

@@ -174,8 +174,19 @@ class EvaluateTab:
         self.tbl_tx.setMinimumHeight(160)
         xv.addWidget(self.tbl_tx)
         split3.addWidget(grp_tx)
+
+        grp_report = Section("Model report")
+        rv = QVBoxLayout(grp_report)
+        self.btn_report2 = QPushButton("Generate model report")
+        self.btn_report2.setMinimumHeight(36)
+        self.btn_report2.clicked.connect(self._export_report)
+        rv.addWidget(self.btn_report2)
+        rv.addStretch()
+        split3.addWidget(grp_report)
+
         split3.setStretchFactor(0, 1)
-        split3.setStretchFactor(1, 2)
+        split3.setStretchFactor(1, 1)
+        split3.setStretchFactor(2, 1)
         v.addWidget(split3)
         v.addStretch()
 
@@ -244,6 +255,7 @@ class EvaluateTab:
         self._entry = (self._entries[idx]
                        if 0 <= idx < len(self._entries) else None)
         self.btn_report.setEnabled(self._entry is not None)
+        self.btn_report2.setEnabled(self._entry is not None)
         self._refresh()
 
     # ── refresh ──────────────────────────────────────────────────────────────

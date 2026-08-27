@@ -49,14 +49,8 @@ class AnnotationValueEditor(QWidget):
         self.cmb.currentIndexChanged.connect(self._on_changed)
         row.addWidget(self.cmb, stretch=1)
 
-        self.btn_add = QPushButton("+")
-        self.btn_add.setFixedWidth(28)
-        self.btn_add.setToolTip("Add a new value")
-        self.btn_add.clicked.connect(self._add_value)
-        row.addWidget(self.btn_add)
-
         self.btn_edit = QPushButton("Edit…")
-        self.btn_edit.setToolTip("Rename or remove known values")
+        self.btn_edit.setToolTip("Add, rename or remove known values")
         self.btn_edit.clicked.connect(self._edit_values)
         row.addWidget(self.btn_edit)
 
@@ -99,21 +93,7 @@ class AnnotationValueEditor(QWidget):
     def _on_changed(self, _idx):
         self.changed.emit(self.current())
 
-    # ── add / manage ─────────────────────────────────────────────────────────
-    def _add_value(self):
-        var = asch.get(self.var_name)
-        label = var.label if var else self.var_name
-        text, ok = QInputDialog.getText(
-            self, f"Add value — {label}", "New value:")
-        text = text.strip()
-        if not ok or not text:
-            return
-        asch.add_value(self.var_name, text)
-        self.refresh(keep_current=False)
-        idx = self.cmb.findData(text)
-        if idx >= 0:
-            self.cmb.setCurrentIndex(idx)
-
+    # ── manage ───────────────────────────────────────────────────────────────
     def _edit_values(self):
         dlg = _ValueListDialog(self.var_name, self.window())
         dlg.exec()
@@ -139,12 +119,16 @@ class _ValueListDialog(QDialog):
         v.addWidget(note)
 
         self.list = QListWidget()
-        for value in (var.values if var else []):
-            item = QListWidgetItem(value)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
-            self.list.addItem(item)
+        self._reload()
         self.list.itemChanged.connect(self._on_renamed)
         v.addWidget(self.list, stretch=1)
+
+        add_row = QHBoxLayout()
+        btn_add = QPushButton("Add value…")
+        btn_add.clicked.connect(self._add_value)
+        add_row.addWidget(btn_add)
+        add_row.addStretch()
+        v.addLayout(add_row)
 
         btn_row = QHBoxLayout()
         btn_remove = QPushButton("Remove selected")
@@ -156,8 +140,28 @@ class _ValueListDialog(QDialog):
         btn_row.addWidget(btn_close)
         v.addLayout(btn_row)
 
+    def _reload(self):
+        self.list.blockSignals(True)
+        self.list.clear()
+        var = asch.get(self.var_name)
+        for value in (var.values if var else []):
+            item = QListWidgetItem(value)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+            self.list.addItem(item)
+        self.list.blockSignals(False)
         self._prior_text = {id(self.list.item(i)): self.list.item(i).text()
                             for i in range(self.list.count())}
+
+    def _add_value(self):
+        var = asch.get(self.var_name)
+        label = var.label if var else self.var_name
+        text, ok = QInputDialog.getText(
+            self, f"Add value — {label}", "New value:")
+        text = text.strip()
+        if not ok or not text:
+            return
+        asch.add_value(self.var_name, text)
+        self._reload()
 
     def _on_renamed(self, item):
         old = self._prior_text.get(id(item), item.text())
@@ -182,7 +186,7 @@ class _ValueListDialog(QDialog):
             return
         for item in items:
             asch.remove_value(self.var_name, item.text())
-            self.list.takeItem(self.list.row(item))
+        self._reload()
 
 
 class VariableListDialog(QDialog):
