@@ -215,14 +215,14 @@ builder (title + "not built yet" body) rather than one file each.
 - **Mathematical Blade Strike Modelling** (new) - Calculator, Sensitivity
   analysis, Reporting (also writes a JSON of the blade strike calcs for
   Setup and deploy to read).
-- **Setup and deploy** (new; absorbs Prepare) - Study design (95% CI
-  calculator, planned-sensor-count input, optional blade-strike-model
-  result input - may cover only one treatment), Sensor configuration
-  (unchanged content, relabelled), Initiate deployment (new - save the plan,
-  write a basic summary report). Open question, revisit when this task
-  starts: does the global index need a new flag marking which sensor
-  configuration a deployment was locked to, so downstream stages can follow
-  it automatically?
+- **Setup and deploy** (new; absorbs Prepare) - order corrected 2026-08-27:
+  Sensor configuration (unchanged content, relabelled), Study design (now a
+  sampling-precision calculator - see the task 1 follow-up below), Create
+  and edit deployment (renamed from "Initiate deployment" - now also owns
+  the deployment/treatment plan itself, see the same follow-up). Open
+  question, still unresolved: does the global index need a new flag marking
+  which sensor configuration a deployment was locked to, so downstream
+  stages can follow it automatically?
 - **Sensor processing** (kept) - Raw data processing (current Process +
   Metadata tabs, unchanged), Segmentation (renamed from "Validate &
   segment"; this *is* the shelved Delineation tool - see task 6), Data
@@ -310,6 +310,40 @@ per-page tweaks.
    only exist as a folder on disk, or a deployment built here and nowhere
    else would vanish from its own picker on next load (caught by an
    idempotency test, fixed).
+
+   Follow-up (2026-08-27): Setup and deploy's page order and division of
+   labour was corrected. Sidebar order is now Sensor configuration, Study
+   design, Create and edit deployment - fixed by deleting a runtime
+   reorder call added in task 1 (`main.py`'s `move_before("btn_study_design",
+   "btn_prepare")`); removing it lets the buttons fall back to their natural
+   layout position, which already matched the wanted order once
+   `btn_initiate_deployment` and `btn_study_design` were both appended
+   after `btn_prepare`. Study design's old deployment/treatment plan form
+   moved wholesale to Create and edit deployment (`InitiateDeploymentPage`,
+   `_TreatmentRow` moved in from the now-deleted `prepare_tab_study.py`):
+   the deployment-fields form (site, pump/turbine model, type) plus full
+   per-treatment conditions (head, flow, BEP, RPM, runs) sit alongside the
+   library picker and folder-builder already there, and "Save deployment
+   plan" now does both jobs in one action - `deployment_index.save_plan()`
+   writes the index rows *and* the same call builds
+   `raw_sens_data/<deployment>/<treatment>/VIDEO/`, idempotently. Study
+   design itself was rebuilt as a small sampling-precision calculator
+   (`modules/wilson_calc.py` + `modules/prepare_tab_precision.py`,
+   `PrecisionCalcTab`): given a hypothesised strike rate and a planned
+   sample size it shows the Wilson score interval that size would achieve
+   (same formula the old MVP app's `bsm/core/model.py` uses for its
+   observed-proportion CI, `wilson_lo`/`wilson_hi` - lifted out as a
+   standalone function since planning uses a hypothesised rate rather than
+   an observed one) plus a small table at half/double/quadruple that N, to
+   make the sample-size-vs-precision tradeoff concrete without requiring
+   the user to understand the statistics. Deliberately one simple tool for
+   now, not a full planning suite; a later hook (not built) would let the
+   expected rate come from a treatment's Blade Strike Modelling output
+   instead of a typed guess, once task 5 exists. Verified end to end
+   against a scratch library: saved a deployment with full treatment
+   conditions, confirmed the index rows and folder tree both landed
+   correctly, and confirmed re-selecting the deployment reads the same
+   conditions back.
 2. The smaller requested changes - done (2026-08-27).
 
    Live-plot margins + export: exactly three live pyqtgraph plots exist
@@ -358,10 +392,40 @@ per-page tweaks.
    Sensor config global-index flag (from task 1's Setup and deploy note) is
    still an open question, deferred to whenever Setup and deploy's own
    build starts - not blocking anything so far.
-3. Misclassification analysis (Model training) - see the old Chunk 4 note
-   above for the approach (Inspect-based, `_corrected` dataset copy, reuses
-   `AnnotationValueEditor`/`VariableListDialog`, model-package
-   misclassified/cv_predictions CSVs already exist).
+3. Misclassification analysis (Model training) - done (2026-08-27),
+   `modules/page_misclassification.py`. Built as planned in the old Chunk 4
+   note: Inspect-based, `AnnotationValueEditor`/`VariableListDialog` reused
+   verbatim for the Labels box, corrections written to a `_corrected` copy
+   of the training dataset. The model-package misclassified/cv_predictions
+   data existed already (`ml_model_library.discover_models()`); what didn't
+   exist was a path to the actual *signal* for a misclassified file, since
+   a deployed model ships no training data of its own - solved via
+   `train_config.json` in the `BladeStrikeModel_v<v>/` package, which
+   `ml_train_state.build_config()` already writes with the exact dataset
+   path training used and `ml_model_library.export_model_report()` already
+   copies into every deployment; a session-trained model reads
+   `TrainingState.dataset_df` directly instead (no re-read needed). The
+   long-format training CSV carries one row per (file, time_s), with every
+   annotation column constant across a file's rows, so a correction is a
+   masked update exactly like `deployment_index.set_row_values` - confirmed
+   against the real 226k-row dataset before relying on it. Annotation
+   columns are looked up under both StrikeWorks' own `annotation_schema`
+   names and the MVP-legacy names the training pipeline also recognises
+   (`overall_passage_type`/`passage_type`, `leading_edge_type`/
+   `leading_type` - mirrors `ml_state.ANNOTATION_COLUMNS` and
+   `ml_train_state.leading_type_column()`, centralised into one
+   `_resolve_column()` rather than left as scattered tuples). Leaving the
+   page after a correction - whichever button was actually clicked -
+   is redirected by `MainWindow.navigate_to()` to Model training > Train
+   with the corrected dataset already loaded, after a notice that the
+   model should be retrained before its next deployment.  Verified against
+   the real deployed models (multiclass1: 99 misclassified of 247; binary1:
+   565 cv predictions) - model discovery, the misclassified list, signal
+   loading with the model's actual channel set, and Labels reading the
+   file's real annotation values (confirmed against
+   `Pumpflow_2024_and_2026_datatset_.csv`) all check out; the save/
+   leave-redirect path was verified against a small scratch dataset to
+   avoid writing into real project data during testing.
 4. Export animations page - **check in before starting.** Same skeleton as
    Annotate (library, sensor/video list, Signal/Notes-shaped boxes) but the
    annotations box becomes the video-animator's text-field inputs and the

@@ -1641,7 +1641,7 @@ Button */
                    <string notr="true">background-image: url(:/icons/images/icons/cil-check-circle.png);</string>
                   </property>
                   <property name="text">
-                   <string>Initiate deployment</string>
+                   <string>Create and edit deployment</string>
                   </property>
                  </widget>
                 </item>

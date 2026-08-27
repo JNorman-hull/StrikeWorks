@@ -4,45 +4,54 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Controller for the Initiate deployment page (Setup and deploy).
+"""Controller for Create and edit deployment (Setup and deploy).
 
-The last step before fieldwork: pick or create the library, name the
-deployment and its treatments, and build the `raw_sens_data/<deployment>/
-<treatment>/VIDEO/` folder tree Annotate and Process already expect - so
-once sensors and video come back from the field, they only need dragging
-into the right folder, nothing needs creating by hand.
+Object names (`page_initiate_deployment`, `btn_initiate_deployment`, this
+module's filename) still say "initiate deployment" - that was this page's
+working name before it absorbed Study design's planning form; renaming the
+object graph for a label change isn't worth the main.ui/main.py churn (see
+ROADMAP.md Chunk 5's "renames are text-only" note), so only the sidebar
+button text says "Create and edit deployment" now.
+
+One-stop shop for getting a deployment ready for fieldwork: pick or create
+the library, describe the deployment (site, machine) and its treatments
+(head, flow, BEP, RPM, runs - the same fields Study design's plan form used
+to collect, now here instead), and "Save deployment plan" both writes that
+plan into `global_sensor_index.csv` (via `deployment_index.save_plan`,
+exactly what the old Study design tab did) *and* builds the
+`raw_sens_data/<deployment>/<treatment>/VIDEO/` folder tree Annotate and
+Process already expect - so once sensors and video come back from the
+field, they only need dragging into the right folder. Saving is
+idempotent: revisiting an existing deployment, or adding a new one, never
+disturbs files already dropped into earlier folders.
 
 Deliberately not the same "root + combo of existing subfolders" library
-picker every other page uses (`page_annotate.py`, `prepare_tab_study.py`,
-...): this page's job is to *create* a library, not just pick among ones
-that already exist, so a single native folder dialog - which lets the user
-browse anywhere (any drive, a network path) and make a new folder inline,
-exactly like Explorer - covers both create and select in one step.
+picker every other page uses (`page_annotate.py`, ...): this page's job
+includes *creating* a library, not just picking among ones that already
+exist, so a single native folder dialog - which lets the user browse
+anywhere (any drive, a network path) and make a new folder inline, exactly
+like Explorer - covers both create and select in one step.
 
-Treatment names entered here are for folder-naming only; nothing is written
-to `global_sensor_index.csv` (that stays Study design's job, since it needs
-the full set of conditions - head, flow, BEP, RPM - this page doesn't
-collect). When the chosen deployment already has a plan there, its
-treatment names are read back with `deployment_index.treatments()` so the
-folders line up with it automatically; a deployment with no plan yet still
-works, so folders can exist before Study design's numbers are finalised.
-Building is idempotent (`mkdir(..., exist_ok=True)`), so re-running it for
-an existing deployment - or adding a new one - never disturbs files already
-dropped into earlier folders.
+A deployment can exist purely as a folder tree with no index plan yet (or
+vice versa - an old library's sensors carry conditions but were never
+planned here): `_all_deployments()` merges both so neither location loses
+track of what the other already has.
 """
 from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
-    QPushButton, QSizePolicy, QVBoxLayout, QWidget,
+    QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
+    QLineEdit, QMessageBox, QPushButton, QSizePolicy, QSpinBox, QVBoxLayout,
+    QWidget,
 )
 
 from . import deployment_index as di
 from . import settings
 from .ml_widgets import (
-    ACCENT, MUTED, OK, TEXT, WARN, MetaCard, Section, apply_section_defaults,
+    ACCENT, BORDER, CARD_BG, MUTED, OK, TEXT, WARN, MetaCard, Section,
+    apply_section_defaults,
 )
 from .page_annotate import _RAW_DIR, _VIDEO_FOLDER_NAME
 
@@ -50,30 +59,93 @@ _NEW_DEPLOYMENT = "__new__"
 _SUMMARY_NAME = "deployment_summary.txt"
 
 
-class _TreatmentNameRow(QWidget):
-    """One treatment name field, for folder-naming purposes only."""
+class _TreatmentRow(QFrame):
+    """One treatment: its name, the conditions it runs at, and its runs.
 
-    def __init__(self, name="", on_change=None, on_remove=None, parent=None):
+    Moved here from the retired `prepare_tab_study.py` - this page is now
+    the only place a treatment's full conditions are entered.
+    """
+
+    def __init__(self, values=None, on_change=None, on_remove=None,
+                 parent=None):
         super().__init__(parent)
-        h = QHBoxLayout(self)
-        h.setContentsMargins(0, 0, 0, 0)
-        h.setSpacing(6)
-        self.edit = QLineEdit(name)
-        self.edit.setPlaceholderText("Treatment name")
+        self.setObjectName("treatmentRow")
+        self.setStyleSheet(
+            f"#treatmentRow{{background-color:{CARD_BG};border-radius:6px;"
+            f"border:1px solid {BORDER};}}"
+            f"#treatmentRow QLineEdit, #treatmentRow QSpinBox"
+            f"{{background-color:#1b1e23;border:1px solid {BORDER};"
+            f"border-radius:4px;padding:3px 6px;color:{TEXT};}}"
+            f"#treatmentRow QLineEdit:focus, #treatmentRow QSpinBox:focus"
+            f"{{border:1px solid {ACCENT};}}"
+            "#treatmentRow QSpinBox::up-button, "
+            "#treatmentRow QSpinBox::down-button{width:14px;}"
+            "#treatmentRow QSpinBox::up-arrow{"
+            "image:none;border-left:3px solid transparent;"
+            "border-right:3px solid transparent;border-bottom:4px solid "
+            f"{TEXT};width:0;height:0;}}"
+            "#treatmentRow QSpinBox::down-arrow{"
+            "image:none;border-left:3px solid transparent;"
+            "border-right:3px solid transparent;border-top:4px solid "
+            f"{TEXT};width:0;height:0;}}")
+
+        values = values or {}
+        grid = QGridLayout(self)
+        grid.setContentsMargins(10, 8, 10, 8)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(2)
+
+        self.edits = {}
+        for col, (column, label) in enumerate(di.TREATMENT_FIELDS):
+            grid.addWidget(self._caption(label), 0, col)
+            edit = QLineEdit(str(values.get(column, "")))
+            edit.setMinimumWidth(90)
+            edit.setMaximumWidth(150 if column == di.TREATMENT_COL else 110)
+            if on_change is not None:
+                edit.textEdited.connect(lambda _t: on_change())
+            grid.addWidget(edit, 1, col)
+            self.edits[column] = edit
+
+        runs_col = len(di.TREATMENT_FIELDS)
+        grid.addWidget(self._caption("Number of runs"), 0, runs_col)
+        self.spin_runs = QSpinBox()
+        self.spin_runs.setRange(1, di.MAX_RUNS)
+        self.spin_runs.setValue(int(values.get("runs", 1) or 1))
+        self.spin_runs.setToolTip("Runs can be assigned during processing.")
+        self.spin_runs.setMaximumWidth(80)
         if on_change is not None:
-            self.edit.textEdited.connect(lambda _t: on_change())
-        h.addWidget(self.edit, stretch=1)
+            self.spin_runs.valueChanged.connect(lambda _v: on_change())
+        grid.addWidget(self.spin_runs, 1, runs_col)
+
+        last = runs_col + 1
         self.btn_remove = QPushButton("Remove")
+        self.btn_remove.setToolTip("Remove this treatment")
         if on_remove is not None:
             self.btn_remove.clicked.connect(lambda: on_remove(self))
-        h.addWidget(self.btn_remove)
+        grid.addWidget(QLabel(""), 0, last)
+        grid.addWidget(self.btn_remove, 1, last)
+        grid.setColumnStretch(last, 1)
+
+    @staticmethod
+    def _caption(text):
+        lab = QLabel(text)
+        lab.setStyleSheet(f"color:{MUTED};font-size:10px;border:none;")
+        return lab
+
+    def values(self):
+        out = {c: e.text().strip() for c, e in self.edits.items()}
+        out["runs"] = self.spin_runs.value()
+        return out
 
     def name(self):
-        return self.edit.text().strip()
+        return self.edits[di.TREATMENT_COL].text().strip()
+
+    def runs(self):
+        return self.spin_runs.value()
 
 
 class InitiateDeploymentPage(QObject):
-    """Binds the Initiate deployment page widgets to `ui.content_initiate_deployment`."""
+    """Binds Create and edit deployment to `ui.content_initiate_deployment`."""
 
     status = Signal(str, int)
 
@@ -100,7 +172,7 @@ class InitiateDeploymentPage(QObject):
         row1 = QHBoxLayout()
         row1.setSpacing(10)
 
-        grp_lib = Section("Library")
+        grp_lib = Section("Library and deployment")
         lv = QVBoxLayout(grp_lib)
         lv.setSpacing(6)
         lib_row = QHBoxLayout()
@@ -124,17 +196,21 @@ class InitiateDeploymentPage(QObject):
         dep_row.addWidget(self.cmb_deployment, stretch=1)
         lv.addLayout(dep_row)
 
-        id_row = QHBoxLayout()
-        id_row.setSpacing(6)
-        id_row.addWidget(self._muted("Deployment ID"))
-        self.ed_deployment_id = QLineEdit()
-        self.ed_deployment_id.setPlaceholderText("e.g. PF_Test_Rig_2026")
-        id_row.addWidget(self.ed_deployment_id, stretch=1)
-        lv.addLayout(id_row)
+        form = QGridLayout()
+        form.setVerticalSpacing(6)
+        form.setColumnStretch(1, 1)
+        self.edits = {}
+        for i, (column, label) in enumerate(di.DEPLOYMENT_FIELDS):
+            form.addWidget(self._muted(label), i, 0)
+            edit = QLineEdit()
+            edit.textEdited.connect(self._refresh_state)
+            form.addWidget(edit, i, 1)
+            self.edits[column] = edit
+        lv.addLayout(form)
         row1.addWidget(grp_lib, stretch=3)
 
         self.card_summary = MetaCard("Library")
-        self.card_summary.setMinimumWidth(240)
+        self.card_summary.setMinimumWidth(260)
         self.card_summary.setSizePolicy(QSizePolicy.Policy.Preferred,
                                         QSizePolicy.Policy.Expanding)
         row1.addWidget(self.card_summary, stretch=2)
@@ -148,29 +224,35 @@ class InitiateDeploymentPage(QObject):
         self.rows_layout.setContentsMargins(0, 0, 0, 0)
         self.rows_layout.setSpacing(6)
         tv.addWidget(self.rows_holder)
+        add_row = QHBoxLayout()
         self.btn_add_treatment = QPushButton("+  Add treatment")
         self.btn_add_treatment.setMinimumHeight(28)
-        tv.addWidget(self.btn_add_treatment)
+        add_row.addWidget(self.btn_add_treatment)
+        add_row.addStretch()
+        self.lbl_rows = QLabel("")
+        self.lbl_rows.setStyleSheet(f"color:{MUTED};")
+        add_row.addWidget(self.lbl_rows)
+        tv.addLayout(add_row)
         v.addWidget(grp_tr)
 
-        grp_build = Section("Build folder structure")
-        bv = QVBoxLayout(grp_build)
-        bv.setSpacing(6)
+        grp_save = Section("Save deployment plan")
+        gv = QVBoxLayout(grp_save)
+        gv.setSpacing(6)
         self.lbl_state = QLabel("")
         self.lbl_state.setWordWrap(True)
-        bv.addWidget(self.lbl_state)
-        self.btn_build = QPushButton("Build folder structure")
-        self.btn_build.setMinimumHeight(30)
-        self.btn_build.setStyleSheet(
+        gv.addWidget(self.lbl_state)
+        self.btn_save = QPushButton("Save deployment plan")
+        self.btn_save.setMinimumHeight(30)
+        self.btn_save.setStyleSheet(
             f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
             "border-radius:5px;padding:4px 14px;font-weight:bold;}"
             "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
-        bv.addWidget(self.btn_build)
+        gv.addWidget(self.btn_save)
         self.lbl_path = QLabel("")
         self.lbl_path.setStyleSheet(f"color:{MUTED};font-size:10px;")
         self.lbl_path.setWordWrap(True)
-        bv.addWidget(self.lbl_path)
-        v.addWidget(grp_build)
+        gv.addWidget(self.lbl_path)
+        v.addWidget(grp_save)
 
         v.addStretch()
         apply_section_defaults(frame)
@@ -185,9 +267,8 @@ class InitiateDeploymentPage(QObject):
         self.btn_choose_library.clicked.connect(self._choose_library)
         self.cmb_deployment.currentIndexChanged.connect(
             self._on_deployment_changed)
-        self.ed_deployment_id.textEdited.connect(self._refresh_state)
         self.btn_add_treatment.clicked.connect(lambda: self._add_treatment())
-        self.btn_build.clicked.connect(self._build_folders)
+        self.btn_save.clicked.connect(self._save)
 
     # ── library ──────────────────────────────────────────────────────────────
     def _choose_library(self):
@@ -226,9 +307,11 @@ class InitiateDeploymentPage(QObject):
 
     def _all_deployments(self):
         """Index-planned deployments, plus any that only exist as a folder
-        on disk so far - this page never writes the index (that stays
-        Study design's job), so a deployment built here and nowhere else
-        would otherwise vanish from the picker the next time it loads."""
+        on disk so far, and vice versa - a library processed before this
+        page existed has sensors carrying conditions but no plan row, and
+        `deployment_index.deployments()` already falls back to reading
+        those; this only adds the case *neither* index nor conditions
+        exist yet, just a folder tree from a previous save here."""
         indexed = di.deployments(self._lib_root)
         indexed_ids = {d.get(di.DEPLOYMENT_COL, "") for d in indexed}
         raw_dir = self._lib_root / _RAW_DIR
@@ -242,40 +325,49 @@ class InitiateDeploymentPage(QObject):
     def _show_deployment(self, ident):
         self._clear_treatments()
         is_new = ident is None or ident == _NEW_DEPLOYMENT
-        self.ed_deployment_id.setReadOnly(not is_new)
         if is_new:
-            self.ed_deployment_id.setText("")
-            self._add_treatment("Treatment 1")
+            for edit in self.edits.values():
+                edit.setText("")
+            self._add_treatment()
             self._refresh_state()
             return
 
-        self.ed_deployment_id.setText(ident)
+        dep = next((d for d in self._deployments
+                    if d.get(di.DEPLOYMENT_COL, "") == ident), {})
+        for column, edit in self.edits.items():
+            edit.setText(dep.get(column, ""))
+
         planned = di.treatments(self._lib_root, ident)
-        names = [t.get(di.TREATMENT_COL, "") for t in planned if
-                 t.get(di.TREATMENT_COL, "")]
-        if not names:
-            # no index plan yet - fall back to what's already on disk
+        if planned:
+            for treatment in planned:
+                self._add_treatment(treatment)
+        else:
+            # no index plan yet - fall back to treatment names on disk
             dep_dir = self._lib_root / _RAW_DIR / ident
-            if dep_dir.exists():
-                names = sorted(p.name for p in dep_dir.iterdir()
-                               if p.is_dir())
-        for name in names or ["Treatment 1"]:
-            self._add_treatment(name)
+            names = (sorted(p.name for p in dep_dir.iterdir() if p.is_dir())
+                     if dep_dir.exists() else [])
+            for name in names or [None]:
+                self._add_treatment({di.TREATMENT_COL: name} if name else None)
         self._refresh_state()
 
     # ── treatments ───────────────────────────────────────────────────────────
-    def _add_treatment(self, name=""):
-        if not name:
-            used = {r.name() for r in self._rows}
-            n = len(self._rows) + 1
-            while f"Treatment {n}" in used:
-                n += 1
-            name = f"Treatment {n}"
-        row = _TreatmentNameRow(name, on_change=self._refresh_state,
-                                on_remove=self._remove_treatment)
+    def _add_treatment(self, values=None):
+        if values is None:
+            values = dict(self._rows[-1].values()) if self._rows else {}
+            values[di.TREATMENT_COL] = self._next_name()
+        row = _TreatmentRow(values, on_change=self._refresh_state,
+                            on_remove=self._remove_treatment)
         self.rows_layout.addWidget(row)
         self._rows.append(row)
         self._refresh_state()
+        return row
+
+    def _next_name(self):
+        used = {r.name() for r in self._rows}
+        n = len(self._rows) + 1
+        while f"Treatment {n}" in used:
+            n += 1
+        return f"Treatment {n}"
 
     def _remove_treatment(self, row):
         if row not in self._rows:
@@ -292,46 +384,55 @@ class InitiateDeploymentPage(QObject):
         self._rows = []
 
     # ── state / validation ──────────────────────────────────────────────────
+    def _deployment_values(self):
+        return {c: e.text().strip() for c, e in self.edits.items()}
+
     def _problems(self):
         out = []
         if self._lib_root is None:
             out.append("Choose a library first.")
-        ident = self.ed_deployment_id.text().strip()
-        if not ident:
+        if not self._deployment_values().get(di.DEPLOYMENT_COL):
             out.append("The deployment needs an ID.")
-        names = [r.name() for r in self._rows]
-        if not any(names):
+        if not self._rows:
             out.append("Add at least one treatment.")
+        names = [r.name() for r in self._rows]
         if any(not n for n in names):
             out.append("Every treatment needs a name.")
-        if len(set(n for n in names if n)) != len([n for n in names if n]):
+        if len(set(names)) != len(names):
             out.append("Two treatments share a name.")
         return out
 
     def _refresh_state(self, *_args):
         problems = self._problems()
-        self.btn_build.setEnabled(not problems)
+        self.btn_save.setEnabled(not problems)
 
         if self._lib_root is None:
             self.lbl_state.setText("")
             self.lbl_path.setText("")
             self.card_summary.set_title("Library")
             self.card_summary.set_rows([])
+            self.lbl_rows.setText("")
             return
 
-        ident = self.ed_deployment_id.text().strip()
-        names = [r.name() for r in self._rows if r.name()]
+        ident = self._deployment_values().get(di.DEPLOYMENT_COL, "")
+        n_rows = sum(r.runs() for r in self._rows)
+        self.lbl_rows.setText(
+            f"{len(self._rows)} treatment(s), {n_rows} row(s)"
+            if self._rows else "")
+
         if problems:
             self.lbl_state.setText("• " + "<br>• ".join(problems))
             self.lbl_state.setStyleSheet(f"color:{WARN};")
         else:
             self.lbl_state.setText(
-                f"{len(names)} treatment folder(s) will be created (or left "
-                f"alone if they already exist) for '{ident}'.")
+                f"{len(self._rows)} treatment(s) over {n_rows} run(s). "
+                f"Saving writes the plan for '{ident}' and builds its "
+                "folder structure.")
             self.lbl_state.setStyleSheet(f"color:{TEXT};")
         if ident:
             self.lbl_path.setText(
-                f"Creates {self._lib_root / _RAW_DIR / ident}\\<treatment>\\"
+                f"Writes {di.index_path(self._lib_root)}; creates "
+                f"{self._lib_root / _RAW_DIR / ident}\\<treatment>\\"
                 f"{_VIDEO_FOLDER_NAME}\\")
         else:
             self.lbl_path.setText("")
@@ -349,46 +450,72 @@ class InitiateDeploymentPage(QObject):
                         ", ".join(on_disk) if on_disk else None))
         self.card_summary.set_rows(rows)
 
-    # ── build ────────────────────────────────────────────────────────────────
-    def _build_folders(self):
+    # ── save ─────────────────────────────────────────────────────────────────
+    def _save(self):
         problems = self._problems()
         if problems:
-            QMessageBox.warning(self.window, "Cannot build",
+            QMessageBox.warning(self.window, "Cannot save",
                                 "\n".join(f"• {p}" for p in problems))
             return
 
-        ident = self.ed_deployment_id.text().strip()
-        names = [r.name() for r in self._rows if r.name()]
-        dep_dir = self._lib_root / _RAW_DIR / ident
+        deployment = self._deployment_values()
+        ident = deployment.get(di.DEPLOYMENT_COL, "")
+        treatments = [r.values() for r in self._rows]
+        n_rows = sum(t["runs"] for t in treatments)
+
+        df = di.read_index(self._lib_root)
+        n_sensors = 0 if df is None else len(di.sensor_rows(df))
+        existing = di.treatments(self._lib_root, ident)
+
+        detail = (f"Write {len(treatments)} treatment(s) over {n_rows} "
+                  f"run(s) for '{ident}' to\n{di.index_path(self._lib_root)}"
+                  f"\n\nand create its raw_sens_data folder structure.")
+        if existing:
+            detail += (f"\n\nThe {len(existing)} treatment(s) already "
+                       f"planned for '{ident}' are replaced.")
+        if n_sensors:
+            detail += (f"\n{n_sensors} processed sensor row(s) are left as "
+                       "they are.")
+        if QMessageBox.question(self.window, "Save deployment plan", detail) \
+                != QMessageBox.StandardButton.Yes:
+            return
 
         try:
-            created = []
-            for name in names:
-                treatment_dir = dep_dir / name
-                video_dir = treatment_dir / _VIDEO_FOLDER_NAME
-                existed = treatment_dir.exists()
-                video_dir.mkdir(parents=True, exist_ok=True)
-                created.append((name, "already existed" if existed else "created"))
-            self._write_summary(ident, dep_dir, created)
+            path, n = di.save_plan(self._lib_root, deployment, treatments)
+            created = self._build_folders(ident, [t[di.TREATMENT_COL]
+                                                   for t in treatments])
+            self._write_summary(ident, created)
         except Exception as e:
-            QMessageBox.critical(self.window, "Build failed", str(e))
+            QMessageBox.critical(self.window, "Save failed", str(e))
             return
 
         self._load_deployments(select=ident)
-        self.status.emit(
-            f"Folder structure ready for '{ident}' ({len(names)} "
-            "treatment(s)).", 5000)
         self.lbl_state.setText(
-            f"Done. Drop raw sensor files into each treatment folder and "
-            f"video into its {_VIDEO_FOLDER_NAME} subfolder. Add treatment "
-            "conditions (head, flow, BEP, RPM) in Study design when ready.")
+            f"Saved {n} row(s) for '{ident}' and built its folder "
+            "structure. Drop raw sensor files into each treatment folder "
+            f"and video into its {_VIDEO_FOLDER_NAME} subfolder.")
         self.lbl_state.setStyleSheet(f"color:{OK};")
+        self.status.emit(f"Deployment plan saved to {path}", 5000)
 
-    def _write_summary(self, ident, dep_dir, created):
+    def _build_folders(self, ident, names):
+        """`raw_sens_data/<ident>/<name>/VIDEO/` for each treatment name -
+        idempotent, so re-saving an existing deployment (or adding a new
+        one) never disturbs files already dropped into earlier folders."""
+        dep_dir = self._lib_root / _RAW_DIR / ident
+        created = []
+        for name in names:
+            treatment_dir = dep_dir / name
+            existed = treatment_dir.exists()
+            (treatment_dir / _VIDEO_FOLDER_NAME).mkdir(
+                parents=True, exist_ok=True)
+            created.append((name, "already existed" if existed else "created"))
+        return created
+
+    def _write_summary(self, ident, created):
         lines = [
             f"Deployment: {ident}",
             f"Library: {self._lib_root.name}",
-            f"Built: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            f"Saved: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
             "",
             "Treatments:",
         ]
@@ -396,9 +523,6 @@ class InitiateDeploymentPage(QObject):
             lines.append(
                 f"  - {name}  ({state}: "
                 f"{_RAW_DIR}/{ident}/{name}/, {_VIDEO_FOLDER_NAME}/)")
-        lines.append("")
-        lines.append(
-            "Add treatment conditions (head, flow, BEP, RPM) in Study "
-            "design; this file only records the folder structure.")
+        dep_dir = self._lib_root / _RAW_DIR / ident
         dep_dir.mkdir(parents=True, exist_ok=True)
         (dep_dir / _SUMMARY_NAME).write_text("\n".join(lines))

@@ -2676,7 +2676,7 @@ class Ui_MainWindow(object):
         self.btn_annotate.setText(QCoreApplication.translate("MainWindow", u"Annotate", None))
         self.btn_dataset.setText(QCoreApplication.translate("MainWindow", u"Advanced dataset options", None))
         self.btn_study_design.setText(QCoreApplication.translate("MainWindow", u"Study design", None))
-        self.btn_initiate_deployment.setText(QCoreApplication.translate("MainWindow", u"Initiate deployment", None))
+        self.btn_initiate_deployment.setText(QCoreApplication.translate("MainWindow", u"Create and edit deployment", None))
         self.btn_data_analysis.setText(QCoreApplication.translate("MainWindow", u"Data analysis", None))
         self.btn_export_animations.setText(QCoreApplication.translate("MainWindow", u"Export animations", None))
         self.btn_evaluate_train.setText(QCoreApplication.translate("MainWindow", u"Evaluate and report", None))

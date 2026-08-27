@@ -25,6 +25,7 @@ from modules.page_ml_prediction import MLPredictionPage
 from modules.page_ml_training import MLTrainingPage
 from modules.page_stub import StubPage
 from modules.page_initiate_deployment import InitiateDeploymentPage
+from modules.page_misclassification import MisclassificationPage
 from modules import table_copy
 os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
 
@@ -102,6 +103,10 @@ class MainWindow(QMainWindow):
         self.ml_training_page = MLTrainingPage(widgets, self)
         self.ml_training_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
+        self.misclassification_page = MisclassificationPage(
+            widgets, self, self.ml_training_page.state)
+        self.misclassification_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
 
         # the curated dataset from Sensor Processing feeds Model Prediction
         self.dataset_page.dataset_ready.connect(
@@ -129,8 +134,6 @@ class MainWindow(QMainWindow):
                      "of task 7."),
             StubPage(widgets.content_export_animations, "Export animations",
                      "Ports video_sync.py. Part of task 4."),
-            StubPage(widgets.content_misclassification,
-                     "Misclassification analysis", "Part of task 3."),
             StubPage(widgets.content_biological, "Biological interpretation",
                      "Part of task 5."),
             StubPage(widgets.content_final_report, "Final reporting",
@@ -170,7 +173,6 @@ class MainWindow(QMainWindow):
             layout.insertWidget(
                 layout.indexOf(getattr(widgets, after_name)) + 1, widget)
 
-        move_before("btn_study_design", "btn_prepare")
         move_before("btn_export_animations", "btn_dataset")
         move_after("btn_deploy_train", "btn_misclassification")
 
@@ -252,7 +254,7 @@ class MainWindow(QMainWindow):
                 "btn_bsm_reporting"),
                "btn_bsm"),
         "setup_deploy": ("Setup and deploy",
-                         ("btn_study_design", "btn_prepare",
+                         ("btn_prepare", "btn_study_design",
                           "btn_initiate_deployment"),
                          "btn_setup_deploy"),
         "sensor": ("Sensor processing",
@@ -374,7 +376,20 @@ class MainWindow(QMainWindow):
         """Switch to `btn_name`'s page (and tab index, if it targets one),
         reconfiguring the slide-out panel to its section first so this also
         works when called from outside that section (e.g. a cross-page
-        "go to Evaluate" link)."""
+        "go to Evaluate" link).
+
+        Leaving Misclassification analysis with at least one correction
+        made overrides wherever the user was headed: notify, load the
+        corrected dataset into Model training > Train, and land there
+        instead - whatever button was actually clicked."""
+        mp = self.misclassification_page
+        if (widgets.stackedWidget.currentWidget() is
+                widgets.page_misclassification
+                and btn_name != "btn_misclassification"
+                and mp.has_changes()):
+            mp.notify_and_load_into_training()
+            btn_name = "btn_ml_training"
+
         section = self._section_for_button(btn_name)
         if section is not None:
             is_open = widgets.extraLeftBox.width() > 0
