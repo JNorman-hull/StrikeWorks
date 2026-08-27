@@ -35,6 +35,8 @@ Model training > Train with the corrected dataset loaded, after a
 notice that the model should be retrained before its next deployment -
 `notify_and_load_into_training()` is main.py's hook for this.
 """
+import subprocess
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -43,15 +45,17 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QGridLayout, QHBoxLayout, QHeaderView,
-    QLabel, QMessageBox, QPushButton, QSizePolicy, QSplitter, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QInputDialog, QLabel, QMessageBox, QPushButton, QSizePolicy, QSplitter,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import annotation_schema as asch
 from . import ml_model_library
+from . import settings
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
 from .ml_train_state import DEFAULT_MODELS_DIR
-from .ml_widgets import BAD, MUTED, OK, Section, apply_section_defaults
+from .ml_widgets import ACCENT, BAD, MUTED, OK, Section, apply_section_defaults
+from .page_annotate import LOSSLESSCUT_EXE, _RAW_DIR
 from .page_validate import _NavViewBox
 from .plot_style import (
     add_export_button, build_export_data, reserve_top_margin,
@@ -123,6 +127,7 @@ class MisclassificationPage(QObject):
         self._entries = []
         self._entry = None
         self._rows = []
+        self._matches_by_file = {}
         self._cur_stem = None
         self._df_cache = {}          # id(entry) -> long-format DataFrame
         self._time = None
@@ -131,6 +136,7 @@ class MisclassificationPage(QObject):
         self._editors = {}
         self._has_changes = False
         self._corrected_path = None
+        self._corrections = []       # [{file, variable, old, new, when}, ...]
 
         self._build(ui.content_misclassification)
         self._connect()
@@ -155,7 +161,7 @@ class MisclassificationPage(QObject):
         self._build_plot_side(dv)
         dv.addWidget(self._build_labels_side())
         split.addWidget(detail)
-        split.setSizes([1, 3])
+        split.setSizes([1, 1])
 
         apply_section_defaults(frame)
 
@@ -183,9 +189,9 @@ class MisclassificationPage(QObject):
         gv.addWidget(self.lbl_source)
         lv.addWidget(grp)
 
-        self.tbl_misclass = QTableWidget(0, 4)
+        self.tbl_misclass = QTableWidget(0, 5)
         self.tbl_misclass.setHorizontalHeaderLabels(
-            ["File", "True -> Predicted", "Confidence", "Treatment"])
+            ["File", "True -> Predicted", "Confidence", "Treatment", "Video"])
         self.tbl_misclass.verticalHeader().setVisible(False)
         self.tbl_misclass.setEditTriggers(
             QTableWidget.EditTrigger.NoEditTriggers)
@@ -197,6 +203,19 @@ class MisclassificationPage(QObject):
             QHeaderView.ResizeMode.Interactive)
         self.tbl_misclass.setSortingEnabled(True)
         lv.addWidget(self.tbl_misclass, stretch=1)
+
+        report_row = QHBoxLayout()
+        self.btn_report = QPushButton("Generate misclassification report")
+        self.btn_report.setStyleSheet(
+            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
+            "border-radius:5px;padding:4px 14px;font-weight:bold;}")
+        report_row.addWidget(self.btn_report)
+        report_row.addStretch()
+        lv.addLayout(report_row)
+        self.lbl_report_status = QLabel("")
+        self.lbl_report_status.setStyleSheet(f"color:{MUTED};")
+        self.lbl_report_status.setWordWrap(True)
+        lv.addWidget(self.lbl_report_status)
         return left
 
     def _build_plot_side(self, v):
@@ -276,10 +295,13 @@ class MisclassificationPage(QObject):
         self.cmb_model.currentIndexChanged.connect(self._on_model_changed)
         self.btn_refresh.clicked.connect(self._reload_models)
         self.tbl_misclass.itemSelectionChanged.connect(self._on_row_selected)
+        self.tbl_misclass.itemDoubleClicked.connect(
+            self._on_misclass_double_clicked)
         self.cmb_left.currentIndexChanged.connect(self._refresh_signal)
         self.cmb_right.currentIndexChanged.connect(self._refresh_signal)
         self.btn_manage_vars.clicked.connect(self._manage_variables)
         self.btn_save_correction.clicked.connect(self._save_correction)
+        self.btn_report.clicked.connect(self._generate_report)
         asch.notifier.changed.connect(self._rebuild_labels)
         self._rebuild_labels()
 
@@ -310,10 +332,11 @@ class MisclassificationPage(QObject):
         self.tbl_misclass.setSortingEnabled(False)
         self.tbl_misclass.setRowCount(0)
         self._rows = []
+        self._matches_by_file = {}
         self._clear_signal()
 
         if self._entry is None:
-            self.lbl_source.setText(f"No models found.")
+            self.lbl_source.setText("No models found.")
             self.tbl_misclass.setSortingEnabled(True)
             return
 
@@ -322,6 +345,8 @@ class MisclassificationPage(QObject):
             f"{self._entry.label} - {len(self._rows)} misclassified "
             f"recording(s).")
 
+        video_index = self._video_index()
+        self._matches_by_file = {}
         self.tbl_misclass.setRowCount(len(self._rows))
         for r, row in enumerate(self._rows):
             item_file = QTableWidgetItem(str(row["file"]))
@@ -334,8 +359,64 @@ class MisclassificationPage(QObject):
             self.tbl_misclass.setItem(r, 2, conf_item)
             self.tbl_misclass.setItem(
                 r, 3, QTableWidgetItem(str(row["treatment"])))
+            matches = video_index.get(str(row["file"]), [])
+            row["video_matches"] = matches
+            self._matches_by_file[str(row["file"])] = matches
+            video_item = QTableWidgetItem(
+                "; ".join(p.name for p in matches) if matches else "—")
+            video_item.setData(Qt.ItemDataRole.UserRole, row["file"])
+            self.tbl_misclass.setItem(r, 4, video_item)
         self.tbl_misclass.resizeColumnsToContents()
         self.tbl_misclass.setSortingEnabled(True)
+
+    def _video_index(self):
+        """{stem: [video paths]} across every configured library - built
+        once per model switch (one recursive walk) rather than once per
+        misclassified file, since a file's library isn't known up front."""
+        index = {}
+        lib_dir = settings.get_libraries_dir()
+        try:
+            libs = [p for p in lib_dir.iterdir() if p.is_dir()]
+        except OSError:
+            libs = []
+        for lib in libs:
+            raw_dir = lib / _RAW_DIR
+            if not raw_dir.exists():
+                continue
+            for video in raw_dir.rglob("*_vid_*.mp4"):
+                stem = video.name.split("_vid_")[0]
+                index.setdefault(stem, []).append(video)
+        return index
+
+    def _on_misclass_double_clicked(self, item):
+        if item.column() != 4:
+            return
+        # look up by file, not item.row() - the table is sortable, so a
+        # visual row no longer lines up with self._rows' insertion order
+        stem = item.data(Qt.ItemDataRole.UserRole)
+        matches = self._matches_by_file.get(stem) or []
+        if not matches:
+            self.status.emit(f"No matching video for {stem}.", 4000)
+            return
+        if not LOSSLESSCUT_EXE.exists():
+            QMessageBox.warning(self.window, "LosslessCut missing",
+                                f"Missing: {LOSSLESSCUT_EXE}")
+            return
+        video_path = matches[0]
+        if len(matches) > 1:
+            names = [p.name for p in matches]
+            choice, ok = QInputDialog.getItem(
+                self.window, "Choose video",
+                f"{len(names)} videos match {stem}:", names, 0, False)
+            if not ok:
+                return
+            video_path = matches[names.index(choice)]
+        try:
+            subprocess.Popen([str(LOSSLESSCUT_EXE), str(video_path)])
+        except Exception as e:
+            QMessageBox.critical(self.window, "Could not open video", str(e))
+            return
+        self.status.emit(f"Opened {video_path.name} in LosslessCut", 4000)
 
     # ── dataset access ───────────────────────────────────────────────────────
     def _resolve_dataset_path(self, entry):
@@ -578,6 +659,8 @@ class MisclassificationPage(QObject):
                 "Enter at least one corrected value before saving.")
             return
 
+        var_labels = {v.name: v.label for v in asch.all_variables()}
+        changed = []
         for name, value in values.items():
             if not value:
                 continue
@@ -585,7 +668,18 @@ class MisclassificationPage(QObject):
             if col not in df.columns:
                 df[col] = ""
             df[col] = df[col].astype(object)
+            old = df.loc[mask, col].iloc[0]
+            old = "" if pd.isna(old) else str(old)
+            if old != value:
+                changed.append((var_labels.get(name, name), old, value))
             df.loc[mask, col] = value
+
+        for label, old, new in changed:
+            self._corrections.append({
+                "file": self._cur_stem, "variable": label,
+                "old": old or "(blank)", "new": new,
+                "when": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            })
 
         corrected_path = self._corrected_path_for(base_path)
         try:
@@ -603,6 +697,62 @@ class MisclassificationPage(QObject):
             f"{corrected_path.name}", 5000)
         self.lbl_detail_status.setText(f"Saved to {corrected_path}")
         self.lbl_detail_status.setStyleSheet(f"color:{OK};")
+
+    # ── report ───────────────────────────────────────────────────────────────
+    def _generate_report(self):
+        """Saves the misclassified-file table (File/True/Predicted/
+        Confidence/Treatment/Video) plus whatever corrections were made
+        this session - "no corrections made" is a valid, reportable
+        outcome, not an error, so this never requires a save first."""
+        if self._entry is None or not self._rows:
+            QMessageBox.warning(
+                self.window, "Nothing to report",
+                "Select a model with misclassified recordings first.")
+            return
+
+        base_path = self._resolve_dataset_path(self._entry)
+        out_dir = base_path.parent if base_path is not None else Path.cwd()
+        stem = base_path.stem if base_path is not None else "misclassification"
+        out_path = out_dir / f"{stem}_misclassification_report.md"
+
+        lines = [
+            f"# Misclassification report - {self._entry.label}",
+            "",
+            f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            f"{len(self._rows)} misclassified recording(s).",
+            "",
+            "## Misclassified recordings",
+            "",
+            "| File | True -> Predicted | Confidence | Treatment | Video |",
+            "|---|---|---|---|---|",
+        ]
+        for row in self._rows:
+            video = ("; ".join(p.name for p in row.get("video_matches", []))
+                     or "—")
+            lines.append(
+                f"| {row['file']} | {row['true']} -> {row['pred']} | "
+                f"{row['confidence']:.3f} | {row['treatment']} | {video} |")
+
+        lines += ["", "## Changes made this session", ""]
+        if self._corrections:
+            lines.append("| File | Variable | Old value | New value | When |")
+            lines.append("|---|---|---|---|---|")
+            for c in self._corrections:
+                lines.append(
+                    f"| {c['file']} | {c['variable']} | {c['old']} | "
+                    f"{c['new']} | {c['when']} |")
+        else:
+            lines.append("No corrections made this session.")
+
+        try:
+            out_path.write_text("\n".join(lines), encoding="utf-8")
+        except Exception as e:
+            QMessageBox.critical(self.window, "Report failed", str(e))
+            return
+
+        self.lbl_report_status.setText(f"Report saved to {out_path}")
+        self.lbl_report_status.setStyleSheet(f"color:{OK};")
+        self.status.emit(f"Misclassification report saved to {out_path}", 5000)
 
     # ── leaving the page (main.py's navigate_to hook) ───────────────────────
     def has_changes(self):

@@ -132,9 +132,6 @@ class EvaluateTab:
         self.lbl_mis = QLabel("No model selected.")
         self.lbl_mis.setStyleSheet(f"color:{TEXT};")
         ev.addWidget(self.lbl_mis)
-        self.tbl_err = self._make_table([])
-        self.tbl_err.setMinimumHeight(190)
-        ev.addWidget(self.tbl_err)
         self.lbl_err_note = QLabel("")
         self.lbl_err_note.setStyleSheet(f"color:{MUTED};")
         self.lbl_err_note.setWordWrap(True)
@@ -364,51 +361,16 @@ class EvaluateTab:
                 if mis else "No model selected.")
 
         if df is None:
-            # no per-recording predictions: an empty grid would just be a
-            # stray header, so hide the table and let the note explain
-            self._fill(self.tbl_err, [], [])
-            self.tbl_err.setVisible(False)
             self.lbl_err_note.setText(
                 "Per-recording cross-validation predictions were not saved "
                 "with this model, so the individual misclassifications "
                 "cannot be listed. Models trained and deployed from this "
                 "page keep them in their deployment package.")
             return
-        self.tbl_err.setVisible(True)
         self.lbl_err_note.setText(
-            "Misclassified recordings can be reviewed against their sensor "
-            "signals via Model Prediction → Inspect once the model is "
-            "deployed.")
-
-        rows = []
-        if binary and "error_type" in df.columns:
-            bad = df[df["error_type"] != "correct"]
-            for _, r in bad.iterrows():
-                err = "FP" if r["error_type"] == "false_positive" else "FN"
-                rows.append([
-                    str(r["file"]),
-                    "Strike" if r["y_true"] == 1 else "No strike",
-                    "Strike" if r["y_pred"] == 1 else "No strike",
-                    (f"{r['probability']:.3f}", float(r["probability"])),
-                    str(r.get("treatment", "—")),
-                    err,
-                ])
-            headers = ["File", "True", "Predicted", "Probability",
-                       "Treatment", "Error"]
-        elif "true_class" in df.columns:
-            bad = df[~df["correct"]]
-            for _, r in bad.iterrows():
-                rows.append([
-                    str(r["file"]), str(r["true_class"]),
-                    str(r["pred_class"]),
-                    (f"{r['confidence']:.3f}", float(r["confidence"])),
-                    str(r.get("treatment", "—")),
-                ])
-            headers = ["File", "True class", "Predicted class",
-                       "Confidence", "Treatment"]
-        else:
-            headers = ["Recording"]
-        self._fill(self.tbl_err, headers, rows)
+            "The per-recording list moved to Model training > "
+            "Misclassification analysis, where it can be reviewed against "
+            "each sensor's signal and corrected.")
 
     def _refresh_stratification(self, binary, metrics, df):
         m = metrics or {}

@@ -426,14 +426,98 @@ per-page tweaks.
    `Pumpflow_2024_and_2026_datatset_.csv`) all check out; the save/
    leave-redirect path was verified against a small scratch dataset to
    avoid writing into real project data during testing.
-4. Export animations page - **check in before starting.** Same skeleton as
-   Annotate (library, sensor/video list, Signal/Notes-shaped boxes) but the
-   annotations box becomes the video-animator's text-field inputs and the
-   notes box becomes its code/process options (frame sync, labels, ...);
-   single sensor only for now; Process + Save buttons; processed video plays
-   (play/pause) in the Signal container; output goes to a library-independent
-   `processed_video/` folder that the page also reads to list what already
-   exists. Ports `video_sync.py`.
+
+   Follow-up (2026-08-27): Evaluate's per-recording error table
+   (`tbl_err`) removed - `lbl_mis`'s summary line (total/FP/FN) stays, now
+   with a one-line note pointing to Misclassification analysis for detail,
+   since that table duplicated what this page already builds. Misclassification
+   analysis's own table now takes half the page (`split.setSizes([1, 1])`,
+   was `[1, 3]`) and gained a Video column: a `{stem: [paths]}` index built
+   once per model switch (one recursive walk across every configured
+   library's `raw_sens_data/`, matching on the same `<stem>_vid_*.mp4`
+   pattern Annotate uses) rather than once per misclassified row, since a
+   file's library isn't known up front and 99 separate walks would be slow.
+   Double-clicking a Video cell opens it in LosslessCut, same chooser-on-
+   multiple-matches behaviour as Annotate. Caught and fixed a real bug
+   here: the double-click handler originally indexed `self._rows[item.
+   row()]`, but the table is sortable, so a sorted visual row no longer
+   lines up with that list's insertion order - fixed by reading the file
+   stem from the clicked item's own `UserRole` data instead (the same safe
+   pattern row-selection already used) and looking it up in a
+   `{file: matches}` dict built alongside the table. "Generate
+   misclassification report" writes the current table (including video
+   presence) plus a "changes made this session" section to
+   `<dataset>_misclassification_report.md` beside the training dataset -
+   corrections are now tracked as `{file, variable, old, new, when}` as
+   they're saved, not just a bare has-changed flag, specifically so the
+   report can show a real diff; an empty session still produces a valid
+   report ("no corrections made"), not an error. Verified end to end
+   against the real deployed models and libraries: video index found 534
+   videos, 49 of 99 misclassified files matched one, the double-click
+   fix confirmed against a mismatched pre-fix row, and a real report
+   generated correctly (then removed - it was a same-session test
+   artifact, not requested output, and landed in the real `input_data`
+   folder next to the training dataset).
+4. Export animations page - done (2026-08-27),
+   `modules/page_export_animations.py` (GUI) +
+   `modules/video_sync.py` (pure logic, no Qt). Found the reference script
+   at `Scripts/Time series video sync/video_sync.py` (431 lines) - a
+   synced sensor-graph overlay (pressure black, accel magnitude red,
+   scrolling window with a cursor line) burned frame-by-frame into
+   high-speed video footage, plus a text overlay (pump, shaft speed,
+   camera, sensor) and optional logo. Ported faithfully into
+   `video_sync.py`'s `SyncOptions`/`build_cursor_arrays`/
+   `make_graph_strip`/`build_text_lines`/`overlay_text`/`process_video`,
+   every module-level constant the script hardcoded now a parameter driven
+   by the page's Text inputs/Code options boxes. New runtime dependency:
+   `opencv-python` (video read/write; not previously installed), added to
+   `requirements.txt` - Pillow was already present transitively via
+   matplotlib.
+
+   Sync mechanics differ from the original by necessity: the script
+   anchored on a `frames.txt`-supplied row index into an external combined
+   dataset; here `nadir_time_s` comes straight from the sensor's own
+   processed CSV (same `pres_min.time.` index column Annotate/Validate
+   already read), so only the *video frame number* the nadir appears at
+   needs entering by hand (Code options' "Sync frame") - no automatic
+   video/sensor alignment exists or was asked for.
+
+   Page skeleton matches Annotate as specified: same library/deployment/
+   treatment/sensor+video browser (adapted rather than shared - see the
+   docstring note on why Annotate wasn't refactored to share it), Text
+   inputs in place of Annotations, Code options (sync frame, real fps,
+   graph window, zoom, add-labels toggle) in place of Notes. The Signal
+   container is a `QStackedWidget`: the plotted signal until a video's
+   been processed, then a `QMediaPlayer`/`QVideoWidget` with play/pause
+   for it. Processing runs on a `QThread` (`_VideoSyncWorker`) - a real
+   clip's frame-by-frame matplotlib render is easily minutes of work, and
+   a Cancel button (added once the worker's cancellation path was proven
+   working) stops it cleanly. "Process" renders to
+   `processed_video/<stem>_synced.mp4` and always saves its config
+   alongside (`<stem>_sync_config.json` - text fields, sync frame, code
+   options) so a re-render never drifts from what's shown; "Save" persists
+   an edit without paying for a render. `processed_video/` is one
+   app-root-relative folder, not per-library, matching how `models/`
+   already works (`Path(__file__).parent.parent / "processed_video"`, not
+   a bare relative path that would depend on the process's working
+   directory) - the sensor list's "Synced" column reads it back so
+   previously-exported sensors are visible without reprocessing.
+
+   Verified in three tiers rather than only end-to-end, since a real
+   clip's render is slow: `video_sync.process_video()` against a tiny
+   synthetic video + sensor dataframe (confirmed frame count/dimensions,
+   extracted a frame and visually confirmed the graph strip and text
+   overlay render correctly); `_VideoSyncWorker` against the same
+   synthetic inputs (progress signals, `finished_ok`, and the cancellation
+   path all fire correctly); the page's browser/config/nadir-detection
+   wiring against the real library set (257 sensors across 7 libraries,
+   config save/reload round-trips correctly). Caught and fixed one bug in
+   the process: `apply_section_defaults()` runs after `_build()` and
+   force-shows every widget in an open Section, silently undoing the
+   Cancel button's constructor-time `setVisible(False)` - fixed by
+   reasserting it in `_set_loaded_enabled()`, which runs after that pass
+   settles (and also correctly re-hides it when a new sensor loads while
+   a previous run's Cancel button was still showing).
 5. Blade strike modelling port, and finalise Model prediction - bring the
    mathematical model over from the old MVP/Shiny app (Calculator,
    Sensitivity analysis, Reporting/JSON handoff), then Biological

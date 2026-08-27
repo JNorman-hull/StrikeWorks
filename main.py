@@ -26,6 +26,7 @@ from modules.page_ml_training import MLTrainingPage
 from modules.page_stub import StubPage
 from modules.page_initiate_deployment import InitiateDeploymentPage
 from modules.page_misclassification import MisclassificationPage
+from modules.page_export_animations import ExportAnimationsPage
 from modules import table_copy
 os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
 
@@ -95,6 +96,9 @@ class MainWindow(QMainWindow):
         self.annotation_page = AnnotationPage(widgets, self)
         self.annotation_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
+        self.export_animations_page = ExportAnimationsPage(widgets, self)
+        self.export_animations_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
 
         # MACHINE LEARNING ANALYSIS PAGES
         self.ml_prediction_page = MLPredictionPage(widgets, self)
@@ -132,8 +136,6 @@ class MainWindow(QMainWindow):
                      "Passage duration, time-series normalisation, "
                      "barotrauma metrics, acceleration peak finding. Part "
                      "of task 7."),
-            StubPage(widgets.content_export_animations, "Export animations",
-                     "Ports video_sync.py. Part of task 4."),
             StubPage(widgets.content_biological, "Biological interpretation",
                      "Part of task 5."),
             StubPage(widgets.content_final_report, "Final reporting",
