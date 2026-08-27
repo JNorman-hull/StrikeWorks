@@ -874,18 +874,6 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_11.addWidget(self.btn_ml_training)
 
-        self.btn_ml_performance = QPushButton(self.extraTopMenu)
-        self.btn_ml_performance.setObjectName(u"btn_ml_performance")
-        sizePolicy.setHeightForWidth(self.btn_ml_performance.sizePolicy().hasHeightForWidth())
-        self.btn_ml_performance.setSizePolicy(sizePolicy)
-        self.btn_ml_performance.setMinimumSize(QSize(0, 45))
-        self.btn_ml_performance.setFont(font)
-        self.btn_ml_performance.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_ml_performance.setLayoutDirection(Qt.LeftToRight)
-        self.btn_ml_performance.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-speedometer.png);")
-
-        self.verticalLayout_11.addWidget(self.btn_ml_performance)
-
         self.btn_ml_prediction = QPushButton(self.extraTopMenu)
         self.btn_ml_prediction.setObjectName(u"btn_ml_prediction")
         sizePolicy.setHeightForWidth(self.btn_ml_prediction.sizePolicy().hasHeightForWidth())
@@ -2323,20 +2311,6 @@ class Ui_MainWindow(object):
         self.layout_ml_training.addWidget(self.content_ml_training)
 
         self.stackedWidget.addWidget(self.page_ml_training)
-        self.page_ml_performance = QWidget()
-        self.page_ml_performance.setObjectName(u"page_ml_performance")
-        self.layout_ml_performance = QVBoxLayout(self.page_ml_performance)
-        self.layout_ml_performance.setSpacing(10)
-        self.layout_ml_performance.setObjectName(u"layout_ml_performance")
-        self.layout_ml_performance.setContentsMargins(10, 10, 10, 10)
-        self.content_ml_performance = QFrame(self.page_ml_performance)
-        self.content_ml_performance.setObjectName(u"content_ml_performance")
-        self.content_ml_performance.setFrameShape(QFrame.NoFrame)
-        self.content_ml_performance.setFrameShadow(QFrame.Raised)
-
-        self.layout_ml_performance.addWidget(self.content_ml_performance)
-
-        self.stackedWidget.addWidget(self.page_ml_performance)
         self.page_ml_prediction = QWidget()
         self.page_ml_prediction.setObjectName(u"page_ml_prediction")
         self.layout_ml_prediction = QVBoxLayout(self.page_ml_prediction)
@@ -2698,7 +2672,6 @@ class Ui_MainWindow(object):
         self.btn_process.setText(QCoreApplication.translate("MainWindow", u"Raw data processing", None))
         self.btn_validate.setText(QCoreApplication.translate("MainWindow", u"Segmentation", None))
         self.btn_ml_training.setText(QCoreApplication.translate("MainWindow", u"Train", None))
-        self.btn_ml_performance.setText(QCoreApplication.translate("MainWindow", u"Model reporting", None))
         self.btn_ml_prediction.setText(QCoreApplication.translate("MainWindow", u"Predict", None))
         self.btn_annotate.setText(QCoreApplication.translate("MainWindow", u"Annotate", None))
         self.btn_dataset.setText(QCoreApplication.translate("MainWindow", u"Advanced dataset options", None))
@@ -2706,7 +2679,7 @@ class Ui_MainWindow(object):
         self.btn_initiate_deployment.setText(QCoreApplication.translate("MainWindow", u"Initiate deployment", None))
         self.btn_data_analysis.setText(QCoreApplication.translate("MainWindow", u"Data analysis", None))
         self.btn_export_animations.setText(QCoreApplication.translate("MainWindow", u"Export animations", None))
-        self.btn_evaluate_train.setText(QCoreApplication.translate("MainWindow", u"Evaluate", None))
+        self.btn_evaluate_train.setText(QCoreApplication.translate("MainWindow", u"Evaluate and report", None))
         self.btn_deploy_train.setText(QCoreApplication.translate("MainWindow", u"Deploy", None))
         self.btn_misclassification.setText(QCoreApplication.translate("MainWindow", u"Misclassification analysis", None))
         self.btn_inspect_pred.setText(QCoreApplication.translate("MainWindow", u"Inspect", None))

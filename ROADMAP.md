@@ -283,10 +283,81 @@ per-page tweaks.
    `main.py`. Verified headlessly: every button resolves, every
    `navigate_to`/`openPanel` call is error-free, and screenshots confirm
    correct submenu ordering and content in every section.
-2. The smaller requested changes: *(next up)* Annotate's Reporting tab content, the
-   live-plot margin fix + PNG(300dpi)/SVG export menu (size in cm, default
-   16x10, white bg/black axis/black pressure/red higacc) applied to every
-   live plot, and any other small items called out inline above.
+
+   Follow-up (2026-08-27): Model reporting was fully removed (button, page,
+   `modules/page_ml_performance.py`, its `MLPerformancePage` wiring) - it
+   was a thin, session-less wrapper around the same `EvaluateTab` class
+   Model training's own Evaluate page already uses, so 100% redundant once
+   Evaluate absorbed reporting duties. Model training's sub-menu is now
+   Train, Evaluate and report, Misclassification analysis, Deploy (was
+   Train/Evaluate/Deploy/Misclassification/Model reporting). Initiate
+   deployment got a real controller
+   (`modules/page_initiate_deployment.py`, `InitiateDeploymentPage`) instead
+   of a stub: a "Choose library…" button opens a native folder dialog
+   (create-or-select in one step, deliberately not the root+combo pattern
+   other pages use, since this page's job is to *create* a library rather
+   than pick among known ones), a deployment ID + treatment-name rows (read
+   from `deployment_index.treatments()` when a plan already exists, editable
+   free text otherwise), and "Build folder structure" creates
+   `raw_sens_data/<deployment>/<treatment>/VIDEO/` for each - idempotent, so
+   revisiting an existing deployment or adding a new one never disturbs
+   files already dropped in. Writes a plain-text `deployment_summary.txt`
+   into the deployment folder (to be unified with a shared reporting
+   pattern once task 2 builds one). Nothing here touches
+   `global_sensor_index.csv` - that stays Study design's job since it needs
+   full treatment conditions this page doesn't collect - so
+   `_load_deployments()` merges index-planned deployments with ones that
+   only exist as a folder on disk, or a deployment built here and nowhere
+   else would vanish from its own picker on next load (caught by an
+   idempotency test, fixed).
+2. The smaller requested changes - done (2026-08-27).
+
+   Live-plot margins + export: exactly three live pyqtgraph plots exist
+   app-wide (Segmentation `page_validate.py`, Annotate `page_annotate.py`,
+   Model prediction > Inspect `ml_tab_inspect.py`), each already sharing one
+   construction pattern. New `modules/plot_style.py` is the one place that
+   pattern's styling now lives: `reserve_top_margin()`/
+   `set_right_axis_active()` fix the "top and right have no margin"
+   complaint - pyqtgraph only reserves outer space on a side with a
+   *visible* axis, so the fix keeps the right axis always shown (blank
+   when no second channel is plotted, real values when one is) instead of
+   the hideAxis()/showAxis() toggle each page did directly, and reserves a
+   permanently-blank top strip the same way; both replace the matching
+   hideAxis/showAxis call sites 1:1 in all three files. `add_export_button()`
+   attaches a small "Export ▾" menu (PNG 300dpi / SVG) to each plot's
+   toolbar row; `build_export_data()` is the shared shape every page's
+   `_export_data()` callback returns (current view range, left channel
+   black, right channel red); `render_export_figure()` redraws it with
+   matplotlib for a fixed print style - white background, black axes -
+   independent of the live dark-theme colours, at a user-chosen size in cm
+   (default 16x10). Verified: rendered a real export at 300dpi and as SVG,
+   confirmed the white/black/black/red styling visually, and screenshotted
+   a live plot with real data loaded to confirm the margin fix (breathing
+   room now visible at the top and right of the curve).
+
+   Annotate's Reporting tab: `page_annotate.py`'s content is now a
+   `QTabWidget` (Annotate / Reporting) - `_build_annotate_tab()` is the
+   renamed original body, unchanged. Reporting shows a `MetaCard` summary
+   (sensors in index, in dataset, not yet in dataset, flagged bad) and a
+   by-annotation-variable value-count table, both scoped to the whole
+   library rather than the browser's current deployment/treatment filter
+   (a report should cover the library, not whatever happens to be filtered
+   on screen) and refreshed every time `_populate_sensor_table()` runs -
+   i.e. live, on every library/filter change and every save. "Generate
+   dataset report" writes the same summary as Markdown to
+   `processed_sens_data/annotation_report.md` - deliberately simple for
+   now (plain file write, no shared framework yet); once a broader
+   reporting pattern exists (BSM Reporting, deployment summary, Model
+   reporting, Final Reporting all want one) this should move onto it
+   rather than staying a one-off. Verified against the real "Library 1"
+   working library (105 sensors, 2 flagged bad, 0 in dataset yet) - note
+   this left a real `annotation_report.md` in that library as a
+   side-effect of testing; harmless (it's exactly the file the feature is
+   meant to produce) but flagged to the user rather than deleted.
+
+   Sensor config global-index flag (from task 1's Setup and deploy note) is
+   still an open question, deferred to whenever Setup and deploy's own
+   build starts - not blocking anything so far.
 3. Misclassification analysis (Model training) - see the old Chunk 4 note
    above for the approach (Inspect-based, `_corrected` dataset copy, reuses
    `AnnotationValueEditor`/`VariableListDialog`, model-package

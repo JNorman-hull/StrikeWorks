@@ -44,6 +44,7 @@ annotations for this sensor" tick lets a sensor through with none, so a
 dataset collected without annotations still works.
 """
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -56,7 +57,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QGridLayout,
     QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMessageBox,
     QPlainTextEdit, QPushButton, QSizePolicy, QSplitter, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from . import annotation_schema as asch
@@ -64,9 +65,14 @@ from . import deployment_index as di
 from . import sensor_config, settings
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
 from .ml_widgets import (
-    ACCENT, BAD, BORDER, CARD_BG, MUTED, OK, Section, apply_section_defaults,
+    ACCENT, BAD, BORDER, CARD_BG, MUTED, OK, MetaCard, Section,
+    apply_section_defaults,
 )
 from .page_dataset import _META_COLS, _standardise
+from .plot_style import (
+    add_export_button, build_export_data, reserve_top_margin,
+    set_right_axis_active,
+)
 from .page_validate import (
     _CHANNEL_ORDER, _CHANNELS, _MAX_RIGHT_PTS, _CsvLoadThread, _EXCL_NAMES,
     _EXCL_SUFFIXES, _NavViewBox, _Spinner, _decimate, _find_col,
@@ -136,6 +142,22 @@ class AnnotationPage(QObject):
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
+        outer = QVBoxLayout(frame)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs)
+
+        tab_annotate = QWidget()
+        self._build_annotate_tab(tab_annotate)
+        self.tabs.addTab(tab_annotate, "Annotate")
+
+        tab_report = QWidget()
+        self._build_reporting_tab(tab_report)
+        self.tabs.addTab(tab_report, "Reporting")
+
+        apply_section_defaults(frame)
+
+    def _build_annotate_tab(self, frame):
         root = QHBoxLayout(frame)
         root.setContentsMargins(4, 6, 4, 6)
         root.setSpacing(0)
@@ -162,7 +184,47 @@ class AnnotationPage(QObject):
         split.addWidget(detail)
         split.setSizes([1, 3])
 
-        apply_section_defaults(frame)
+    def _build_reporting_tab(self, frame):
+        v = QVBoxLayout(frame)
+        v.setContentsMargins(4, 6, 4, 6)
+        v.setSpacing(10)
+
+        grp_sum = Section("Annotation summary")
+        sv = QVBoxLayout(grp_sum)
+        self.card_report = MetaCard("Library")
+        sv.addWidget(self.card_report)
+        v.addWidget(grp_sum)
+
+        grp_vars = Section("By annotation variable")
+        vv = QVBoxLayout(grp_vars)
+        self.tbl_report_vars = QTableWidget(0, 3)
+        self.tbl_report_vars.setHorizontalHeaderLabels(
+            ["Variable", "Value", "Count"])
+        self.tbl_report_vars.verticalHeader().setVisible(False)
+        self.tbl_report_vars.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers)
+        self.tbl_report_vars.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Interactive)
+        self.tbl_report_vars.setMinimumHeight(180)
+        vv.addWidget(self.tbl_report_vars)
+        v.addWidget(grp_vars, stretch=1)
+
+        grp_gen = Section("Dataset report")
+        gv = QVBoxLayout(grp_gen)
+        self.lbl_report_status = QLabel("")
+        self.lbl_report_status.setStyleSheet(f"color:{MUTED};")
+        self.lbl_report_status.setWordWrap(True)
+        gv.addWidget(self.lbl_report_status)
+        self.btn_generate_report = QPushButton("Generate dataset report")
+        self.btn_generate_report.setMinimumHeight(30)
+        self.btn_generate_report.setStyleSheet(
+            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
+            "border-radius:5px;padding:4px 14px;font-weight:bold;}")
+        self.btn_generate_report.clicked.connect(self._generate_report)
+        gv.addWidget(self.btn_generate_report)
+        v.addWidget(grp_gen)
+
+        v.addStretch()
 
     def _build_browser(self):
         left = QWidget()
@@ -247,6 +309,8 @@ class AnnotationPage(QObject):
         self._spinner.setVisible(False)
         win_row.addWidget(self._spinner)
         win_row.addStretch()
+        add_export_button(win_row, self._export_data, self.window,
+                          file_stub="annotate")
         sv.addLayout(win_row)
 
         plot_holder = QWidget()
@@ -258,6 +322,7 @@ class AnnotationPage(QObject):
         pi = self._pw.plotItem
         pi.getViewBox().setMouseMode(pg.ViewBox.RectMode)
         pi.setLabel("bottom", "Time (s)")
+        reserve_top_margin(pi)
         ph.addWidget(self._pw)
         sv.addWidget(plot_holder, stretch=1)
 
@@ -265,7 +330,7 @@ class AnnotationPage(QObject):
         pi.scene().addItem(self._vb2)
         pi.getAxis("right").linkToView(self._vb2)
         self._vb2.setXLink(pi)
-        pi.hideAxis("right")
+        set_right_axis_active(pi, False)
         pi.vb.sigResized.connect(self._sync_vb2)
         pi.vb.sigXRangeChanged.connect(self._on_xrange_changed)
 
@@ -566,10 +631,12 @@ class AnnotationPage(QObject):
         self._sensor_rows = []
         if self._lib_root is None:
             self.lbl_progress.setText("")
+            self._refresh_report()
             return
         csv_dir = self._lib_root / _CSV_DIR
         if not csv_dir.exists():
             self.lbl_progress.setText("")
+            self._refresh_report()
             return
 
         wanted_deployment = self.cmb_deployment.currentData()
@@ -610,6 +677,121 @@ class AnnotationPage(QObject):
 
         n_done = sum(1 for row in rows if row["stem"] in self._dataset_stems)
         self.lbl_progress.setText(f"In dataset: {n_done} / {len(rows)}")
+        self._refresh_report()
+
+    # ── reporting tab ────────────────────────────────────────────────────────
+    def _library_sensor_rows(self):
+        """Every sensor index row for the whole library, plan rows dropped -
+        the Reporting tab summarises the library, not the current
+        deployment/treatment filter the browser happens to be showing."""
+        if self._index_df is None:
+            return None
+        return di.sensor_rows(self._index_df)
+
+    def _variable_value_counts(self, df):
+        """[(variable label, value, count), ...] across every annotated
+        sensor row, one group per variable, most common value first."""
+        rows = []
+        for var in asch.all_variables():
+            if var.name not in df.columns:
+                continue
+            values = df[var.name].astype(str).str.strip()
+            values = values[values.astype(bool) & (values.str.lower() != "nan")]
+            for value, count in values.value_counts().items():
+                rows.append((var.label, value, int(count)))
+        return rows
+
+    def _refresh_report(self):
+        df = self._library_sensor_rows()
+        if self._lib_root is None or df is None:
+            self.card_report.set_title("Library")
+            self.card_report.set_rows([])
+            self.tbl_report_vars.setRowCount(0)
+            self.lbl_report_status.setText(
+                "Open a library to see its annotation summary.")
+            return
+
+        total = len(df)
+        in_dataset = len(self._dataset_stems)
+        bad = 0
+        if _BAD_SENS_COL in df.columns:
+            bad = int((df[_BAD_SENS_COL].astype(str).str.strip().str.upper()
+                      == "Y").sum())
+
+        self.card_report.set_title(f"Library: {self._lib_root.name}")
+        self.card_report.set_rows([
+            ("Sensors in index", total or None),
+            ("In dataset (annotated + saved)", in_dataset or None),
+            ("Not yet in dataset", (total - in_dataset) or None),
+            ("Flagged bad", bad or None),
+        ])
+
+        rows = self._variable_value_counts(df)
+        self.tbl_report_vars.setRowCount(len(rows))
+        for r, (label, value, count) in enumerate(rows):
+            self.tbl_report_vars.setItem(r, 0, QTableWidgetItem(label))
+            self.tbl_report_vars.setItem(r, 1, QTableWidgetItem(str(value)))
+            item = QTableWidgetItem(str(count))
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.tbl_report_vars.setItem(r, 2, item)
+        self.tbl_report_vars.resizeColumnsToContents()
+
+        self.lbl_report_status.setText(
+            f"{in_dataset} of {total} sensor(s) in the dataset. Updates "
+            "live as you annotate.")
+        self.lbl_report_status.setStyleSheet(f"color:{MUTED};")
+
+    def _generate_report(self):
+        df = self._library_sensor_rows()
+        if self._lib_root is None or df is None:
+            return
+
+        total = len(df)
+        in_dataset = len(self._dataset_stems)
+        bad = 0
+        if _BAD_SENS_COL in df.columns:
+            bad = int((df[_BAD_SENS_COL].astype(str).str.strip().str.upper()
+                      == "Y").sum())
+
+        lines = [
+            f"# Annotation report - {self._lib_root.name}",
+            "",
+            f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            "",
+            "## Summary",
+            "",
+            f"- Sensors in index: {total}",
+            f"- In dataset (annotated + saved): {in_dataset}",
+            f"- Not yet in dataset: {total - in_dataset}",
+            f"- Flagged bad: {bad}",
+            "",
+            "## By annotation variable",
+            "",
+        ]
+        by_var = {}
+        for label, value, count in self._variable_value_counts(df):
+            by_var.setdefault(label, []).append((value, count))
+        if by_var:
+            for label, values in by_var.items():
+                lines.append(f"### {label}")
+                lines.append("")
+                for value, count in values:
+                    lines.append(f"- {value}: {count}")
+                lines.append("")
+        else:
+            lines.append("No annotation values recorded yet.")
+
+        out_path = self._lib_root / "processed_sens_data" / "annotation_report.md"
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text("\n".join(lines))
+        except Exception as e:
+            QMessageBox.critical(self.window, "Report failed", str(e))
+            return
+
+        self.lbl_report_status.setText(f"Report written to {out_path}")
+        self.lbl_report_status.setStyleSheet(f"color:{OK};")
+        self.status.emit(f"Dataset report saved to {out_path}", 5000)
 
     def _on_row_selected(self):
         items = self.tbl_sensors.selectedItems()
@@ -747,9 +929,9 @@ class AnnotationPage(QObject):
             self._vb2.removeItem(self._right_curve)
             self._right_curve = None
         if self._right_key is None or self._channel(self._right_key) is None:
-            pi.hideAxis("right")
+            set_right_axis_active(pi, False)
             return
-        pi.showAxis("right")
+        set_right_axis_active(pi, True)
         pi.setLabel("right", _CHANNELS[self._right_key][1])
         self._right_curve = pg.PlotCurveItem(pen=pg.mkPen("#ff5555", width=1))
         self._vb2.addItem(self._right_curve)
@@ -785,6 +967,14 @@ class AnnotationPage(QObject):
         pi = self._pw.plotItem
         self._vb2.setGeometry(pi.vb.sceneBoundingRect())
         self._vb2.linkedViewChanged(pi.vb, self._vb2.XAxis)
+
+    def _export_data(self):
+        (x0, x1), _ = self._pw.plotItem.vb.viewRange()
+        left_label = _CHANNELS[self._left_key][1] if self._left_key else ""
+        right_label = _CHANNELS[self._right_key][1] if self._right_key else ""
+        return build_export_data(
+            self._time, left_label, self._channel(self._left_key),
+            right_label, self._channel(self._right_key), (x0, x1))
 
     def _apply_view_limits(self):
         vb = self._pw.plotItem.getViewBox()

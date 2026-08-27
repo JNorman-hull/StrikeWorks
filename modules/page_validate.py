@@ -27,13 +27,17 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt, QDir, QObject, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QFileDialog, QFileSystemModel, QMessageBox, QTreeWidgetItem, QVBoxLayout,
-    QWidget,
+    QFileDialog, QFileSystemModel, QHBoxLayout, QMessageBox, QTreeWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
 from . import deployment_index as di
 from . import sensor_config, settings
 from .page_process import _DirsOnlyProxy
+from .plot_style import (
+    add_export_button, build_export_data, reserve_top_margin,
+    set_right_axis_active,
+)
 
 # Global pyqtgraph config - set once, before any PlotWidget is created.
 # Dark theme + antialiasing so signal plots match the application styling.
@@ -241,11 +245,18 @@ class ValidatePage(QObject):
         holder = QVBoxLayout(u.frame_val_plot)
         holder.setContentsMargins(0, 0, 0, 0)
 
+        toolbar = QHBoxLayout()
+        toolbar.addStretch()
+        add_export_button(toolbar, self._export_data, self.window,
+                          file_stub="segmentation")
+        holder.addLayout(toolbar)
+
         self._pw = pg.PlotWidget(viewBox=_NavViewBox())
         pi = self._pw.plotItem
         pi.getViewBox().setMouseMode(pg.ViewBox.RectMode)
         pi.setLabel("left", _CHANNELS[self._left_key][1])
         pi.setLabel("bottom", "Time (s)")
+        reserve_top_margin(pi)
         holder.addWidget(self._pw)
 
         # secondary ViewBox for the optional right-axis channel
@@ -253,7 +264,7 @@ class ValidatePage(QObject):
         pi.scene().addItem(self._vb2)
         pi.getAxis("right").linkToView(self._vb2)
         self._vb2.setXLink(pi)
-        pi.hideAxis("right")
+        set_right_axis_active(pi, False)
         pi.vb.sigResized.connect(self._sync_vb2)
         pi.vb.sigXRangeChanged.connect(self._on_xrange_changed)
 
@@ -589,10 +600,10 @@ class ValidatePage(QObject):
             self._right_curve = None
 
         if self._right_key is None or self._channel(self._right_key) is None:
-            pi.hideAxis("right")
+            set_right_axis_active(pi, False)
             return
 
-        pi.showAxis("right")
+        set_right_axis_active(pi, True)
         pi.setLabel("right", _CHANNELS[self._right_key][1])
         self._right_curve = pg.PlotCurveItem(
             pen=pg.mkPen("#ff5555", width=1))
@@ -629,6 +640,14 @@ class ValidatePage(QObject):
         pi = self._pw.plotItem
         self._vb2.setGeometry(pi.vb.sceneBoundingRect())
         self._vb2.linkedViewChanged(pi.vb, self._vb2.XAxis)
+
+    def _export_data(self):
+        (x0, x1), _ = self._pw.plotItem.vb.viewRange()
+        left_label = _CHANNELS[self._left_key][1] if self._left_key else ""
+        right_label = _CHANNELS[self._right_key][1] if self._right_key else ""
+        return build_export_data(
+            self._time, left_label, self._channel(self._left_key),
+            right_label, self._channel(self._right_key), (x0, x1))
 
     def _apply_view_limits(self):
         vb = self._pw.plotItem.getViewBox()

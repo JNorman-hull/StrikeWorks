@@ -23,8 +23,8 @@ from modules.page_dataset import DatasetPage
 from modules.page_annotate import AnnotationPage
 from modules.page_ml_prediction import MLPredictionPage
 from modules.page_ml_training import MLTrainingPage
-from modules.page_ml_performance import MLPerformancePage
 from modules.page_stub import StubPage
+from modules.page_initiate_deployment import InitiateDeploymentPage
 from modules import table_copy
 os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
 
@@ -86,6 +86,9 @@ class MainWindow(QMainWindow):
         self.dataset_page = DatasetPage(widgets, self)
         self.dataset_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
+        self.initiate_deployment_page = InitiateDeploymentPage(widgets, self)
+        self.initiate_deployment_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
 
         # ANNOTATION & VIDEO ANALYSIS PAGES
         self.annotation_page = AnnotationPage(widgets, self)
@@ -99,21 +102,15 @@ class MainWindow(QMainWindow):
         self.ml_training_page = MLTrainingPage(widgets, self)
         self.ml_training_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
-        self.ml_performance_page = MLPerformancePage(widgets, self)
-        self.ml_performance_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
 
         # the curated dataset from Sensor Processing feeds Model Prediction
         self.dataset_page.dataset_ready.connect(
             self.ml_prediction_page.on_dataset_ready)
 
         # a freshly deployed model becomes available to Model Prediction
-        # and appears in the Model Performance model list
         self.ml_training_page.model_deployed.connect(
             lambda _p: self.ml_prediction_page.state.load_models_from_dir(
                 self.ml_prediction_page.state.models_dir))
-        self.ml_training_page.model_deployed.connect(
-            lambda _p: self.ml_performance_page.reload())
 
         # STUB PAGES (Chunk 5 restructure - not built yet; see ROADMAP.md)
         # ///////////////////////////////////////////////////////////////
@@ -126,8 +123,6 @@ class MainWindow(QMainWindow):
             StubPage(widgets.content_bsm_reporting, "Reporting",
                      "Blade strike modelling report, saved as JSON for "
                      "Setup and deploy to read. Part of task 5."),
-            StubPage(widgets.content_initiate_deployment, "Initiate deployment",
-                     "Save the deployment plan and a basic summary report."),
             StubPage(widgets.content_data_analysis, "Data analysis",
                      "Passage duration, time-series normalisation, "
                      "barotrauma metrics, acceleration peak finding. Part "
@@ -177,7 +172,7 @@ class MainWindow(QMainWindow):
 
         move_before("btn_study_design", "btn_prepare")
         move_before("btn_export_animations", "btn_dataset")
-        move_after("btn_ml_performance", "btn_misclassification")
+        move_after("btn_deploy_train", "btn_misclassification")
 
         # BUTTONS CLICK
         # ///////////////////////////////////////////////////////////////
@@ -268,8 +263,7 @@ class MainWindow(QMainWindow):
                       "btn_annotation"),
         "model_training": ("Model training",
                            ("btn_ml_training", "btn_evaluate_train",
-                            "btn_deploy_train", "btn_misclassification",
-                            "btn_ml_performance"),
+                            "btn_misclassification", "btn_deploy_train"),
                            "btn_model_training"),
         "model_prediction": ("Model prediction",
                              ("btn_ml_prediction", "btn_inspect_pred",
@@ -301,7 +295,6 @@ class MainWindow(QMainWindow):
         "btn_evaluate_train":      ("page_ml_training", "tabs_ml_training", 1),
         "btn_deploy_train":        ("page_ml_training", "tabs_ml_training", 2),
         "btn_misclassification":   ("page_misclassification", None, None),
-        "btn_ml_performance":      ("page_ml_performance", None, None),
         # Model prediction
         "btn_ml_prediction":  ("page_ml_prediction", "tabs_ml_prediction", 0),
         "btn_inspect_pred":   ("page_ml_prediction", "tabs_ml_prediction", 1),

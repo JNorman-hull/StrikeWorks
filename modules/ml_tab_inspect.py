@@ -32,6 +32,10 @@ from .ml_widgets import (
     BAD, INFO, MUTED, OK, PALETTE, PINK, TEXT, WARN, ProbBars, Section, apply_section_defaults,
 )
 from .page_validate import _CsvLoadThread, _NavViewBox
+from .plot_style import (
+    add_export_button, build_export_data, reserve_top_margin,
+    set_right_axis_active,
+)
 
 _VIEW_WINDOW = "window"   # exact model-input segment
 _VIEW_FULL   = "full"     # full sensor passage from the library
@@ -58,6 +62,9 @@ class InspectTab:
         self._full_missing = set()  # recordings with no library CSV
         self._loaders = []
         self._pending_full = None
+        self._export_t = None
+        self._export_left = None
+        self._export_right = None
 
         self._build(frame)
         self._connect_state()
@@ -207,6 +214,8 @@ class InspectTab:
         ctl.addWidget(lab_r)
         ctl.addWidget(self.cmb_right, stretch=1)
         ctl.addWidget(self.btn_reset_view)
+        add_export_button(ctl, self._export_data, self.window,
+                          file_stub="inspect")
         gv.addLayout(ctl)
 
         self._pw = pg.PlotWidget(viewBox=_NavViewBox())
@@ -216,13 +225,14 @@ class InspectTab:
         pi = self._pw.plotItem
         pi.getViewBox().setMouseMode(pg.ViewBox.RectMode)
         pi.setLabel("bottom", "Time (s)")
+        reserve_top_margin(pi)
 
         # secondary ViewBox for the optional right-axis channel
         self._vb2 = pg.ViewBox()
         pi.scene().addItem(self._vb2)
         pi.getAxis("right").linkToView(self._vb2)
         self._vb2.setXLink(pi)
-        pi.hideAxis("right")
+        set_right_axis_active(pi, False)
         pi.vb.sigResized.connect(self._sync_vb2)
         gv.addWidget(self._pw, stretch=1)
 
@@ -588,7 +598,10 @@ class InspectTab:
         if self._window_region is not None:
             pi.removeItem(self._window_region)
             self._window_region = None
-        pi.hideAxis("right")
+        set_right_axis_active(pi, False)
+        self._export_t = None
+        self._export_left = None
+        self._export_right = None
 
     # ── full-passage lookup (library CSVs, loaded off the GUI thread) ────────
     def _find_full_csv(self, stem):
@@ -678,6 +691,9 @@ class InspectTab:
 
         pi = self._pw.plotItem
         t = sig["time_s"].to_numpy(dtype=float)
+        self._export_t = t
+        self._export_left = None
+        self._export_right = None
 
         left = self.cmb_left.currentData()
         if left and left in sig.columns:
@@ -687,17 +703,20 @@ class InspectTab:
             self._left_curve.setDownsampling(auto=True, method="peak")
             self._left_curve.setClipToView(True)
             pi.setLabel("left", left)
+            self._export_left = (left, y)
 
         right = self.cmb_right.currentData()
         if right and right in sig.columns:
-            pi.showAxis("right")
+            set_right_axis_active(pi, True)
             pi.setLabel("right", right)
             self._right_curve = pg.PlotCurveItem(
                 pen=pg.mkPen("#ff5555", width=1))
             self._vb2.addItem(self._right_curve)
-            self._right_curve.setData(t, sig[right].to_numpy(dtype=float))
+            right_y = sig[right].to_numpy(dtype=float)
+            self._right_curve.setData(t, right_y)
             self._sync_vb2()
             self._vb2.enableAutoRange("y", True)
+            self._export_right = (right, right_y)
 
         # model-input window: shaded when viewing the full passage
         w_t = window_sig["time_s"].to_numpy(dtype=float)
@@ -734,3 +753,13 @@ class InspectTab:
         pi = self._pw.plotItem
         self._vb2.setGeometry(pi.vb.sceneBoundingRect())
         self._vb2.linkedViewChanged(pi.vb, self._vb2.XAxis)
+
+    def _export_data(self):
+        if self._export_t is None or self._export_left is None:
+            return None
+        (x0, x1), _ = self._pw.plotItem.vb.viewRange()
+        left_label, left_y = self._export_left
+        right_label, right_y = self._export_right or (None, None)
+        return build_export_data(
+            self._export_t, left_label, left_y, right_label, right_y,
+            (x0, x1))
