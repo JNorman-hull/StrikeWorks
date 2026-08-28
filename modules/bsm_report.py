@@ -12,11 +12,25 @@ that would give the BSM pages their own visual language, inconsistent with
 every prediction/evaluation report elsewhere in the app. Instead this
 reuses `ml_report.py`'s generic HTML building blocks
 (`_kv_table`/`_data_table`/`_img_tag`/`wrap_html_document`/`_DARK`), so a
-BSM report looks like the same family of document as a prediction report.
+BSM report looks like the same family of document as a prediction report -
+the equations section below is the same "symbol = numbers = result"
+breakdown the standalone `/Scripts/Mathematical BSM/Project` scripts print
+to console, just as a formatted block instead of stdout.
 """
+import math
 from datetime import datetime
 
 from .ml_report import _DARK, _data_table, _img_tag, _kv_table, wrap_html_document
+
+_EPS = 1e-9
+
+
+def _equation_block(title, lines):
+    body = "<br>".join(lines)
+    return (f"<p style='margin:10px 0 2px;font-weight:bold;'>{title}</p>"
+            f"<div style='font-family:Consolas,\"Courier New\",monospace;"
+            f"font-size:12px;background:#f1f5f9;border-radius:4px;"
+            f"padding:8px 12px;white-space:pre-wrap;'>{body}</div>")
 
 
 def build_bsm_report_html(res, image_paths=None, embed_images=True):
@@ -54,6 +68,9 @@ def build_bsm_report_html(res, image_paths=None, embed_images=True):
         ("Blade-tip critical velocity (m/s)", f"{res['vcrit_tip']:.4f}"),
     ]))
 
+    h.append(f"<h2 style='color:{_DARK};'>Equations (blade tip, f = 1)</h2>")
+    h.extend(_equations(res))
+
     h.append(f"<h2 style='color:{_DARK};'>Results</h2>")
     headers = ["Method", "Pco (%)", "fMR (%)", "Pm (%)", "S (%)"]
     rows = [["CEN", f"{res['Pco_tip'] * 100:.2f}", f"{res['fMR_tip'] * 100:.2f}",
@@ -68,8 +85,7 @@ def build_bsm_report_html(res, image_paths=None, embed_images=True):
                  f"[{res['wilson_lo'] * 100:.2f}%, {res['wilson_hi'] * 100:.2f}%] "
                  f"(n={p.get('total', na)}, strikes={p.get('strike', na)}).</p>")
 
-    figs = [image_paths.get("pco"), image_paths.get("pm")]
-    figs = [f for f in figs if f]
+    figs = [f for f in image_paths.values() if f]
     if figs:
         h.append(f"<h2 style='color:{_DARK};'>Figures</h2>")
         for f in figs:
@@ -80,3 +96,49 @@ def build_bsm_report_html(res, image_paths=None, embed_images=True):
              f"{datetime.now().strftime('%Y-%m-%d %H:%M')}.</p>")
     h.append("</div>")
     return "".join(h)
+
+
+def _equations(res):
+    """The symbol -> substituted-numbers -> result breakdown for the
+    blade-tip point, in the same form the standalone Mathematical BSM
+    scripts print to console."""
+    p = res["params"]
+    wf, alpha = p["wf"], p["alpha"]
+    vm = res["vm"]
+    circ_tip, chan_tip = res["circ_tip"], res["chan_tip"]
+    Leff_m, Leff_t = res["Leff_m"], res["Leff_t"]
+    denom_v = max(abs(vm + wf * math.cos(alpha)), _EPS)
+
+    blocks = [
+        _equation_block("Collision probability Pco", [
+            "Pco = Leff,m &middot; |circ| / [ max(chan &minus; Leff,t, &epsilon;) "
+            "&middot; |vm + wf&middot;cos&nbsp;&alpha;| ]",
+            f"    = {Leff_m:.6f} &middot; {abs(circ_tip):.6f} / "
+            f"[ max({chan_tip:.6f} &minus; {Leff_t:.6f}, &epsilon;) &middot; "
+            f"{denom_v:.6f} ]",
+            f"    = {res['Pco_tip']:.6f}  ({res['Pco_tip'] * 100:.4f} %)",
+        ]),
+        _equation_block("Mutilation fraction fMR", [
+            (f"fMR = a &middot; ln(Lf/d) + b) &middot; (vstrike &minus; vcrit)   "
+             f"[regime {res['regime_tip']}]"
+             if p["species"] != "eel" else
+             "fMR = a &middot; (Lf/d) &middot; (vstrike &minus; vcrit)   [eel]"),
+            f"    a = {res['a_tip']:.6f}"
+            + (f"  b = {res['b_tip']:.6f}" if res["b_tip"] is not None else ""),
+            f"    Lf/d = {res['Lf_d_tip']:.4f}   vstrike = "
+            f"{res['vstrike_tip']:.4f} m/s   vcrit = {res['vcrit_tip']:.4f} m/s",
+            f"    = {res['fMR_tip']:.6f}  ({res['fMR_tip'] * 100:.4f} %)",
+        ]),
+        _equation_block("Mortality probability Pm", [
+            "Pm = (2 / (r + bh)) &middot; &#8747;&#8320;&sup1; fMR(f)&middot;"
+            "Pco(f)&middot;r(f) df",
+            f"   = (2 / {p['r'] + p['bh']:.4f}) &middot; {res['integral']:.6f}",
+            f"   = {res['Pm']:.6f}  ({res['Pm'] * 100:.4f} %)",
+        ]),
+        _equation_block("Survival probability S", [
+            "S = 1 &minus; Pm",
+            f"  = 1 &minus; {res['Pm']:.6f} = {res['S']:.6f}  "
+            f"({res['S'] * 100:.4f} %)",
+        ]),
+    ]
+    return blocks

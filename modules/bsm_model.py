@@ -193,3 +193,51 @@ def recompute_mortality(res, species, eel_vcrit=None, lf=None, threshold=None):
 
     return {"species": species, "eel_vcrit": eel_vcrit, "lf": lf,
             "threshold": threshold, "fMR_arr": fMR_arr, "Pm": Pm, "S": 1 - Pm}
+
+
+def default_vcrit(res, species, eel_vcrit=None, lf=None):
+    """The critical velocity `cen_regression` would derive on its own for
+    this result's blade-tip length-to-diameter ratio - scaly's floor is
+    4.8 m/s (`max(4.8, -2.8*Lf_d + 10.3)`), eel uses `eel_vcrit` directly.
+    The point the critical-velocity sensitivity curve marks as "the
+    regression's own value" rather than an override."""
+    p = res["params"]
+    lf = lf if lf is not None else p["lf"]
+    eel_vcrit = eel_vcrit if eel_vcrit is not None else p["eel_vcrit"]
+    Lf_d_tip = lf / res["d_arr"][-1]
+    _a, _b, vcrit, _regime = cen_regression(species, Lf_d_tip, eel_vcrit)
+    return vcrit
+
+
+def recompute_mortality_at_vcrit(res, species, vcrit, lf=None):
+    """Mortality at an explicit critical velocity, bypassing
+    `cen_regression`'s own vcrit formula entirely - the "what if the
+    critical velocity were X" question the critical-velocity sensitivity
+    curve sweeps, holding everything else (regression a/b coefficients,
+    hydrodynamic exposure) fixed at this result's values. Species still
+    selects which regression shape (log-linear vs single-term) applies -
+    only the velocity threshold itself is overridden.
+    """
+    p = res["params"]
+    lf = lf if lf is not None else p["lf"]
+    r, bh = p["r"], p["bh"]
+    f_arr = res["f_arr"]
+    r_arr, d_arr = res["r_arr"], res["d_arr"]
+    vstrike_arr, Pco_arr = res["vstrike_arr"], res["Pco_arr"]
+
+    fMR_arr = np.zeros_like(r_arr)
+    for i in range(len(r_arr)):
+        Lf_d = lf / d_arr[i]
+        # eel_vcrit is unused here (the vcrit argument overrides it below);
+        # pass a placeholder so cen_regression's eel branch doesn't error
+        a_c, b_c, _vcrit_ignored, _ = cen_regression(species, Lf_d, vcrit)
+        if species == "eel":
+            fMR_arr[i] = min(1.0, max(0.0, a_c * Lf_d * (vstrike_arr[i] - vcrit)))
+        else:
+            fMR_arr[i] = min(1.0, max(0.0,
+                (a_c * np.log(Lf_d) + b_c) * (vstrike_arr[i] - vcrit)))
+
+    integrand = fMR_arr * Pco_arr * r_arr
+    integral = np.sum(np.diff(f_arr) * (integrand[:-1] + integrand[1:]) / 2)
+    Pm = min(1.0, max(0.0, 2 / (r + bh) * integral))
+    return {"species": species, "vcrit": vcrit, "lf": lf, "Pm": Pm, "S": 1 - Pm}

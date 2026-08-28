@@ -770,6 +770,206 @@ per-page tweaks.
    treatment summaries with Wilson 95% CIs." label under Prediction
    configuration is removed as redundant restating of what Results by
    treatment / Prediction figures already show.
+
+   Follow-up (2026-08-28): app-wide styling/widget consistency, plus a
+   substantial BSM pages rework, informed by `/Scripts/Mathematical BSM/
+   Project` (the standalone reference scripts the plotting/config/report
+   conventions below are ported from).
+
+   **Sensor-list unification.** `LibrarySelector` (`library_widgets.py`)
+   now optionally owns the whole sensor-list panel, not just the Library/
+   Deployment/Treatment combos: `LibrarySelector(sensor_list=True,
+   list_columns=[...])` adds the "Show bad sensors" checkbox, the progress
+   counter, and a `populate_sensor_list(rows, is_bad=, is_done=,
+   done_label=, extra=)` call that does the one behaviour every such list
+   should share - never-bad-not-done stays white, done turns green,
+   bad-not-done is red, bad-and-done is amber, and **unticking "Show bad
+   sensors" now actually hides bad rows** rather than just leaving them
+   uncoloured (previously true only on Annotate; the denominator in the
+   counter stays the full unfiltered count). Export animations gained this
+   whole panel for the first time - "Show bad sensors" and a "Synced: N/M"
+   counter (its own name for "done", since Export doesn't build a
+   dataset), reading `bad_sens` via a new `deployment_index.is_bad()`/
+   `BAD_SENS_COL` (moved out of `page_annotate.py`, the canonical home now
+   that two pages need it) and its own index load on `library_changed`.
+   Caught and fixed while wiring this up: the combos' `currentIndexChanged`
+   (passes an int) was connected directly to `filters_changed.emit` (a
+   no-arg signal) - harmless while nothing but blockSignals-guarded
+   repopulation touched the combos, but a `TypeError` the instant a user
+   actually picked a different deployment/treatment; fixed with a lambda
+   that drops the argument. Also fixed a real index-mismatch bug this
+   surfaced: Annotate's video-double-click handler read
+   `self._sensor_rows[row_index]`, which breaks the moment "Show bad
+   sensors" hides rows (visible index ≠ list index) - now reads the stem
+   from the clicked row's own item text instead.
+
+   **App-wide table/container styling.** New `ml_widgets.style_table()` -
+   the same card background/outline as everything else, both rows and
+   columns left user-draggable (`row_numbers=True` by default: Qt gives a
+   *hidden* vertical header no drag handle at all, so showing row numbers
+   is what makes rows resizable, not just cosmetic) - applied to every
+   `QTableWidget` in the app: Predict's/Inspect's/Train's results tables
+   (`columns=False` where a table already deliberately auto-fits +
+   stretches its last column, e.g. wide sortable results grids - only the
+   background/row treatment applies there), Annotate's report-variables
+   table, Misclassification, Study design's precision-sweep table,
+   Process's inventory/metadata tables, and both new BSM tables. Also:
+   Create and edit deployment's treatment-rows list (each row carrying its
+   own run count) now scrolls in a capped-height `QScrollArea` instead of
+   squashing the Save panel below it once there are more than a handful.
+
+   **BSM Calculator.** New `modules/bsm_config.py` reads `[fish]`/`[pump]`/
+   `[blade]`/`[observed]` INI files from `input_data/BSM_config/*.txt` -
+   the exact format the standalone scripts' `pump_config/*.txt` use, so a
+   config written for one loads into the other unchanged (case-sensitive
+   parsing was required: `[pump]` has both a lower-case `n`, blade count,
+   and upper-case `N`, shaft speed, which `configparser`'s default
+   lower-casing collides). A "Configuration" picker (library-style combo +
+   Load button) above Fish populates every input field from the selected
+   file. The folder name and its two files (`ksb_configuration.txt`,
+   `pumpflow_configuration.txt`) turned out to already exist, committed
+   independently mid-session ("Added BSm calculator", outside this
+   session's control per the established auto-commit pattern) - the
+   content was byte-identical to what this task copied in from the same
+   source scripts, so no conflict; `CONFIG_DIR` was pointed at the
+   already-tracked `BSM_config` capitalisation rather than the `bsm_config`
+   this was first written against, since Windows' case-insensitive
+   filesystem had silently aliased the two into one directory anyway.
+   "Observed strike data" is off the visible page per request - the
+   Section is still built (kept as `self._observed_section` so Qt doesn't
+   garbage-collect an unparented widget tree, which crashed the first
+   version of this) so `read_inputs()`/`_validate()` stay unchanged, just
+   never attached to a layout; `bsm_model.compute()` itself is untouched.
+   The Pco/Pm bar-chart canvases are gone from Calculator (moved to
+   Analysis and reporting); a new "Blade strike output" `MetaCard` shows
+   the exact JSON that gets published for the rest of the pipeline, via a
+   new `bsm_state.build_latest_payload()` shared with Reporting's own
+   publish step (one payload shape, not two that could drift).
+
+   **"Sensitivity analysis" → "Analysis and reporting"** (label only -
+   `page_bsm_sensitivity.py`/`SensitivityPage` keep their names to avoid
+   gratuitous import churn). Now shows: the Pco/Pm bars moved from
+   Calculator; collision probability vs relative fish velocity with one
+   line per flow rate (0.6x-1.6x the Calculator's own Q, design flow drawn
+   heavier); mortality probability vs shaft speed, same flow-rate lines;
+   mortality probability vs relative fish velocity (single line). The
+   multi-line sweeps are a new `bsm_figures.draw_sweep_lines()` porting
+   the standalone scripts' Q_LEVELS fan-out convention exactly: viridis-
+   coloured lines, the design curve heavier, each curve labelled directly
+   on the line (cascaded across x so labels don't stack), a corner
+   annotation box for the fixed parameters - plus `bsm_io.export_sweep_lines()`
+   for the long-format CSV+PNG export each sweep offers ("Save sweep...").
+
+   **BSM report.** `bsm_report.py` gained an "Equations" section - the
+   same symbol → substituted-numbers → result breakdown the standalone
+   scripts print to console (Pco, fMR, Pm, S at the blade tip), as a
+   formatted block rather than stdout, kept in `ml_report.py`'s existing
+   visual language (not the old MVP's MathJax methodology document, a
+   decision from the original port that still stands) so every report in
+   the app reads as the same family of document, per the explicit ask
+   ahead of Final Reporting.
+
+   **Study design.** A new "Expected precision vs sample size" figure -
+   Wilson half-width across a range of N at the assumed strike rate, the
+   planned N marked as a point - with a "Save figure to library" button
+   that writes it alongside the deployment index
+   (`deployment_index.index_path(root).parent`) on whichever library is
+   currently selected on Create and edit deployment (a cross-page
+   `self.window.initiate_deployment_page._lib_root` read, matching the
+   pattern `ml_prediction_page` already uses elsewhere - shows a "select a
+   library first" status if none is open there yet).
+
+   **Biological interpretation**, rebuilt per explicit feedback that
+   "critical mortality threshold" wasn't a real concept: removed the
+   threshold spinbox entirely; the mortality estimator now just reports
+   what the chosen species' own regression predicts
+   (`recompute_mortality(..., threshold=None)`) - no adjustable cutoff,
+   because each species' fMR regression already defines what counts as
+   lethal. New "Critical velocity sensitivity" panel sweeps vcrit 2-10 m/s
+   via a new `bsm_model.recompute_mortality_at_vcrit()` (bypasses
+   `cen_regression`'s own vcrit formula entirely, holding the a/b
+   coefficients and hydrodynamic exposure fixed) and marks the point the
+   regression would derive by itself via a new `bsm_model.default_vcrit()`
+   (4.8 m/s - scaly's floor value - verified as the marked point in a
+   scaly sweep). The per-treatment comparison is now a figure as well as a
+   table (`bsm_figures.draw_comparison_bars()` - CEN estimate plus one bar
+   per ML treatment, Wilson error bars), and the manual strike/total input
+   folds into the *same* figure as its own "Manual" bar rather than a
+   disconnected number, per the explicit ask to tie these together.
+
+   Verified end-to-end headlessly against the real seeded config files:
+   Calculator load → calculate → Analysis and reporting's three sweeps →
+   Reporting's JSON publish + equations-bearing HTML report → Biological's
+   mortality/vcrit-sweep/comparison-figure, all through one `MainWindow()`
+   construction; the sensor-list filtering/colouring and Process's
+   deployment/treatment-scoped scanning against scratch libraries with
+   planted `bad_sens` flags and dataset/sync state; the deployment page's
+   treatment-list scroll cap under ten rows; Study design's figure +
+   library-relative save. Two transparency notes: (1) a crashed scratch-
+   library test left `~/.hifistrike_settings.json`'s `libraries_dir`
+   pointed at a deleted scratch folder rather than the real RAPID_libraries
+   path - caught via a screenshot showing an empty Library combo and fixed
+   by hand, twice, since a later test silently propagated the same
+   corruption forward (`settings.get_libraries_dir()` falls back to a
+   bundled default the instant the persisted path doesn't exist, which
+   masks exactly this kind of failed test cleanup rather than surfacing
+   it - worth hardening later, not fixed this pass). (2) `main.ui` was
+   edited again (the "Sensitivity analysis" → "Analysis and reporting"
+   button label) and regenerated via `build_ui.py --force`, same as
+   Process's tree→combo conversion earlier in this task.
+
+   Correction pass (2026-08-28), same session: the above was over-built
+   and under-specified in several places, caught by direct feedback before
+   moving on to task 6.
+
+   The `style_table()` sweep had touched ten-odd files individually for
+   what should have been one change - reverted every per-file call and
+   `style_table` import, replaced with a single pass at the end of
+   `MainWindow.__init__` (`for tbl in self.findChildren(QTableWidget):
+   style_table(tbl)`), the same "one pass over everything, not one edit
+   per page" shape `page_process.py` already used for QGroupBox theming.
+   Genuinely uniform now: every table in the app gets draggable rows and
+   columns from one call site, not ten inconsistent ones (confirmed via
+   `sectionResizeMode` - querying it on a still-empty table is a query
+   artifact, not a real gap: the mode only resolves once rows exist).
+
+   Calculator's Configuration combo now loads on selection
+   (`currentIndexChanged`), matching how the Library combo elsewhere
+   already behaves - the separate "Load" button was an inconsistency with
+   the app's own established pattern, not a deliberate choice. The "Blade
+   strike output" card was too narrow (just the published-JSON subset);
+   it now shows every equation result (geometry, regime, vcrit, Pco, fMR,
+   Pm, S) via a new shared `bsm_state.output_card_rows()`, and replaces
+   the separate small results table on Calculator entirely - one output
+   area, not two.
+
+   The standalone Reporting page is gone (`page_bsm_reporting.py` deleted,
+   its sidebar button and stacked-widget page removed from `main.ui`,
+   `build_ui.py --force` regenerated) - its job was always meant to be
+   part of Analysis and reporting, not a fourth BSM page. Analysis and
+   reporting now: one "Figures" box holding all five plots in a grid (the
+   same shape as Model training's "Evaluation figures" - one box, not one
+   per figure); the Results table and Blade strike output card (same
+   `output_card_rows()` Calculator uses); and one "Generate report..."
+   button producing the CSV+PNG+HTML package `bsm_report.py`/`bsm_io.py`
+   already built, now covering all five figures rather than just Pco/Pm
+   (`build_bsm_report_html`'s figure loop generalised from two hardcoded
+   keys to iterating whatever `image_paths` it's given). Calculator now
+   publishes `LATEST_RESULT_PATH` directly on every `calculate()` call
+   (`build_latest_payload`, unchanged shape) since Reporting no longer
+   exists to own that job.
+
+   Study design's three boxes (Wilson calculator, precision-at-other-N
+   table, precision-vs-N figure) collapsed into one "Study size" box, form
+   and result label above, table and figure side by side below, every
+   descriptive paragraph removed - the boxes and their own titles already
+   said what they were. Biological interpretation's four boxes (with a
+   paragraph of prose each) collapsed to two - "Comparison" (table and
+   figure side by side, the manual strike/total inputs as a compact row
+   underneath rather than their own section) and "Mortality" (species +
+   eel-critical-velocity inputs, the result line, and the critical-
+   velocity sweep figure together) - same content, same behaviour, far
+   less scaffolding around it.
 6. Delineation tool (Segmentation page) - the design already agreed in the
    old Chunk 4 note: 7 windows covering the full time series, start/end
    trim handles placed first with everything else relative to them, nadir

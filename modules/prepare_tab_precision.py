@@ -17,26 +17,33 @@ Create and edit deployment, which now owns writing the plan into the
 library.
 
 "Load from Blade Strike Modelling" (ROADMAP.md Chunk 5 task 5) reads
-`bsm_state.LATEST_RESULT_PATH` - the small JSON the Reporting page writes
-after every Calculator run - and fills the expected strike rate from the
-CEN estimate. Deliberately reads the file rather than taking a live
-BSMState reference: Setup and deploy stays decoupled from whether the BSM
-pages have even been visited this session, and "expected" strike rate for
-planning purposes is the a-priori CEN estimate, not an observed rate that
-does not exist yet.
+`bsm_state.LATEST_RESULT_PATH` - the small JSON Calculator writes after
+every run - and fills the expected strike rate from the CEN estimate.
+Deliberately reads the file rather than taking a live BSMState reference:
+Setup and deploy stays decoupled from whether the BSM pages have even been
+visited this session, and "expected" strike rate for planning purposes is
+the a-priori CEN estimate, not an observed rate that does not exist yet.
 """
 import json
 
+import numpy as np
+
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+
 from PySide6.QtWidgets import (
     QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QPushButton,
-    QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from . import deployment_index as di
 from .bsm_state import LATEST_RESULT_PATH
+from .ml_figures import fg_colour, style_axes, style_legend, _grid
 from .ml_widgets import MUTED, TEXT, Section, apply_section_defaults
 from .wilson_calc import wilson_interval
 
 _N_MULTIPLIERS = (0.5, 1, 2, 4)
+_N_CURVE_POINTS = 60
 
 
 class PrecisionCalcTab:
@@ -54,18 +61,9 @@ class PrecisionCalcTab:
         v.setContentsMargins(4, 6, 4, 6)
         v.setSpacing(10)
 
-        grp = Section("Sampling precision (Wilson score interval)")
+        grp = Section("Study size")
         gv = QVBoxLayout(grp)
         gv.setSpacing(8)
-
-        lab_note = QLabel(
-            "Estimate the precision a planned sample size would achieve for "
-            "a hypothesised strike rate - a quick way to judge whether the "
-            "sampling effort planned in Create and edit deployment is "
-            "enough, before any data comes back.")
-        lab_note.setStyleSheet(f"color:{MUTED};")
-        lab_note.setWordWrap(True)
-        gv.addWidget(lab_note)
 
         form = QGridLayout()
         form.setHorizontalSpacing(10)
@@ -105,25 +103,31 @@ class PrecisionCalcTab:
         self.lbl_result.setStyleSheet(f"color:{TEXT};font-weight:bold;")
         self.lbl_result.setWordWrap(True)
         gv.addWidget(self.lbl_result)
-        v.addWidget(grp)
 
-        grp_table = Section("Precision at other sample sizes")
-        tv = QVBoxLayout(grp_table)
-        lab_table = QLabel(
-            "Same strike rate and confidence level, at half, double and "
-            "quadruple the planned N.")
-        lab_table.setStyleSheet(f"color:{MUTED};")
-        lab_table.setWordWrap(True)
-        tv.addWidget(lab_table)
+        row = QHBoxLayout()
         self.tbl_sweep = QTableWidget(0, 4)
         self.tbl_sweep.setHorizontalHeaderLabels(
             ["N", "Interval", "Precision (±)", ""])
-        self.tbl_sweep.verticalHeader().setVisible(False)
         self.tbl_sweep.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.tbl_sweep.setMinimumHeight(160)
-        tv.addWidget(self.tbl_sweep)
-        v.addWidget(grp_table)
+        row.addWidget(self.tbl_sweep, stretch=1)
 
+        self.fig_precision = Figure(figsize=(5.0, 3.2), dpi=100)
+        self.canvas_precision = FigureCanvas(self.fig_precision)
+        self.canvas_precision.setMinimumSize(220, 190)
+        self.canvas_precision.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        row.addWidget(self.canvas_precision, stretch=1)
+        gv.addLayout(row, stretch=1)
+
+        save_row = QHBoxLayout()
+        save_row.addStretch()
+        self.btn_save_precision = QPushButton("Save figure to library...")
+        self.btn_save_precision.clicked.connect(self._save_precision_figure)
+        save_row.addWidget(self.btn_save_precision)
+        gv.addLayout(save_row)
+
+        v.addWidget(grp)
         v.addStretch()
         apply_section_defaults(frame)
 
@@ -183,3 +187,45 @@ class PrecisionCalcTab:
             self.tbl_sweep.setItem(r, 2, QTableWidgetItem(precision))
             self.tbl_sweep.setItem(r, 3, QTableWidgetItem(label))
         self.tbl_sweep.resizeColumnsToContents()
+
+        self._draw_precision_curve(p, n, confidence, half)
+
+    def _draw_precision_curve(self, p, n, confidence, planned_half):
+        n_max = max(n * 4, 20)
+        n_vals = np.unique(np.round(np.linspace(2, n_max, _N_CURVE_POINTS))
+                           .astype(int))
+        half_vals = np.array([wilson_interval(p, int(ni), confidence)[2] * 100
+                              for ni in n_vals])
+
+        fig = self.fig_precision
+        fig.clear()
+        ax = fig.add_subplot(111)
+        dark = True
+        fg = fg_colour(dark)
+        _grid(ax, dark)
+        ax.plot(n_vals, half_vals, color="#568af2", linewidth=1.5, zorder=2)
+        ax.scatter([n], [planned_half * 100], s=50, color="#f59e0b",
+                  edgecolor=fg, linewidth=0.8, zorder=4,
+                  label=f"Planned N={n}")
+        style_legend(ax.legend(loc="upper right", fontsize=8), dark)
+        ax.set_xlabel("Sample size N", fontsize=9)
+        ax.set_ylabel("Precision ± (percentage points)", fontsize=9)
+        ax.tick_params(labelsize=8)
+        style_axes(fig, ax, dark)
+        fig.tight_layout()
+        self.canvas_precision.draw()
+
+    def _save_precision_figure(self):
+        dep_page = getattr(self.window, "initiate_deployment_page", None)
+        lib_root = getattr(dep_page, "_lib_root", None) if dep_page else None
+        if lib_root is None:
+            if self._status is not None:
+                self._status("Select a library on Create and edit "
+                             "deployment first.", 5000)
+            return
+        out_dir = di.index_path(lib_root).parent
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / "precision_ci_vs_n.png"
+        self.fig_precision.savefig(out_path, dpi=200, bbox_inches="tight")
+        if self._status is not None:
+            self._status(f"Saved precision figure to {out_path}", 5000)

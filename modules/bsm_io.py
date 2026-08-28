@@ -37,3 +37,20 @@ def export_sensitivity(x, y, fig, out_dir, stem, x_header):
             w.writerow([f"{xi:g}", f"{yi:.6f}"])
     fig.savefig(out / f"{stem}.png", dpi=300, bbox_inches="tight")
     return out
+
+
+def export_sweep_lines(curves, fig, out_dir, stem, x_header, line_header,
+                       y_header):
+    """Long-format export of a multi-line sweep (`bsm_figures.draw_sweep_lines`'
+    `curves` shape: label -> (x_arr, y_arr)) - one row per (x, line) pair,
+    matching the standalone Mathematical BSM scripts' `*_sensitivity_wf_q.csv`
+    convention."""
+    out = Path(out_dir)
+    with open(out / f"{stem}.csv", "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow([x_header, line_header, y_header])
+        for label, (x_arr, y_arr) in curves.items():
+            for xi, yi in zip(x_arr, y_arr):
+                w.writerow([f"{xi:g}", label, f"{yi:.6f}"])
+    fig.savefig(out / f"{stem}.png", dpi=300, bbox_inches="tight")
+    return out

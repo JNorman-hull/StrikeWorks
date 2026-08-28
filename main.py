@@ -30,8 +30,8 @@ from modules.page_export_animations import ExportAnimationsPage
 from modules.bsm_state import BSMState
 from modules.page_bsm_calculator import CalculatorPage
 from modules.page_bsm_sensitivity import SensitivityPage
-from modules.page_bsm_reporting import ReportingPage
 from modules.page_bsm_biological import BiologicalPage
+from modules.ml_widgets import style_table
 from modules import table_copy
 os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
 
@@ -127,8 +127,9 @@ class MainWindow(QMainWindow):
                 self.ml_prediction_page.state.models_dir))
 
         # MATHEMATICAL BLADE STRIKE MODELLING PAGES (Chunk 5 task 5)
-        # Calculator owns each run; Sensitivity and Reporting react to its
-        # `calculated` signal via the shared BSMState. Biological
+        # Calculator owns each run; Analysis and reporting reacts to its
+        # `calculated` signal via the shared BSMState and also owns export
+        # (the standalone Reporting page was folded into it). Biological
         # interpretation additionally compares against Model prediction's
         # data-driven per-treatment results.
         # ///////////////////////////////////////////////////////////////
@@ -140,10 +141,6 @@ class MainWindow(QMainWindow):
         self.bsm_sensitivity_page = SensitivityPage(
             widgets.content_bsm_sensitivity, self, self.bsm_state)
         self.bsm_sensitivity_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-        self.bsm_reporting_page = ReportingPage(
-            widgets.content_bsm_reporting, self, self.bsm_state)
-        self.bsm_reporting_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
         self.biological_page = BiologicalPage(
             widgets.content_biological, self, self.bsm_state,
@@ -227,6 +224,14 @@ class MainWindow(QMainWindow):
         widgets.settingsTopBtn.clicked.connect(openCloseRightBox)
         widgets.btn_about.clicked.connect(self.openAbout)
 
+        # UNIFORM TABLE STYLING - one pass over every QTableWidget in the
+        # app (built by every page above) rather than each page styling
+        # its own tables: the same card background/outline everything
+        # else gets, rows and columns both left user-resizable.
+        # ///////////////////////////////////////////////////////////////
+        for tbl in self.findChildren(QTableWidget):
+            style_table(tbl)
+
         # SHOW APP
         # ///////////////////////////////////////////////////////////////
         self.show()
@@ -272,8 +277,7 @@ class MainWindow(QMainWindow):
     # ///////////////////////////////////////////////////////////////
     _PANEL_SECTIONS = {
         "bsm": ("Mathematical blade strike modelling",
-               ("btn_bsm_calculator", "btn_bsm_sensitivity",
-                "btn_bsm_reporting"),
+               ("btn_bsm_calculator", "btn_bsm_sensitivity"),
                "btn_bsm"),
         "setup_deploy": ("Setup and deploy",
                          ("btn_prepare", "btn_study_design",
@@ -328,7 +332,6 @@ class MainWindow(QMainWindow):
         # Mathematical Blade Strike Modelling
         "btn_bsm_calculator":       ("page_bsm_calculator", None, None),
         "btn_bsm_sensitivity":      ("page_bsm_sensitivity", None, None),
-        "btn_bsm_reporting":        ("page_bsm_reporting", None, None),
     }
 
     def _section_for_button(self, btn_name):

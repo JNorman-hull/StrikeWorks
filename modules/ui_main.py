@@ -1066,18 +1066,6 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_11.addWidget(self.btn_bsm_sensitivity)
 
-        self.btn_bsm_reporting = QPushButton(self.extraTopMenu)
-        self.btn_bsm_reporting.setObjectName(u"btn_bsm_reporting")
-        sizePolicy.setHeightForWidth(self.btn_bsm_reporting.sizePolicy().hasHeightForWidth())
-        self.btn_bsm_reporting.setSizePolicy(sizePolicy)
-        self.btn_bsm_reporting.setMinimumSize(QSize(0, 45))
-        self.btn_bsm_reporting.setFont(font)
-        self.btn_bsm_reporting.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_bsm_reporting.setLayoutDirection(Qt.LeftToRight)
-        self.btn_bsm_reporting.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-description.png);")
-
-        self.verticalLayout_11.addWidget(self.btn_bsm_reporting)
-
 
         self.verticalLayout_12.addWidget(self.extraTopMenu, 0, Qt.AlignTop)
 
@@ -2391,20 +2379,6 @@ class Ui_MainWindow(object):
         self.layout_page_bsm_sensitivity.addWidget(self.content_bsm_sensitivity)
 
         self.stackedWidget.addWidget(self.page_bsm_sensitivity)
-        self.page_bsm_reporting = QWidget()
-        self.page_bsm_reporting.setObjectName(u"page_bsm_reporting")
-        self.layout_page_bsm_reporting = QVBoxLayout(self.page_bsm_reporting)
-        self.layout_page_bsm_reporting.setSpacing(10)
-        self.layout_page_bsm_reporting.setObjectName(u"layout_page_bsm_reporting")
-        self.layout_page_bsm_reporting.setContentsMargins(10, 10, 10, 10)
-        self.content_bsm_reporting = QFrame(self.page_bsm_reporting)
-        self.content_bsm_reporting.setObjectName(u"content_bsm_reporting")
-        self.content_bsm_reporting.setFrameShape(QFrame.NoFrame)
-        self.content_bsm_reporting.setFrameShadow(QFrame.Raised)
-
-        self.layout_page_bsm_reporting.addWidget(self.content_bsm_reporting)
-
-        self.stackedWidget.addWidget(self.page_bsm_reporting)
         self.page_initiate_deployment = QWidget()
         self.page_initiate_deployment.setObjectName(u"page_initiate_deployment")
         self.layout_page_initiate_deployment = QVBoxLayout(self.page_initiate_deployment)
@@ -2674,8 +2648,7 @@ class Ui_MainWindow(object):
         self.btn_biological.setText(QCoreApplication.translate("MainWindow", u"Biological interpretation", None))
         self.btn_final_report.setText(QCoreApplication.translate("MainWindow", u"Final reporting", None))
         self.btn_bsm_calculator.setText(QCoreApplication.translate("MainWindow", u"Calculator", None))
-        self.btn_bsm_sensitivity.setText(QCoreApplication.translate("MainWindow", u"Sensitivity analysis", None))
-        self.btn_bsm_reporting.setText(QCoreApplication.translate("MainWindow", u"Reporting", None))
+        self.btn_bsm_sensitivity.setText(QCoreApplication.translate("MainWindow", u"Analysis and reporting", None))
         self.titleRightInfo.setText("")
 #if QT_CONFIG(tooltip)
         self.settingsTopBtn.setToolTip(QCoreApplication.translate("MainWindow", u"Settings", None))

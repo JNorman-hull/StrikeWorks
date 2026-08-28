@@ -2048,44 +2048,7 @@ Button */
                    <string notr="true">background-image: url(:/icons/images/icons/cil-chart-pie.png);</string>
                   </property>
                   <property name="text">
-                   <string>Sensitivity analysis</string>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="QPushButton" name="btn_bsm_reporting">
-                  <property name="sizePolicy">
-                   <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-                    <horstretch>0</horstretch>
-                    <verstretch>0</verstretch>
-                   </sizepolicy>
-                  </property>
-                  <property name="minimumSize">
-                   <size>
-                    <width>0</width>
-                    <height>45</height>
-                   </size>
-                  </property>
-                  <property name="font">
-                   <font>
-                    <family>Segoe UI</family>
-                    <pointsize>10</pointsize>
-                    <weight>50</weight>
-                    <italic>false</italic>
-                    <bold>false</bold>
-                   </font>
-                  </property>
-                  <property name="cursor">
-                   <cursorShape>PointingHandCursor</cursorShape>
-                  </property>
-                  <property name="layoutDirection">
-                   <enum>Qt::LeftToRight</enum>
-                  </property>
-                  <property name="styleSheet">
-                   <string notr="true">background-image: url(:/icons/images/icons/cil-description.png);</string>
-                  </property>
-                  <property name="text">
-                   <string>Reporting</string>
+                   <string>Analysis and reporting</string>
                   </property>
                  </widget>
                 </item>
@@ -4765,35 +4728,6 @@ background-repeat: no-repeat;</string>
                        </property>
                        <item>
                         <widget class="QFrame" name="content_bsm_sensitivity">
-                         <property name="frameShape">
-                          <enum>QFrame::NoFrame</enum>
-                         </property>
-                         <property name="frameShadow">
-                          <enum>QFrame::Raised</enum>
-                         </property>
-                        </widget>
-                       </item>
-                      </layout>
-                     </widget>
-                     <widget class="QWidget" name="page_bsm_reporting">
-                      <layout class="QVBoxLayout" name="layout_page_bsm_reporting">
-                       <property name="spacing">
-                        <number>10</number>
-                       </property>
-                       <property name="leftMargin">
-                        <number>10</number>
-                       </property>
-                       <property name="topMargin">
-                        <number>10</number>
-                       </property>
-                       <property name="rightMargin">
-                        <number>10</number>
-                       </property>
-                       <property name="bottomMargin">
-                        <number>10</number>
-                       </property>
-                       <item>
-                        <widget class="QFrame" name="content_bsm_reporting">
                          <property name="frameShape">
                           <enum>QFrame::NoFrame</enum>
                          </property>

@@ -30,7 +30,8 @@ from . import ml_model_library, ml_train_figures
 from .ml_tab_predict import _NumItem
 from .ml_train_state import DEFAULT_MODELS_DIR
 from .ml_widgets import (
-    BAD, MUTED, OK, TEXT, WARN, CARD_W2, CARD_H2, MetaCard, RingCard, Section, apply_section_defaults,
+    BAD, MUTED, OK, TEXT, WARN, CARD_W2, CARD_H2, MetaCard, RingCard, Section,
+    apply_section_defaults,
 )
 
 FIG_MIN_W, FIG_MIN_H = 300, 250

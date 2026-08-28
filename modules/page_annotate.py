@@ -52,9 +52,8 @@ import pandas as pd
 import pyqtgraph as pg
 
 from PySide6.QtCore import Qt, QObject, Signal
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QGridLayout,
+    QCheckBox, QComboBox, QGridLayout,
     QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMessageBox,
     QPlainTextEdit, QPushButton, QSizePolicy, QSplitter, QTableWidget,
     QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
@@ -66,7 +65,7 @@ from . import sensor_config
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
 from .library_widgets import LibrarySelector
 from .ml_widgets import (
-    ACCENT, BAD, BORDER, CARD_BG, MUTED, OK, WARN, MetaCard, Section,
+    ACCENT, MUTED, OK, MetaCard, Section,
     apply_section_defaults,
 )
 from .page_dataset import _META_COLS, _standardise
@@ -88,7 +87,7 @@ _DATASET_REL = Path("processed_sens_data") / "model_features.csv"
 _NADIR_T_COL = "pres_min.time."
 _NADIR_V_COL = "pres_min.kPa."
 _VALIDATED_COL = "hstrike_processed"
-_BAD_SENS_COL = "bad_sens"
+_BAD_SENS_COL = di.BAD_SENS_COL
 _NOTES_COL = "notes"
 
 _FS = 2000
@@ -209,11 +208,8 @@ class AnnotationPage(QObject):
         self.tbl_report_vars = QTableWidget(0, 3)
         self.tbl_report_vars.setHorizontalHeaderLabels(
             ["Variable", "Value", "Count"])
-        self.tbl_report_vars.verticalHeader().setVisible(False)
         self.tbl_report_vars.setEditTriggers(
             QTableWidget.EditTrigger.NoEditTriggers)
-        self.tbl_report_vars.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Interactive)
         self.tbl_report_vars.setMinimumHeight(180)
         vv.addWidget(self.tbl_report_vars)
         v.addWidget(grp_vars, stretch=1)
@@ -242,33 +238,14 @@ class AnnotationPage(QObject):
         lv.setContentsMargins(0, 0, 5, 0)
         lv.setSpacing(8)
 
-        self.lib_selector = LibrarySelector()
-        fv = self.lib_selector.section_layout
-
-        self.chk_show_flags = QCheckBox("Show bad sensors")
-        self.chk_show_flags.setChecked(True)
-        fv.addWidget(self.chk_show_flags)
-
-        self.lbl_progress = QLabel("")
-        self.lbl_progress.setStyleSheet(f"color:{MUTED};")
-        fv.addWidget(self.lbl_progress)
-        lv.addWidget(self.lib_selector)
-
-        self.tbl_sensors = QTableWidget(0, 2)
-        self.tbl_sensors.setHorizontalHeaderLabels(["Sensor", "Video"])
-        self.tbl_sensors.verticalHeader().setVisible(False)
-        self.tbl_sensors.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.tbl_sensors.setSelectionBehavior(
-            QTableWidget.SelectionBehavior.SelectRows)
-        self.tbl_sensors.setSelectionMode(
-            QAbstractItemView.SelectionMode.SingleSelection)
-        self.tbl_sensors.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Interactive)
-        self.tbl_sensors.horizontalHeader().setStretchLastSection(False)
-        self.tbl_sensors.setStyleSheet(
-            f"QTableWidget{{background-color:{CARD_BG};"
-            f"border:1px solid {BORDER};border-radius:5px;}}")
-        lv.addWidget(self.tbl_sensors, stretch=1)
+        self.lib_selector = LibrarySelector(sensor_list=True,
+                                            list_columns=["Video"])
+        lv.addWidget(self.lib_selector, stretch=1)
+        # kept as aliases so the rest of this module's existing references
+        # (chk_show_flags, tbl_sensors, lbl_progress) keep working unchanged
+        self.chk_show_flags = self.lib_selector.chk_show_flags
+        self.tbl_sensors = self.lib_selector.tbl_sensors
+        self.lbl_progress = self.lib_selector.lbl_progress
 
         self.lbl_loading = QLabel("")
         self.lbl_loading.setStyleSheet(f"color:{MUTED};")
@@ -431,7 +408,8 @@ class AnnotationPage(QObject):
     def _connect(self):
         self.lib_selector.library_changed.connect(self._on_lib_changed)
         self.lib_selector.filters_changed.connect(self._populate_sensor_table)
-        self.chk_show_flags.toggled.connect(self._populate_sensor_table)
+        # "Show bad sensors" re-renders from LibrarySelector's own cache
+        # (no filesystem rescan needed) - see populate_sensor_list()
         self.tbl_sensors.itemSelectionChanged.connect(self._on_row_selected)
         self.tbl_sensors.itemDoubleClicked.connect(self._on_sensor_double_clicked)
 
@@ -454,12 +432,7 @@ class AnnotationPage(QObject):
         self._index_df = di.read_index(self._lib_root) if self._lib_root else None
 
     def _is_bad(self, stem: str) -> bool:
-        if self._index_df is None or "file" not in self._index_df.columns:
-            return False
-        row = self._index_df[self._index_df["file"] == stem]
-        if row.empty or _BAD_SENS_COL not in self._index_df.columns:
-            return False
-        return str(row[_BAD_SENS_COL].iloc[0]).strip().upper() == "Y"
+        return di.is_bad(self._index_df, stem)
 
     # ── the running dataset (resume support) ─────────────────────────────────
     def _dataset_path(self):
@@ -497,14 +470,12 @@ class AnnotationPage(QObject):
 
     # ── sensor table ─────────────────────────────────────────────────────────
     def _populate_sensor_table(self):
-        self.tbl_sensors.setRowCount(0)
-        self._sensor_rows = []
         if self._lib_root is None:
+            self._sensor_rows = []
+            self.tbl_sensors.setRowCount(0)
             self.lbl_progress.setText("")
             self._refresh_report()
             return
-
-        show_flags = self.chk_show_flags.isChecked()
 
         rows = []
         for row in self.lib_selector.list_sensor_csvs():
@@ -515,33 +486,10 @@ class AnnotationPage(QObject):
             })
         self._sensor_rows = rows
 
-        self.tbl_sensors.setRowCount(len(rows))
-        n_done = 0
-        n_done_bad = 0
-        for r, row in enumerate(rows):
-            sensor_item = QTableWidgetItem(row["stem"])
-            sensor_item.setData(Qt.ItemDataRole.UserRole, row["path"])
-            in_dataset = row["stem"] in self._dataset_stems
-            is_bad = self._is_bad(row["stem"])
-            if in_dataset:
-                n_done += 1
-                if is_bad:
-                    n_done_bad += 1
-                if is_bad and show_flags:
-                    # saved AND flagged bad - stays visually distinct from a
-                    # plain "done" sensor rather than disappearing into
-                    # green, since bad-but-saved still needs attention
-                    sensor_item.setForeground(QColor(WARN))
-                else:
-                    sensor_item.setForeground(QColor(OK))
-            elif show_flags and is_bad:
-                sensor_item.setForeground(QColor(BAD))
-            self.tbl_sensors.setItem(r, 0, sensor_item)
-            self.tbl_sensors.setItem(r, 1, QTableWidgetItem(row["video"]))
-        self.tbl_sensors.resizeColumnsToContents()
-
-        suffix = f" ({n_done_bad} bad)" if n_done_bad and show_flags else ""
-        self.lbl_progress.setText(f"In dataset: {n_done} / {len(rows)}{suffix}")
+        self.lib_selector.populate_sensor_list(
+            rows, is_bad=self._is_bad,
+            is_done=lambda stem: stem in self._dataset_stems,
+            done_label="In dataset", extra=lambda r: [r["video"]])
         self._refresh_report()
 
     # ── reporting tab ────────────────────────────────────────────────────────
@@ -923,10 +871,14 @@ class AnnotationPage(QObject):
     def _on_sensor_double_clicked(self, item):
         if item.column() != 1:
             return
-        row = item.row()
-        if row < 0 or row >= len(self._sensor_rows):
+        # read the stem from the clicked row itself (column 0's text), not
+        # by list index - "Show bad sensors" unticked hides rows from the
+        # table, so a visible row's index no longer matches its position
+        # in the unfiltered self._sensor_rows
+        stem_item = self.tbl_sensors.item(item.row(), 0)
+        if stem_item is None:
             return
-        stem = self._sensor_rows[row]["stem"]
+        stem = stem_item.text()
         matches = self.lib_selector.video_matches_for(stem)
         if not matches:
             self.status.emit(f"No matching video for {stem}.", 4000)

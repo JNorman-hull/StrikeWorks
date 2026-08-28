@@ -29,7 +29,8 @@ from . import settings
 from .ml_state import annotation_column, is_strike_value
 from .ml_tab_predict import _NumItem
 from .ml_widgets import (
-    BAD, INFO, MUTED, OK, PALETTE, PINK, TEXT, WARN, ProbBars, Section, apply_section_defaults,
+    BAD, INFO, MUTED, OK, PALETTE, PINK, TEXT, WARN, ProbBars, Section,
+    apply_section_defaults,
 )
 from .page_validate import _CsvLoadThread, _NavViewBox
 from .plot_style import (

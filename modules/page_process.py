@@ -28,8 +28,8 @@ import pandas as pd
 from PySide6.QtCore import Qt, QDir, QObject, QThread, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
-    QAbstractItemView, QFileSystemModel, QFrame, QHBoxLayout,
-    QHeaderView, QLabel, QListWidgetItem, QMessageBox, QTableWidgetItem,
+    QAbstractItemView, QFileSystemModel, QFrame, QHBoxLayout, QHeaderView,
+    QLabel, QListWidgetItem, QMessageBox, QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
 

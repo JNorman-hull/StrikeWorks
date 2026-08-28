@@ -13,8 +13,9 @@ are new but follow the same card language as page_process.StatCard.
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
-    QComboBox, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
+    QAbstractItemView, QComboBox, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
+    QHeaderView, QLabel, QLineEdit, QPushButton, QSizePolicy, QTableWidget,
+    QVBoxLayout, QWidget,
 )
 
 # theme colours (match the PyDracula palette used by the app)
@@ -37,6 +38,35 @@ PALETTE = [INFO, PINK, WARN, OK, ACCENT, "#00bcd4"]
 # never forces a horizontal scrollbar at a sensible window size.
 CARD_W, CARD_H   = 205, 124
 CARD_W2, CARD_H2 = 112, 112
+
+
+def style_table(tbl: QTableWidget, row_numbers=True, columns=True):
+    """The one table look used everywhere in the app: the same card
+    background + outline every other container gets, and rows left
+    user-resizable (drag a row boundary) rather than a fixed grid. Row
+    resizing needs a visible vertical header to grab (Qt gives a hidden
+    header no drag handle at all), so `row_numbers` defaults to True; pass
+    False only for a table dense enough that a numbered gutter would be
+    pure clutter and its rows never need resizing (e.g. a single-purpose
+    two-column key/value listing).
+
+    `columns=True` (the default) also makes column widths user-draggable
+    (`Interactive`, matching the rows) - call `tbl.resizeColumnsToContents()`
+    once after populating so they start at a sensible width rather than
+    Qt's generic default. Pass `columns=False` to leave a table's own
+    column-sizing choice alone (e.g. `ResizeToContents` + stretch-last on a
+    wide sortable results table, where auto-fit matters more than manual
+    dragging) and only pick up the background/border/row treatment here.
+    """
+    tbl.setStyleSheet(
+        f"QTableWidget{{background-color:{CARD_BG};"
+        f"border:1px solid {BORDER};border-radius:5px;}}")
+    tbl.verticalHeader().setVisible(row_numbers)
+    tbl.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+    if columns:
+        tbl.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Interactive)
+        tbl.horizontalHeader().setStretchLastSection(False)
 
 
 # ── ring card (ported from the MVP, dark theme) ──────────────────────────────

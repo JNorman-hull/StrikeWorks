@@ -44,12 +44,11 @@ from pathlib import Path
 import cv2
 
 from PySide6.QtCore import Qt, QObject, QThread, QUrl, Signal
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QDoubleSpinBox, QFileDialog,
-    QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
+    QCheckBox, QDoubleSpinBox, QFileDialog,
+    QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPushButton, QSizePolicy, QSpinBox, QSplitter, QStackedWidget,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QVBoxLayout, QWidget,
 )
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -57,7 +56,7 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from . import deployment_index as di
 from . import sensor_config, video_sync
 from .library_widgets import LibrarySelector
-from .ml_widgets import ACCENT, MUTED, OK, TEXT, Section, apply_section_defaults
+from .ml_widgets import ACCENT, MUTED, TEXT, Section, apply_section_defaults
 from .page_annotate import LOSSLESSCUT_EXE
 from .page_validate import (
     _CsvLoadThread, _NavViewBox, _find_col,
@@ -129,6 +128,7 @@ class ExportAnimationsPage(QObject):
         self.window = window
 
         self._sensor_rows = []
+        self._index_df = None
 
         self._df = None
         self._time = None
@@ -156,8 +156,10 @@ class ExportAnimationsPage(QObject):
         return self.lib_selector.lib_root
 
     def _on_lib_changed(self):
-        if self.lib_selector.lib_root:
-            self.status.emit(f"Library: {self.lib_selector.lib_root.name}", 4000)
+        root = self.lib_selector.lib_root
+        self._index_df = di.read_index(root) if root else None
+        if root:
+            self.status.emit(f"Library: {root.name}", 4000)
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
@@ -194,20 +196,10 @@ class ExportAnimationsPage(QObject):
         lv.setContentsMargins(0, 0, 5, 0)
         lv.setSpacing(8)
 
-        self.lib_selector = LibrarySelector()
-        lv.addWidget(self.lib_selector)
-
-        self.tbl_sensors = QTableWidget(0, 3)
-        self.tbl_sensors.setHorizontalHeaderLabels(["Sensor", "Video", "Synced"])
-        self.tbl_sensors.verticalHeader().setVisible(False)
-        self.tbl_sensors.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.tbl_sensors.setSelectionBehavior(
-            QTableWidget.SelectionBehavior.SelectRows)
-        self.tbl_sensors.setSelectionMode(
-            QAbstractItemView.SelectionMode.SingleSelection)
-        self.tbl_sensors.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Interactive)
-        lv.addWidget(self.tbl_sensors, stretch=1)
+        self.lib_selector = LibrarySelector(sensor_list=True,
+                                            list_columns=["Video", "Synced"])
+        lv.addWidget(self.lib_selector, stretch=1)
+        self.tbl_sensors = self.lib_selector.tbl_sensors
 
         self.lbl_loading = QLabel("")
         self.lbl_loading.setStyleSheet(f"color:{MUTED};")
@@ -395,9 +387,9 @@ class ExportAnimationsPage(QObject):
 
     # ── sensor table ─────────────────────────────────────────────────────────
     def _populate_sensor_table(self):
-        self.tbl_sensors.setRowCount(0)
-        self._sensor_rows = []
         if self._lib_root is None:
+            self._sensor_rows = []
+            self.tbl_sensors.setRowCount(0)
             return
 
         rows = []
@@ -409,18 +401,13 @@ class ExportAnimationsPage(QObject):
                 "synced": _synced_path_for(row["stem"]).exists(),
             })
         self._sensor_rows = rows
+        synced_by_stem = {r["stem"]: r["synced"] for r in rows}
 
-        self.tbl_sensors.setRowCount(len(rows))
-        for r, row in enumerate(rows):
-            sensor_item = QTableWidgetItem(row["stem"])
-            sensor_item.setData(Qt.ItemDataRole.UserRole, row["path"])
-            self.tbl_sensors.setItem(r, 0, sensor_item)
-            self.tbl_sensors.setItem(r, 1, QTableWidgetItem(row["video"]))
-            synced_item = QTableWidgetItem("Yes" if row["synced"] else "—")
-            if row["synced"]:
-                synced_item.setForeground(QColor(OK))
-            self.tbl_sensors.setItem(r, 2, synced_item)
-        self.tbl_sensors.resizeColumnsToContents()
+        self.lib_selector.populate_sensor_list(
+            rows, is_bad=lambda stem: di.is_bad(self._index_df, stem),
+            is_done=lambda stem: synced_by_stem.get(stem, False),
+            done_label="Synced",
+            extra=lambda r: [r["video"], "Yes" if r["synced"] else "—"])
 
     def _on_row_selected(self):
         items = self.tbl_sensors.selectedItems()

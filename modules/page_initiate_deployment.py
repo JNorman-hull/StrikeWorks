@@ -43,8 +43,8 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
-    QLineEdit, QMessageBox, QPushButton, QSizePolicy, QSpinBox, QVBoxLayout,
-    QWidget,
+    QLineEdit, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+    QVBoxLayout, QWidget,
 )
 
 from . import deployment_index as di
@@ -223,7 +223,17 @@ class InitiateDeploymentPage(QObject):
         self.rows_layout = QVBoxLayout(self.rows_holder)
         self.rows_layout.setContentsMargins(0, 0, 0, 0)
         self.rows_layout.setSpacing(6)
-        tv.addWidget(self.rows_holder)
+        # a scroll area rather than letting the Section grow unbounded - a
+        # deployment with many treatments (each carrying its own run count)
+        # used to squash everything below it instead of scrolling
+        rows_scroll = QScrollArea()
+        rows_scroll.setWidgetResizable(True)
+        rows_scroll.setStyleSheet(
+            "QScrollArea{border:none;background:transparent;}")
+        rows_scroll.setWidget(self.rows_holder)
+        rows_scroll.setMinimumHeight(160)
+        rows_scroll.setMaximumHeight(420)
+        tv.addWidget(rows_scroll)
         add_row = QHBoxLayout()
         self.btn_add_treatment = QPushButton("+  Add treatment")
         self.btn_add_treatment.setMinimumHeight(28)

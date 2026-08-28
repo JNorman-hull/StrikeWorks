@@ -18,21 +18,25 @@ appearing in its sensor list where Annotate correctly filtered them out.
 `LibrarySelector` is the fix: one `QWidget`, one copy of the scan/filter
 logic, used identically by every page that needs to pick a library and
 list its sensors - Annotate, Export animations, and (raw data) Process.
-Each host page still builds its own sensor table (columns differ: Annotate
-wants Sensor/Video, Export wants Sensor/Video/Synced, Process works from
-raw stems rather than processed CSVs) by calling `list_sensor_csvs()` /
-`raw_stems()` after connecting to `filters_changed`.
+Process works from raw stems (`raw_stems()`) rather than processed CSVs and
+has no per-sensor bad/done status, so it uses the picker alone
+(`sensor_list=False`, the default). Annotate and Export animations both
+opt into the sensor-list panel (`sensor_list=True`) - one "Show bad
+sensors" checkbox, one progress counter, one coloured table, with the same
+show/hide-when-unticked filtering and white/green/red/amber colouring
+everywhere it appears, driven by `populate_sensor_list()`.
 """
 from pathlib import Path
 
-from PySide6.QtCore import QSortFilterProxyModel, Signal
+from PySide6.QtCore import QSortFilterProxyModel, Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
-    QWidget,
+    QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QHBoxLayout,
+    QLabel, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import settings
-from .ml_widgets import MUTED, Section
+from .ml_widgets import BAD, MUTED, OK, WARN, Section, style_table
 
 RAW_DIR = Path("raw_sens_data")
 CSV_DIR = Path("processed_sens_data") / "csv"
@@ -72,25 +76,29 @@ class LibrarySelector(QWidget):
 
     library_changed = Signal()
     filters_changed = Signal()
+    selection_changed = Signal()       # tbl_sensors selection changed
+    row_activated = Signal(int, int)   # row, column - tbl_sensors double-click
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, sensor_list=False, list_columns=()):
         super().__init__(parent)
         self._lib_dir = settings.get_libraries_dir()
         self._lib_root = None
         self._deployment_map = {}   # stem (upper) -> (deployment, treatment)
-        self._build()
+        self._list_columns = list(list_columns)
+        self._cache = None           # last populate_sensor_list() call, for re-filtering
+        self._build(sensor_list)
         self._connect()
         self._populate_libraries()
 
     # ── layout ───────────────────────────────────────────────────────────────
-    def _build(self):
+    def _build(self, sensor_list):
         v = QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
         self.section = Section("Library")
         fv = QVBoxLayout(self.section)
         fv.setSpacing(6)
-        # exposed so a host page can append its own controls (e.g. Annotate's
-        # "Show bad sensors" checkbox) into the same visual panel
+        # exposed so a host page can append its own controls into the same
+        # visual panel, above the sensor list if there is one
         self.section_layout = fv
 
         lib_row = QHBoxLayout()
@@ -106,6 +114,32 @@ class LibrarySelector(QWidget):
         self.cmb_treatment = QComboBox()
         fv.addLayout(self._row(self._muted("Treatment"), self.cmb_treatment))
         v.addWidget(self.section)
+
+        if sensor_list:
+            self._build_sensor_list(v)
+
+    def _build_sensor_list(self, v):
+        self.chk_show_flags = QCheckBox("Show bad sensors")
+        self.chk_show_flags.setChecked(True)
+        self.chk_show_flags.toggled.connect(self._on_show_flags_toggled)
+        v.addWidget(self.chk_show_flags)
+
+        self.lbl_progress = QLabel("")
+        self.lbl_progress.setStyleSheet(f"color:{MUTED};")
+        v.addWidget(self.lbl_progress)
+
+        self.tbl_sensors = QTableWidget(0, 1 + len(self._list_columns))
+        self.tbl_sensors.setHorizontalHeaderLabels(["Sensor"] + self._list_columns)
+        style_table(self.tbl_sensors)
+        self.tbl_sensors.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows)
+        self.tbl_sensors.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection)
+        self.tbl_sensors.itemSelectionChanged.connect(
+            self.selection_changed.emit)
+        self.tbl_sensors.itemDoubleClicked.connect(
+            lambda item: self.row_activated.emit(item.row(), item.column()))
+        v.addWidget(self.tbl_sensors, stretch=1)
 
     @staticmethod
     def _muted(text):
@@ -323,3 +357,77 @@ class LibrarySelector(QWidget):
             rows.append({"stem": stem, "deployment": deployment,
                         "treatment": treatment})
         return rows
+
+    # ── sensor list panel (opt-in via sensor_list=True) ─────────────────────────
+    def selected_path(self):
+        """The `path` of the currently-selected sensor row, or None."""
+        items = self.tbl_sensors.selectedItems()
+        if not items:
+            return None
+        return self.tbl_sensors.item(items[0].row(), 0).data(
+            Qt.ItemDataRole.UserRole)
+
+    def _on_show_flags_toggled(self, _checked):
+        # re-render from the cached call rather than making the host rescan
+        # the filesystem just to react to this checkbox
+        if self._cache is not None:
+            rows, is_bad, is_done, done_label, extra = self._cache
+            self.populate_sensor_list(rows, is_bad=is_bad, is_done=is_done,
+                                      done_label=done_label, extra=extra)
+
+    def populate_sensor_list(self, rows, is_bad=None, is_done=None,
+                             done_label="In dataset", extra=None):
+        """Render `rows` (each a dict with at least "stem", usually also
+        "path") into the sensor table - the one behaviour every list of
+        sensors in the app should share:
+
+          - never flagged bad, not yet done -> white
+          - never flagged bad, done         -> green
+          - flagged bad, not yet done       -> red   (hidden if unticked)
+          - flagged bad, done               -> amber (hidden if unticked;
+            stays visually distinct from a plain "done" row rather than
+            disappearing into green, since bad-but-done still needs
+            attention)
+
+        "Show bad sensors" unticked doesn't just stop colouring bad rows -
+        it drops them from the list entirely, so the count of visible rows
+        is the count of rows actually worth looking at right now.
+
+        `is_bad(stem)`/`is_done(stem)` are optional predicates (default:
+        never bad / never done - a caller that only wants the picker's list
+        without status tracking can leave both out). `extra(row)` returns
+        the values for any extra columns configured via `list_columns`, in
+        order. `done_label` is the counter's prefix, e.g. "In dataset" or
+        "Synced" - whatever "done" means for this page.
+        """
+        self._cache = (rows, is_bad, is_done, done_label, extra)
+        is_bad = is_bad or (lambda _s: False)
+        is_done = is_done or (lambda _s: False)
+        extra = extra or (lambda _r: [])
+        show_flags = self.chk_show_flags.isChecked()
+
+        visible = [r for r in rows if show_flags or not is_bad(r["stem"])]
+
+        self.tbl_sensors.setRowCount(len(visible))
+        n_done = n_done_bad = 0
+        for i, row in enumerate(visible):
+            stem = row["stem"]
+            bad, done = is_bad(stem), is_done(stem)
+            item = QTableWidgetItem(stem)
+            item.setData(Qt.ItemDataRole.UserRole, row.get("path"))
+            if done:
+                n_done += 1
+                if bad:
+                    n_done_bad += 1
+                    item.setForeground(QColor(WARN))
+                else:
+                    item.setForeground(QColor(OK))
+            elif bad:
+                item.setForeground(QColor(BAD))
+            self.tbl_sensors.setItem(i, 0, item)
+            for c, val in enumerate(extra(row), start=1):
+                self.tbl_sensors.setItem(i, c, QTableWidgetItem(str(val)))
+        self.tbl_sensors.resizeColumnsToContents()
+
+        suffix = f" ({n_done_bad} bad)" if n_done_bad and show_flags else ""
+        self.lbl_progress.setText(f"{done_label}: {n_done} / {len(rows)}{suffix}")

@@ -58,6 +58,11 @@ DEPLOYMENT_COL = "deployment_id"
 #: set to Y on a sensor once it carries deployment information
 DEPLOYMENT_FLAG_COL = "deployment_info"
 
+#: set to Y on a sensor manually flagged bad (Annotate's "no annotations" /
+#: bad-sensor checkbox) - the single definition every list of sensors that
+#: shows bad/good status (Annotate, Export animations, ...) reads
+BAD_SENS_COL = "bad_sens"
+
 # what the Study design tab collects, and the index column each lands in
 DEPLOYMENT_FIELDS = [
     ("site", "Site"),
@@ -114,6 +119,16 @@ def is_plan_row(df):
     if df is None or FILE_COL not in df.columns:
         return None
     return df[FILE_COL].astype(str).str.strip().str.lower() == PAD_FILE
+
+
+def is_bad(df, stem: str) -> bool:
+    """Whether `stem` is flagged bad in the index `df` (may be None)."""
+    if df is None or FILE_COL not in df.columns or BAD_SENS_COL not in df.columns:
+        return False
+    row = df[df[FILE_COL] == stem]
+    if row.empty:
+        return False
+    return str(row[BAD_SENS_COL].iloc[0]).strip().upper() == "Y"
 
 
 def sensor_rows(df):

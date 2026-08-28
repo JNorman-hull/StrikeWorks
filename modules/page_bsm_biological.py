@@ -7,35 +7,41 @@
 """Controller for the Biological interpretation page (ROADMAP.md Chunk 5
 task 5's final piece).
 
-Three independent tools, each answering one of the roadmap's asks rather
-than one mega-table trying to do all of them at once:
+Two boxes:
 
-  - Per-treatment comparison: each treatment's data-driven (ML model)
-    strike rate from `PredictionState.summary`, alongside the single
-    mathematical (BSM) collision-probability estimate for the same
-    physical setup - shows where the model over/under-predicts a given
-    treatment's empirical rate.
-  - Mortality / survival estimator: re-runs the BSM mortality integral
-    (`bsm_model.recompute_mortality`) at a user-adjustable critical
-    mortality threshold and a chosen species (own regression + critical
-    velocity), holding the BSM run's hydrodynamic exposure fixed.
-  - Manual strike/no-strike proportion: a plain count-based check
-    independent of both models, for a quick "what would N=40, 6 strikes
-    imply" sanity check.
+  - Comparison: each treatment's data-driven (ML model) strike rate
+    against the mathematical (BSM) collision-probability estimate, as a
+    table and a bar figure, plus a manual strike/total count that folds
+    into the same figure as its own "Manual" bar (Wilson 95% CI).
+  - Mortality: what the chosen species' own regression predicts from this
+    BSM run (no adjustable threshold - each species' fMR regression
+    already defines what counts as lethal), and a critical-velocity
+    sensitivity sweep (2-10 m/s, bypassing the regression's own vcrit
+    formula) marking the point the regression would derive by itself
+    (`bsm_model.default_vcrit` - 4.8 m/s for scaly's floor case).
 
 Longer-term (ROADMAP.md, not this pass): replace the mortality
 regression's assumed uniform strike distribution with the concentric
 strike locations the blade-strike model itself predicts.
 """
+import numpy as np
+
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
-    QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel,
+    QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
-from .bsm_model import recompute_mortality
+from . import bsm_figures
+from .bsm_model import default_vcrit, recompute_mortality, recompute_mortality_at_vcrit
 from .ml_widgets import MUTED, TEXT, Section, apply_section_defaults
 from .wilson_calc import wilson_interval
+
+_VCRIT_MIN, _VCRIT_MAX, _VCRIT_STEP = 2.0, 10.0, 0.25
 
 
 class BiologicalPage(QWidget):
@@ -62,51 +68,58 @@ class BiologicalPage(QWidget):
         v.setSpacing(10)
         v.addWidget(self._comparison_group())
         v.addWidget(self._mortality_group())
-        v.addWidget(self._manual_group())
         v.addStretch()
         apply_section_defaults(frame)
 
     def _comparison_group(self):
-        g = Section("Per-treatment comparison")
+        g = Section("Comparison")
         gv = QVBoxLayout(g)
-        note = QLabel(
-            "Each treatment's data-driven strike rate (from Model "
-            "prediction) alongside the mathematical model's collision "
-            "probability for the same setup, calculated on Calculator.")
-        note.setStyleSheet(f"color:{MUTED};")
-        note.setWordWrap(True)
-        gv.addWidget(note)
+
+        row = QHBoxLayout()
         self.tbl_compare = QTableWidget(0, 5)
         self.tbl_compare.setHorizontalHeaderLabels(
             ["Treatment", "N", "ML strike rate (95% CI)", "BSM Pco (CEN)",
              "Difference (ML − BSM)"])
-        self.tbl_compare.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch)
-        self.tbl_compare.verticalHeader().setVisible(False)
         self.tbl_compare.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.tbl_compare.setMinimumHeight(120)
-        gv.addWidget(self.tbl_compare)
-        return g
+        row.addWidget(self.tbl_compare, stretch=1)
 
-    def _mortality_group(self):
-        g = Section("Mortality / survival estimator")
-        gv = QVBoxLayout(g)
-        note = QLabel(
-            "Re-runs the mortality integral from the last Calculator run "
-            "at a chosen species and critical mortality threshold, "
-            "holding the hydrodynamic exposure (blade sweep, strike "
-            "velocity) fixed - each species uses its own regression and "
-            "critical velocity.")
-        note.setStyleSheet(f"color:{MUTED};")
-        note.setWordWrap(True)
-        gv.addWidget(note)
+        self.fig_compare = Figure(figsize=(5.0, 3.2), dpi=100)
+        self.canvas_compare = FigureCanvas(self.fig_compare)
+        self.canvas_compare.setMinimumSize(220, 190)
+        self.canvas_compare.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        row.addWidget(self.canvas_compare, stretch=1)
+        gv.addLayout(row, stretch=1)
 
         form = QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setColumnStretch(1, 1)
+        self.spin_manual_total = QSpinBox()
+        self.spin_manual_total.setRange(0, 1000000)
+        self.spin_manual_total.valueChanged.connect(self._recalculate_manual)
+        form.addWidget(self._muted("Manual: sensors deployed"), 0, 0)
+        form.addWidget(self.spin_manual_total, 0, 1)
+        self.spin_manual_strike = QSpinBox()
+        self.spin_manual_strike.setRange(0, 1000000)
+        self.spin_manual_strike.valueChanged.connect(self._recalculate_manual)
+        form.addWidget(self._muted("Strikes observed"), 0, 2)
+        form.addWidget(self.spin_manual_strike, 0, 3)
+        gv.addLayout(form)
+        self.lbl_manual = QLabel("")
+        self.lbl_manual.setStyleSheet(f"color:{TEXT};")
+        self.lbl_manual.setWordWrap(True)
+        gv.addWidget(self.lbl_manual)
+        return g
+
+    def _mortality_group(self):
+        g = Section("Mortality")
+        gv = QVBoxLayout(g)
+
+        form = QGridLayout()
+        form.setHorizontalSpacing(10)
         self.cmb_species = QComboBox()
         self.cmb_species.addItems(["scaly", "eel"])
-        self.cmb_species.currentIndexChanged.connect(self._recalculate_mortality)
+        self.cmb_species.currentIndexChanged.connect(self._on_species_changed)
         form.addWidget(self._muted("Species"), 0, 0)
         form.addWidget(self.cmb_species, 0, 1)
 
@@ -115,59 +128,22 @@ class BiologicalPage(QWidget):
         self.spin_eel_vcrit.setDecimals(2)
         self.spin_eel_vcrit.setValue(2.0)
         self.spin_eel_vcrit.setSuffix(" m/s")
-        self.spin_eel_vcrit.valueChanged.connect(self._recalculate_mortality)
-        form.addWidget(self._muted("Eel critical velocity"), 1, 0)
-        form.addWidget(self.spin_eel_vcrit, 1, 1)
-
-        self.spin_threshold = QDoubleSpinBox()
-        self.spin_threshold.setRange(0.0, 100.0)
-        self.spin_threshold.setDecimals(1)
-        self.spin_threshold.setValue(50.0)
-        self.spin_threshold.setSuffix(" %")
-        self.spin_threshold.setToolTip(
-            "A strike is counted as lethal if its injury fraction (fMR) "
-            "meets or exceeds this threshold. Set to 0 to use the "
-            "continuous fMR instead (same result as Calculator's Pm).")
-        self.spin_threshold.valueChanged.connect(self._recalculate_mortality)
-        form.addWidget(self._muted("Critical mortality threshold"), 2, 0)
-        form.addWidget(self.spin_threshold, 2, 1)
+        self.spin_eel_vcrit.valueChanged.connect(self._on_species_changed)
+        form.addWidget(self._muted("Eel critical velocity"), 0, 2)
+        form.addWidget(self.spin_eel_vcrit, 0, 3)
         gv.addLayout(form)
 
-        self.lbl_mortality = QLabel(
-            "Run a calculation on Calculator to populate this estimate.")
+        self.lbl_mortality = QLabel("")
         self.lbl_mortality.setStyleSheet(f"color:{TEXT};font-weight:bold;")
         self.lbl_mortality.setWordWrap(True)
         gv.addWidget(self.lbl_mortality)
-        return g
 
-    def _manual_group(self):
-        g = Section("Manual strike/no-strike proportion")
-        gv = QVBoxLayout(g)
-        note = QLabel(
-            "A quick check independent of both models: enter observed "
-            "counts directly to see the implied proportion and its "
-            "Wilson 95% CI.")
-        note.setStyleSheet(f"color:{MUTED};")
-        note.setWordWrap(True)
-        gv.addWidget(note)
-        form = QGridLayout()
-        form.setHorizontalSpacing(10)
-        form.setColumnStretch(1, 1)
-        self.spin_manual_total = QSpinBox()
-        self.spin_manual_total.setRange(0, 1000000)
-        self.spin_manual_total.valueChanged.connect(self._recalculate_manual)
-        form.addWidget(self._muted("Sensors deployed"), 0, 0)
-        form.addWidget(self.spin_manual_total, 0, 1)
-        self.spin_manual_strike = QSpinBox()
-        self.spin_manual_strike.setRange(0, 1000000)
-        self.spin_manual_strike.valueChanged.connect(self._recalculate_manual)
-        form.addWidget(self._muted("Strikes observed"), 1, 0)
-        form.addWidget(self.spin_manual_strike, 1, 1)
-        gv.addLayout(form)
-        self.lbl_manual = QLabel("")
-        self.lbl_manual.setStyleSheet(f"color:{TEXT};font-weight:bold;")
-        self.lbl_manual.setWordWrap(True)
-        gv.addWidget(self.lbl_manual)
+        self.fig_vcrit = Figure(figsize=(6.0, 3.2), dpi=100)
+        self.canvas_vcrit = FigureCanvas(self.fig_vcrit)
+        self.canvas_vcrit.setMinimumSize(220, 190)
+        self.canvas_vcrit.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        gv.addWidget(self.canvas_vcrit, stretch=1)
         return g
 
     @staticmethod
@@ -179,57 +155,102 @@ class BiologicalPage(QWidget):
     # ── reactions ────────────────────────────────────────────────────────────
     def _on_bsm_result(self, res):
         self._recalculate_mortality()
+        self._run_vcrit_sweep()
         self._refresh_comparison()
 
-    def _recalculate_mortality(self, *_args):
+    def _on_species_changed(self, *_args):
+        self._recalculate_mortality()
+        self._run_vcrit_sweep()
+
+    def _recalculate_mortality(self):
         res = self.bsm_state.last_result
         if res is None:
             return
         species = self.cmb_species.currentText()
         eel_vcrit = self.spin_eel_vcrit.value()
-        threshold = self.spin_threshold.value() / 100.0
         out = recompute_mortality(res, species, eel_vcrit=eel_vcrit,
-                                  threshold=threshold if threshold > 0 else None)
+                                  threshold=None)
         self.lbl_mortality.setText(
-            f"{species} at a {self.spin_threshold.value():.1f}% critical "
-            f"mortality threshold -> Pm={out['Pm'] * 100:.2f}%, "
-            f"S={out['S'] * 100:.2f}% (Pco unchanged from the Calculator "
-            f"run, {res['Pco_tip'] * 100:.2f}%).")
+            f"{species}: Pm={out['Pm'] * 100:.2f}%, S={out['S'] * 100:.2f}% "
+            f"(Pco unchanged from the Calculator run, "
+            f"{res['Pco_tip'] * 100:.2f}%).")
+
+    def _run_vcrit_sweep(self):
+        res = self.bsm_state.last_result
+        if res is None:
+            return
+        species = self.cmb_species.currentText()
+        eel_vcrit = self.spin_eel_vcrit.value()
+        vcrit_vals = np.arange(_VCRIT_MIN, _VCRIT_MAX + 1e-9, _VCRIT_STEP)
+        pm_vals = np.array([
+            recompute_mortality_at_vcrit(res, species, float(v))["Pm"] * 100
+            for v in vcrit_vals])
+        default_v = default_vcrit(res, species, eel_vcrit=eel_vcrit)
+        default_pm = recompute_mortality_at_vcrit(
+            res, species, default_v)["Pm"] * 100
+        bsm_figures.draw_vcrit_sweep(
+            self.fig_vcrit, vcrit_vals, pm_vals, default_v, default_pm)
+        self.canvas_vcrit.draw()
 
     def _recalculate_manual(self, *_args):
         total = self.spin_manual_total.value()
         strike = self.spin_manual_strike.value()
         if total == 0:
             self.lbl_manual.setText("")
-            return
-        if strike > total:
-            self.lbl_manual.setText("Strikes observed cannot exceed sensors deployed.")
-            return
-        lo, hi, half = wilson_interval(strike / total, total, confidence=95)
-        self.lbl_manual.setText(
-            f"{strike}/{total} = {strike / total * 100:.1f}% strike rate, "
-            f"95% CI [{lo * 100:.1f}%, {hi * 100:.1f}%], "
-            f"precision +/-{half * 100:.1f} percentage points.")
+        elif strike > total:
+            self.lbl_manual.setText(
+                "Strikes observed cannot exceed sensors deployed.")
+        else:
+            lo, hi, half = wilson_interval(strike / total, total, confidence=95)
+            self.lbl_manual.setText(
+                f"{strike}/{total} = {strike / total * 100:.1f}% strike rate, "
+                f"95% CI [{lo * 100:.1f}%, {hi * 100:.1f}%], "
+                f"precision +/-{half * 100:.1f} percentage points.")
+        self._refresh_comparison()
+
+    def _manual_comparison_bar(self):
+        """(label, value_pct, ci_lo, ci_hi) for the manual entry, or None
+        if it's empty/invalid - the extra bar in the comparison figure."""
+        total = self.spin_manual_total.value()
+        strike = self.spin_manual_strike.value()
+        if total == 0 or strike > total:
+            return None
+        lo, hi, _half = wilson_interval(strike / total, total, confidence=95)
+        return ("Manual", strike / total * 100, lo * 100, hi * 100)
 
     def _refresh_comparison(self):
         res = self.bsm_state.last_result
         pco_cen = res["Pco_tip"] * 100 if res is not None else None
         summary = (self.prediction_state.summary
                   if self.prediction_state is not None else None)
-        if summary is None or not len(summary):
-            self.tbl_compare.setRowCount(0)
+
+        rows = summary if summary is not None and len(summary) else None
+        self.tbl_compare.setRowCount(len(rows) if rows is not None else 0)
+        comparisons = []
+        if rows is not None:
+            for i, (_, r) in enumerate(rows.iterrows()):
+                ml_rate = r["strike_rate"] * 100
+                self.tbl_compare.setItem(i, 0, QTableWidgetItem(str(r["treatment"])))
+                self.tbl_compare.setItem(i, 1, QTableWidgetItem(str(int(r["n"]))))
+                self.tbl_compare.setItem(i, 2, QTableWidgetItem(
+                    f"{ml_rate:.1f}% [{r['ci_lo'] * 100:.1f}%, {r['ci_hi'] * 100:.1f}%]"))
+                if pco_cen is None:
+                    self.tbl_compare.setItem(i, 3, QTableWidgetItem("Not calculated"))
+                    self.tbl_compare.setItem(i, 4, QTableWidgetItem(""))
+                else:
+                    self.tbl_compare.setItem(i, 3, QTableWidgetItem(f"{pco_cen:.1f}%"))
+                    self.tbl_compare.setItem(
+                        i, 4, QTableWidgetItem(f"{ml_rate - pco_cen:+.1f} pp"))
+                comparisons.append((str(r["treatment"]), ml_rate,
+                                   r["ci_lo"] * 100, r["ci_hi"] * 100))
+
+        manual = self._manual_comparison_bar()
+        if manual is not None:
+            comparisons.append(manual)
+
+        if pco_cen is None:
+            self.fig_compare.clear()
+            self.canvas_compare.draw()
             return
-        self.tbl_compare.setRowCount(len(summary))
-        for i, (_, r) in enumerate(summary.iterrows()):
-            ml_rate = r["strike_rate"] * 100
-            self.tbl_compare.setItem(i, 0, QTableWidgetItem(str(r["treatment"])))
-            self.tbl_compare.setItem(i, 1, QTableWidgetItem(str(int(r["n"]))))
-            self.tbl_compare.setItem(i, 2, QTableWidgetItem(
-                f"{ml_rate:.1f}% [{r['ci_lo'] * 100:.1f}%, {r['ci_hi'] * 100:.1f}%]"))
-            if pco_cen is None:
-                self.tbl_compare.setItem(i, 3, QTableWidgetItem("Not calculated"))
-                self.tbl_compare.setItem(i, 4, QTableWidgetItem(""))
-            else:
-                self.tbl_compare.setItem(i, 3, QTableWidgetItem(f"{pco_cen:.1f}%"))
-                self.tbl_compare.setItem(
-                    i, 4, QTableWidgetItem(f"{ml_rate - pco_cen:+.1f} pp"))
+        bsm_figures.draw_comparison_bars(self.fig_compare, pco_cen, comparisons)
+        self.canvas_compare.draw()
