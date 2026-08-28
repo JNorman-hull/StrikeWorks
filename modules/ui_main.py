@@ -1324,25 +1324,12 @@ class Ui_MainWindow(object):
         self.grid_raw.setSpacing(8)
         self.grid_raw.setObjectName(u"grid_raw")
         self.grid_raw.setContentsMargins(8, 8, 8, 8)
-        self.grp_library = QGroupBox(self.tab_raw)
-        self.grp_library.setObjectName(u"grp_library")
-        self.layout_grp_library = QVBoxLayout(self.grp_library)
-        self.layout_grp_library.setSpacing(6)
-        self.layout_grp_library.setObjectName(u"layout_grp_library")
-        self.layout_grp_library.setContentsMargins(6, 6, 6, 6)
-        self.tree_library = QTreeView(self.grp_library)
-        self.tree_library.setObjectName(u"tree_library")
+        self.frame_process_library = QFrame(self.tab_raw)
+        self.frame_process_library.setObjectName(u"frame_process_library")
+        self.frame_process_library.setFrameShape(QFrame.NoFrame)
+        self.frame_process_library.setFrameShadow(QFrame.Raised)
 
-        self.layout_grp_library.addWidget(self.tree_library)
-
-        self.btn_change_libraries = QPushButton(self.grp_library)
-        self.btn_change_libraries.setObjectName(u"btn_change_libraries")
-        self.btn_change_libraries.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-
-        self.layout_grp_library.addWidget(self.btn_change_libraries)
-
-
-        self.grid_raw.addWidget(self.grp_library, 0, 0, 1, 1)
+        self.grid_raw.addWidget(self.frame_process_library, 0, 0, 1, 1)
 
         self.grp_index = QGroupBox(self.tab_raw)
         self.grp_index.setObjectName(u"grp_index")
@@ -2708,8 +2695,6 @@ class Ui_MainWindow(object):
         self.closeAppBtn.setText("")
         self.tabs_prepare.setTabText(self.tabs_prepare.indexOf(self.tab_prepare_sensor), QCoreApplication.translate("MainWindow", u"Sensor configuration", None))
         self.tabs_prepare.setTabText(self.tabs_prepare.indexOf(self.tab_prepare_study), QCoreApplication.translate("MainWindow", u"Study design", None))
-        self.grp_library.setTitle(QCoreApplication.translate("MainWindow", u"Library", None))
-        self.btn_change_libraries.setText(QCoreApplication.translate("MainWindow", u"Change libraries folder\u2026", None))
         self.grp_index.setTitle(QCoreApplication.translate("MainWindow", u"Index", None))
         self.grp_inventory.setTitle(QCoreApplication.translate("MainWindow", u"File inventory", None))
         ___qtablewidgetitem = self.table_inventory.horizontalHeaderItem(0)

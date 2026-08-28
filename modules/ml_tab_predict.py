@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 from . import ml_figures
 from .ml_widgets import (
     ACCENT, BAD, MUTED, OK, PALETTE, PINK, TEXT, WARN,
-    CARD_W2, CARD_H2, CheckList, MetaCard, RingCard, Spinner, Section, apply_section_defaults,
+    CARD_W2, CARD_H2, MetaCard, RingCard, Spinner, Section, apply_section_defaults,
 )
 
 FIG_MIN_W, FIG_MIN_H = 320, 300
@@ -123,6 +123,21 @@ class PredictTab:
         perf_row.addStretch()
         mv.addLayout(perf_row)
 
+        sel_row = QHBoxLayout()
+        lab_bin_sel = QLabel("Binary")
+        lab_bin_sel.setStyleSheet(f"color:{MUTED};")
+        self.cmb_bin_model = QComboBox()
+        self.cmb_bin_model.currentIndexChanged.connect(self._on_bin_model_picked)
+        sel_row.addWidget(lab_bin_sel)
+        sel_row.addWidget(self.cmb_bin_model, stretch=1)
+        lab_mc_sel = QLabel("Multiclass")
+        lab_mc_sel.setStyleSheet(f"color:{MUTED};")
+        self.cmb_mc_model = QComboBox()
+        self.cmb_mc_model.currentIndexChanged.connect(self._on_mc_model_picked)
+        sel_row.addWidget(lab_mc_sel)
+        sel_row.addWidget(self.cmb_mc_model, stretch=1)
+        mv.addLayout(sel_row)
+
         mdl_btn_row = QHBoxLayout()
         self.btn_models = QPushButton("Change models folder…")
         self.btn_models.clicked.connect(self._change_models_folder)
@@ -146,13 +161,6 @@ class PredictTab:
         ds_btn_row.addWidget(self.btn_load_csv)
         ds_btn_row.addStretch()
         dv.addLayout(ds_btn_row)
-
-        # model-dataset compatibility lives with the dataset it validates
-        lab_compat = QLabel("Compatibility")
-        lab_compat.setStyleSheet(f"color:{MUTED};")
-        dv.addWidget(lab_compat)
-        self.checklist = CheckList()
-        dv.addWidget(self.checklist)
         row1.addWidget(grp_data, stretch=1)
         v.addLayout(row1)
 
@@ -197,11 +205,6 @@ class PredictTab:
         self.lbl_override_note.setVisible(False)
         gv.addWidget(self.lbl_override_note)
 
-        lab_out = QLabel("Outputs: strike probability, confidence, predicted "
-                         "class; treatment summaries with Wilson 95% CIs.")
-        lab_out.setStyleSheet(f"color:{MUTED};")
-        lab_out.setWordWrap(True)
-        gv.addWidget(lab_out)
         gv.addStretch()
         row2.addWidget(grp_cfg, stretch=1)
 
@@ -344,6 +347,28 @@ class PredictTab:
 
         self.lbl_models_dir.setText(str(s.models_dir))
 
+        self.cmb_bin_model.blockSignals(True)
+        self.cmb_bin_model.clear()
+        for p in s.bin_candidates:
+            self.cmb_bin_model.addItem(p.name, str(p))
+        idx = self.cmb_bin_model.findData(
+            str(s.bin_model_path) if s.bin_model_path else None)
+        if idx >= 0:
+            self.cmb_bin_model.setCurrentIndex(idx)
+        self.cmb_bin_model.setEnabled(self.cmb_bin_model.count() > 1)
+        self.cmb_bin_model.blockSignals(False)
+
+        self.cmb_mc_model.blockSignals(True)
+        self.cmb_mc_model.clear()
+        self.cmb_mc_model.addItem("(none - binary only)", None)
+        for p in s.mc_candidates:
+            self.cmb_mc_model.addItem(p.name, str(p))
+        idx = self.cmb_mc_model.findData(
+            str(s.mc_model_path) if s.mc_model_path else None)
+        self.cmb_mc_model.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_mc_model.setEnabled(len(s.mc_candidates) > 0)
+        self.cmb_mc_model.blockSignals(False)
+
     # ── dataset card ─────────────────────────────────────────────────────────
     def _refresh_dataset(self):
         s = self.state
@@ -385,12 +410,11 @@ class PredictTab:
 
     # ── validation ───────────────────────────────────────────────────────────
     def _refresh_validation(self):
-        s = self.state
-        if s.running:
-            self.checklist.set_checks(s.checks, False)
-        else:
-            self.checklist.set_checks(s.checks, s.ready)
-        self.btn_run.setEnabled(s.ready and not s.running)
+        # no persistent compatibility panel - Run itself triggers validate()
+        # and surfaces any failure (see PredictionState.run_prediction);
+        # this only needs to keep the button from being double-clicked
+        # mid-run, not pre-emptively gate on readiness.
+        self.btn_run.setEnabled(not self.state.running)
 
     # ── configuration ────────────────────────────────────────────────────────
     def _refresh_config(self):
@@ -436,6 +460,20 @@ class PredictTab:
         mode = self.cmb_mode.currentData()
         if mode:
             self.state.set_mode(mode)
+
+    def _on_bin_model_picked(self):
+        path = self.cmb_bin_model.currentData()
+        if not path:
+            return
+        ok, msg = self.state.select_bin_model(path)
+        if not ok:
+            self.state.status.emit(f"Could not switch binary model: {msg}", 6000)
+
+    def _on_mc_model_picked(self):
+        path = self.cmb_mc_model.currentData()
+        ok, msg = self.state.select_mc_model(path)
+        if not ok:
+            self.state.status.emit(f"Could not switch multiclass model: {msg}", 6000)
 
     def _on_override_toggled(self, checked):
         # the spinbox shows the deployed threshold while unchecked, so
@@ -493,7 +531,7 @@ class PredictTab:
         self._tick.stop()
         self.spinner.stop()
         self.btn_run.setText("Run prediction")
-        self.btn_run.setEnabled(self.state.ready)
+        self.btn_run.setEnabled(True)
 
     def _on_run_finished(self):
         self._stop_run_ui()
@@ -535,7 +573,14 @@ class PredictTab:
     def _on_run_failed(self, msg):
         self._stop_run_ui()
         self.lbl_run_status.setStyleSheet(f"color:{BAD};")
-        first = msg.strip().splitlines()[-1] if msg.strip() else "Unknown error"
+        msg = msg.strip() or "Unknown error"
+        if msg.startswith("Prediction is not ready"):
+            # a pre-flight compatibility failure - short, already itemised
+            # by validate(), and expected (missing dataset, wrong mode) -
+            # the status line is enough, no need to interrupt with a modal
+            self.lbl_run_status.setText(f"✗ {msg}")
+            return
+        first = msg.splitlines()[-1]
         self.lbl_run_status.setText(f"✗ Prediction failed: {first}")
         dlg = QMessageBox(self.window)
         dlg.setWindowTitle("Prediction error")

@@ -25,16 +25,19 @@ from pathlib import Path
 
 import pandas as pd
 
-from PySide6.QtCore import Qt, QDir, QObject, QThread, QSortFilterProxyModel, Signal
+from PySide6.QtCore import Qt, QDir, QObject, QThread, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
-    QAbstractItemView, QFileDialog, QFileSystemModel, QFrame, QHBoxLayout,
+    QAbstractItemView, QFileSystemModel, QFrame, QHBoxLayout,
     QHeaderView, QLabel, QListWidgetItem, QMessageBox, QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
 
 from . import deployment_index as di
-from . import sensor_config, settings
+from . import sensor_config
+from .library_widgets import (
+    LibrarySelector, UNGROUPED as _LIB_UNGROUPED, _DirsOnlyProxy,
+)
 
 # ── paths inside a library root (unchanged from the MVP) ─────────────────────
 _INDEX_REL = di.INDEX_REL
@@ -112,14 +115,6 @@ class _ProcessThread(QThread):
         self.done.emit(0 if n_fail == 0 else 1)
 
 
-class _DirsOnlyProxy(QSortFilterProxyModel):
-    """Show directories only."""
-
-    def filterAcceptsRow(self, row, parent):
-        idx = self.sourceModel().index(row, 0, parent)
-        return self.sourceModel().isDir(idx)
-
-
 class StatCard(QFrame):
     """Small themed summary tile used in 'Selection information'."""
 
@@ -187,20 +182,20 @@ class ProcessPage(QObject):
         # a plan saved on Prepare > Study design becomes selectable here
         di.notifier.plan_saved.connect(self._on_plan_saved)
 
-        self._fs_model = QFileSystemModel()
-        self._fs_model.setFilter(QDir.Filter.Dirs | QDir.Filter.NoDotAndDotDot)
-        self._proxy = _DirsOnlyProxy()
-        self._proxy.setSourceModel(self._fs_model)
-
         self._idx_model = QFileSystemModel()
         self._idx_model.setFilter(QDir.Filter.Dirs | QDir.Filter.NoDotAndDotDot)
         self._idx_proxy = _DirsOnlyProxy()
         self._idx_proxy.setSourceModel(self._idx_model)
 
         self._build_cards()
+        self._build_library_selector()
         self._configure_widgets()
         self._connect()
-        self._init_tree()
+        # LibrarySelector auto-selects its first library during its own
+        # construction, before _connect() wired these signals up - catch up
+        # on whatever it landed on rather than starting on an empty Tab 1
+        self._on_lib_changed()
+        self._on_filters_changed()
         self._refresh_treatments()
 
     # ── setup ────────────────────────────────────────────────────────────────
@@ -217,16 +212,19 @@ class ProcessPage(QObject):
             holder.addWidget(c)
         holder.addStretch()
 
+    def _build_library_selector(self):
+        lv = QVBoxLayout(self.ui.frame_process_library)
+        lv.setContentsMargins(0, 0, 0, 0)
+        self.lib_selector = LibrarySelector()
+        lv.addWidget(self.lib_selector)
+
     def _configure_widgets(self):
         u = self.ui
 
-        u.tree_library.setModel(self._proxy)
-        u.tree_library.setHeaderHidden(True)
         u.tree_index.setModel(self._idx_proxy)
         u.tree_index.setHeaderHidden(True)
-        for tree in (u.tree_library, u.tree_index):
-            for col in range(1, 4):
-                tree.hideColumn(col)
+        for col in range(1, 4):
+            u.tree_index.hideColumn(col)
 
         for tbl in (u.table_inventory, u.table_meta):
             tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -286,7 +284,7 @@ class ProcessPage(QObject):
                 padding: 0 4px;
             }}
         """
-        for box in self.window.findChildren(type(u.grp_library)):
+        for box in self.window.findChildren(type(u.grp_index)):
             box.setStyleSheet(group_style)
 
         # metadata tab needs its own feedback line - the Tab 1 console is not
@@ -298,9 +296,9 @@ class ProcessPage(QObject):
 
     def _connect(self):
         u = self.ui
-        u.tree_library.selectionModel().selectionChanged.connect(self._on_library_select)
+        self.lib_selector.library_changed.connect(self._on_lib_changed)
+        self.lib_selector.filters_changed.connect(self._on_filters_changed)
         u.tree_index.selectionModel().selectionChanged.connect(self._on_index_select)
-        u.btn_change_libraries.clicked.connect(self._change_libraries)
         u.table_inventory.itemSelectionChanged.connect(self._on_table_select)
         u.chk_select_all.toggled.connect(self._on_select_all)
         u.btn_process_selected.clicked.connect(self._process)
@@ -311,45 +309,36 @@ class ProcessPage(QObject):
         u.btn_apply_deployment.clicked.connect(self._load_deployment)
         u.chk_meta_select_all.toggled.connect(self._on_meta_select_all)
 
-    def _init_tree(self):
-        self._lib_dir = settings.get_libraries_dir()
-        self.ui.btn_change_libraries.setToolTip(str(self._lib_dir))
-        fs_root = self._fs_model.setRootPath(str(self._lib_dir))
-        self.ui.tree_library.setRootIndex(self._proxy.mapFromSource(fs_root))
-        self._log(f"Libraries: {self._lib_dir}")
+    # ── library selector (shared widget - see library_widgets.py) ────────────
+    def _on_lib_changed(self):
+        root = self.lib_selector.lib_root
+        if root is not None:
+            self._set_root(root)
 
-    # ── library / index trees ────────────────────────────────────────────────
-    def _change_libraries(self):
-        chosen = QFileDialog.getExistingDirectory(
-            self.window, "Select libraries folder", str(self._lib_dir))
-        if not chosen:
-            return
-        settings.set_libraries_dir(chosen)
-        self._root = None
-        self._files = []
-        self._index_df = None
-        self._init_tree()
-        self._refresh_cards()
-        self._refresh_table()
-        self.status.emit(f"Libraries folder: {chosen}", 5000)
+    def _on_filters_changed(self):
+        folder = self._scan_target_dir()
+        if folder is not None:
+            self._scan_and_refresh(folder)
 
-    def _on_library_select(self, selected, _deselected):
-        idxs = selected.indexes()
-        if not idxs:
-            return
-        folder = Path(self._fs_model.filePath(self._proxy.mapToSource(idxs[0])))
+    def _scan_target_dir(self):
+        """The raw folder the deployment/treatment combos currently select.
 
-        # the library root is always the direct child of the libraries dir
-        try:
-            rel = folder.relative_to(self._lib_dir)
-            lib_root = self._lib_dir / rel.parts[0]
-        except (ValueError, IndexError):
-            lib_root = folder
-
-        if lib_root != self._root:
-            self._set_root(lib_root)
-
-        self._scan_and_refresh(folder)
+        A specific deployment (or treatment within it) narrows the scan to
+        that subfolder; "All deployments"/"All treatments" - and the
+        `_LIB_UNGROUPED` bucket for files sitting directly in raw_sens_data
+        with no deployment subfolder - all resolve to the raw root itself,
+        since `_scan()` already recurses (`rglob`) from wherever it's
+        pointed."""
+        if self._raw_dir is None:
+            return None
+        folder = self._raw_dir
+        dep = self.lib_selector.wanted_deployment()
+        if dep and dep != _LIB_UNGROUPED:
+            folder = folder / dep
+            treat = self.lib_selector.wanted_treatment()
+            if treat and treat != _LIB_UNGROUPED:
+                folder = folder / treat
+        return folder
 
     def _set_root(self, root: Path):
         self._root = root

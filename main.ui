@@ -2700,40 +2700,13 @@ background-repeat: no-repeat;</string>
                                <number>8</number>
                               </property>
                               <item row="0" column="0">
-                               <widget class="QGroupBox" name="grp_library">
-                                <property name="title">
-                                 <string>Library</string>
+                               <widget class="QFrame" name="frame_process_library">
+                                <property name="frameShape">
+                                 <enum>QFrame::NoFrame</enum>
                                 </property>
-                                <layout class="QVBoxLayout" name="layout_grp_library">
-                                 <property name="spacing">
-                                  <number>6</number>
-                                 </property>
-                                 <property name="leftMargin">
-                                  <number>6</number>
-                                 </property>
-                                 <property name="topMargin">
-                                  <number>6</number>
-                                 </property>
-                                 <property name="rightMargin">
-                                  <number>6</number>
-                                 </property>
-                                 <property name="bottomMargin">
-                                  <number>6</number>
-                                 </property>
-                                 <item>
-                                  <widget class="QTreeView" name="tree_library" />
-                                 </item>
-                                 <item>
-                                  <widget class="QPushButton" name="btn_change_libraries">
-                                   <property name="cursor">
-                                    <cursorShape>PointingHandCursor</cursorShape>
-                                   </property>
-                                   <property name="text">
-                                    <string>Change libraries folder…</string>
-                                   </property>
-                                  </widget>
-                                 </item>
-                                </layout>
+                                <property name="frameShadow">
+                                 <enum>QFrame::Raised</enum>
+                                </property>
                                </widget>
                               </item>
                               <item row="1" column="0">

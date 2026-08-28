@@ -54,7 +54,7 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QGridLayout,
+    QAbstractItemView, QCheckBox, QComboBox, QGridLayout,
     QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMessageBox,
     QPlainTextEdit, QPushButton, QSizePolicy, QSplitter, QTableWidget,
     QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
@@ -62,10 +62,11 @@ from PySide6.QtWidgets import (
 
 from . import annotation_schema as asch
 from . import deployment_index as di
-from . import sensor_config, settings
+from . import sensor_config
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
+from .library_widgets import LibrarySelector
 from .ml_widgets import (
-    ACCENT, BAD, BORDER, CARD_BG, MUTED, OK, MetaCard, Section,
+    ACCENT, BAD, BORDER, CARD_BG, MUTED, OK, WARN, MetaCard, Section,
     apply_section_defaults,
 )
 from .page_dataset import _META_COLS, _standardise
@@ -74,20 +75,15 @@ from .plot_style import (
     set_right_axis_active,
 )
 from .page_validate import (
-    _CHANNEL_ORDER, _CHANNELS, _MAX_RIGHT_PTS, _CsvLoadThread, _EXCL_NAMES,
-    _EXCL_SUFFIXES, _NavViewBox, _Spinner, _decimate, _find_col,
+    _CHANNEL_ORDER, _CHANNELS, _MAX_RIGHT_PTS, _CsvLoadThread,
+    _NavViewBox, _Spinner, _decimate, _find_col,
 )
 
 pg.setConfigOptions(antialias=True, background="#21252b",
                     foreground="#c8cdd6")
 
-_RAW_DIR = Path("raw_sens_data")
-_CSV_DIR = Path("processed_sens_data") / "csv"
 _WIN_DIR = Path("processed_sens_data") / "nadir_window"
 _DATASET_REL = Path("processed_sens_data") / "model_features.csv"
-_VIDEO_FOLDER_NAME = "VIDEO"
-_UNGROUPED = "(ungrouped)"
-_ALL_DEPLOYMENTS = None
 
 _NADIR_T_COL = "pres_min.time."
 _NADIR_V_COL = "pres_min.kPa."
@@ -111,10 +107,7 @@ class AnnotationPage(QObject):
         self.ui = ui
         self.window = window
 
-        self._lib_dir = settings.get_libraries_dir()
-        self._lib_root = None
         self._index_df = None
-        self._deployment_map = {}      # stem (upper) -> (deployment, treatment)
         self._sensor_rows = []          # [{"path", "stem", "deployment", "video"}]
         self._dataset_stems = set()
 
@@ -136,9 +129,25 @@ class AnnotationPage(QObject):
 
         self._build(ui.content_annotate)
         self._connect()
-        self._populate_libraries()
+        self._on_lib_changed()
+        self._populate_sensor_table()
         self._rebuild_annotation_panel()
         self._set_loaded_enabled(False)
+
+    # ── library selector (shared widget - see library_widgets.py) ────────────
+    @property
+    def _lib_root(self):
+        return self.lib_selector.lib_root
+
+    @property
+    def _deployment_map(self):
+        return self.lib_selector.deployment_map
+
+    def _on_lib_changed(self):
+        self._load_index()
+        self._load_dataset_stems()
+        if self.lib_selector.lib_root:
+            self.status.emit(f"Library: {self.lib_selector.lib_root.name}", 4000)
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
@@ -233,23 +242,8 @@ class AnnotationPage(QObject):
         lv.setContentsMargins(0, 0, 5, 0)
         lv.setSpacing(8)
 
-        grp = Section("Library")
-        fv = QVBoxLayout(grp)
-        fv.setSpacing(6)
-
-        lib_row = QHBoxLayout()
-        self.cmb_library = QComboBox()
-        self.cmb_library.setMinimumWidth(140)
-        lib_row.addWidget(self.cmb_library, stretch=1)
-        self.btn_change_libs = QPushButton("Libraries…")
-        lib_row.addWidget(self.btn_change_libs)
-        fv.addLayout(lib_row)
-
-        self.cmb_deployment = QComboBox()
-        fv.addLayout(self._row(self._muted("Deployment"), self.cmb_deployment))
-
-        self.cmb_treatment = QComboBox()
-        fv.addLayout(self._row(self._muted("Treatment"), self.cmb_treatment))
+        self.lib_selector = LibrarySelector()
+        fv = self.lib_selector.section_layout
 
         self.chk_show_flags = QCheckBox("Show bad sensors")
         self.chk_show_flags.setChecked(True)
@@ -258,7 +252,7 @@ class AnnotationPage(QObject):
         self.lbl_progress = QLabel("")
         self.lbl_progress.setStyleSheet(f"color:{MUTED};")
         fv.addWidget(self.lbl_progress)
-        lv.addWidget(grp)
+        lv.addWidget(self.lib_selector)
 
         self.tbl_sensors = QTableWidget(0, 2)
         self.tbl_sensors.setHorizontalHeaderLabels(["Sensor", "Video"])
@@ -353,18 +347,26 @@ class AnnotationPage(QObject):
             "border-radius:5px;padding:4px 14px;font-weight:bold;}"
             "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
         self.btn_save_next.clicked.connect(self._save_and_next)
+        self.btn_save_annotations = QPushButton("Save annotations")
+        self.btn_save_annotations.setToolTip(
+            "Save the flag, annotation values and notes for this sensor "
+            "without extracting its window or moving to the next one.")
+        self.btn_save_annotations.clicked.connect(self._save_annotations)
         self.btn_reset = QPushButton("Reset sensor")
         self.btn_reset.clicked.connect(self._reset_current)
         act.addWidget(self.btn_save_next)
+        act.addWidget(self.btn_save_annotations)
         act.addWidget(self.btn_reset)
         act.addStretch()
         sv.addLayout(act)
 
         lbl_save_help = self._muted(
             "Save + next extracts the ROI window for model training and/or "
-            "blade strike prediction. Annotations are appended unless "
-            "turned off. Use Reset sensor to reload this file without "
-            "saving.")
+            "blade strike prediction, appends it to the dataset, and moves "
+            "on. Save annotations writes just the flag/annotations/notes "
+            "and stays here - for a quick pass through a library's "
+            "annotations without also finalising each window. Use Reset "
+            "sensor to reload this file without saving.")
         lbl_save_help.setWordWrap(True)
         sv.addWidget(lbl_save_help)
         v.addWidget(grp_sig)
@@ -427,14 +429,8 @@ class AnnotationPage(QObject):
         return r
 
     def _connect(self):
-        self.cmb_library.currentIndexChanged.connect(self._on_library_changed)
-        self.btn_change_libs.clicked.connect(self._change_libraries)
-        self.cmb_deployment.currentIndexChanged.connect(
-            self._rebuild_treatment_combo)
-        self.cmb_deployment.currentIndexChanged.connect(
-            self._populate_sensor_table)
-        self.cmb_treatment.currentIndexChanged.connect(
-            self._populate_sensor_table)
+        self.lib_selector.library_changed.connect(self._on_lib_changed)
+        self.lib_selector.filters_changed.connect(self._populate_sensor_table)
         self.chk_show_flags.toggled.connect(self._populate_sensor_table)
         self.tbl_sensors.itemSelectionChanged.connect(self._on_row_selected)
         self.tbl_sensors.itemDoubleClicked.connect(self._on_sensor_double_clicked)
@@ -447,48 +443,12 @@ class AnnotationPage(QObject):
         self._fill_window_combo()
 
     def _set_loaded_enabled(self, enabled):
-        for b in (self.btn_save_next, self.btn_reset):
+        for b in (self.btn_save_next, self.btn_save_annotations, self.btn_reset):
             b.setEnabled(enabled)
         for c in (self.chk_good, self.chk_bad):
             c.setEnabled(enabled)
 
     # ── libraries ────────────────────────────────────────────────────────────
-    def _populate_libraries(self, select=None):
-        self.cmb_library.blockSignals(True)
-        self.cmb_library.clear()
-        try:
-            libs = sorted(p for p in self._lib_dir.iterdir() if p.is_dir())
-        except Exception:
-            libs = []
-        for lib in libs:
-            self.cmb_library.addItem(lib.name, str(lib))
-        self.cmb_library.blockSignals(False)
-        self.btn_change_libs.setToolTip(str(self._lib_dir))
-        if not libs:
-            self._lib_root = None
-            return
-        idx = self.cmb_library.findData(str(select)) if select else 0
-        self.cmb_library.setCurrentIndex(max(0, idx))
-        self._on_library_changed()
-
-    def _change_libraries(self):
-        chosen = QFileDialog.getExistingDirectory(
-            self.window, "Select libraries folder", str(self._lib_dir))
-        if not chosen:
-            return
-        self._lib_dir = settings.set_libraries_dir(chosen)
-        self._populate_libraries()
-
-    def _on_library_changed(self, *_args):
-        path = self.cmb_library.currentData()
-        self._lib_root = Path(path) if path else None
-        self._load_index()
-        self._scan_deployments()
-        self._load_dataset_stems()
-        self._populate_sensor_table()
-        if self._lib_root:
-            self.status.emit(f"Library: {self._lib_root.name}", 4000)
-
     # ── index ────────────────────────────────────────────────────────────────
     def _load_index(self):
         self._index_df = di.read_index(self._lib_root) if self._lib_root else None
@@ -500,96 +460,6 @@ class AnnotationPage(QObject):
         if row.empty or _BAD_SENS_COL not in self._index_df.columns:
             return False
         return str(row[_BAD_SENS_COL].iloc[0]).strip().upper() == "Y"
-
-    # ── deployments (raw_sens_data subfolders, one level) ────────────────────
-    def _scan_deployments(self):
-        """Map each raw sensor stem to (deployment, treatment).
-
-        `raw_sens_data/<deployment>/<treatment>/` is the normal shape;
-        a deployment with no treatment subfolders (files directly inside
-        it), or a library with no deployment subfolders at all, still work
-        - they just bucket under `_UNGROUPED` at whichever level is
-        missing, rather than being dropped.
-        """
-        self._deployment_map = {}
-        current_dep = self.cmb_deployment.currentData()
-        self.cmb_deployment.blockSignals(True)
-        self.cmb_deployment.clear()
-        self.cmb_deployment.addItem("All deployments", _ALL_DEPLOYMENTS)
-
-        raw_dir = self._lib_root / _RAW_DIR if self._lib_root else None
-        if raw_dir is None or not raw_dir.exists():
-            self.cmb_deployment.blockSignals(False)
-            self._rebuild_treatment_combo()
-            return
-
-        deployments = set()
-        for entry in sorted(raw_dir.iterdir()):
-            if entry.is_file():
-                self._deployment_map.setdefault(
-                    entry.stem.upper(), (_UNGROUPED, _UNGROUPED))
-                deployments.add(_UNGROUPED)
-                continue
-            if not entry.is_dir():
-                continue
-            deployments.add(entry.name)
-            for child in sorted(entry.iterdir()):
-                if child.is_dir():
-                    if child.name.upper() == _VIDEO_FOLDER_NAME:
-                        continue   # VIDEO with no treatment level in between
-                    for f in child.rglob("*"):
-                        if f.is_file():
-                            self._deployment_map.setdefault(
-                                f.stem.upper(), (entry.name, child.name))
-                elif child.is_file():
-                    self._deployment_map.setdefault(
-                        child.stem.upper(), (entry.name, _UNGROUPED))
-
-        for name in sorted(deployments):
-            self.cmb_deployment.addItem(name, name)
-        idx = self.cmb_deployment.findData(current_dep)
-        self.cmb_deployment.setCurrentIndex(idx if idx >= 0 else 0)
-        self.cmb_deployment.blockSignals(False)
-        self._rebuild_treatment_combo()
-
-    def _rebuild_treatment_combo(self):
-        wanted_deployment = self.cmb_deployment.currentData()
-        current = self.cmb_treatment.currentData()
-        self.cmb_treatment.blockSignals(True)
-        self.cmb_treatment.clear()
-        self.cmb_treatment.addItem("All treatments", _ALL_DEPLOYMENTS)
-        treatments = sorted({
-            treatment for (deployment, treatment) in self._deployment_map.values()
-            if wanted_deployment is None or deployment == wanted_deployment})
-        for name in treatments:
-            self.cmb_treatment.addItem(name, name)
-        idx = self.cmb_treatment.findData(current)
-        self.cmb_treatment.setCurrentIndex(idx if idx >= 0 else 0)
-        self.cmb_treatment.blockSignals(False)
-
-    def _video_dir_for(self, stem: str):
-        info = self._deployment_map.get(stem.upper())
-        if not info or self._lib_root is None:
-            return None
-        deployment, treatment = info
-        base = self._lib_root / _RAW_DIR
-        if deployment != _UNGROUPED:
-            base = base / deployment
-        if treatment != _UNGROUPED:
-            base = base / treatment
-        if not base.exists():
-            return None
-        for entry in base.iterdir():
-            # case-insensitive: "video"/"Video"/"VIDEO" all match
-            if entry.is_dir() and entry.name.upper() == _VIDEO_FOLDER_NAME:
-                return entry
-        return None
-
-    def _video_matches_for(self, stem: str):
-        video_dir = self._video_dir_for(stem)
-        if video_dir is None:
-            return []
-        return sorted(video_dir.glob(f"{stem}_vid_*.mp4"))
 
     # ── the running dataset (resume support) ─────────────────────────────────
     def _dataset_path(self):
@@ -633,50 +503,45 @@ class AnnotationPage(QObject):
             self.lbl_progress.setText("")
             self._refresh_report()
             return
-        csv_dir = self._lib_root / _CSV_DIR
-        if not csv_dir.exists():
-            self.lbl_progress.setText("")
-            self._refresh_report()
-            return
 
-        wanted_deployment = self.cmb_deployment.currentData()
-        wanted_treatment = self.cmb_treatment.currentData()
         show_flags = self.chk_show_flags.isChecked()
 
-        valid = [p for p in sorted(csv_dir.rglob("*.csv"))
-                 if p.name not in _EXCL_NAMES
-                 and not any(p.stem.endswith(s) for s in _EXCL_SUFFIXES)]
-
         rows = []
-        for p in valid:
-            deployment, treatment = self._deployment_map.get(
-                p.stem.upper(), (_UNGROUPED, _UNGROUPED))
-            if wanted_deployment is not None and deployment != wanted_deployment:
-                continue
-            if wanted_treatment is not None and treatment != wanted_treatment:
-                continue
-            matches = self._video_matches_for(p.stem)
+        for row in self.lib_selector.list_sensor_csvs():
+            matches = self.lib_selector.video_matches_for(row["stem"])
             rows.append({
-                "path": p, "stem": p.stem, "deployment": deployment,
-                "treatment": treatment,
+                **row,
                 "video": "; ".join(m.name for m in matches) if matches else "—",
             })
         self._sensor_rows = rows
 
         self.tbl_sensors.setRowCount(len(rows))
+        n_done = 0
+        n_done_bad = 0
         for r, row in enumerate(rows):
             sensor_item = QTableWidgetItem(row["stem"])
             sensor_item.setData(Qt.ItemDataRole.UserRole, row["path"])
-            if row["stem"] in self._dataset_stems:
-                sensor_item.setForeground(QColor(OK))
-            elif show_flags and self._is_bad(row["stem"]):
+            in_dataset = row["stem"] in self._dataset_stems
+            is_bad = self._is_bad(row["stem"])
+            if in_dataset:
+                n_done += 1
+                if is_bad:
+                    n_done_bad += 1
+                if is_bad and show_flags:
+                    # saved AND flagged bad - stays visually distinct from a
+                    # plain "done" sensor rather than disappearing into
+                    # green, since bad-but-saved still needs attention
+                    sensor_item.setForeground(QColor(WARN))
+                else:
+                    sensor_item.setForeground(QColor(OK))
+            elif show_flags and is_bad:
                 sensor_item.setForeground(QColor(BAD))
             self.tbl_sensors.setItem(r, 0, sensor_item)
             self.tbl_sensors.setItem(r, 1, QTableWidgetItem(row["video"]))
         self.tbl_sensors.resizeColumnsToContents()
 
-        n_done = sum(1 for row in rows if row["stem"] in self._dataset_stems)
-        self.lbl_progress.setText(f"In dataset: {n_done} / {len(rows)}")
+        suffix = f" ({n_done_bad} bad)" if n_done_bad and show_flags else ""
+        self.lbl_progress.setText(f"In dataset: {n_done} / {len(rows)}{suffix}")
         self._refresh_report()
 
     # ── reporting tab ────────────────────────────────────────────────────────
@@ -1062,7 +927,7 @@ class AnnotationPage(QObject):
         if row < 0 or row >= len(self._sensor_rows):
             return
         stem = self._sensor_rows[row]["stem"]
-        matches = self._video_matches_for(stem)
+        matches = self.lib_selector.video_matches_for(stem)
         if not matches:
             self.status.emit(f"No matching video for {stem}.", 4000)
             return
@@ -1140,17 +1005,57 @@ class AnnotationPage(QObject):
     def _annotation_values(self):
         return {name: editor.current() for name, editor in self._editors.items()}
 
+    def _has_content_to_save(self, values):
+        """Shared gate for both save actions: at least one annotation
+        value, a note, or an explicit "no annotations" tick - a note alone
+        (no formal annotation) is enough, since Save annotations exists
+        specifically to let a note stand on its own."""
+        has_any = any(v for v in values.values())
+        has_notes = bool(self.txt_notes.toPlainText().strip())
+        if has_any or has_notes or self.chk_no_annotations.isChecked():
+            return True
+        QMessageBox.warning(
+            self.window, "Nothing to save",
+            "Enter at least one annotation value or a note, or tick "
+            "\"No annotations for this sensor\" to save without any.")
+        return False
+
+    def _save_annotations(self):
+        """Flag + annotation values + notes only - no window extraction, no
+        dataset entry, no jump to the next sensor. For working through a
+        library's annotations/notes without also finalising each ROI
+        window every time, or to save a note mid-review without losing
+        your place."""
+        if self._df is None or self._lib_root is None:
+            return
+        values = self._annotation_values()
+        if not self._has_content_to_save(values):
+            return
+
+        flag_value = "Y" if self.chk_bad.isChecked() else "N"
+        index_values = {
+            _BAD_SENS_COL: flag_value,
+            _NOTES_COL: self.txt_notes.toPlainText().strip(),
+        }
+        for name, value in values.items():
+            if value:
+                index_values[name] = value
+        try:
+            di.set_row_values(self._lib_root, self._cur_stem, index_values)
+        except Exception as e:
+            QMessageBox.critical(self.window, "Save error", str(e))
+            return
+
+        self._load_index()
+        self._populate_sensor_table()
+        self.status.emit(f"Saved annotations for {self._cur_stem}.", 4000)
+
     def _save_and_next(self):
         if self._df is None or self._lib_root is None:
             return
 
         values = self._annotation_values()
-        has_any = any(v for v in values.values())
-        if not has_any and not self.chk_no_annotations.isChecked():
-            QMessageBox.warning(
-                self.window, "No annotations entered",
-                "Enter at least one annotation value, or tick "
-                "\"No annotations for this sensor\" to save without any.")
+        if not self._has_content_to_save(values):
             return
 
         try:

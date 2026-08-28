@@ -53,7 +53,7 @@ from .ml_widgets import (
     ACCENT, BORDER, CARD_BG, MUTED, OK, TEXT, WARN, MetaCard, Section,
     apply_section_defaults,
 )
-from .page_annotate import _RAW_DIR, _VIDEO_FOLDER_NAME
+from .library_widgets import RAW_DIR as _RAW_DIR, VIDEO_FOLDER_NAME as _VIDEO_FOLDER_NAME
 
 _NEW_DEPLOYMENT = "__new__"
 _SUMMARY_NAME = "deployment_summary.txt"

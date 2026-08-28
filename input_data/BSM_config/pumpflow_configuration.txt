@@ -1,0 +1,25 @@
+[fish]
+lf = 0.1
+bf = 0.025
+species = scaly
+wf = 0.0
+alpha = 0.0
+eel_vcrit = 8.0
+
+[pump]
+n = 2
+N = 500
+Q = 1.32
+r = 0.35
+bh = 0.104
+
+[blade]
+rttr = 0.314, 0.438, 0.578, 0.719, 0.859, 1.000
+d_vals = 42, 40, 36, 32, 30, 23
+beta_vals = 25.474, 29.888, 34.835, 36.103, 24.716, 17.014
+delta_vals = -38.398, 33.110, 44.595, 58.292, 53.679, 52.001
+
+[observed]
+use_observed = True
+total = 459
+strike = 184

@@ -518,17 +518,258 @@ per-page tweaks.
    reasserting it in `_set_loaded_enabled()`, which runs after that pass
    settles (and also correctly re-hides it when a new sensor loads while
    a previous run's Cancel button was still showing).
-5. Blade strike modelling port, and finalise Model prediction - bring the
-   mathematical model over from the old MVP/Shiny app (Calculator,
-   Sensitivity analysis, Reporting/JSON handoff), then Biological
-   interpretation: compare data-driven vs. mathematical blade-strike
-   predictions per treatment, generate mortality/survival estimates from
-   the BSM output's empirical regressions with a user-adjustable critical
-   mortality threshold, support multiple species (each its own regression +
-   critical velocity), and the simple strike/no-strike proportion input.
+
+   Follow-up (2026-08-27), two Annotate fixes plus a substantial Export
+   animations round:
+
+   Annotate - the "show bad sensors" highlight interacting wrongly with
+   the green/counter was real: a sensor that's both flagged bad *and*
+   already saved to the dataset used to fall straight into the plain-green
+   "done" bucket, losing its bad flag visually and in the "In dataset"
+   count the moment it was saved - there was no way to tell a saved
+   sensor was one that still needed attention. Fixed with a third state:
+   saved+bad now renders amber (`WARN`), distinct from plain green
+   (saved, not bad) and red (bad, not yet saved); the counter grew a
+   "(N bad)" suffix when any saved sensor is flagged; both the colour and
+   the suffix still respect the "Show bad sensors" toggle, so switching it
+   off returns saved-bad sensors to plain green exactly as before. Traced
+   this empirically against the real library (which only had one bad
+   sensor at the time, not enough to reproduce the reported mismatch) by
+   building a 3-sensor scratch library with a pre-flagged bad sensor and
+   walking it through save/toggle/filter sequences.
+
+   Also added a second save action: "Save annotations" writes the flag/
+   annotation values/notes via the same `deployment_index.set_row_values`
+   path `_save_and_next` already uses, but skips the ROI window extraction
+   and dataset append and doesn't advance to the next sensor - for working
+   through a library's annotations/notes in one pass without also
+   finalising every window, or jotting a note mid-review without losing
+   your place. Both save paths now share one gate (`_has_content_to_save`)
+   that also accepts a note on its own as valid content to save, not just
+   a formal annotation value or the "no annotations" tick.
+
+   Export animations - the signal plot used to auto-range to the sensor's
+   entire recording (hundreds of seconds), which is useless for finding a
+   sync point: cropped it to nadir-centred, sized to the matched video's
+   own duration (read from the video's own metadata via
+   `cv2.VideoCapture`, no frames decoded) capped at 15s, with a shaded
+   `LinearRegionItem` marking the assumed video span - shaded at the
+   video's *true* duration even past the 15s view cap, since that's the
+   thing being aligned, not the view. A "Video: N frames, D.DDDD s
+   (fps)" label above the plot gives the frame-to-elapsed-time arithmetic
+   needed to convert a moment spotted in LosslessCut into a frame number
+   for the Sync frame field. Also added: Frame nudge (px) - the original
+   script's `VIDEO_NUDGE_PX`, deliberately left out of the first pass, now
+   exposed; an overlay-image picker (Browse…/Clear + opacity) for the
+   original script's optional logo, wired into `SyncOptions.logo_path`/
+   `logo_opacity` which already existed but had no UI; and Pump/Passive
+   sensor now autofill the same way Shaft speed already did - Pump from
+   the index's `pump_turbine`/`type` columns (the same fields Create and
+   edit deployment writes), Passive sensor from `sensor_config.active()` -
+   both stay plain editable text, and a value already saved to a sensor's
+   `_sync_config.json` always wins over the autofill. Verified against a
+   real sensor with a real video (709 frames, 11.8167s, 60fps): label,
+   crop, and shading all matched expected math; separately forced a 30s
+   synthetic duration to confirm the 15s view cap while the shading still
+   showed the full 30s. One thing worth flagging: this testing produced
+   two `processed_video/*_sync_config.json` files against real sensors
+   (generic test values - blank pump, hardcoded default camera/sensor
+   text) that got auto-committed at some point outside this session's
+   control; both were removed as part of routine test cleanup once
+   noticed, not left in place.
+5. Blade strike modelling port, and finalise Model prediction - done
+   (2026-08-27). Brought the mathematical model over from the old MVP/
+   Shiny app (`old_bsm_app_mvp/bsm/`), then built Biological
+   interpretation on top of it.
+
+   `modules/bsm_model.py` is a faithful, unchanged-maths port of
+   `core/model.py`'s `compute()`/`cen_regression()` (geometric/
+   hydrodynamic collision-probability integral over 200 blade-radius
+   points, mutilation-fraction regression by species/length-to-diameter
+   regime) - the one deviation is the observed-strike confidence interval
+   now goes through the shared `wilson_calc.wilson_interval()` (the same
+   function Study design uses) instead of duplicated inline maths.
+   `modules/bsm_state.py` is a `BSMState(QObject)` with a `calculated`
+   signal, the same "one state object, several pages react to its signal"
+   shape `PredictionState`/`TrainingState` already use, plus
+   `LATEST_RESULT_PATH` - the well-known JSON location for the
+   Setup-and-deploy handoff below. `modules/bsm_figures.py` ports
+   `plotting.py`'s two bar charts and the sensitivity line+scatter plot,
+   redrawn with the app's own dark theme (`ml_figures.py`'s
+   `style_axes`/`fg_colour`/`_grid`/`_PALETTE`) rather than the old app's
+   white-on-navy styling. `modules/bsm_io.py` ports `io.py`'s CSV/PNG
+   export helpers unchanged.
+
+   Three pages, one shared `BSMState` owned by `MainWindow`:
+   - **Calculator** (`page_bsm_calculator.py`) - Fish/Pump/Blade profile
+     (editable table, cubic-spline interpolated, minimum 2 rows)/Observed
+     strike data groups as `Section` panels (replacing the old app's
+     `QGroupBox`es), full-field validation before Calculate enables,
+     results table (CEN row always, Observed row + Wilson CI line when
+     included) and the two bar charts. Deliberately still starts blank
+     (species unselected, no seeded numbers) - a faithful port, not a
+     redesign.
+   - **Sensitivity analysis** (`page_bsm_sensitivity.py`) - reacts to
+     `BSMState.calculated` rather than being called directly by
+     Calculator, so it is populated whether Calculator ran on this visit
+     or the state already held a result from an earlier one; wf swept
+     -3.5..+3.5 m/s in 0.1 m/s steps, cubic-spline fit, "Save sweep..."
+     CSV+PNG export via `bsm_io.export_sensitivity`.
+   - **Reporting** (`page_bsm_reporting.py`) - "Export report package..."
+     writes CSV+PNGs (`bsm_io.export_results`) plus a self-contained
+     HTML report. The report deliberately does NOT port the old app's
+     `report/builder.py` (an elaborate MathJax-equation methodology
+     document built from string Templates) - that would give BSM its own
+     visual language; instead `modules/bsm_report.py` reuses
+     `ml_report.py`'s generic building blocks (`_kv_table`/`_data_table`/
+     `_img_tag`/`wrap_html_document`/`_DARK`) so a BSM report reads as
+     the same family of document as a prediction report. On every new
+     result the page also writes `bsm_state.LATEST_RESULT_PATH` - a
+     small JSON (timestamp, species, CEN/observed Pco/Pm/S, Wilson CI) -
+     automatically, no separate publish step.
+
+   **Biological interpretation** (`page_bsm_biological.py`, promoted from
+   its Chunk 5 stub) is three independent tools rather than one
+   mega-table trying to do everything the roadmap asked for at once:
+   per-treatment comparison (each treatment's data-driven strike rate
+   from `PredictionState.summary`, reacting to `run_finished`, alongside
+   the single mathematical Pco estimate for the same setup - shows
+   over/under-prediction per treatment); a mortality/survival estimator
+   built on a new `bsm_model.recompute_mortality(res, species,
+   eel_vcrit=None, lf=None, threshold=None)` that re-runs the mortality
+   integral from an existing `compute()` result under a different
+   species/critical velocity/threshold while holding the hydrodynamic
+   exposure (`Pco_arr`/`vstrike_arr`/`r_arr`) fixed - `threshold=None`
+   reproduces `compute()`'s own continuous-fMR `Pm` exactly (verified:
+   0.7177395399249237 both ways), a numeric threshold makes fMR binary
+   (lethal iff the continuous fraction meets or exceeds it) so each
+   species uses its own regression and critical velocity independently of
+   the others; and a manual strike/no-strike proportion checker
+   (`wilson_calc.wilson_interval`) for a quick count-based sanity check
+   independent of both models.
+
+   **Setup and deploy > Study design handoff**: `prepare_tab_precision.py`
+   gained a "Load from Blade Strike Modelling" button next to the
+   expected-strike-rate field that reads `LATEST_RESULT_PATH` and fills
+   the field from the CEN Pco estimate (the a-priori planning figure, not
+   an observed rate that does not exist yet before data collection) -
+   deliberately reads the JSON rather than taking a live `BSMState`
+   reference, so Study design stays decoupled from whether the BSM pages
+   have even been visited this session.
+
+   Verified end-to-end headlessly: `MainWindow()` construction (all four
+   new page controllers plus every pre-existing page), a full Calculator
+   run flowing through to Sensitivity/Reporting/Biological via
+   `BSMState.calculated`, the Reporting page's JSON write, and the Study
+   design "Load from Blade Strike Modelling" round trip pulling the CEN
+   value into the precision calculator. `content_bsm_calculator`/
+   `content_bsm_sensitivity`/`content_bsm_reporting`/`content_biological`
+   removed from `main.py`'s `_stub_pages`; `content_data_analysis` (task
+   7) and `content_final_report` (not part of task 5's scope) remain
+   stubs.
+
    Longer-term (not this pass): replace the regression's assumed strike
    distribution with the concentric strike locations the blade-strike model
    predicts, for direct x%-mortality-from-x%-strikes-in-region-x estimates.
+
+   Follow-up (2026-08-27): four fixes, none part of task 5/6/7 but raised
+   while working nearby.
+
+   `_min` files were appearing in Export animations' sensor list. Root
+   cause: Export animations carried its own copy of Annotate's library/
+   deployment/treatment-scan logic (copy-paste, not shared code), and its
+   copy's exclusion list (`{"global_sensor_index.csv", "model_features.csv"}`
+   / `("_nadir_window",)`) had silently drifted from the canonical one in
+   `page_validate.py` (`_min`, `_delineated`) - both of Export's own
+   exclusions were actually no-ops (`model_features.csv` and any
+   `_nadir_window` file live outside the `processed_sens_data/csv/` folder
+   the scan globs, so neither was ever reachable), while the exclusions
+   that mattered were missing. Fixed at the root: new `modules/
+   library_widgets.py` with a single `LibrarySelector(QWidget)` - the
+   Library/Deployment/Treatment combo panel plus `list_sensor_csvs()`
+   (canonical exclusions, now defined in `library_widgets.py` itself with
+   `page_validate.py` importing them rather than the reverse, to avoid a
+   page_process/page_validate/library_widgets import cycle) and
+   `video_matches_for()`. Annotate and Export animations both now embed
+   this one widget instead of their own copies; `page_misclassification.py`
+   and `page_initiate_deployment.py`'s imports of the old `_RAW_DIR`/
+   `_VIDEO_FOLDER_NAME` constants (previously re-exported from
+   `page_annotate.py`) were repointed at `library_widgets.py`, their new
+   home. Also caught and fixed while wiring this up: `LibrarySelector`'s
+   deployment/treatment combos connected `currentIndexChanged` (which
+   passes an int) directly to `filters_changed.emit` (a no-arg signal) -
+   harmless while nothing but blockSignals-guarded repopulation touched
+   the combos, but a `TypeError` the instant a user (or a test) actually
+   picked a different deployment/treatment; fixed with a lambda that
+   drops the index argument. Verified with a scratch library carrying
+   `_min`/`_delineated` CSVs (both now excluded from `list_sensor_csvs()`)
+   and by driving real combo selection changes (not just default state)
+   through both pages. One transparency note: a scratch-library test run
+   that hit the `filters_changed` bug above crashed before its cleanup
+   step restored `settings.get_libraries_dir()`, leaving the persisted
+   `~/.hifistrike_settings.json` pointed at the (now-deleted) scratch
+   folder rather than the real RAPID_libraries path - caught immediately
+   via a screenshot showing an empty Library combo, and restored by hand
+   before finishing this pass.
+
+   Per the same "one library style" request, Process (Sensor processing >
+   Raw data processing) moved off its `QTreeView` file browser onto the
+   same `LibrarySelector`. This one needed a `main.ui` edit - Designer's
+   `grp_library` QGroupBox (`tree_library` + its own "Change libraries
+   folder…" button) replaced with a bare `frame_process_library` at the
+   same grid cell, `ui_main.py` regenerated via `build_ui.py --force` -
+   plus adapting `page_process.py`'s scan target from "whatever tree node
+   the user clicked" (arbitrary folder depth, `rglob`-scanned) to "the
+   folder implied by the deployment/treatment combos" (`_scan_target_dir()`:
+   raw root, or raw root/deployment, or raw root/deployment/treatment).
+   Explicitly a narrowing of what was possible before (no more picking an
+   arbitrary intermediate subfolder) - the user chose this over extending
+   `LibrarySelector` with a folder-depth mode, given it matches Annotate/
+   Export's shape and the tree never supported isolating an "(ungrouped)"
+   top-level file from its siblings' subfolders either (rglob always
+   recursed from wherever it was pointed). `_DirsOnlyProxy` (the dirs-only
+   tree filter, shared with Validate's own file tree and Process's
+   still-tree-based Metadata tab) also moved into `library_widgets.py` as
+   part of untangling the import cycle. Verified with a scratch library
+   spanning two deployments and two treatments: unfiltered scan found all
+   three planted files, narrowing to one deployment found two, narrowing
+   further to one treatment found one - and Process's `lib_selector` is
+   confirmed the identical class Annotate/Export use.
+
+   Predict (Model prediction) had three requested changes. (1) Switching
+   between binary/multiclass model variants in the same folder (e.g.
+   `binary1_1.joblib`, `binary1_2.joblib`, `binary1_3.joblib`) was not
+   possible - `PredictionState.load_models_from_dir()` globbed for
+   `binary*.joblib`/`multiclass*.joblib` and always silently took the
+   alphabetically-first match, with no way to pick another. Fixed by
+   splitting model loading into folder-discovery (`bin_candidates`/
+   `mc_candidates` properties) and model-application
+   (`select_bin_model()`/`select_mc_model()`, the latter accepting `None`
+   for binary-only), and adding "Binary"/"Multiclass" combo pickers to the
+   Model card in `ml_tab_predict.py` that list every discovered variant.
+   Verified with a scratch models folder (3 binary + 2 multiclass
+   variants): switching either combo updates `state.bin_model_path`/
+   `mc_model_path` correctly, including switching multiclass back to
+   "(none - binary only)". (2) The "Compatibility" checklist panel
+   (`CheckList` widget, permanently visible under the Dataset card) is
+   removed - `PredictionState.run_prediction()` already called
+   `validate()` and refused to run when not ready, so the checks were
+   already re-run at Run time; the panel was redundant, gating-only
+   friction. `run_prediction()` now emits a "Checking model, dataset,
+   channels, sequence length…" status message before validating, and on
+   failure builds the status text from every failed check
+   (`self.checks`) rather than one generic "not ready" line; the Run
+   button itself is no longer gated on `state.ready` (only disabled while
+   a run is actually in progress) so it is always available to press and
+   find out why, rather than sitting disabled with no visible reason.
+   `_on_run_failed` shows this itemised pre-flight message in full but
+   keeps the old last-line-only condensing for genuine worker-subprocess
+   tracebacks (still shown in a modal detail dialog, which the pre-flight
+   case skips entirely - it's an expected, not exceptional, outcome).
+   (3) The "Outputs: strike probability, confidence, predicted class;
+   treatment summaries with Wilson 95% CIs." label under Prediction
+   configuration is removed as redundant restating of what Results by
+   treatment / Prediction figures already show.
 6. Delineation tool (Segmentation page) - the design already agreed in the
    old Chunk 4 note: 7 windows covering the full time series, start/end
    trim handles placed first with everything else relative to them, nadir

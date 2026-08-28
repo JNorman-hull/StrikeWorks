@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 
 from . import deployment_index as di
 from . import sensor_config, settings
-from .page_process import _DirsOnlyProxy
+from .library_widgets import _DirsOnlyProxy, _EXCL_NAMES, _EXCL_SUFFIXES
 from .plot_style import (
     add_export_button, build_export_data, reserve_top_margin,
     set_right_axis_active,
@@ -67,9 +67,6 @@ _CHANNELS = {
 }
 _CHANNEL_ORDER = ["higacc_mag", "inacc_mag", "pressure", "rot_mag"]
 _MAX_RIGHT_PTS = 8000   # cap for the (manually decimated) right-axis overlay
-
-_EXCL_SUFFIXES = {"_min", "_delineated"}
-_EXCL_NAMES = {"global_sensor_index.csv"}
 
 _OK = "#22c55e"
 _TEXT = "#dddddd"

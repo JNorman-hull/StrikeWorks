@@ -27,6 +27,11 @@ from modules.page_stub import StubPage
 from modules.page_initiate_deployment import InitiateDeploymentPage
 from modules.page_misclassification import MisclassificationPage
 from modules.page_export_animations import ExportAnimationsPage
+from modules.bsm_state import BSMState
+from modules.page_bsm_calculator import CalculatorPage
+from modules.page_bsm_sensitivity import SensitivityPage
+from modules.page_bsm_reporting import ReportingPage
+from modules.page_bsm_biological import BiologicalPage
 from modules import table_copy
 os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
 
@@ -121,25 +126,40 @@ class MainWindow(QMainWindow):
             lambda _p: self.ml_prediction_page.state.load_models_from_dir(
                 self.ml_prediction_page.state.models_dir))
 
+        # MATHEMATICAL BLADE STRIKE MODELLING PAGES (Chunk 5 task 5)
+        # Calculator owns each run; Sensitivity and Reporting react to its
+        # `calculated` signal via the shared BSMState. Biological
+        # interpretation additionally compares against Model prediction's
+        # data-driven per-treatment results.
+        # ///////////////////////////////////////////////////////////////
+        self.bsm_state = BSMState(self)
+        self.bsm_calculator_page = CalculatorPage(
+            widgets.content_bsm_calculator, self, self.bsm_state)
+        self.bsm_calculator_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
+        self.bsm_sensitivity_page = SensitivityPage(
+            widgets.content_bsm_sensitivity, self, self.bsm_state)
+        self.bsm_sensitivity_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
+        self.bsm_reporting_page = ReportingPage(
+            widgets.content_bsm_reporting, self, self.bsm_state)
+        self.bsm_reporting_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
+        self.biological_page = BiologicalPage(
+            widgets.content_biological, self, self.bsm_state,
+            self.ml_prediction_page.state)
+        self.biological_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
+
         # STUB PAGES (Chunk 5 restructure - not built yet; see ROADMAP.md)
         # ///////////////////////////////////////////////////////////////
         self._stub_pages = [
-            StubPage(widgets.content_bsm_calculator, "Calculator",
-                     "Blade strike calculator. Part of task 5 (blade strike "
-                     "modelling port)."),
-            StubPage(widgets.content_bsm_sensitivity, "Sensitivity analysis",
-                     "Part of task 5."),
-            StubPage(widgets.content_bsm_reporting, "Reporting",
-                     "Blade strike modelling report, saved as JSON for "
-                     "Setup and deploy to read. Part of task 5."),
             StubPage(widgets.content_data_analysis, "Data analysis",
                      "Passage duration, time-series normalisation, "
                      "barotrauma metrics, acceleration peak finding. Part "
                      "of task 7."),
-            StubPage(widgets.content_biological, "Biological interpretation",
-                     "Part of task 5."),
             StubPage(widgets.content_final_report, "Final reporting",
-                     "Part of task 5."),
+                     "Not part of task 5's scope; a later addition."),
         ]
 
         # TAB WIDGETS NOW DRIVEN BY THE SIDEBAR

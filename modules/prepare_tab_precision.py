@@ -16,17 +16,23 @@ tab (site, machine, per-treatment conditions) moved to Setup and deploy >
 Create and edit deployment, which now owns writing the plan into the
 library.
 
-Future hook (not built yet): when the Mathematical Blade Strike Modelling
-pages exist (ROADMAP.md Chunk 5 task 5), the expected strike rate here
-should be able to pull from a treatment's BSM output instead of a typed
-guess - the input is deliberately a plain field now so that wiring is a
-later, additive change.
+"Load from Blade Strike Modelling" (ROADMAP.md Chunk 5 task 5) reads
+`bsm_state.LATEST_RESULT_PATH` - the small JSON the Reporting page writes
+after every Calculator run - and fills the expected strike rate from the
+CEN estimate. Deliberately reads the file rather than taking a live
+BSMState reference: Setup and deploy stays decoupled from whether the BSM
+pages have even been visited this session, and "expected" strike rate for
+planning purposes is the a-priori CEN estimate, not an observed rate that
+does not exist yet.
 """
+import json
+
 from PySide6.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QSpinBox,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QPushButton,
+    QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from .bsm_state import LATEST_RESULT_PATH
 from .ml_widgets import MUTED, TEXT, Section, apply_section_defaults
 from .wilson_calc import wilson_interval
 
@@ -66,12 +72,17 @@ class PrecisionCalcTab:
         form.setVerticalSpacing(6)
 
         form.addWidget(self._muted("Expected strike rate (%)"), 0, 0)
+        rate_row = QHBoxLayout()
         self.spin_rate = QDoubleSpinBox()
         self.spin_rate.setRange(0.0, 100.0)
         self.spin_rate.setDecimals(1)
         self.spin_rate.setValue(10.0)
         self.spin_rate.valueChanged.connect(self._recalculate)
-        form.addWidget(self.spin_rate, 0, 1)
+        rate_row.addWidget(self.spin_rate)
+        self.btn_load_bsm = QPushButton("Load from Blade Strike Modelling")
+        self.btn_load_bsm.clicked.connect(self._load_from_bsm)
+        rate_row.addWidget(self.btn_load_bsm)
+        form.addLayout(rate_row, 0, 1)
 
         form.addWidget(self._muted("Planned sample size (N)"), 1, 0)
         self.spin_n = QSpinBox()
@@ -121,6 +132,28 @@ class PrecisionCalcTab:
         lab = QLabel(text)
         lab.setStyleSheet(f"color:{MUTED};")
         return lab
+
+    # ── Blade Strike Modelling handoff ──────────────────────────────────────
+    def _load_from_bsm(self):
+        if not LATEST_RESULT_PATH.exists():
+            if self._status is not None:
+                self._status("No Blade Strike Modelling result found - run "
+                             "a calculation on Calculator first.", 5000)
+            return
+        try:
+            with open(LATEST_RESULT_PATH, encoding="utf-8") as f:
+                payload = json.load(f)
+            self.spin_rate.setValue(payload["pco_cen_percent"])
+        except Exception as e:
+            if self._status is not None:
+                self._status(f"Could not read Blade Strike Modelling "
+                             f"result: {e}", 6000)
+            return
+        if self._status is not None:
+            self._status(
+                f"Loaded {payload['pco_cen_percent']:.1f}% expected strike "
+                f"rate from Blade Strike Modelling ({payload['species']}, "
+                f"{payload['timestamp']}).", 5000)
 
     # ── calculation ──────────────────────────────────────────────────────────
     def _recalculate(self, *_args):

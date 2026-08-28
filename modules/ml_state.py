@@ -144,6 +144,11 @@ class PredictionState(QObject):
         self.mc_metrics_path  = None
         self.mc_metrics       = None
         self.class_names      = []
+        # every binary*/multiclass*.joblib found in models_dir, for
+        # switching between variants (binary1_1, binary1_2, ...) without
+        # re-browsing the folder
+        self._bin_candidates  = []
+        self._mc_candidates   = []
 
         # dataset
         self.dataset_df     = None
@@ -196,49 +201,35 @@ class PredictionState(QObject):
     def load_models_from_dir(self, d):
         """Auto-discover binary*.joblib / multiclass*.joblib as in the MVP.
 
+        When a folder holds several variants (binary1_1, binary1_2, ...) the
+        alphabetically-first of each is selected by default - `bin_candidates`
+        / `mc_candidates` expose the rest so a caller (Predict's model
+        selector) can switch via `select_bin_model`/`select_mc_model` without
+        re-browsing the folder.
+
         Returns (ok, message). On success the models_changed signal fires and
         validation is re-run.
         """
         d = Path(d)
-        bins = sorted(d.glob("binary*.joblib"))
-        mcs  = sorted(d.glob("multiclass*.joblib"))
-        if not bins:
+        self._bin_candidates = sorted(d.glob("binary*.joblib"))
+        self._mc_candidates  = sorted(d.glob("multiclass*.joblib"))
+        if not self._bin_candidates:
             return False, f"No binary*.joblib found in {d}"
 
-        bin_model   = bins[0]
-        bin_metrics = self._metrics_for(bin_model)
-        if bin_metrics is None:
-            return False, "No metrics JSON found beside the binary model."
-        try:
-            with open(bin_metrics) as f:
-                parsed = json.load(f)
-        except Exception as e:
-            return False, f"Could not read {bin_metrics.name}: {e}"
-
-        self.models_dir       = d
-        self.bin_model_path   = bin_model
-        self.bin_metrics_path = bin_metrics
-        self.bin_metrics      = parsed
+        self.models_dir = d
+        ok, msg = self._apply_bin_model(self._bin_candidates[0])
+        if not ok:
+            return False, msg
 
         # multiclass model is optional; a failure to read it degrades to
         # binary-only rather than failing the whole load
-        self.mc_model_path = self.mc_metrics_path = self.mc_metrics = None
-        self.class_names = []
         mc_note = ""
-        if mcs:
-            mc_model   = mcs[0]
-            mc_metrics = self._metrics_for(mc_model)
-            if mc_metrics is not None:
-                try:
-                    with open(mc_metrics) as f:
-                        self.mc_metrics = json.load(f)
-                    self.mc_model_path   = mc_model
-                    self.mc_metrics_path = mc_metrics
-                    self.class_names = list(self.mc_metrics.get("class_names", []))
-                except Exception as e:
-                    mc_note = f" (multiclass metrics unreadable: {e})"
-            else:
-                mc_note = " (multiclass model has no metrics JSON - ignored)"
+        if self._mc_candidates:
+            ok, msg = self._apply_mc_model(self._mc_candidates[0])
+            if not ok:
+                mc_note = f" ({msg})"
+        else:
+            self._clear_mc_model()
 
         # default mode: use the full two-stage pipeline when available
         self.mode = "multiclass" if self.mc_model_path else "binary"
@@ -248,6 +239,75 @@ class PredictionState(QObject):
         self.config_changed.emit()
         self.validate()
         return True, f"Models loaded from {d}{mc_note}"
+
+    def _apply_bin_model(self, path):
+        metrics = self._metrics_for(path)
+        if metrics is None:
+            return False, "No metrics JSON found beside the binary model."
+        try:
+            with open(metrics) as f:
+                parsed = json.load(f)
+        except Exception as e:
+            return False, f"Could not read {metrics.name}: {e}"
+        self.bin_model_path   = Path(path)
+        self.bin_metrics_path = metrics
+        self.bin_metrics      = parsed
+        return True, ""
+
+    def _clear_mc_model(self):
+        self.mc_model_path = self.mc_metrics_path = self.mc_metrics = None
+        self.class_names = []
+
+    def _apply_mc_model(self, path):
+        metrics = self._metrics_for(path)
+        if metrics is None:
+            self._clear_mc_model()
+            return False, "multiclass model has no metrics JSON - ignored"
+        try:
+            with open(metrics) as f:
+                parsed = json.load(f)
+        except Exception as e:
+            self._clear_mc_model()
+            return False, f"multiclass metrics unreadable: {e}"
+        self.mc_model_path   = Path(path)
+        self.mc_metrics_path = metrics
+        self.mc_metrics      = parsed
+        self.class_names     = list(parsed.get("class_names", []))
+        return True, ""
+
+    @property
+    def bin_candidates(self):
+        """Every binary*.joblib found in models_dir, for a model picker."""
+        return list(self._bin_candidates)
+
+    @property
+    def mc_candidates(self):
+        """Every multiclass*.joblib found in models_dir, for a model picker."""
+        return list(self._mc_candidates)
+
+    def select_bin_model(self, path):
+        """Switch to a different binary model already found in models_dir."""
+        ok, msg = self._apply_bin_model(path)
+        if ok:
+            self.threshold_overridden = False
+            self.models_changed.emit()
+            self.config_changed.emit()
+            self.validate()
+        return ok, msg
+
+    def select_mc_model(self, path):
+        """Switch to a different multiclass model, or None for binary-only."""
+        if path is None:
+            self._clear_mc_model()
+            ok, msg = True, ""
+        else:
+            ok, msg = self._apply_mc_model(path)
+        if self.mode == "multiclass" and self.mc_model_path is None:
+            self.mode = "binary"
+        self.models_changed.emit()
+        self.config_changed.emit()
+        self.validate()
+        return ok, msg
 
     @property
     def deployed_threshold(self):
@@ -448,13 +508,25 @@ class PredictionState(QObject):
     # ── run ──────────────────────────────────────────────────────────────────
     def run_prediction(self):
         """Launch the worker subprocess. Emits run_started immediately and
-        run_finished / run_failed later on the GUI thread."""
+        run_finished / run_failed later on the GUI thread.
+
+        There is no persistent compatibility panel any more - pressing Run
+        is what triggers `validate()`, and a failure surfaces every failed
+        check right here rather than requiring the user to have found and
+        read a checklist beforehand."""
         if self.running:
             return
+        self.status.emit(
+            "Checking model, dataset, channels, sequence length…", 3000)
         self.validate()
         if not self.ready:
-            self.run_failed.emit("Prediction is not ready - resolve the "
-                                 "compatibility checks first.")
+            failed = [f"{label}: {detail}" if detail else label
+                      for state, label, detail in self.checks if state == "fail"]
+            msg = ("Prediction is not ready.\n" + "\n".join(failed)
+                   if failed else
+                   "Prediction is not ready - resolve the compatibility "
+                   "checks first.")
+            self.run_failed.emit(msg)
             return
 
         self.run_id  = datetime.now().strftime("%Y%m%d_%H%M%S")

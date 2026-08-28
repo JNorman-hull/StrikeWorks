@@ -55,7 +55,8 @@ from . import settings
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
 from .ml_train_state import DEFAULT_MODELS_DIR
 from .ml_widgets import ACCENT, BAD, MUTED, OK, Section, apply_section_defaults
-from .page_annotate import LOSSLESSCUT_EXE, _RAW_DIR
+from .page_annotate import LOSSLESSCUT_EXE
+from .library_widgets import RAW_DIR as _RAW_DIR
 from .page_validate import _NavViewBox
 from .plot_style import (
     add_export_button, build_export_data, reserve_top_margin,

@@ -41,10 +41,12 @@ in-progress edit without paying for a render.
 import json
 from pathlib import Path
 
+import cv2
+
 from PySide6.QtCore import Qt, QObject, QThread, QUrl, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
+    QAbstractItemView, QCheckBox, QDoubleSpinBox, QFileDialog,
     QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
     QPushButton, QSizePolicy, QSpinBox, QSplitter, QStackedWidget,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
@@ -53,9 +55,10 @@ from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 
 from . import deployment_index as di
-from . import settings, video_sync
-from .ml_widgets import ACCENT, MUTED, OK, Section, apply_section_defaults
-from .page_annotate import LOSSLESSCUT_EXE, _RAW_DIR, _VIDEO_FOLDER_NAME
+from . import sensor_config, video_sync
+from .library_widgets import LibrarySelector
+from .ml_widgets import ACCENT, MUTED, OK, TEXT, Section, apply_section_defaults
+from .page_annotate import LOSSLESSCUT_EXE
 from .page_validate import (
     _CsvLoadThread, _NavViewBox, _find_col,
 )
@@ -63,14 +66,10 @@ from .plot_style import reserve_top_margin, set_right_axis_active
 
 import pyqtgraph as pg
 
+_MAX_WINDOW_S = 15.0
+
 pg.setConfigOptions(antialias=True, background="#21252b",
                     foreground="#c8cdd6")
-
-_CSV_DIR = Path("processed_sens_data") / "csv"
-_EXCL_NAMES = {"global_sensor_index.csv", "model_features.csv"}
-_EXCL_SUFFIXES = ("_nadir_window",)
-_UNGROUPED = "(ungrouped)"
-_ALL_DEPLOYMENTS = None
 
 _PROCESSED_VIDEO_DIR = Path(__file__).parent.parent / "processed_video"
 _NADIR_T_COL = "pres_min.time."
@@ -129,9 +128,6 @@ class ExportAnimationsPage(QObject):
         self.ui = ui
         self.window = window
 
-        self._lib_dir = settings.get_libraries_dir()
-        self._lib_root = None
-        self._deployment_map = {}
         self._sensor_rows = []
 
         self._df = None
@@ -144,12 +140,24 @@ class ExportAnimationsPage(QObject):
         self._loaders = []
         self._pending_path = None
         self._video_matches = []
+        self._video_frames = None
+        self._video_duration_s = None
         self._worker = None
 
         self._build(ui.content_export_animations)
         self._connect()
-        self._populate_libraries()
+        self._on_lib_changed()
+        self._populate_sensor_table()
         self._set_loaded_enabled(False)
+
+    # ── library selector (shared widget - see library_widgets.py) ────────────
+    @property
+    def _lib_root(self):
+        return self.lib_selector.lib_root
+
+    def _on_lib_changed(self):
+        if self.lib_selector.lib_root:
+            self.status.emit(f"Library: {self.lib_selector.lib_root.name}", 4000)
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
@@ -186,23 +194,8 @@ class ExportAnimationsPage(QObject):
         lv.setContentsMargins(0, 0, 5, 0)
         lv.setSpacing(8)
 
-        grp = Section("Library")
-        fv = QVBoxLayout(grp)
-        fv.setSpacing(6)
-
-        lib_row = QHBoxLayout()
-        self.cmb_library = QComboBox()
-        self.cmb_library.setMinimumWidth(140)
-        lib_row.addWidget(self.cmb_library, stretch=1)
-        self.btn_change_libs = QPushButton("Libraries…")
-        lib_row.addWidget(self.btn_change_libs)
-        fv.addLayout(lib_row)
-
-        self.cmb_deployment = QComboBox()
-        fv.addLayout(self._row(self._muted("Deployment"), self.cmb_deployment))
-        self.cmb_treatment = QComboBox()
-        fv.addLayout(self._row(self._muted("Treatment"), self.cmb_treatment))
-        lv.addWidget(grp)
+        self.lib_selector = LibrarySelector()
+        lv.addWidget(self.lib_selector)
 
         self.tbl_sensors = QTableWidget(0, 3)
         self.tbl_sensors.setHorizontalHeaderLabels(["Sensor", "Video", "Synced"])
@@ -226,6 +219,10 @@ class ExportAnimationsPage(QObject):
         sv = QVBoxLayout(grp)
         sv.setSpacing(6)
 
+        self.lbl_video_info = QLabel("No matching video.")
+        self.lbl_video_info.setStyleSheet(f"color:{TEXT};font-weight:bold;")
+        sv.addWidget(self.lbl_video_info)
+
         self.stack_signal = QStackedWidget()
 
         self._pw = pg.PlotWidget(viewBox=_NavViewBox())
@@ -240,6 +237,18 @@ class ExportAnimationsPage(QObject):
         self._vb2.setXLink(pi)
         set_right_axis_active(pi, False)
         pi.vb.sigResized.connect(self._sync_vb2)
+
+        # shades the sensor-time span the matched video is assumed to
+        # cover (video duration, centred on the nadir - the video's own
+        # start isn't known yet, that's what this page helps figure out),
+        # so scrubbing the video in LosslessCut alongside this plot makes
+        # frame-to-data-row alignment easier to eyeball
+        self._video_region = pg.LinearRegionItem(
+            movable=False, brush=pg.mkBrush(120, 170, 255, 35),
+            pen=pg.mkPen(120, 170, 255, 90))
+        self._video_region.setVisible(False)
+        pi.addItem(self._video_region)
+
         self.stack_signal.addWidget(self._pw)
 
         video_holder = QWidget()
@@ -317,6 +326,12 @@ class ExportAnimationsPage(QObject):
         self.spin_zoom.setRange(0.1, 10.0)
         self.spin_zoom.setSingleStep(0.1)
         self.spin_zoom.setValue(1.0)
+        self.spin_video_nudge = QSpinBox()
+        self.spin_video_nudge.setRange(-2000, 2000)
+        self.spin_video_nudge.setToolTip(
+            "Shifts the video content vertically (pixels) before the graph "
+            "strip is stacked underneath it - use if the crop clips the "
+            "footage or leaves a gap.")
         self.chk_labels = QCheckBox("Add labels")
         self.chk_labels.setChecked(True)
 
@@ -324,10 +339,31 @@ class ExportAnimationsPage(QObject):
                 ("Sync frame (video)", self.spin_nadir_frame),
                 ("Real fps (camera)", self.spin_real_fps),
                 ("Graph window (s)", self.spin_window),
-                ("Zoom", self.spin_zoom)]):
+                ("Zoom", self.spin_zoom),
+                ("Frame nudge (px)", self.spin_video_nudge)]):
             gv.addWidget(self._muted(label), row, 0)
             gv.addWidget(widget, row, 1)
-        gv.addWidget(self.chk_labels, 4, 0, 1, 2)
+        gv.addWidget(self.chk_labels, 5, 0, 1, 2)
+
+        logo_row = QHBoxLayout()
+        self.lbl_logo_path = QLabel("No overlay image")
+        self.lbl_logo_path.setStyleSheet(f"color:{MUTED};")
+        self.lbl_logo_path.setWordWrap(True)
+        logo_row.addWidget(self.lbl_logo_path, stretch=1)
+        self.btn_choose_logo = QPushButton("Browse…")
+        logo_row.addWidget(self.btn_choose_logo)
+        self.btn_clear_logo = QPushButton("Clear")
+        logo_row.addWidget(self.btn_clear_logo)
+        gv.addLayout(logo_row, 6, 0, 1, 2)
+
+        gv.addWidget(self._muted("Overlay opacity"), 7, 0)
+        self.spin_logo_opacity = QDoubleSpinBox()
+        self.spin_logo_opacity.setRange(0.0, 1.0)
+        self.spin_logo_opacity.setSingleStep(0.1)
+        self.spin_logo_opacity.setValue(1.0)
+        gv.addWidget(self.spin_logo_opacity, 7, 1)
+
+        self._logo_path = None
         return grp
 
     @staticmethod
@@ -336,28 +372,17 @@ class ExportAnimationsPage(QObject):
         lab.setStyleSheet(f"color:{MUTED};")
         return lab
 
-    @staticmethod
-    def _row(label, widget):
-        r = QHBoxLayout()
-        r.addWidget(label)
-        r.addWidget(widget, stretch=1)
-        return r
-
     def _connect(self):
-        self.cmb_library.currentIndexChanged.connect(self._on_library_changed)
-        self.btn_change_libs.clicked.connect(self._change_libraries)
-        self.cmb_deployment.currentIndexChanged.connect(
-            self._rebuild_treatment_combo)
-        self.cmb_deployment.currentIndexChanged.connect(
-            self._populate_sensor_table)
-        self.cmb_treatment.currentIndexChanged.connect(
-            self._populate_sensor_table)
+        self.lib_selector.library_changed.connect(self._on_lib_changed)
+        self.lib_selector.filters_changed.connect(self._populate_sensor_table)
         self.tbl_sensors.itemSelectionChanged.connect(self._on_row_selected)
         self.btn_process.clicked.connect(self._process)
         self.btn_save.clicked.connect(self._save_config)
         self.btn_cancel.clicked.connect(self._cancel_process)
         self.btn_play.clicked.connect(self._toggle_play)
         self._player.playbackStateChanged.connect(self._on_playback_changed)
+        self.btn_choose_logo.clicked.connect(self._choose_logo)
+        self.btn_clear_logo.clicked.connect(self._clear_logo)
 
     def _set_loaded_enabled(self, enabled):
         for b in (self.btn_process, self.btn_save):
@@ -368,149 +393,20 @@ class ExportAnimationsPage(QObject):
         # a new sensor while a previous one's Cancel button was showing
         self.btn_cancel.setVisible(False)
 
-    # ── libraries (same shape as Annotate) ────────────────────────────────────
-    def _populate_libraries(self, select=None):
-        self.cmb_library.blockSignals(True)
-        self.cmb_library.clear()
-        try:
-            libs = sorted(p for p in self._lib_dir.iterdir() if p.is_dir())
-        except Exception:
-            libs = []
-        for lib in libs:
-            self.cmb_library.addItem(lib.name, str(lib))
-        self.cmb_library.blockSignals(False)
-        if not libs:
-            self._lib_root = None
-            return
-        idx = self.cmb_library.findData(str(select)) if select else 0
-        self.cmb_library.setCurrentIndex(max(0, idx))
-        self._on_library_changed()
-
-    def _change_libraries(self):
-        chosen = QFileDialog.getExistingDirectory(
-            self.window, "Select libraries folder", str(self._lib_dir))
-        if not chosen:
-            return
-        self._lib_dir = settings.set_libraries_dir(chosen)
-        self._populate_libraries()
-
-    def _on_library_changed(self, *_args):
-        path = self.cmb_library.currentData()
-        self._lib_root = Path(path) if path else None
-        self._scan_deployments()
-        self._populate_sensor_table()
-        if self._lib_root:
-            self.status.emit(f"Library: {self._lib_root.name}", 4000)
-
-    def _scan_deployments(self):
-        self._deployment_map = {}
-        current_dep = self.cmb_deployment.currentData()
-        self.cmb_deployment.blockSignals(True)
-        self.cmb_deployment.clear()
-        self.cmb_deployment.addItem("All deployments", _ALL_DEPLOYMENTS)
-
-        raw_dir = self._lib_root / _RAW_DIR if self._lib_root else None
-        if raw_dir is None or not raw_dir.exists():
-            self.cmb_deployment.blockSignals(False)
-            self._rebuild_treatment_combo()
-            return
-
-        deployments = set()
-        for entry in sorted(raw_dir.iterdir()):
-            if entry.is_file():
-                self._deployment_map.setdefault(
-                    entry.stem.upper(), (_UNGROUPED, _UNGROUPED))
-                deployments.add(_UNGROUPED)
-                continue
-            if not entry.is_dir():
-                continue
-            deployments.add(entry.name)
-            for child in sorted(entry.iterdir()):
-                if child.is_dir():
-                    if child.name.upper() == _VIDEO_FOLDER_NAME:
-                        continue
-                    for f in child.rglob("*"):
-                        if f.is_file():
-                            self._deployment_map.setdefault(
-                                f.stem.upper(), (entry.name, child.name))
-                elif child.is_file():
-                    self._deployment_map.setdefault(
-                        child.stem.upper(), (entry.name, _UNGROUPED))
-
-        for name in sorted(deployments):
-            self.cmb_deployment.addItem(name, name)
-        idx = self.cmb_deployment.findData(current_dep)
-        self.cmb_deployment.setCurrentIndex(idx if idx >= 0 else 0)
-        self.cmb_deployment.blockSignals(False)
-        self._rebuild_treatment_combo()
-
-    def _rebuild_treatment_combo(self):
-        wanted_deployment = self.cmb_deployment.currentData()
-        current = self.cmb_treatment.currentData()
-        self.cmb_treatment.blockSignals(True)
-        self.cmb_treatment.clear()
-        self.cmb_treatment.addItem("All treatments", _ALL_DEPLOYMENTS)
-        treatments = sorted({
-            treatment for (deployment, treatment) in self._deployment_map.values()
-            if wanted_deployment is None or deployment == wanted_deployment})
-        for name in treatments:
-            self.cmb_treatment.addItem(name, name)
-        idx = self.cmb_treatment.findData(current)
-        self.cmb_treatment.setCurrentIndex(idx if idx >= 0 else 0)
-        self.cmb_treatment.blockSignals(False)
-
-    def _video_dir_for(self, stem):
-        info = self._deployment_map.get(stem.upper())
-        if not info or self._lib_root is None:
-            return None
-        deployment, treatment = info
-        base = self._lib_root / _RAW_DIR
-        if deployment != _UNGROUPED:
-            base = base / deployment
-        if treatment != _UNGROUPED:
-            base = base / treatment
-        if not base.exists():
-            return None
-        for entry in base.iterdir():
-            if entry.is_dir() and entry.name.upper() == _VIDEO_FOLDER_NAME:
-                return entry
-        return None
-
-    def _video_matches_for(self, stem):
-        video_dir = self._video_dir_for(stem)
-        if video_dir is None:
-            return []
-        return sorted(video_dir.glob(f"{stem}_vid_*.mp4"))
-
     # ── sensor table ─────────────────────────────────────────────────────────
     def _populate_sensor_table(self):
         self.tbl_sensors.setRowCount(0)
         self._sensor_rows = []
         if self._lib_root is None:
             return
-        csv_dir = self._lib_root / _CSV_DIR
-        if not csv_dir.exists():
-            return
-
-        wanted_deployment = self.cmb_deployment.currentData()
-        wanted_treatment = self.cmb_treatment.currentData()
-        valid = [p for p in sorted(csv_dir.rglob("*.csv"))
-                 if p.name not in _EXCL_NAMES
-                 and not any(p.stem.endswith(s) for s in _EXCL_SUFFIXES)]
 
         rows = []
-        for p in valid:
-            deployment, treatment = self._deployment_map.get(
-                p.stem.upper(), (_UNGROUPED, _UNGROUPED))
-            if wanted_deployment is not None and deployment != wanted_deployment:
-                continue
-            if wanted_treatment is not None and treatment != wanted_treatment:
-                continue
-            matches = self._video_matches_for(p.stem)
+        for row in self.lib_selector.list_sensor_csvs():
+            matches = self.lib_selector.video_matches_for(row["stem"])
             rows.append({
-                "path": p, "stem": p.stem,
+                **row,
                 "video": "; ".join(m.name for m in matches) if matches else "—",
-                "synced": _synced_path_for(p.stem).exists(),
+                "synced": _synced_path_for(row["stem"]).exists(),
             })
         self._sensor_rows = rows
 
@@ -579,8 +475,9 @@ class ExportAnimationsPage(QObject):
                       else None)
         self._cur_path = path
         self._cur_stem = path.stem
-        self._video_matches = self._video_matches_for(self._cur_stem)
+        self._video_matches = self.lib_selector.video_matches_for(self._cur_stem)
 
+        self._update_video_info()
         self._draw_plot()
         self._load_config()
         self._set_loaded_enabled(True)
@@ -590,19 +487,69 @@ class ExportAnimationsPage(QObject):
         if synced.exists():
             self._show_video(synced)
 
+    def _video_frame_count_and_duration(self):
+        """(frames, seconds) for the current sensor's matched video, from
+        its own metadata - no frames decoded. (None, None) if there's no
+        video, or (frames, None) if the container doesn't report an fps."""
+        if not self._video_matches:
+            return None, None
+        try:
+            cap = cv2.VideoCapture(str(self._video_matches[0]))
+            frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS) or 0
+            cap.release()
+        except Exception:
+            return None, None
+        return frames, (frames / fps if fps > 0 else None)
+
+    def _update_video_info(self):
+        frames, duration = self._video_frame_count_and_duration()
+        self._video_frames = frames
+        self._video_duration_s = duration
+        if frames is None:
+            self.lbl_video_info.setText("No matching video.")
+        elif duration is None:
+            self.lbl_video_info.setText(
+                f"Video: {frames} frames (frame rate unknown)")
+        else:
+            self.lbl_video_info.setText(
+                f"Video: {frames} frames, {duration:.4f} s "
+                f"({frames / duration:.1f} fps)")
+
     def _draw_plot(self):
         pi = self._pw.plotItem
         if self._curve is not None:
             pi.removeItem(self._curve)
             self._curve = None
         if self._time is None or "pressure_kpa" not in self._df.columns:
+            self._video_region.setVisible(False)
             return
         y = self._df["pressure_kpa"].to_numpy(dtype=float)
         self._curve = self._pw.plot(self._time, y, pen=pg.mkPen("#dddddd", width=1))
         self._curve.setDownsampling(auto=True, method="peak")
         self._curve.setClipToView(True)
-        pi.enableAutoRange("x", True)
         pi.enableAutoRange("y", True)
+
+        nadir_t = self._nadir_time_s()
+        duration = getattr(self, "_video_duration_s", None)
+        if nadir_t is None:
+            self._video_region.setVisible(False)
+            pi.enableAutoRange("x", True)
+            return
+
+        # default view: nadir-centred, sized to the matched video's length
+        # (most videos run 6-10s) but never more than _MAX_WINDOW_S, so a
+        # long recording's full range never gets crammed into one crop -
+        # the shaded region still shows the video's *true* span even past
+        # that cap, since it - not the view - is the thing being aligned
+        window = min(duration, _MAX_WINDOW_S) if duration else _MAX_WINDOW_S
+        pi.setXRange(nadir_t - window / 2, nadir_t + window / 2, padding=0)
+        if duration:
+            self._video_region.setRegion(
+                [nadir_t - duration / 2, nadir_t + duration / 2])
+            self._video_region.setVisible(True)
+        else:
+            self._video_region.setVisible(False)
 
     def _sync_vb2(self):
         pi = self._pw.plotItem
@@ -620,27 +567,57 @@ class ExportAnimationsPage(QObject):
             "real_fps": self.spin_real_fps.value(),
             "graph_window_s": self.spin_window.value(),
             "zoom": self.spin_zoom.value(),
+            "video_nudge_px": self.spin_video_nudge.value(),
             "add_labels": self.chk_labels.isChecked(),
+            "logo_path": self._logo_path,
+            "logo_opacity": self.spin_logo_opacity.value(),
         }
+
+    @staticmethod
+    def _pump_default_from_row(row):
+        """Pump/turbine model + type, straight from the index
+        (`deployment_index.DEPLOYMENT_FIELDS`) - same source Setup and
+        deploy's Create and edit deployment page writes."""
+        if row is None:
+            return ""
+        blank = {"", "na", "nan", "none"}
+        model = str(row.get("pump_turbine", "") or "").strip()
+        kind = str(row.get("type", "") or "").strip()
+        model = "" if model.lower() in blank else model
+        kind = "" if kind.lower() in blank else kind
+        if model and kind:
+            return f"{model} ({kind})"
+        return model or kind
+
+    @staticmethod
+    def _sensor_default():
+        cfg = sensor_config.active()
+        return f"{cfg.name} ({cfg.output_rate_hz:g} Hz)"
 
     def _load_config(self):
         index_df = di.read_index(self._lib_root) if self._lib_root else None
-        treatment = ""
+        row = None
         if index_df is not None and "file" in index_df.columns:
             match = index_df[index_df["file"] == self._cur_stem]
-            if not match.empty and "treatment" in match.columns:
-                treatment = str(match.iloc[0].get("treatment", "") or "")
+            if not match.empty:
+                row = match.iloc[0]
+        treatment = str(row.get("treatment", "") or "") if row is not None else ""
 
         cfg = _read_json(_config_path_for(self._cur_stem)) or {}
-        self.ed_pump.setText(cfg.get("pump", ""))
-        self.ed_shaft_speed.setText(cfg.get("shaft_speed", treatment))
+        # index-sourced defaults are only used when nothing was saved
+        # before - text inputs stay editable either way
+        self.ed_pump.setText(cfg.get("pump") or self._pump_default_from_row(row))
+        self.ed_shaft_speed.setText(cfg.get("shaft_speed") or treatment)
         self.ed_camera.setText(cfg.get("camera", self.ed_camera.text()))
-        self.ed_sensor.setText(cfg.get("sensor", self.ed_sensor.text()))
+        self.ed_sensor.setText(cfg.get("sensor") or self._sensor_default())
         self.spin_nadir_frame.setValue(int(cfg.get("nadir_frame", 0)))
         self.spin_real_fps.setValue(int(cfg.get("real_fps", 1000)))
         self.spin_window.setValue(float(cfg.get("graph_window_s", 0.3)))
         self.spin_zoom.setValue(float(cfg.get("zoom", 1.0)))
+        self.spin_video_nudge.setValue(int(cfg.get("video_nudge_px", 0)))
         self.chk_labels.setChecked(bool(cfg.get("add_labels", True)))
+        self._set_logo_path(cfg.get("logo_path"))
+        self.spin_logo_opacity.setValue(float(cfg.get("logo_opacity", 1.0)))
 
     def _save_config(self):
         if not self._cur_stem:
@@ -649,6 +626,21 @@ class ExportAnimationsPage(QObject):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(self._config_values(), indent=2))
         self.status.emit(f"Sync configuration saved for {self._cur_stem}.", 4000)
+
+    # ── overlay image ────────────────────────────────────────────────────────
+    def _set_logo_path(self, path):
+        self._logo_path = path or None
+        self.lbl_logo_path.setText(Path(path).name if path else "No overlay image")
+
+    def _choose_logo(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self.window, "Choose an overlay image", "",
+            "Images (*.png *.PNG)")
+        if path:
+            self._set_logo_path(path)
+
+    def _clear_logo(self):
+        self._set_logo_path(None)
 
     # ── nadir time (from the sensor's own processed CSV) ────────────────────
     def _nadir_time_s(self):
@@ -685,7 +677,9 @@ class ExportAnimationsPage(QObject):
         cfg = self._config_values()
         opts = video_sync.SyncOptions(
             real_fps=cfg["real_fps"], graph_window_s=cfg["graph_window_s"],
-            zoom=cfg["zoom"], add_labels=cfg["add_labels"])
+            zoom=cfg["zoom"], add_labels=cfg["add_labels"],
+            video_nudge_px=cfg["video_nudge_px"], logo_path=cfg["logo_path"],
+            logo_opacity=cfg["logo_opacity"])
         output_path = _synced_path_for(self._cur_stem)
 
         self.btn_process.setEnabled(False)
