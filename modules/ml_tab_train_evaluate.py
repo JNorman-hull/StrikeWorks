@@ -21,7 +21,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QHeaderView,
+    QComboBox, QFileDialog, QHBoxLayout, QHeaderView,
     QLabel, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSplitter,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -145,15 +145,23 @@ class EvaluateTab:
 
         # ── figures ─────────────────────────────────────────────────────────
         grp_figs = Section("Evaluation figures")
-        fg = QGridLayout(grp_figs)
-        fg.setSpacing(8)
-        fg.addWidget(self.canvases["fig1"], 0, 0)
-        fg.addWidget(self.canvases["fig2"], 0, 1)
-        fg.addWidget(self.canvases["fig3"], 0, 2)
-        fg.addWidget(self.canvases["fig4"], 1, 0)
-        fg.addWidget(self.canvases["fig5"], 1, 1, 1, 2)
-        for c in range(3):
-            fg.setColumnStretch(c, 1)
+        fg = QVBoxLayout(grp_figs)
+        row1 = QSplitter(Qt.Orientation.Horizontal)
+        row1.setChildrenCollapsible(False)
+        for key in ("fig1", "fig2", "fig3"):
+            row1.addWidget(self.canvases[key])
+        row1.setSizes([1, 1, 1])
+        row2 = QSplitter(Qt.Orientation.Horizontal)
+        row2.setChildrenCollapsible(False)
+        row2.addWidget(self.canvases["fig4"])
+        row2.addWidget(self.canvases["fig5"])
+        row2.setSizes([1, 2])
+        figs_split = QSplitter(Qt.Orientation.Vertical)
+        figs_split.setChildrenCollapsible(False)
+        figs_split.addWidget(row1)
+        figs_split.addWidget(row2)
+        figs_split.setSizes([1, 1])
+        fg.addWidget(figs_split)
         v.addWidget(grp_figs)
 
         # ── stratification ──────────────────────────────────────────────────

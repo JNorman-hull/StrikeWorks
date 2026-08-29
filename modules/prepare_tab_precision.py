@@ -31,9 +31,12 @@ import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
+from PySide6.QtCore import Qt
+
 from PySide6.QtWidgets import (
     QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QPushButton,
-    QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QScrollArea, QSizePolicy, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
 from . import deployment_index as di
@@ -57,7 +60,17 @@ class PrecisionCalcTab:
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
-        v = QVBoxLayout(frame)
+        outer = QVBoxLayout(frame)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
+        outer.addWidget(scroll)
+
+        body = QWidget()
+        body.setStyleSheet("background:transparent;")
+        scroll.setWidget(body)
+        v = QVBoxLayout(body)
         v.setContentsMargins(4, 6, 4, 6)
         v.setSpacing(10)
 
@@ -104,21 +117,24 @@ class PrecisionCalcTab:
         self.lbl_result.setWordWrap(True)
         gv.addWidget(self.lbl_result)
 
-        row = QHBoxLayout()
         self.tbl_sweep = QTableWidget(0, 4)
         self.tbl_sweep.setHorizontalHeaderLabels(
             ["N", "Interval", "Precision (±)", ""])
         self.tbl_sweep.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.tbl_sweep.setMinimumHeight(160)
-        row.addWidget(self.tbl_sweep, stretch=1)
 
         self.fig_precision = Figure(figsize=(5.0, 3.2), dpi=100)
         self.canvas_precision = FigureCanvas(self.fig_precision)
         self.canvas_precision.setMinimumSize(220, 190)
         self.canvas_precision.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        row.addWidget(self.canvas_precision, stretch=1)
-        gv.addLayout(row, stretch=1)
+
+        row = QSplitter(Qt.Orientation.Horizontal)
+        row.setChildrenCollapsible(False)
+        row.addWidget(self.tbl_sweep)
+        row.addWidget(self.canvas_precision)
+        row.setSizes([1, 1])
+        gv.addWidget(row, stretch=1)
 
         save_row = QHBoxLayout()
         save_row.addStretch()

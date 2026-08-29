@@ -155,8 +155,6 @@ class MainWindow(QMainWindow):
                      "Passage duration, time-series normalisation, "
                      "barotrauma metrics, acceleration peak finding. Part "
                      "of task 7."),
-            StubPage(widgets.content_final_report, "Final reporting",
-                     "Not part of task 5's scope; a later addition."),
         ]
 
         # TAB WIDGETS NOW DRIVEN BY THE SIDEBAR
@@ -328,7 +326,10 @@ class MainWindow(QMainWindow):
         "btn_inspect_pred":   ("page_ml_prediction", "tabs_ml_prediction", 1),
         "btn_report_pred":    ("page_ml_prediction", "tabs_ml_prediction", 2),
         "btn_biological":           ("page_biological", None, None),
-        "btn_final_report":         ("page_final_report", None, None),
+        # "Final reporting" is now the unified report hub, built into
+        # Model prediction > Report (report_center.py) - same target as
+        # btn_report_pred rather than the old empty stub page.
+        "btn_final_report":   ("page_ml_prediction", "tabs_ml_prediction", 2),
         # Mathematical Blade Strike Modelling
         "btn_bsm_calculator":       ("page_bsm_calculator", None, None),
         "btn_bsm_sensitivity":      ("page_bsm_sensitivity", None, None),

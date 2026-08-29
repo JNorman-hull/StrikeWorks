@@ -21,7 +21,7 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox, QDoubleSpinBox, QHBoxLayout, QHeaderView, QLabel,
-    QLineEdit, QPushButton, QSizePolicy, QSplitter, QTableWidget,
+    QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSplitter, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -144,8 +144,17 @@ class InspectTab:
         split.addWidget(left)
 
         # ── right: detail ───────────────────────────────────────────────────
+        # scrollable so the stacked sections below don't clip on a short
+        # window, and inside the splitter (not root) so it's resizable
+        # against the browser like the header comment always claimed
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setStyleSheet(
+            "QScrollArea{border:none;background:transparent;}")
+        right_scroll.setMinimumWidth(420)
         right = QWidget()
-        right.setMinimumWidth(420)
+        right.setStyleSheet("background:transparent;")
+        right_scroll.setWidget(right)
         rv = QVBoxLayout(right)
         rv.setContentsMargins(5, 0, 0, 0)
         rv.setSpacing(8)
@@ -245,7 +254,8 @@ class InspectTab:
         gv.addWidget(self.lbl_sig_note)
         rv.addWidget(grp_sig, stretch=1)
 
-        root.addWidget(right, stretch=1)
+        split.addWidget(right_scroll)
+        split.setSizes([1, 1])
 
         apply_section_defaults(frame)
 

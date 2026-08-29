@@ -33,10 +33,11 @@ import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QFileDialog, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
-    QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QFileDialog, QHBoxLayout, QLabel, QPushButton, QScrollArea,
+    QSizePolicy, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
 from . import bsm_figures, bsm_io
@@ -111,8 +112,7 @@ class SensitivityPage(QWidget):
 
     def _figures_group(self):
         g = Section("Figures")
-        grid = QGridLayout(g)
-        grid.setSpacing(8)
+        gv = QVBoxLayout(g)
 
         self.fig_pco = Figure(figsize=(4.0, 3.2), dpi=100)
         self.fig_pm = Figure(figsize=(4.0, 3.2), dpi=100)
@@ -125,13 +125,22 @@ class SensitivityPage(QWidget):
         self.canvas_wf_q = self._canvas(self.fig_wf_q)
         self.canvas_n_q = self._canvas(self.fig_n_q)
 
-        grid.addWidget(self.canvas_pco, 0, 0)
-        grid.addWidget(self.canvas_pm, 0, 1)
-        grid.addWidget(self.canvas_wf_pm, 0, 2)
-        grid.addWidget(self.canvas_wf_q, 1, 0, 1, 2)
-        grid.addWidget(self.canvas_n_q, 1, 2, 1, 1)
-        for c in range(3):
-            grid.setColumnStretch(c, 1)
+        row1 = QSplitter(Qt.Orientation.Horizontal)
+        row1.setChildrenCollapsible(False)
+        for c in (self.canvas_pco, self.canvas_pm, self.canvas_wf_pm):
+            row1.addWidget(c)
+        row1.setSizes([1, 1, 1])
+        row2 = QSplitter(Qt.Orientation.Horizontal)
+        row2.setChildrenCollapsible(False)
+        row2.addWidget(self.canvas_wf_q)
+        row2.addWidget(self.canvas_n_q)
+        row2.setSizes([2, 1])
+        figs_split = QSplitter(Qt.Orientation.Vertical)
+        figs_split.setChildrenCollapsible(False)
+        figs_split.addWidget(row1)
+        figs_split.addWidget(row2)
+        figs_split.setSizes([1, 1])
+        gv.addWidget(figs_split)
         return g
 
     @staticmethod

@@ -29,11 +29,11 @@ import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel,
-    QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout,
-    QWidget,
+    QComboBox, QDoubleSpinBox, QGridLayout, QLabel,
+    QScrollArea, QSizePolicy, QSpinBox, QSplitter, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import bsm_figures
@@ -63,7 +63,17 @@ class BiologicalPage(QWidget):
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
-        v = QVBoxLayout(frame)
+        outer = QVBoxLayout(frame)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
+        outer.addWidget(scroll)
+
+        body = QWidget()
+        body.setStyleSheet("background:transparent;")
+        scroll.setWidget(body)
+        v = QVBoxLayout(body)
         v.setContentsMargins(4, 6, 4, 6)
         v.setSpacing(10)
         v.addWidget(self._comparison_group())
@@ -75,22 +85,25 @@ class BiologicalPage(QWidget):
         g = Section("Comparison")
         gv = QVBoxLayout(g)
 
-        row = QHBoxLayout()
         self.tbl_compare = QTableWidget(0, 5)
         self.tbl_compare.setHorizontalHeaderLabels(
             ["Treatment", "N", "ML strike rate (95% CI)", "BSM Pco (CEN)",
              "Difference (ML − BSM)"])
         self.tbl_compare.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.tbl_compare.setMinimumHeight(120)
-        row.addWidget(self.tbl_compare, stretch=1)
 
         self.fig_compare = Figure(figsize=(5.0, 3.2), dpi=100)
         self.canvas_compare = FigureCanvas(self.fig_compare)
         self.canvas_compare.setMinimumSize(220, 190)
         self.canvas_compare.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        row.addWidget(self.canvas_compare, stretch=1)
-        gv.addLayout(row, stretch=1)
+
+        row = QSplitter(Qt.Orientation.Horizontal)
+        row.setChildrenCollapsible(False)
+        row.addWidget(self.tbl_compare)
+        row.addWidget(self.canvas_compare)
+        row.setSizes([1, 1])
+        gv.addWidget(row, stretch=1)
 
         form = QGridLayout()
         form.setHorizontalSpacing(10)

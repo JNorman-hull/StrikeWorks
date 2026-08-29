@@ -970,6 +970,128 @@ per-page tweaks.
    eel-critical-velocity inputs, the result line, and the critical-
    velocity sweep figure together) - same content, same behaviour, far
    less scaffolding around it.
+
+   Follow-up (2026-08-28), same session: scroll/splitter consistency,
+   raised as a direct correction rather than something I'd noticed myself.
+
+   Verified against the reference pages (Annotate, Export animations,
+   Misclassification, Evaluate) that "vertical slider" meant page-level
+   scrolling for content taller than the window, not table styling (that
+   was already uniform from the `style_table()` centralisation above).
+   The reference pages either split-panel with a self-scrolling table
+   (Annotate/Export/Misclassification) or already wrap in `QScrollArea`
+   (Evaluate); every other page stacking `Section` boxes vertically did
+   not, so tall content just clipped with no way to reach it. Added
+   `QScrollArea` to Biological interpretation, Study design, and
+   Inspect's right-hand detail panel (which also turned out to be a real
+   bug, not just a missing scrollbar: `right` was added to the outer
+   `QHBoxLayout` instead of the `QSplitter` next to it, so the header
+   comment's claim that browser/detail were resizable against each other
+   was never actually true - fixed by moving it into the splitter).
+   Verified Process and Dataset deliberately don't need this (fixed-grid
+   dashboards, not vertical stacks - confirmed by screenshotting both at
+   650px tall with no clipping) rather than adding scroll areas
+   everywhere unconditionally. Horizontal scrolling on tables turned out
+   to already work automatically once a table sits inside a properly
+   bounded container (confirmed on Inspect's now-scrollable signal plot,
+   which shows both scrollbars) - no code needed there, just the same
+   `QScrollArea` fix.
+
+   Every box holding more than one plot canvas (or a table paired with a
+   canvas) was a fixed `QGridLayout`/`QHBoxLayout` with no drag handle -
+   converted all to `QSplitter`: Analysis and reporting's Figures box (a
+   vertical splitter of two horizontal splitters, 3-then-2 panels),
+   Evaluation figures (same nested shape, 5 panels), Predict's Prediction
+   figures (2 panels), Biological's Comparison table+figure, and Study
+   design's table+figure. `setChildrenCollapsible(False)` throughout so a
+   drag can't accidentally zero out a panel.
+
+   Follow-up (2026-08-28), same session again: re-verified row+column drag
+   handles specifically (not just columns) after a direct request to
+   double check. Re-audited every `addWidget(canvas/fig/pw...)` call site
+   across `modules/` and ran a functional test, not just an `isinstance`
+   check: `page_bsm_sensitivity.py`'s and `ml_tab_train_evaluate.py`'s
+   nested splitters (`row1`/`row2` each `Horizontal`, wrapped in an outer
+   `Vertical` splitter) genuinely resize in both directions once the Qt
+   event loop settles - confirmed `row1.sizes()` changing from
+   `[453, 454, 453]` to `[318, 724, 318]` after `setSizes()` +
+   `app.processEvents()`. The nested-splitter work above was already
+   correct; no code changed for this part.
+
+   Then unified reporting: nine pages (BSM/Analysis and reporting, Study
+   design, Raw data processing, Annotate, Model training > Evaluate,
+   Misclassification, Model deployment, Model prediction, Biological
+   interpretation) each had - or, for three of them, lacked entirely - a
+   bespoke report widget/button/format. Requested: one shared reporting
+   capability, built into Model prediction > Report (also satisfying the
+   still-stub "Final reporting" page), with a checklist of sections the
+   user can check/uncheck before generating.
+
+   New `modules/report_center.py`: a `ReportSection(key, title, available,
+   reason, build)` per source, plus `assemble(sections, out_dir,
+   checked_keys)` which concatenates the checked, available sections'
+   HTML bodies (each section embeds its own figures as base64, the
+   existing `embed_images=True` convention) into one document and writes
+   any tables it wants alongside as CSV. All output now goes under one
+   `output_data/Report_<timestamp>/` folder at the project root rather
+   than each page picking its own destination (a save dialog, a
+   library-relative path, or nothing).
+
+   Two sections reused what already existed unchanged: BSM
+   (`bsm_report.build_bsm_report_html`, plus the same figure-export calls
+   `page_bsm_sensitivity.py`'s own report button made) and Model training
+   (`ml_model_library.build_model_report_html`, for whichever model is
+   selected on Evaluate). Model prediction reused `ml_report.
+   build_report_html` (the one this page always had). Five had no HTML
+   builder and got one written fresh, following the same `_kv_table`/
+   `_data_table`/`_img_tag` primitives throughout: Study design (deployment
+   plan summary - site/treatments/runs from `deployment_index.py`, the
+   library's storage path, the standard folder layout, and a GitHub
+   remote read straight from `.git/config` if the library happens to be a
+   git repo), Raw data processing (Process page's scan inventory and
+   sensor/complete/processed counts), Annotation (converted from the old
+   Markdown report to the shared HTML format - same underlying data),
+   Misclassification (same conversion, same data), and Model deployment
+   summary (every deployed model in the models folder via
+   `ml_model_library.discover_models`, as a lighter version-by-version
+   table rather than the training report's full deep-dive on one model),
+   Biological interpretation (comparison table + bar figure, mortality
+   line, critical-velocity sweep figure, read straight off the page's own
+   widgets since it never had underlying report data separated out).
+
+   `ml_tab_report.py` (Model Prediction > Report) rebuilt around this: a
+   "Report sections" box with one checkbox + status line per section
+   (disabled with its `reason` shown when a section currently has nothing
+   to report - e.g. "Run a calculation on Calculator first"), "Select all
+   available"/"Clear", and "Generate report" as the primary action. Section
+   availability is cheap (no figure rendering) and re-evaluated on every
+   existing PredictionState signal plus an explicit "Refresh" button;
+   actual figure rendering only happens inside `build()`, when a checked
+   section is actually assembled. Model prediction's own "Export analysis
+   / tables / figures" stayed (they package more than report.html alone -
+   SVGs, `provenance.json`, raw CSVs - for this one dataset specifically),
+   but "Save report (HTML)" was removed as now strictly redundant with
+   checking only "Model prediction" and clicking Generate.
+
+   "Final reporting"'s sidebar button (`btn_final_report`) now points at
+   the same target as `btn_report_pred` - `page_ml_prediction` /
+   `tabs_ml_prediction` index 2 - instead of the empty `page_final_report`
+   stub; its `StubPage(...)` entry was dropped from `main.py`'s
+   `_stub_pages`. `main.ui` itself was not touched: `page_final_report`
+   still exists in the file but is simply unreferenced now, the same
+   low-risk choice as leaving unused widgets behind rather than a UI
+   edit + `build_ui.py --force` regeneration for a page nothing points at
+   any more.
+
+   Verified headless (`QT_QPA_PLATFORM=offscreen`): `MainWindow()`
+   constructs cleanly with the new module; a real combined report was
+   generated end-to-end through `ReportTab._generate_report()` itself
+   (Raw data processing + Annotation, the two sections with genuine data
+   in this environment - a persisted library with 179 real sensor files)
+   and confirmed to write `report.html` plus a `process_inventory.csv`
+   under `output_data/`; the empty-checklist and nothing-checked paths
+   were also exercised. Not tested in a real windowed session - only the
+   headless construction/generation path.
 6. Delineation tool (Segmentation page) - the design already agreed in the
    old Chunk 4 note: 7 windows covering the full time series, start/end
    trim handles placed first with everything else relative to them, nadir

@@ -21,7 +21,7 @@ from PySide6.QtCore import Qt, QElapsedTimer, QTimer
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout,
     QHeaderView, QLabel, QMessageBox, QPushButton, QScrollArea, QSizePolicy,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import ml_figures
@@ -271,10 +271,13 @@ class PredictTab:
 
         # ── row 5: figures ──────────────────────────────────────────────────
         grp_figs = Section("Prediction figures")
-        fv = QHBoxLayout(grp_figs)
-        fv.setSpacing(8)
-        fv.addWidget(self.canvas_bin, stretch=1)
-        fv.addWidget(self.canvas_mc, stretch=1)
+        fv = QVBoxLayout(grp_figs)
+        figs_split = QSplitter(Qt.Orientation.Horizontal)
+        figs_split.setChildrenCollapsible(False)
+        figs_split.addWidget(self.canvas_bin)
+        figs_split.addWidget(self.canvas_mc)
+        figs_split.setSizes([1, 1])
+        fv.addWidget(figs_split)
         v.addWidget(grp_figs)
 
         v.addStretch()
