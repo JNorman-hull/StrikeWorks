@@ -39,7 +39,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from . import deployment_index as di
 from .bsm_state import LATEST_RESULT_PATH
 from .ml_figures import fg_colour, style_axes, style_legend, _grid
 from .ml_widgets import MUTED, TEXT, Section, apply_section_defaults
@@ -136,13 +135,6 @@ class PrecisionCalcTab:
         row.setSizes([1, 1])
         gv.addWidget(row, stretch=1)
 
-        save_row = QHBoxLayout()
-        save_row.addStretch()
-        self.btn_save_precision = QPushButton("Save figure to library...")
-        self.btn_save_precision.clicked.connect(self._save_precision_figure)
-        save_row.addWidget(self.btn_save_precision)
-        gv.addLayout(save_row)
-
         v.addWidget(grp)
         v.addStretch()
         apply_section_defaults(frame)
@@ -184,7 +176,7 @@ class PrecisionCalcTab:
         result = wilson_interval(p, n, confidence)
         lo, hi, half = result
         self.lbl_result.setText(
-            f"N={n} at an assumed {p * 100:.1f}% strike rate -> "
+            f"N={n} at an assumed {p * 100:.1f}% strike rate → "
             f"{confidence}% CI [{lo * 100:.1f}%, {hi * 100:.1f}%], "
             f"precision ±{half * 100:.1f} percentage points.")
 
@@ -230,18 +222,3 @@ class PrecisionCalcTab:
         style_axes(fig, ax, dark)
         fig.tight_layout()
         self.canvas_precision.draw()
-
-    def _save_precision_figure(self):
-        dep_page = getattr(self.window, "initiate_deployment_page", None)
-        lib_root = getattr(dep_page, "_lib_root", None) if dep_page else None
-        if lib_root is None:
-            if self._status is not None:
-                self._status("Select a library on Create and edit "
-                             "deployment first.", 5000)
-            return
-        out_dir = di.index_path(lib_root).parent
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / "precision_ci_vs_n.png"
-        self.fig_precision.savefig(out_path, dpi=200, bbox_inches="tight")
-        if self._status is not None:
-            self._status(f"Saved precision figure to {out_path}", 5000)

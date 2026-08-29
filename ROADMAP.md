@@ -1102,6 +1102,125 @@ per-page tweaks.
 7. Data analysis page (Sensor processing) - passage durations, time-series
    normalisation, barotrauma metrics, acceleration peak finding, per the
    old Shiny app's framework.
+8. Follow-up (2026-08-28), thirteen-item request in one message. Triaged
+   and actioned the small/well-scoped ones directly; logged the rest here
+   rather than guessing at their shape. Easy batch, done this pass:
+
+   - Report formatted for A4 with narrow margins: `ml_report.
+     A4_REPORT_CSS` (`@page{size:A4;margin:12mm;}`, 186mm content width)
+     is now the one CSS block both `ml_report.wrap_html_document` and
+     `report_center._wrap_document` use, so every report - single-source
+     or the unified one - prints/exports to PDF the same way.
+   - `->` replaced with `→` everywhere it was user-facing (table headers/
+     cells, log lines, a checkbox label, the Study design result line) -
+     left alone everywhere it was a `-> ReturnType` annotation or
+     docstring, which is a different thing entirely and not what was
+     meant.
+   - "Misclassified recordings" removed from the Model Evaluation Report
+     (`ml_model_library.build_model_report_html`) - the dedicated
+     Misclassification report (`report_center.misclassification_section`)
+     already covers this in more detail, so it was pure duplication.
+   - Video file names duplicating in the misclassification report: traced
+     to `page_misclassification.py`'s `_video_index()` - a library folder
+     can be reachable under more than one entry in the libraries
+     directory (case-variant name, shortcut/junction, synced duplicate),
+     which walked the same physical video twice. Fixed by deduplicating
+     on resolved path while indexing, plus a defensive `dict.fromkeys()`
+     when the report joins the names, so a future duplicate source still
+     can't double a name in the text.
+   - Binary vs multiclass performance/misclassification asymmetry: traced
+     through `train_worker.py`'s metrics dict for both stages - binary's
+     "out-of-fold performance" kv table already carries accuracy/
+     sensitivity/specificity/ROC-AUC/PR-AUC/optimal threshold (its
+     equivalent of multiclass's dedicated "per-class performance" table,
+     which genuinely doesn't apply to a 2-class problem), and its
+     confusion matrix / cv_predictions code paths are structurally
+     symmetric with multiclass's. No code bug found - if a specific
+     binary model's report still looks thin, it's most likely that
+     model's `binary_cv_predictions.csv` / `binaryperformance_metrics.
+     json` predating some of these fields, which needs the actual model
+     re-evaluated/redeployed to fix, not a code change. Flagged back
+     rather than guessed at.
+   - Study design: removed "Save figure to library" (`prepare_tab_
+     precision.py`'s `_save_precision_figure` and its button - dead code
+     once removed, along with the now-unused `deployment_index` import).
+     The Study design report section now includes the precision table,
+     the precision-vs-N figure, and the calculator's own result line
+     ("N=50 at an assumed 10.0% strike rate → 95% CI [...], precision
+     ±8.3 percentage points.") as the narrative text - reusing the label
+     already computed for the page itself rather than a second
+     implementation. This section is available as soon as the calculator
+     has a value (it always does - sensible defaults, not a blank form);
+     the deployment-plan half (library/folder structure/deployments/
+     treatments) still only appears once a library is selected.
+   - Tables not filling their container until dragged: `style_table()`'s
+     `Interactive` column mode (needed so columns stay user-resizable,
+     per the earlier "row height and column width adjuster required
+     everywhere" request) starts every column at Qt's generic default
+     width. New `ml_widgets.fill_table_width()` widens columns
+     proportionally to fill the viewport when there's spare width -
+     never shrinks a column, so it can't undo a user's own drag - wired
+     in centrally via a `QEvent.Type.Show` event filter installed by
+     `style_table()` itself (every table gets it automatically, no
+     per-page edits needed) plus an explicit call in `page_process.py`'s
+     `_refresh_table()` for the specifically-named Raw data processing
+     table, since its rescan can repopulate the table while the page is
+     already visible - no fresh Show event to catch that case.
+   - Biological interpretation's "two large white boxes": both
+     `canvas_compare` and `canvas_vcrit` are matplotlib canvases that were
+     only ever drawn once a Blade Strike Modelling result existed -
+     `canvas_vcrit` was never drawn at all before that, and
+     `canvas_compare`'s "no result yet" path was a bare `fig.clear()`
+     with no facecolor set, so both defaulted to matplotlib's plain white
+     until first real data arrived. Fixed the same way `ml_figures.
+     draw_strike_rate`/`draw_region` already handle "no run yet" -
+     `bsm_figures.draw_comparison_bars`/`draw_vcrit_sweep` now draw a
+     themed dark placeholder with an "awaiting" message when there's
+     nothing to plot, and `page_bsm_biological.py` always calls them
+     (including once at construction) instead of skipping the draw.
+
+   Verified headless: `MainWindow()` still constructs cleanly; generated
+   a combined report through every section this fixed, confirmed the A4
+   `@page` rule is present and `Study Design Report`/`Sampling precision`
+   render; confirmed both Biological canvases' facecolor is `#21252b`
+   (the app's dark theme) immediately on construction, before any BSM run.
+
+   Logged, not started - each needs either a design conversation or is
+   large enough to warrant its own pass rather than folding into this one:
+
+   - Move the Report page to "Export and report", with its sidebar button
+     fixed at the bottom-left rather than in the scrolling section list -
+     a real `main.ui` layout change (a docked/pinned button outside the
+     current sidebar's structure), not a one-line edit; wants doing
+     carefully with the file open in Designer rather than blind XML
+     surgery.
+   - Adopting a standardised report-generation package (the user linked
+     https://github.com/svanirudh1809/ReportGenerator.git as a candidate)
+     in place of the hand-rolled `ml_report.py`/`report_center.py`
+     primitives - worth evaluating (what it actually buys over what's
+     already unified and working) before committing either way; the A4
+     styling half of this request is done above without it.
+   - "Selection information" (Process page's four StatCards, most likely
+     - not confirmed) "to be one of the JSON type outputs from elsewhere
+     in the app" - which JSON output, and which panel, needs confirming
+     before changing anything; guessing here risks solving the wrong
+     problem.
+   - Dual-species (scaly + eel) BSM calculation, on by default, feeding
+     everything downstream (every visual, table, and report currently
+     built around one species per run) - a real data-model change to
+     `bsm_model.py`/`bsm_state.py` and every consumer, not a UI toggle;
+     needs scoping before touching the calculation core.
+   - Session management: New session / Save session on a new Home page,
+     library selection driving every library-picking widget app-wide,
+     library-scoped `StrikeWorks_user_output/` output convention,
+     temp-copy-until-save autosave. Large, cross-cutting architecture
+     change - the user posed part of this as an open question ("Is this
+     simple enough to implement?") rather than a settled spec, so it
+     wants a design conversation, not a blind build.
+   - Simple/Advanced mode on Home, Simple being a guided wizard-style
+     pipeline (deployment → processing → predicting → reporting) sitting
+     on top of Advanced's existing pages. Large; depends on the session/
+     Home work above existing first.
 
 ## Deferred — multiple collision detection
 

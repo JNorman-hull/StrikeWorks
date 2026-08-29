@@ -299,27 +299,6 @@ def build_model_report_html(entry, image_paths=None, embed_images=False,
             h.append(table(["True class", "Misclassified"],
                            list(mis["by_true_class"].items())))
 
-    df = entry.cv_predictions
-    if df is not None and len(df):
-        h.append("<h3 style='color:%s;'>Misclassified recordings</h3>" % dark)
-        if "error_type" in df.columns:
-            bad = df[df["error_type"] != "correct"]
-            rows = [[r["file"],
-                     "Strike" if r["y_true"] == 1 else "No strike",
-                     "Strike" if r["y_pred"] == 1 else "No strike",
-                     f"{r['probability']:.3f}", r.get("treatment", "—"),
-                     "FP" if r["error_type"] == "false_positive" else "FN"]
-                    for _, r in bad.iterrows()]
-            h.append(table(["File", "True", "Predicted", "Probability",
-                            "Treatment", "Error"], rows))
-        elif "true_class" in df.columns:
-            bad = df[~df["correct"]]
-            rows = [[r["file"], r["true_class"], r["pred_class"],
-                     f"{r['confidence']:.3f}", r.get("treatment", "—")]
-                    for _, r in bad.iterrows()]
-            h.append(table(["File", "True class", "Predicted class",
-                            "Confidence", "Treatment"], rows))
-
     # ── figures ──────────────────────────────────────────────────────────────
     if image_paths:
         h.append(f"<h2 style='color:{dark};'>Figures</h2>")

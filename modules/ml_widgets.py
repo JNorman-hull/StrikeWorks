@@ -10,7 +10,7 @@ The RingCard and Spinner are ports of the MVP prediction page's widgets,
 recoloured for the StrikeWorks dark theme. MetaCard, CheckList and ProbBars
 are new but follow the same card language as page_process.StatCard.
 """
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
@@ -67,6 +67,51 @@ def style_table(tbl: QTableWidget, row_numbers=True, columns=True):
         tbl.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Interactive)
         tbl.horizontalHeader().setStretchLastSection(False)
+        # Interactive columns start at Qt's generic default width (a
+        # freshly populated table looks squeezed into its left edge until
+        # dragged wider by hand) - fill_table_width() on first Show fixes
+        # that without giving up manual dragging afterward.
+        tbl.installEventFilter(_TableFillOnShow.instance())
+
+
+class _TableFillOnShow(QObject):
+    """Singleton event filter: widens a table's columns to fill its
+    viewport the first time it becomes visible with data, then gets out
+    of the way - it only ever adds spare width, never fights a drag the
+    user makes afterward."""
+    _shared = None
+
+    @classmethod
+    def instance(cls):
+        if cls._shared is None:
+            cls._shared = cls()
+        return cls._shared
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.Show:
+            fill_table_width(obj)
+        return False
+
+
+def fill_table_width(tbl: QTableWidget):
+    """Widen `tbl`'s (already `Interactive`) columns to fill its viewport
+    when their natural content width leaves space spare, so a populated
+    table reads full-width instead of needing a manual drag first. Safe
+    to call on an empty table (no columns to widen) or repeatedly (only
+    ever adds width, so it will not undo a user's own drag)."""
+    n = tbl.columnCount()
+    if n == 0:
+        return
+    tbl.resizeColumnsToContents()
+    total = sum(tbl.columnWidth(c) for c in range(n))
+    available = tbl.viewport().width()
+    extra = available - total
+    if extra <= 0:
+        return
+    share, remainder = divmod(extra, n)
+    for c in range(n):
+        tbl.setColumnWidth(
+            c, tbl.columnWidth(c) + share + (1 if c < remainder else 0))
 
 
 # ── ring card (ported from the MVP, dark theme) ──────────────────────────────

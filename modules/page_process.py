@@ -38,6 +38,7 @@ from . import sensor_config
 from .library_widgets import (
     LibrarySelector, UNGROUPED as _LIB_UNGROUPED, _DirsOnlyProxy,
 )
+from .ml_widgets import fill_table_width
 
 # ── paths inside a library root (unchanged from the MVP) ─────────────────────
 _INDEX_REL = di.INDEX_REL
@@ -540,6 +541,7 @@ class ProcessPage(QObject):
                 if col == 6:
                     it.setForeground(QColor(_OK if f["processed"] else _WARN))
                 t.setItem(row, col, it)
+        fill_table_width(t)
         self.ui.btn_process_selected.setEnabled(False)
 
     def _on_table_select(self):
@@ -581,7 +583,7 @@ class ProcessPage(QObject):
         else:
             self._log("Treatment: none - this batch is processed unlabelled.")
         self._batch_processed = []
-        self._log(f"Output -> {out_dir}\n")
+        self._log(f"Output → {out_dir}\n")
         self.ui.btn_process_selected.setEnabled(False)
 
         self._thread = _ProcessThread(complete, out_dir, self._root, cfg)

@@ -721,7 +721,7 @@ class DatasetPage(QObject):
         try:
             self._result.to_csv(path, index=False)
             self.status.emit(f"Saved: {Path(path).name}", 4000)
-            self._log(f"\nSaved dataset -> {path}")
+            self._log(f"\nSaved dataset → {path}")
         except Exception as e:
             self.status.emit(f"Save failed: {e}", 6000)
 
@@ -739,7 +739,7 @@ class DatasetPage(QObject):
             self.fig.savefig(out / "annotation_summary.png",
                              dpi=300, bbox_inches="tight")
             self.status.emit(f"Saved outputs to {dirpath}", 5000)
-            self._log(f"\nSaved annotated dataset + figure -> {out}")
+            self._log(f"\nSaved annotated dataset + figure → {out}")
         except Exception as e:
             self.status.emit(f"Save failed: {e}", 6000)
 

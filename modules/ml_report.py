@@ -283,12 +283,25 @@ def _threshold_text(state):
 
 
 def wrap_html_document(body_html):
-    """Standalone HTML file around the report body (print/PDF friendly)."""
+    """Standalone HTML file around the report body, sized for an A4 page
+    with narrow margins both on screen and when printed/exported to PDF."""
     return ("<!DOCTYPE html><html><head><meta charset='utf-8'/>"
             "<title>Blade Strike Analysis Report</title>"
-            "<style>body{max-width:900px;margin:24px auto;padding:0 16px;"
-            "background:#ffffff;} @media print {body{margin:0;}}</style>"
+            f"<style>{A4_REPORT_CSS}</style>"
             f"</head><body>{body_html}</body></html>")
+
+
+#: shared by every report wrapper (`ml_report`, `report_center`) so every
+#: StrikeWorks report - single-source or the unified one - prints the same
+#: way: A4, 12mm margins, content width matching the printable area.
+A4_REPORT_CSS = (
+    "@page{size:A4;margin:12mm;}"
+    "body{max-width:186mm;margin:12mm auto;padding:0 4mm;"
+    "background:#ffffff;}"
+    "@media print{body{margin:0 auto;padding:0;}}"
+    "img{max-width:100%;}"
+    "table{max-width:100%;}"
+)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

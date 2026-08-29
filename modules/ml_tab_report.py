@@ -32,7 +32,7 @@ from .ml_widgets import ACCENT, MUTED, Section, apply_section_defaults
 # (key, title) in the order report_center.all_sections() builds them
 _SECTION_TITLES = [
     ("bsm",              "Blade strike modelling (mathematical)"),
-    ("study_design",     "Study design (deployment plan)"),
+    ("study_design",     "Study design"),
     ("process",          "Raw data processing"),
     ("annotation",       "Annotation"),
     ("training",         "Model training"),

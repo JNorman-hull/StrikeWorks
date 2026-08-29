@@ -14,7 +14,7 @@ dark=True (the default here - these only ever appear on in-app canvases,
 unlike ml_figures' report-vs-canvas split) gives the themed presentation;
 dark=False is available for anything exported to a light-background report.
 """
-from .ml_figures import _PALETTE, fg_colour, style_axes, style_legend, _grid
+from .ml_figures import _PALETTE, _awaiting, fg_colour, style_axes, style_legend, _grid
 
 CEN_COLOR = _PALETTE[3]   # green - "the model's own estimate"
 OBS_COLOR = _PALETTE[0]   # blue - "what was actually observed"
@@ -137,19 +137,29 @@ def draw_vcrit_sweep(fig, vcrit_vals, pm_vals, default_vcrit, default_pm,
     question - a plain line plus one highlighted point marking what the
     species' own regression would derive by itself, so the sweep is read
     against the actual default rather than an arbitrary baseline.
+
+    `vcrit_vals`/`pm_vals` empty (or None) draws the themed awaiting-data
+    placeholder instead of a blank white canvas - the same idiom
+    `ml_figures.draw_strike_rate`/`draw_region` use before a run exists.
     """
     fig.clear()
     ax = fig.add_subplot(111)
     fg = fg_colour(dark)
     _grid(ax, dark)
+    ax.set_xlabel("Critical velocity vcrit (m/s)", fontsize=9)
+    ax.set_ylabel("Mortality probability (%)", fontsize=9)
+    ax.set_ylim(0, 100)
+    if vcrit_vals is None or len(vcrit_vals) == 0:
+        ax.set_xticks([])
+        _awaiting(ax, "Run a Blade Strike Modelling calculation first")
+        style_axes(fig, ax, dark)
+        fig.tight_layout()
+        return
     ax.plot(vcrit_vals, pm_vals, color=CEN_COLOR, linewidth=1.5, zorder=2)
     ax.scatter([default_vcrit], [default_pm], s=50, color=OBS_COLOR,
               edgecolor=fg, linewidth=0.8, zorder=4,
               label=f"Regression default ({default_vcrit:.2f} m/s)")
     style_legend(ax.legend(loc="upper right", fontsize=8), dark)
-    ax.set_xlabel("Critical velocity vcrit (m/s)", fontsize=9)
-    ax.set_ylabel("Mortality probability (%)", fontsize=9)
-    ax.set_ylim(0, 100)
     ax.tick_params(labelsize=8)
     style_axes(fig, ax, dark)
     fig.tight_layout()
@@ -162,10 +172,20 @@ def draw_comparison_bars(fig, cen_value, comparisons, dark=True,
     typed-in comparison - the "BSM vs predicted" figure on Biological
     interpretation. `comparisons`: list of (label, value_pct, ci_lo, ci_hi)
     - ci_lo/ci_hi may be None for a bar with no confidence interval.
+
+    `cen_value` None draws the themed awaiting-data placeholder instead of
+    a blank white canvas - the same idiom `ml_figures.draw_strike_rate`/
+    `draw_region` use before a run exists.
     """
     fig.clear()
     ax = fig.add_subplot(111)
     fg = fg_colour(dark)
+    if cen_value is None:
+        ax.set_xticks([])
+        _awaiting(ax, "Run a Blade Strike Modelling calculation first")
+        _bar_style(ax, dark, ylabel)
+        fig.tight_layout()
+        return
     labels = ["CEN"] + [c[0] for c in comparisons]
     heights = [cen_value] + [c[1] for c in comparisons]
     colors = [CEN_COLOR] + [OBS_COLOR] * len(comparisons)

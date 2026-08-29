@@ -59,6 +59,7 @@ class BiologicalPage(QWidget):
         if bsm_state.last_result is not None:
             self._on_bsm_result(bsm_state.last_result)
         else:
+            self._run_vcrit_sweep()
             self._refresh_comparison()
 
     # ── layout ───────────────────────────────────────────────────────────────
@@ -191,6 +192,8 @@ class BiologicalPage(QWidget):
     def _run_vcrit_sweep(self):
         res = self.bsm_state.last_result
         if res is None:
+            bsm_figures.draw_vcrit_sweep(self.fig_vcrit, [], None, None, None)
+            self.canvas_vcrit.draw()
             return
         species = self.cmb_species.currentText()
         eel_vcrit = self.spin_eel_vcrit.value()
@@ -261,9 +264,5 @@ class BiologicalPage(QWidget):
         if manual is not None:
             comparisons.append(manual)
 
-        if pco_cen is None:
-            self.fig_compare.clear()
-            self.canvas_compare.draw()
-            return
         bsm_figures.draw_comparison_bars(self.fig_compare, pco_cen, comparisons)
         self.canvas_compare.draw()

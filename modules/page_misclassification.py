@@ -192,7 +192,7 @@ class MisclassificationPage(QObject):
 
         self.tbl_misclass = QTableWidget(0, 5)
         self.tbl_misclass.setHorizontalHeaderLabels(
-            ["File", "True -> Predicted", "Confidence", "Treatment", "Video"])
+            ["File", "True → Predicted", "Confidence", "Treatment", "Video"])
         self.tbl_misclass.verticalHeader().setVisible(False)
         self.tbl_misclass.setEditTriggers(
             QTableWidget.EditTrigger.NoEditTriggers)
@@ -354,7 +354,7 @@ class MisclassificationPage(QObject):
             item_file.setData(Qt.ItemDataRole.UserRole, row["file"])
             self.tbl_misclass.setItem(r, 0, item_file)
             self.tbl_misclass.setItem(
-                r, 1, QTableWidgetItem(f'{row["true"]} -> {row["pred"]}'))
+                r, 1, QTableWidgetItem(f'{row["true"]} → {row["pred"]}'))
             conf_item = QTableWidgetItem(f'{row["confidence"]:.3f}')
             conf_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.tbl_misclass.setItem(r, 2, conf_item)
@@ -373,8 +373,15 @@ class MisclassificationPage(QObject):
     def _video_index(self):
         """{stem: [video paths]} across every configured library - built
         once per model switch (one recursive walk) rather than once per
-        misclassified file, since a file's library isn't known up front."""
+        misclassified file, since a file's library isn't known up front.
+
+        Deduplicated by resolved path: a library folder can be reachable
+        under more than one entry in the libraries directory (a
+        case-variant name, a shortcut/junction, a synced duplicate), which
+        would otherwise walk the same physical video twice and list its
+        name twice against one recording."""
         index = {}
+        seen_by_stem = {}
         lib_dir = settings.get_libraries_dir()
         try:
             libs = [p for p in lib_dir.iterdir() if p.is_dir()]
@@ -386,6 +393,14 @@ class MisclassificationPage(QObject):
                 continue
             for video in raw_dir.rglob("*_vid_*.mp4"):
                 stem = video.name.split("_vid_")[0]
+                try:
+                    key = str(video.resolve()).lower()
+                except OSError:
+                    key = str(video).lower()
+                seen = seen_by_stem.setdefault(stem, set())
+                if key in seen:
+                    continue
+                seen.add(key)
                 index.setdefault(stem, []).append(video)
         return index
 
@@ -724,14 +739,14 @@ class MisclassificationPage(QObject):
             "",
             "## Misclassified recordings",
             "",
-            "| File | True -> Predicted | Confidence | Treatment | Video |",
+            "| File | True → Predicted | Confidence | Treatment | Video |",
             "|---|---|---|---|---|",
         ]
         for row in self._rows:
             video = ("; ".join(p.name for p in row.get("video_matches", []))
                      or "—")
             lines.append(
-                f"| {row['file']} | {row['true']} -> {row['pred']} | "
+                f"| {row['file']} | {row['true']} → {row['pred']} | "
                 f"{row['confidence']:.3f} | {row['treatment']} | {video} |")
 
         lines += ["", "## Changes made this session", ""]

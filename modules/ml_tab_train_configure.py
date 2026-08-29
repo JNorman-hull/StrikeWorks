@@ -218,7 +218,7 @@ class TrainTab:
         for key, spec in GROUPING_PRESETS.items():
             self.cmb_preset.addItem(spec["desc"], key)
         self.cmb_preset.currentIndexChanged.connect(self._preset_changed)
-        self.chk_surface = QCheckBox("Unlabelled surface strikes -> region 1")
+        self.chk_surface = QCheckBox("Unlabelled surface strikes → region 1")
         self.chk_surface.toggled.connect(self._surface_changed)
         mc_row.addWidget(self.chk_multiclass, 0, 0, 1, 2)
         mc_row.addWidget(self.lbl_class_col, 1, 0)
