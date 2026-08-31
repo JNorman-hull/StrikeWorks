@@ -22,8 +22,8 @@ so they stay distinct utility rather than a duplicate of the unified
 report.
 """
 from PySide6.QtWidgets import (
-    QCheckBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel, QMessageBox,
-    QPushButton, QTextBrowser, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel,
+    QMessageBox, QPushButton, QTextBrowser, QVBoxLayout, QWidget,
 )
 
 from . import ml_figures, ml_report, report_center
@@ -42,6 +42,13 @@ _SECTION_TITLES = [
     ("biological",       "Biological interpretation"),
 ]
 
+# these two sections report on "a model" rather than "the app's current
+# state" - previously they silently used whatever was last selected on
+# Model training > Evaluate / Misclassification analysis, which drifted
+# out of sync with what the checkbox actually said it would report. Own
+# picker here instead, independent of either page.
+_MODEL_PICKER_KEYS = ("training", "misclassification")
+
 
 class ReportTab:
     """Builds the Report tab UI into `frame` and binds it to `state`."""
@@ -52,6 +59,7 @@ class ReportTab:
         self._image_paths = {}
         self._checks = {}
         self._status_labels = {}
+        self._model_combos = {}
         self._sections = []
 
         self._build(frame)
@@ -87,6 +95,11 @@ class ReportTab:
             cb.setChecked(key == "prediction")
             self._checks[key] = cb
             cell.addWidget(cb)
+            if key in _MODEL_PICKER_KEYS:
+                combo = QComboBox()
+                combo.setEnabled(False)
+                self._model_combos[key] = combo
+                cell.addWidget(combo)
             lab = QLabel("")
             lab.setStyleSheet(f"color:{MUTED};font-size:11px;")
             lab.setWordWrap(True)
@@ -155,8 +168,29 @@ class ReportTab:
         s.dataset_changed.connect(self._refresh)
 
     # ── section checklist ────────────────────────────────────────────────────
+    def _refresh_model_combos(self):
+        """Repopulates the Model training / Misclassification pickers with
+        every available model, keeping the previous selection (matched by
+        label, since `available_model_entries` builds fresh `ModelEntry`
+        objects each call) if it's still in the list."""
+        entries = report_center.available_model_entries(self.window)
+        for combo in self._model_combos.values():
+            keep_label = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            for e in entries:
+                combo.addItem(e.label, e)
+            combo.setEnabled(bool(entries))
+            idx = combo.findText(keep_label) if keep_label else -1
+            combo.setCurrentIndex(idx if idx >= 0 else (0 if entries else -1))
+            combo.blockSignals(False)
+
     def _refresh_checklist(self):
-        self._sections = report_center.all_sections(self.window)
+        self._refresh_model_combos()
+        self._sections = report_center.all_sections(
+            self.window,
+            training_entry_getter=lambda: self._model_combos["training"].currentData(),
+            misclass_entry_getter=lambda: self._model_combos["misclassification"].currentData())
         for sec in self._sections:
             cb = self._checks.get(sec.key)
             lab = self._status_labels.get(sec.key)

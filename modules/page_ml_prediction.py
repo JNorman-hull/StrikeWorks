@@ -69,4 +69,4 @@ class MLPredictionPage(QObject):
             self.tab_inspect.apply_filter_preset(preset)
 
     def goto_report(self):
-        self.window.navigate_to("btn_report_pred")
+        self.window.navigate_to("btn_export_report")

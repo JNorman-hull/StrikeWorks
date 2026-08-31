@@ -54,12 +54,27 @@ TEXT_PADDING = 20
 TIME_TOL = 0.001
 
 
+#: the two channels every export used before channels became
+#: configurable - still the default so an old saved config (no
+#: "channels" key) renders exactly as it always did
+DEFAULT_CHANNELS = [
+    {"column": "pressure_kpa", "label": "Pressure (kPa)", "color": "black"},
+    {"column": "higacc_mag_g", "label": "Acceleration magnitude (g)",
+     "color": "red"},
+]
+
+#: up to this many panels in one graph strip - past this a 150 dpi strip
+#: has no room left to be readable
+MAX_CHANNELS = 6
+
+
 class SyncOptions:
     """Every tunable the original script hardcoded as a module constant."""
 
     def __init__(self, real_fps=1000, data_hz=2000, graph_window_s=0.3,
                 zoom=1.0, pressure_row_offset=20, video_nudge_px=0,
-                add_labels=True, logo_path=None, logo_opacity=1.0):
+                add_labels=True, logo_path=None, logo_opacity=1.0,
+                channels=None, layout="row", no_video=False):
         self.real_fps = real_fps
         self.data_hz = data_hz
         self.graph_window_s = graph_window_s
@@ -69,15 +84,36 @@ class SyncOptions:
         self.add_labels = add_labels
         self.logo_path = logo_path
         self.logo_opacity = logo_opacity
+        # which signal(s) the rolling graph strip plots, one panel each -
+        # was hardcoded to pressure + acceleration magnitude; any numeric
+        # column in the sensor's processed CSV works now (e.g. the raw
+        # higacc_x/y/z axes instead of the combined magnitude)
+        self.channels = channels or DEFAULT_CHANNELS
+        # "row": panels side by side (the original layout, fits under a
+        # video crop). "grid": up to 3 rows of 2 - only really usable
+        # with no_video, where the panels get the whole frame to work
+        # with instead of a quarter-height strip
+        self.layout = layout
+        # skip the video crop entirely and let the graph panels fill the
+        # whole output frame - a pure sensor-signal animation rather than
+        # a video overlay, for when there's no camera footage worth
+        # keeping (or none at all)
+        self.no_video = no_video
 
 
-def build_cursor_arrays(nadir_time_s, df, nadir_frame, total_frames, opts):
-    """Pressure/accmag arrays aligned 1-to-1 with encoded video frames -
-    used only for the live cursor annotation value on each frame."""
+def build_cursor_arrays(nadir_time_s, df, nadir_frame, total_frames, opts,
+                        columns=None):
+    """{column: per-frame value array}, aligned 1-to-1 with encoded video
+    frames - used only for the live cursor annotation value on each
+    frame's panel. `columns` defaults to every channel in `opts.channels`.
+
+    A pressure-named column gets the same row-offset correction the
+    original script applied for every column (pressure and acceleration
+    are logged a few rows apart on the same device) - every other column
+    uses the acceleration-aligned time directly.
+    """
+    columns = columns or [c["column"] for c in opts.channels]
     times = df["time_s"].to_numpy(dtype=float)
-    pres_vals = df["pressure_kpa"].to_numpy(dtype=float)
-    acc_vals = df["higacc_mag_g"].to_numpy(dtype=float)
-
     pres_offset_s = opts.pressure_row_offset / opts.data_hz
     f_idx = np.arange(total_frames)
     acc_times = nadir_time_s + (f_idx - nadir_frame) / opts.real_fps
@@ -89,28 +125,39 @@ def build_cursor_arrays(nadir_time_s, df, nadir_frame, total_frames, opts):
         valid = np.abs(times[idx] - target_times) < TIME_TOL
         return idx, valid
 
-    acc_idx, acc_valid = lookup(acc_times)
-    pres_idx, pres_valid = lookup(pres_times)
-    accmag = np.where(acc_valid, acc_vals[acc_idx], 0.0)
-    pres = np.where(pres_valid, pres_vals[pres_idx], 0.0)
-    return pres, accmag
+    out = {}
+    for col in columns:
+        if col not in df.columns or col in out:
+            continue
+        target_times = pres_times if "pres" in col.lower() else acc_times
+        idx, valid = lookup(target_times)
+        vals = df[col].to_numpy(dtype=float)
+        out[col] = np.where(valid, vals[idx], 0.0)
+    return out
 
 
-def make_graph_strip(df, pres_cursor, accmag_cursor, frame_idx, nadir_time_s,
+def _grid_shape(n, layout):
+    if layout == "grid":
+        cols = 2 if n > 1 else 1
+        rows = -(-n // cols)   # ceil
+        return rows, cols
+    return 1, n
+
+
+def make_graph_strip(df, cursor_values, frame_idx, nadir_time_s,
                      nadir_frame, strip_width, strip_height, opts):
-    """Two-panel scrolling graph (pressure black, accel magnitude red) for
-    the current frame - full processed signal as backdrop so data is
-    always visible on both sides of the cursor."""
-    time_axis = df["time_s"].to_numpy(dtype=float)
-    pres_plot = df["pressure_kpa"].to_numpy(dtype=float)
-    acc_plot = df["higacc_mag_g"].to_numpy(dtype=float)
+    """Scrolling graph, one panel per `opts.channels` entry (up to
+    `MAX_CHANNELS`), arranged per `opts.layout` - the current frame's
+    slice of every configured signal, full processed signal as backdrop
+    so data is always visible on both sides of the cursor.
 
+    `cursor_values`: {column: array} from `build_cursor_arrays`.
+    """
+    channels = opts.channels[:MAX_CHANNELS]
+    time_axis = df["time_s"].to_numpy(dtype=float)
     current_t = nadir_time_s + (frame_idx - nadir_frame) / opts.real_fps
     window = opts.graph_window_s / max(opts.zoom, 1e-6)
     t_lo, t_hi = current_t - window, current_t + window
-
-    p_min, p_max = np.nanmin(pres_plot), np.nanmax(pres_plot)
-    a_min, a_max = np.nanmin(acc_plot), np.nanmax(acc_plot)
 
     def pad_range(lo, hi, frac=0.08):
         r = (hi - lo) if hi != lo else 1.0
@@ -118,32 +165,38 @@ def make_graph_strip(df, pres_cursor, accmag_cursor, frame_idx, nadir_time_s,
 
     dpi = 150
     fig_w, fig_h = strip_width / dpi, strip_height / dpi
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(fig_w, fig_h), dpi=dpi)
+    rows, cols = _grid_shape(len(channels), opts.layout)
+    fig, axes = plt.subplots(rows, cols, figsize=(fig_w, fig_h), dpi=dpi,
+                             squeeze=False)
     fig.patch.set_facecolor("white")
+    flat_axes = [ax for row in axes for ax in row]
 
-    ax1.plot(time_axis, pres_plot, color="black", linewidth=0.8)
-    ax1.set_xlim(t_lo, t_hi)
-    ax1.set_ylim(*pad_range(p_min, p_max))
-    ax1.axvline(x=current_t, color="#00cc44", linestyle="--", linewidth=1.0)
-    ax1.set_ylabel("Pressure (kPa)", fontsize=8)
-    ax1.set_xticks([])
-    ax1.tick_params(axis="y", labelsize=7)
-    ax1.text(current_t, pres_cursor[frame_idx], f" {pres_cursor[frame_idx]:.2f}",
-             va="center", ha="left", fontsize=8, color="black")
-
-    ax2.plot(time_axis, acc_plot, color="red", linewidth=0.8)
-    ax2.set_xlim(t_lo, t_hi)
-    ax2.set_ylim(*pad_range(a_min, a_max))
-    ax2.axvline(x=current_t, color="#00cc44", linestyle="--", linewidth=1.0)
-    ax2.set_ylabel("Acceleration magnitude (g)", fontsize=8)
-    ax2.set_xticks([])
-    ax2.tick_params(axis="y", labelsize=7)
-    ax2.text(current_t, accmag_cursor[frame_idx],
-             f" {accmag_cursor[frame_idx]:.2f}",
-             va="center", ha="left", fontsize=8, color="red")
+    for ax, ch in zip(flat_axes, channels):
+        col = ch["column"]
+        if col not in df.columns:
+            ax.axis("off")
+            continue
+        y = df[col].to_numpy(dtype=float)
+        color = ch.get("color", "black")
+        ax.plot(time_axis, y, color=color, linewidth=0.8)
+        ax.set_xlim(t_lo, t_hi)
+        ax.set_ylim(*pad_range(np.nanmin(y), np.nanmax(y)))
+        ax.axvline(x=current_t, color="#00cc44", linestyle="--", linewidth=1.0)
+        ax.set_ylabel(ch.get("label", col), fontsize=8)
+        ax.set_xticks([])
+        ax.tick_params(axis="y", labelsize=7)
+        cur = cursor_values.get(col)
+        if cur is not None:
+            val = cur[frame_idx]
+            ax.text(current_t, val, f" {val:.2f}", va="center", ha="left",
+                    fontsize=8, color=color)
+    # unused cells in a grid layout that doesn't fill evenly (e.g. 5
+    # channels in a 2x3 grid) stay blank rather than showing empty axes
+    for ax in flat_axes[len(channels):]:
+        ax.axis("off")
 
     fig.subplots_adjust(left=0.06, right=0.99, top=0.95, bottom=0.08,
-                        wspace=0.12)
+                        wspace=0.12, hspace=0.3)
 
     canvas = FigureCanvasAgg(fig)
     canvas.draw()
@@ -215,6 +268,61 @@ def overlay_logo(frame, logo, opacity):
     return frame
 
 
+def render_preview_frame(video_path, df, nadir_time_s, nadir_frame, fields,
+                         opts: SyncOptions, frame_idx):
+    """Composite exactly one frame - the same video crop + graph strip +
+    overlays `process_video` burns into every frame of the export - without
+    rendering the whole clip. Lets Export animations' "Generate preview
+    frame" sanity-check the sync frame/graph window/overlay settings
+    before committing to a full (slow) render.
+    """
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise IOError(f"Cannot open: {video_path}")
+    try:
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        frame_idx = max(0, min(int(frame_idx), max(total_frames - 1, 0)))
+        frame = None
+        if not opts.no_video:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cap.read()
+            if not ret:
+                raise IOError(f"Could not read frame {frame_idx} of {video_path}")
+    finally:
+        cap.release()
+
+    # cursor arrays are cheap (numpy, no per-frame decode) even built out
+    # to frame_idx + 1 just to read the last value - no need for a
+    # separate single-value code path
+    cursor_values = build_cursor_arrays(
+        nadir_time_s, df, nadir_frame, frame_idx + 1, opts)
+
+    if opts.no_video:
+        # pure sensor-signal animation - no camera footage, so the graph
+        # panels get the whole frame instead of a quarter-height strip
+        combined = make_graph_strip(
+            df, cursor_values, frame_idx, nadir_time_s, nadir_frame,
+            frame_width, frame_height, opts)
+        video_h = frame_height
+    else:
+        strip_h = frame_height // 4
+        video_h = frame_height - strip_h
+        video_crop = frame[opts.video_nudge_px:video_h + opts.video_nudge_px, :]
+        graph_strip = make_graph_strip(
+            df, cursor_values, frame_idx, nadir_time_s,
+            nadir_frame, frame_width, strip_h, opts)
+        combined = np.vstack([video_crop, graph_strip])
+
+    logo = load_logo(opts.logo_path, frame_width, frame_height)
+    combined = overlay_logo(combined, logo, opts.logo_opacity)
+    if opts.add_labels:
+        lines, realtime_line = build_text_lines(fields, frame_idx, opts)
+        combined = overlay_text(combined, lines, realtime_line, video_h)
+    return combined
+
+
 def process_video(video_path, df, nadir_time_s, nadir_frame, fields,
                   output_path, opts: SyncOptions, progress_cb=None):
     """Renders the synced+overlaid video to `output_path`. `df` is the
@@ -230,10 +338,13 @@ def process_video(video_path, df, nadir_time_s, nadir_frame, fields,
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     enc_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
 
-    strip_h = frame_height // 4
-    video_h = frame_height - strip_h
+    if opts.no_video:
+        strip_h = video_h = frame_height
+    else:
+        strip_h = frame_height // 4
+        video_h = frame_height - strip_h
 
-    pres_cursor, accmag_cursor = build_cursor_arrays(
+    cursor_values = build_cursor_arrays(
         nadir_time_s, df, nadir_frame, total_frames, opts)
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -248,11 +359,14 @@ def process_video(video_path, df, nadir_time_s, nadir_frame, fields,
             if not ret:
                 break
 
-            video_crop = frame[opts.video_nudge_px:video_h + opts.video_nudge_px, :]
             graph_strip = make_graph_strip(
-                df, pres_cursor, accmag_cursor, f, nadir_time_s, nadir_frame,
+                df, cursor_values, f, nadir_time_s, nadir_frame,
                 frame_width, strip_h, opts)
-            combined = np.vstack([video_crop, graph_strip])
+            if opts.no_video:
+                combined = graph_strip
+            else:
+                video_crop = frame[opts.video_nudge_px:video_h + opts.video_nudge_px, :]
+                combined = np.vstack([video_crop, graph_strip])
             combined = overlay_logo(combined, logo, opts.logo_opacity)
             if opts.add_labels:
                 lines, realtime_line = build_text_lines(fields, f, opts)

@@ -743,6 +743,18 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_8.addWidget(self.btn_model_prediction)
 
+        self.btn_export_report = QPushButton(self.topMenu)
+        self.btn_export_report.setObjectName(u"btn_export_report")
+        sizePolicy.setHeightForWidth(self.btn_export_report.sizePolicy().hasHeightForWidth())
+        self.btn_export_report.setSizePolicy(sizePolicy)
+        self.btn_export_report.setMinimumSize(QSize(0, 45))
+        self.btn_export_report.setFont(font)
+        self.btn_export_report.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_export_report.setLayoutDirection(Qt.LeftToRight)
+        self.btn_export_report.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-description.png);")
+
+        self.verticalLayout_8.addWidget(self.btn_export_report)
+
 
         self.verticalMenuLayout.addWidget(self.topMenu, 0, Qt.AlignTop)
 
@@ -1006,18 +1018,6 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_11.addWidget(self.btn_inspect_pred)
 
-        self.btn_report_pred = QPushButton(self.extraTopMenu)
-        self.btn_report_pred.setObjectName(u"btn_report_pred")
-        sizePolicy.setHeightForWidth(self.btn_report_pred.sizePolicy().hasHeightForWidth())
-        self.btn_report_pred.setSizePolicy(sizePolicy)
-        self.btn_report_pred.setMinimumSize(QSize(0, 45))
-        self.btn_report_pred.setFont(font)
-        self.btn_report_pred.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_report_pred.setLayoutDirection(Qt.LeftToRight)
-        self.btn_report_pred.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-description.png);")
-
-        self.verticalLayout_11.addWidget(self.btn_report_pred)
-
         self.btn_biological = QPushButton(self.extraTopMenu)
         self.btn_biological.setObjectName(u"btn_biological")
         sizePolicy.setHeightForWidth(self.btn_biological.sizePolicy().hasHeightForWidth())
@@ -1029,18 +1029,6 @@ class Ui_MainWindow(object):
         self.btn_biological.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-medical-cross.png);")
 
         self.verticalLayout_11.addWidget(self.btn_biological)
-
-        self.btn_final_report = QPushButton(self.extraTopMenu)
-        self.btn_final_report.setObjectName(u"btn_final_report")
-        sizePolicy.setHeightForWidth(self.btn_final_report.sizePolicy().hasHeightForWidth())
-        self.btn_final_report.setSizePolicy(sizePolicy)
-        self.btn_final_report.setMinimumSize(QSize(0, 45))
-        self.btn_final_report.setFont(font)
-        self.btn_final_report.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_final_report.setLayoutDirection(Qt.LeftToRight)
-        self.btn_final_report.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-description.png);")
-
-        self.verticalLayout_11.addWidget(self.btn_final_report)
 
         self.btn_bsm_calculator = QPushButton(self.extraTopMenu)
         self.btn_bsm_calculator.setObjectName(u"btn_bsm_calculator")
@@ -2624,6 +2612,7 @@ class Ui_MainWindow(object):
         self.btn_annotation.setText(QCoreApplication.translate("MainWindow", u"Validate and annotate", None))
         self.btn_model_training.setText(QCoreApplication.translate("MainWindow", u"Model training", None))
         self.btn_model_prediction.setText(QCoreApplication.translate("MainWindow", u"Model prediction", None))
+        self.btn_export_report.setText(QCoreApplication.translate("MainWindow", u"Export and report", None))
         self.extraLabel.setText(QCoreApplication.translate("MainWindow", u"Sensor processing", None))
 #if QT_CONFIG(tooltip)
         self.extraCloseColumnBtn.setToolTip(QCoreApplication.translate("MainWindow", u"Close sensor processing", None))
@@ -2644,9 +2633,7 @@ class Ui_MainWindow(object):
         self.btn_deploy_train.setText(QCoreApplication.translate("MainWindow", u"Deploy", None))
         self.btn_misclassification.setText(QCoreApplication.translate("MainWindow", u"Misclassification analysis", None))
         self.btn_inspect_pred.setText(QCoreApplication.translate("MainWindow", u"Inspect", None))
-        self.btn_report_pred.setText(QCoreApplication.translate("MainWindow", u"Report", None))
         self.btn_biological.setText(QCoreApplication.translate("MainWindow", u"Biological interpretation", None))
-        self.btn_final_report.setText(QCoreApplication.translate("MainWindow", u"Final reporting", None))
         self.btn_bsm_calculator.setText(QCoreApplication.translate("MainWindow", u"Calculator", None))
         self.btn_bsm_sensitivity.setText(QCoreApplication.translate("MainWindow", u"Analysis and reporting", None))
         self.titleRightInfo.setText("")

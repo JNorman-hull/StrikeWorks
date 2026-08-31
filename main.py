@@ -193,6 +193,27 @@ class MainWindow(QMainWindow):
         move_before("btn_export_animations", "btn_dataset")
         move_after("btn_deploy_train", "btn_misclassification")
 
+        # PIN "EXPORT AND REPORT" TO THE BOTTOM OF THE SIDEBAR
+        # Built in main.ui as an ordinary topMenu button (simplest safe
+        # edit there) and relocated here at runtime into its own frame,
+        # pushed to the bottom of the sidebar by a stretch - the same
+        # "build normally, reposition in Python" approach move_before/
+        # move_after use above, rather than restructuring topMenu's own
+        # layout in the .ui file. `#bottomMenu` already has its own QSS
+        # rule (carried over from the PyDracula template) that nothing
+        # used until now, so this also gets a visually distinct treatment
+        # for free.
+        # ///////////////////////////////////////////////////////////////
+        widgets.topMenu.layout().removeWidget(widgets.btn_export_report)
+        bottomMenu = QFrame(widgets.leftMenuFrame)
+        bottomMenu.setObjectName("bottomMenu")
+        bottomMenuLayout = QVBoxLayout(bottomMenu)
+        bottomMenuLayout.setContentsMargins(0, 0, 0, 0)
+        bottomMenuLayout.setSpacing(0)
+        bottomMenuLayout.addWidget(widgets.btn_export_report)
+        widgets.leftMenuFrame.layout().addStretch(1)
+        widgets.leftMenuFrame.layout().addWidget(bottomMenu)
+
         # BUTTONS CLICK
         # ///////////////////////////////////////////////////////////////
 
@@ -293,8 +314,7 @@ class MainWindow(QMainWindow):
                            "btn_model_training"),
         "model_prediction": ("Model prediction",
                              ("btn_ml_prediction", "btn_inspect_pred",
-                              "btn_report_pred", "btn_biological",
-                              "btn_final_report"),
+                              "btn_biological"),
                              "btn_model_prediction"),
     }
 
@@ -324,15 +344,19 @@ class MainWindow(QMainWindow):
         # Model prediction
         "btn_ml_prediction":  ("page_ml_prediction", "tabs_ml_prediction", 0),
         "btn_inspect_pred":   ("page_ml_prediction", "tabs_ml_prediction", 1),
-        "btn_report_pred":    ("page_ml_prediction", "tabs_ml_prediction", 2),
         "btn_biological":           ("page_biological", None, None),
-        # "Final reporting" is now the unified report hub, built into
-        # Model prediction > Report (report_center.py) - same target as
-        # btn_report_pred rather than the old empty stub page.
-        "btn_final_report":   ("page_ml_prediction", "tabs_ml_prediction", 2),
         # Mathematical Blade Strike Modelling
         "btn_bsm_calculator":       ("page_bsm_calculator", None, None),
         "btn_bsm_sensitivity":      ("page_bsm_sensitivity", None, None),
+        # Export and report - pinned to the bottom of the sidebar (see
+        # the relocation right after uiDefinitions() below), a single
+        # destination rather than a multi-page section, so it isn't in
+        # _PANEL_SECTIONS and doesn't open the slide-out panel. Was
+        # "Report" (a Model prediction sub-page) plus the separate empty
+        # "Final reporting" stub - both replaced by report_center.py's
+        # unified hub, reached from here app-wide instead of nested
+        # under one section.
+        "btn_export_report": ("page_ml_prediction", "tabs_ml_prediction", 2),
     }
 
     def _section_for_button(self, btn_name):

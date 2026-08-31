@@ -1221,6 +1221,219 @@ per-page tweaks.
      pipeline (deployment → processing → predicting → reporting) sitting
      on top of Advanced's existing pages. Large; depends on the session/
      Home work above existing first.
+9. Follow-up (2026-08-28), same session again: a six-item request -
+   Report page model pickers, the sidebar move, a new dataset-binding
+   feature, and a real workflow rework of Export animations. All six
+   actioned this pass.
+
+   Report page (`ml_tab_report.py`/`report_center.py`): "Model training"
+   and "Misclassification analysis" previously always reported on
+   whichever model happened to be last selected on Model training >
+   Evaluate / Misclassification analysis respectively - checking the box
+   here didn't pin down *which* model. Both sections now have their own
+   model-picker combo (populated from `report_center.
+   available_model_entries()`, the same session + deployed list those
+   other pages already offer), read at report-*generation* time via a
+   `get_entry()` callable so `report_center.training_section`/
+   `misclassification_section` no longer reach into either page's live
+   selection at all. Misclassification's content now comes from
+   `page_misclassification._misclassified_rows(entry)` (a pure function)
+   plus that page's `_video_index()` (entry-independent), called directly
+   for whichever entry the Report page's own combo picked - session
+   corrections only show when the picked entry is the one actively being
+   corrected right now, not stale data from a different model.
+
+   Sidebar: "Report" (a Model prediction sub-page) and the separate empty
+   "Final reporting" stub both replaced by one pinned button, "Export and
+   report", reached from anywhere rather than nested under one section.
+   `main.ui`: added `btn_export_report` to `topMenu` (a plain copy of the
+   existing button pattern - the safe kind of edit) and deleted
+   `btn_report_pred`/`btn_final_report`'s blocks from the Model
+   prediction submenu outright (no longer needed, not just repointed).
+   `main.py`: pins it to the sidebar's bottom at runtime - relocated out
+   of `topMenu`'s layout into a new frame named `bottomMenu` (an existing
+   QSS rule from the PyDracula template that nothing had ever used) after
+   a stretch, in `verticalMenuLayout` - the same "build normally in the
+   .ui file, reposition in Python" approach `move_before`/`move_after`
+   already use for two other buttons, rather than restructuring
+   `topMenu`'s own layout in Designer. `_SUBMENU_TARGETS`/
+   `_PANEL_SECTIONS` updated to match; it isn't in `_PANEL_SECTIONS` at
+   all, so clicking it navigates straight to Report without opening the
+   slide-out panel, the same as `btn_home`.
+
+   Advanced dataset options (`page_dataset.py`): new "Bind training data"
+   box - add several `model_features.csv` files (typically one per
+   library), "Bind and save…" concatenates them (`pd.concat(...,
+   sort=False)`, outer-joined on columns, missing values left blank, a
+   `_bind_source` column tags provenance) into one CSV for Model
+   training's existing dataset loader to pick up - no new cross-page
+   wiring, the file itself is the hand-off. Built in Python
+   (`grid_dataset.addWidget(grp, 3, 0, 1, 2)`, a new row under the
+   existing 2-column/3-row grid, every other cell of which was already
+   full) rather than a `main.ui` restructure, since this page's whole
+   layout still comes from Designer.
+
+   Export animations (`page_export_animations.py`, `video_sync.py`) - the
+   largest piece, and the page's actual main task per the request: two
+   real bugs plus a genuine workflow rework, not just polish.
+
+   - Video link click: `LibrarySelector` already emits `row_activated` on
+     double-click, but nothing on this page listened for it - or even
+     `tbl_sensors.itemDoubleClicked` directly, unlike Annotate's identical
+     Video column. Wired `itemDoubleClicked` straight to a new
+     `_on_video_double_clicked` (column 1 only), same LosslessCut-opening
+     logic as Annotate's, so double-clicking a matched video's name now
+     opens it.
+   - Graph window: sized itself only from a manual `spin_window` value
+     (a `±0.05-5.0 s` half-width around the current-time line, baked into
+     the export by `video_sync.make_graph_strip`) with no live feedback -
+     the pyqtgraph preview's default view range was computed from the
+     matched video's own duration instead, completely ignoring the
+     option, so changing it visibly did nothing until a full (slow)
+     re-render. Now auto-derives from the matched video's own length the
+     first time a sensor with no saved config loads (`(duration / 2) +
+     1.0`s pad each side, so the centred current-time line doesn't sit at
+     the raw edge of the data - the ± 1 s pad asked for), a saved value
+     still wins on reload same as every other option here, the range
+     widened to 60 s to fit longer videos, and - the actual fix for
+     "doesn't seem to work" - the live preview's X-range is now driven by
+     `2 × Graph window / Zoom` and redraws immediately on either
+     changing, split into its own `_update_view_range()` so this doesn't
+     force a full curve re-plot on every tweak.
+   - The page's real task, restated precisely: associate the sensor's
+     nadir (a point in time) with the video frame that visibly shows it
+     (a point in the footage) - two different axes with no shared clock,
+     which is exactly why this needs a human watching both at once rather
+     than being automatable. Addressed with:
+     - A draggable, snap-to-sample nadir line on the Signal plot -
+       verbatim the same interaction `page_validate.py`'s nadir tool
+       already uses (`pg.InfiniteLine`, yellow, `sigPositionChanged`
+       snapping to `argmin(|time - t|)`) - so the user isn't stuck with
+       whatever the index/argmin says the nadir is. The override is
+       page-local (this sensor's own `_sync_config.json`, a new
+       `nadir_time_override` key), not written back to the shared index -
+       Validate remains the place that edits that.
+     - A frame-exact video scrubber (new "Video preview" row) replacing
+       the old QMediaPlayer + Play button entirely: `cv2.VideoCapture` +
+       `CAP_PROP_POS_FRAMES` seeking driven by a `QSlider`, not a
+       time-based player, because seeking a compressed container by *time*
+       lands on the nearest keyframe, not the exact frame - the one thing
+       this page cannot afford to get approximately right. Scrubs the raw
+       matched video before processing (finding the sync frame) and the
+       synced output after (checking it), the same widget either way.
+       "Use this frame as sync frame" copies the slider's position
+       straight into Sync frame (video).
+     - "Generate preview frame" (`video_sync.render_preview_frame`, new -
+       reuses every existing composition helper `process_video` itself
+       uses) composites exactly one frame - video crop + graph strip +
+       overlays - at whichever frame the scrubber is on, shown in a small
+       dialog, so the crop/nudge/overlay settings can be sanity-checked
+       without paying for a full render.
+     - Layout: the Signal box and the sensor picker are no longer forced
+       to share the left column's full height 1:1 with no say in it -
+       both sides are now nested `QSplitter`s (left: sensor picker over
+       the merged sync-inputs box; right: Signal over Video preview),
+       consistent with this session's broader "everything should be
+       user-resizable" pattern rather than a literal pixel-height lock,
+       which would have fought the app's responsive layout for no real
+       benefit over a sensible default split the user can still drag.
+       Text inputs and Code options merged into one "Sensor sync inputs"
+       box (two labelled groups, not two boxes) in the space the
+       height-split frees up.
+
+   Verified headless throughout: `MainWindow()` constructs cleanly after
+   every change; the Report page's model combos populate and
+   `training_section`/`misclassification_section` were exercised against
+   a synthetic `ModelEntry` (confirmed the Model Evaluation Report still
+   omits "Misclassified recordings" per the last session's fix, and the
+   misclassification table correctly excludes non-"correct" rows only);
+   the pinned sidebar button was clicked programmatically and confirmed
+   to land on Report without opening the slide-out panel; Bind training
+   data was run against two synthetic CSVs with partially-overlapping
+   columns and produced the expected 5-row, NaN-filled, source-tagged
+   output; the frame scrubber and `render_preview_frame` were both
+   exercised against a synthetic OpenCV-written video (no real matched
+   video existed in this environment) and correctly seek/read/compose
+   frames. Not tested in a real windowed session with real video files -
+   only the headless construction/logic path.
+10. Follow-up (2026-08-28), same session again: a regression from item 9
+    caught immediately by the user, plus the graph-channels feature that
+    fix opened the door to.
+
+    Regression: sizing the export's rolling graph window to the matched
+    video's own length (item 9's `_default_graph_window_s`) made the
+    trace scroll far too slowly - a multi-second video's whole duration
+    crammed into one view barely moves frame to frame, which is the
+    opposite of a "live, scrolling" look. That was the wrong read of the
+    original ask; reverted to a small constant default (`0.3`s, what it
+    always was) - "Graph window (s)" and "Zoom" (Code options) are the
+    user's own stretch/zoom controls for this, not something that should
+    auto-derive from the video's length.
+
+    Then the actual request: `video_sync.py`'s graph strip was hardcoded
+    to exactly two panels (pressure black, acceleration magnitude red,
+    side by side, always over a video crop). Generalised throughout:
+    `SyncOptions` gained `channels` (a list of `{column, label, color}`,
+    defaulting to that original pair so an old saved config with no
+    `channels` key still renders identically), `layout` ("row" or a
+    "grid" of up to 3x2), and `no_video` (skip the video crop entirely -
+    the panels fill the whole frame, a pure sensor-signal animation with
+    no camera footage). `build_cursor_arrays` now returns `{column:
+    array}` for arbitrary columns instead of a hardcoded pressure/accmag
+    pair (still applies the pressure row-offset correction, now matched
+    by name rather than assumed); `make_graph_strip` takes that dict and
+    lays out `plt.subplots` per `layout`, up to `MAX_CHANNELS = 6`, each
+    panel its own column/label/colour; `process_video`/
+    `render_preview_frame` both updated for the new signatures and the
+    `no_video` branch (still reads the source video frame-by-frame in
+    that mode, only to keep frame-count/timing correct - never crops or
+    draws its pixels).
+
+    `page_export_animations.py`: new "Graph channels" box under Code
+    options - a small table (Signal/Label/Colour per row, "Add channel"/
+    "Remove selected", capped at 6), the Signal column an editable combo
+    populated from whichever numeric columns the currently loaded
+    sensor's CSV actually has (`_channel_columns`/`_refresh_channel_
+    columns`) rather than a fixed guess at names like `higacc_x/y/z` -
+    adapts to whatever a given sensor config actually logs. A "Layout"
+    picker and "No video background (sensor animation)" checkbox sit
+    alongside it. Persisted in the same per-sensor `_sync_config.json` as
+    everything else here, with one deliberate difference from nadir_frame
+    etc: channels are only rebuilt from a saved config if that specific
+    sensor has one - otherwise the table keeps whatever's already in it
+    switching sensors, since "which signals do my animations show" reads
+    as an animation-wide preference rather than a per-recording one.
+
+    Verified headless: default 2-channel behaviour unchanged; a
+    synthetic sensor CSV with `higacc_x/y/z` columns correctly populated
+    the picker; added channels up to the 6 cap and confirmed a 7th is
+    rejected; grid layout + no-video mode both exercised through
+    `render_preview_frame` and a full `process_video` render (valid,
+    non-empty output for both the video-overlay and no-video paths);
+    save/load round-trip confirmed channels/layout/no_video restore
+    correctly. Not tested in a real windowed session - only headless
+    construction and logic against synthetic video/sensor data.
+11. Follow-up (2026-08-28), same session again: page-level vertical
+    scrolling for Annotate, Export animations, and Analysis and reporting
+    (BSM) - the last of which turned out to already have it from an
+    earlier pass this session, confirmed rather than assumed
+    (`content_bsm_sensitivity.findChildren(QScrollArea)` - one,
+    `widgetResizable() == True`). Annotate and Export animations didn't:
+    both are horizontally split (a sensor picker whose own table already
+    scrolls, next to a detail column that doesn't), so both detail
+    columns now wrap in `QScrollArea` (`setWidgetResizable(True)`, the
+    same pattern used everywhere else this session), same fix as
+    `ml_tab_inspect.py`'s right panel earlier - not a new pattern.
+    Annotate: the "Annotate" tab's detail column (plot + annotation/
+    notes splitter) and the separate "Reporting" tab (summary card +
+    by-variable table + report button, previously a bare stack with no
+    scroll at all). Export animations: the sync-inputs box specifically
+    (Text/Code options/Graph channels, which had grown past what fits in
+    a fixed splitter pane) and the whole Signal/Video preview column,
+    given a 500px minimum so there's something real to scroll rather than
+    everything collapsing to bare minimums first. Verified headless:
+    `MainWindow()` still constructs; each page's expected scroll-area
+    count confirmed via `findChildren`.
 
 ## Deferred — multiple collision detection
 

@@ -55,8 +55,8 @@ from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QGridLayout,
     QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMessageBox,
-    QPlainTextEdit, QPushButton, QSizePolicy, QSplitter, QTableWidget,
-    QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
+    QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QSplitter,
+    QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from . import annotation_schema as asch
@@ -189,11 +189,29 @@ class AnnotationPage(QObject):
         lower.setSizes([1, 1])
         dv.addWidget(lower, stretch=1)
 
-        split.addWidget(detail)
+        # scrollable rather than squeezed into whatever height the plot
+        # and the annotation/notes splitter leave each other - the browser
+        # side doesn't need this, its own sensor table already scrolls
+        detail_scroll = QScrollArea()
+        detail_scroll.setWidgetResizable(True)
+        detail_scroll.setStyleSheet(
+            "QScrollArea{border:none;background:transparent;}")
+        detail_scroll.setWidget(detail)
+        split.addWidget(detail_scroll)
         split.setSizes([1, 3])
 
     def _build_reporting_tab(self, frame):
-        v = QVBoxLayout(frame)
+        outer = QVBoxLayout(frame)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
+        outer.addWidget(scroll)
+
+        body = QWidget()
+        body.setStyleSheet("background:transparent;")
+        scroll.setWidget(body)
+        v = QVBoxLayout(body)
         v.setContentsMargins(4, 6, 4, 6)
         v.setSpacing(10)
 
