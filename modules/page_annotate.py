@@ -259,7 +259,8 @@ class AnnotationPage(QObject):
 
         self.lib_selector = LibrarySelector(sensor_list=True,
                                             list_columns=["Video"],
-                                            session_state=self.session_state)
+                                            session_state=self.session_state,
+                                            show_picker=False)
         lv.addWidget(self.lib_selector, stretch=1)
         # kept as aliases so the rest of this module's existing references
         # (chk_show_flags, tbl_sensors, lbl_progress) keep working unchanged

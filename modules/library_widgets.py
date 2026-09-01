@@ -63,15 +63,21 @@ class _DirsOnlyProxy(QSortFilterProxyModel):
 class LibrarySelector(QWidget):
     """Library / Deployment / Treatment picker, embeddable in any page.
 
-    Wraps a `Section("Library")` panel with the three combos and the
-    "Libraries…" folder-change button - visually and behaviourally
-    identical everywhere it's used. Callers connect to `library_changed`
-    (the library root itself switched - reload anything keyed to the whole
-    library, e.g. the deployment index) and `filters_changed` (deployment/
-    treatment changed, or the library just changed too - re-list sensors);
-    `library_changed` always fires before `filters_changed` on a library
-    switch, so a host's index/dataset reload runs before it repopulates
-    its sensor table.
+    Library selection is app-wide now (Home / session_state.py, plus the
+    libraries folder itself in Adjustments) - `show_picker=False` (Process,
+    Annotate, Export animations) hides this widget's own library combo and
+    "Libraries…" button, leaving just the Deployment/Treatment filters and
+    a read-only "Library: X" label; the library still comes from
+    `session_state` via `set_library()` exactly as before, just with no
+    way to override it locally any more. `show_picker=True` (the default,
+    for standalone/legacy use) keeps the full three-combo panel.
+
+    Callers connect to `library_changed` (the library root itself switched
+    - reload anything keyed to the whole library, e.g. the deployment
+    index) and `filters_changed` (deployment/treatment changed, or the
+    library just changed too - re-list sensors); `library_changed` always
+    fires before `filters_changed` on a library switch, so a host's index/
+    dataset reload runs before it repopulates its sensor table.
     """
 
     library_changed = Signal()
@@ -80,7 +86,7 @@ class LibrarySelector(QWidget):
     row_activated = Signal(int, int)   # row, column - tbl_sensors double-click
 
     def __init__(self, parent=None, sensor_list=False, list_columns=(),
-                session_state=None):
+                session_state=None, show_picker=True):
         super().__init__(parent)
         self._lib_dir = settings.get_libraries_dir()
         self._lib_root = None
@@ -88,6 +94,7 @@ class LibrarySelector(QWidget):
         self._list_columns = list(list_columns)
         self._cache = None           # last populate_sensor_list() call, for re-filtering
         self._session_state = session_state
+        self._show_picker = show_picker
         self._syncing = False        # True while set_library() is soft-syncing this
                                       # picker to the session library - hosts check
                                       # this to skip their own "Library: X" status
@@ -135,20 +142,31 @@ class LibrarySelector(QWidget):
     def _build(self, sensor_list):
         v = QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
-        self.section = Section("Library")
+        self.section = Section("Library" if self._show_picker else "Filters")
         fv = QVBoxLayout(self.section)
         fv.setSpacing(6)
         # exposed so a host page can append its own controls into the same
         # visual panel, above the sensor list if there is one
         self.section_layout = fv
 
-        lib_row = QHBoxLayout()
+        # cmb_library/btn_change_libs still exist and still drive every bit
+        # of internal scanning logic below even with show_picker=False -
+        # library selection just isn't done *here* any more (Home/session_
+        # state is the only place now), so the row is simply never added to
+        # the visible layout in that mode, in favour of a read-only label
         self.cmb_library = QComboBox()
         self.cmb_library.setMinimumWidth(140)
-        lib_row.addWidget(self.cmb_library, stretch=1)
         self.btn_change_libs = QPushButton("Libraries…")
-        lib_row.addWidget(self.btn_change_libs)
-        fv.addLayout(lib_row)
+        if self._show_picker:
+            lib_row = QHBoxLayout()
+            lib_row.addWidget(self.cmb_library, stretch=1)
+            lib_row.addWidget(self.btn_change_libs)
+            fv.addLayout(lib_row)
+        else:
+            self.lbl_current_library = QLabel("No library selected.")
+            self.lbl_current_library.setStyleSheet(f"color:{MUTED};")
+            self.lbl_current_library.setWordWrap(True)
+            fv.addWidget(self.lbl_current_library)
 
         self.cmb_deployment = QComboBox()
         fv.addLayout(self._row(self._muted("Deployment"), self.cmb_deployment))
@@ -259,6 +277,10 @@ class LibrarySelector(QWidget):
     def _on_library_changed(self, *_args):
         path = self.cmb_library.currentData()
         self._lib_root = Path(path) if path else None
+        if not self._show_picker:
+            self.lbl_current_library.setText(
+                f"Library: {self._lib_root.name}" if self._lib_root
+                else "No library selected.")
         self._scan_deployments()
         self.library_changed.emit()
         self.filters_changed.emit()

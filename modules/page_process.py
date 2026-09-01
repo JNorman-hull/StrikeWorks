@@ -217,7 +217,8 @@ class ProcessPage(QObject):
     def _build_library_selector(self):
         lv = QVBoxLayout(self.ui.frame_process_library)
         lv.setContentsMargins(0, 0, 0, 0)
-        self.lib_selector = LibrarySelector(session_state=self.session_state)
+        self.lib_selector = LibrarySelector(session_state=self.session_state,
+                                            show_picker=False)
         lv.addWidget(self.lib_selector)
 
     def _configure_widgets(self):

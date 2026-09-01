@@ -1802,6 +1802,292 @@ per-page tweaks.
     on the tab object; every module compiled (`py_compile`) after each
     batch of edits, not only at the end.
 
+15. Follow-up (2026-09-01), same session again: fixed the missing
+    `ReportDialog.refresh()` method (item 14's `open_report()` called it,
+    the dialog never defined it - `showEvent` already refreshed on open,
+    so this was a one-line addition, not a design change), then finished
+    two long-standing deferred items in one pass: single-picker library
+    unification (removing per-page soft-sync overrides, the follow-up
+    item 13's own docstring named as "not this pass") and the two-species
+    BSM plan's full implementation (item 14 was step one - the rename and
+    the Predict move).
+
+    Library selection, now genuinely app-wide: every page's own "which
+    library" picker is gone except Initiate deployment (left untouched,
+    per instruction - it does something different, editing a deployment
+    plan, not browsing one). `LibrarySelector` (Process/Annotate/Export
+    animations) gained `show_picker=False`: the combo and "Libraries…"
+    button still exist and still drive every bit of scanning logic
+    unchanged, just never added to the visible layout - a read-only
+    "Library: X" label takes their place, and the Section title becomes
+    "Filters" (deployment/treatment - the thing actually left to pick).
+    Validate and Dataset had their own bespoke pickers (a `QTreeView`
+    rooted at the whole libraries folder, not `LibrarySelector` at all) -
+    same treatment: the tree and its "Change libraries folder…" button
+    hidden, a read-only label added into the same `QGroupBox` layout so
+    no row-stretch/grid surgery was needed, `_lib_root` now set from
+    `session_state.library_changed` instead of a tree click. Both pages
+    gained a `session_state` constructor argument (`main.py` already
+    constructs `SessionState` before every page, so this was just wiring
+    it through) and lost their now-dead `_fs_model`/`_DirsOnlyProxy`/
+    `QFileSystemModel` machinery entirely, not just its visibility.
+
+    None of these five pages emit their own "Library: X" status message
+    for a session-driven change any more - `LibrarySelector.syncing`
+    already existed for this (item 14) and needed no changes; Validate/
+    Dataset's new handler simply never emits one, the same effect by
+    construction since they have no independent path left to emit it
+    from. Home's own handler is confirmed still the one place a session-
+    wide change is ever announced. Verified headless: every soft-synced/
+    reactive page's picker widget confirmed hidden (`isVisibleTo`), a
+    session-wide library change confirmed to produce exactly one status
+    message app-wide (not five), and Validate/Dataset's own `_lib_root`
+    confirmed to follow it correctly.
+
+    Dual-species BSM, the actual implementation (item 14 was staging):
+    `bsm_model.compute()` was already a pure, fully species-parameterised
+    function - the CEN regression, and materially the collision-
+    probability geometry too (`Leff_m`/`Leff_t` differ by species, so
+    Pco itself is not species-invariant, only vaguely resembles it),
+    just never called twice. `BSMState` gained `results` (a `{"scaly":
+    res, "eel": res}` dict) and `set_results()`/`calculated_all`,
+    additive alongside the untouched `last_result`/`calculated` -
+    zero risk to Calculator's own single-result display or Analysis and
+    reporting, which still read the original single-result API exactly
+    as before. `page_bsm_calculator.py`'s `calculate()` now runs
+    `compute()` a second time for whichever species wasn't selected
+    (every other input - fish/pump/blade geometry, eel_vcrit - is
+    already shared, so this is one extra call, not a second data-entry
+    pass) and publishes both through `set_results()`. Calculator's own
+    page and Sensitivity's sweeps were deliberately left single-species-
+    per-run - they already have a working one-species-at-a-time workflow
+    and redesigning them into side-by-side dual displays wasn't
+    something either the "two species" framing or this instruction
+    specifically asked for; they now just also feed the background
+    second compute for the two pages that do want both.
+
+    Model comparison's "Cen" column/bar split into "Cen (scaly)"/"Cen
+    (eel)", each a genuine independent BSM run's own `Pco_tip` (not one
+    result relabelled twice) via `bsm_state.results`, wired to the new
+    `calculated_all` signal. Predict's mortality panel dropped its
+    species combo entirely - scaly and eel are both always shown
+    (`lbl_mortality` is now two lines), each recomputed via `bsm_model.
+    recompute_mortality`/`recompute_mortality_at_vcrit` against *that
+    species'* own `bsm_state.results` entry rather than one shared base
+    result - a real correctness improvement over item 14's version,
+    which (like the original Biological interpretation code before it)
+    recomputed both hypothetical species off whichever single result
+    happened to be in `last_result`, silently wrong for the geometry half
+    whenever that wasn't the species actually needed. The eel critical-
+    velocity spinbox still overrides live without a Calculator re-run,
+    exactly as before, since `recompute_mortality` was kept for exactly
+    that reason rather than switched to reading `results["eel"]["Pm"]`
+    directly (which would have been frozen at Calculate-time and broken
+    that interaction). `bsm_figures.draw_comparison_bars`/`draw_
+    vcrit_sweep` both changed shape to take a species-keyed dict/list
+    instead of one value - `SPECIES_COLORS` (scaly reuses the existing
+    CEN green, eel gets a new purple) makes the two visually
+    distinguishable on both figures. `report_center.py`'s Model
+    comparison section needed no changes - it already reads `bio.
+    tbl_compare` generically by column count/header text, not by a fixed
+    5- or 6-column assumption, so the new 7th column just appeared.
+
+    Verified headless: a full Calculate confirmed `bsm_state.results`
+    populated with both `"scaly"`/`"eel"` keys, each a real independent
+    result (different `Pco_tip`); Model comparison's table confirmed at
+    7 columns with the right headers; Predict's mortality label confirmed
+    showing both species on separate lines with materially different
+    Pm values (driven by each species' own eel_vcrit/geometry, not a
+    coincidence); the whole app confirmed constructing and compiling
+    clean throughout, settings file and git status checked clean after
+    every test run as established practice this session.
+
+16. Follow-up (2026-09-01), same session again: per-species fish body
+    dimensions on the Calculator, and the first piece of Simple mode -
+    the sidebar-visibility and pop-up infrastructure, not its page
+    content (deliberately deferred - see below).
+
+    Calculator's Fish section: item 15 made the Calculator compute both
+    scaly and eel every run, but both runs shared one Lf/Bf pair - wrong,
+    since scaly and eel have genuinely different body dimensions and
+    Leff_m/Leff_t (and so Pco itself) depend on them. Fish now has three
+    subsections: Scaly (Lf/Bf), Eel (Lf/Bf, defaulting to 0.66 m/0.08 m),
+    Shared (wf/alpha/eel_vcrit - not asked to split, and there's no
+    per-species source for them). The Species combo is gone entirely -
+    nothing reads it any more now that both species always compute - and
+    loading a `bsm_config` file (still one species per file, matching the
+    standalone Mathematical BSM scripts' own format unchanged) routes its
+    Lf/Bf into whichever species field matches the file's own `species`
+    key, leaving the other species' fields as they were. Output grew a
+    matching second card (Scaly/Eel side by side) instead of one - the
+    natural finish, given the page now always computes and holds both.
+    Verified headless: scaly and eel now produce genuinely different
+    Pco_tip from the same Calculate click (confirmed via `bsm_state.
+    results`), where before this fix they were identical because eel was
+    silently reusing scaly's body length.
+
+    Simple mode infrastructure: the main sidebar (`leftMenuBg`) now
+    starts fully hidden (width 0, not the PyDracula template's normal
+    240px) - `main.py.collapse_sidebar()`/`expand_sidebar()`, called at
+    the end of `MainWindow.__init__` and from Home's Advanced mode button
+    respectively. `toggleButton` (the PyDracula hamburger toggle) lives
+    inside `leftMenuBg`, so at width 0 it's unreachable regardless -
+    hidden explicitly too (`setVisible(False)`) rather than left as dead,
+    invisible-but-technically-focusable chrome. Home's Simple mode button
+    is no longer disabled; it opens a new `SimpleModeDialog` (`modules/
+    page_simple_mode.py`) instead - a pop-up (`main.py.openSimpleMode()`,
+    built once alongside the other dialogs) with a step list down the
+    left and a stacked content area, deliberately not touching the
+    sidebar at all.
+
+    Explicitly scoped down, per the user's own framing ("I'll provide
+    samples... once the backend is built"): every step
+    (Deployment/Process/Predict/Report - placeholder names matching what
+    Home's own now-removed tooltip already described) is a stub page
+    saying so, not a working reimplementation of anything. The real work
+    - what each step actually shows, and which existing backend call
+    (`ProcessPage`/`PredictionState`/`report_center.py`/...) it triggers
+    - is follow-up, one step at a time, once those designs land; this
+    pass is the shell they'll plug into, not a guess at their content.
+
+    Verified headless: sidebar confirmed at 0-width and `toggleButton`
+    confirmed hidden immediately after construction; Advanced mode
+    confirmed expanding it to 240; Simple mode confirmed leaving it
+    untouched at 0 while opening the dialog; the dialog's step list
+    confirmed populated in the expected order.
+
+17. Follow-up (2026-09-01), same session again - a large batch: sidebar
+    activation corrected per feedback, per-species Calculator inputs, a
+    much fuller BSM report, value labels on every BSM plot, a treatment
+    picker on Predict's mortality panel, a real eel_vcrit default bug
+    fix, Model comparison's input boxes rebuilt to spec, Initiate
+    deployment wired to the session library plus a readme/Explorer-open
+    on folder creation, and Export animations restructured (video preview
+    as a pop-out, buttons relocated, 3x3 graph channels, graph plotting
+    space exposed).
+
+    Sidebar correction: item 16 hid the sidebar to width 0 and hid its
+    toggle button, on a misreading of "hide sidebar" - correct behaviour,
+    per direct feedback: the sidebar keeps its *existing* collapse (the
+    PyDracula 60px icon strip, `toggleButton` fully intact and always
+    visible/usable) and starts in that state, but every section button on
+    it now starts *disabled* regardless of width, activated only by
+    Home's "Advanced mode" button - toggling the sidebar wide/narrow
+    afterward never re-enables or disables them by itself, since width
+    and activation are deliberately two separate things now. `main.py`
+    gained `set_sidebar_active()`/`_SIDEBAR_NAV_BUTTONS` (every top-level
+    section button plus pinned Export and report; Home stays enabled
+    always so the app can never strand the user with no way back).
+    Verified headless: launch state confirmed 60px + every nav button
+    disabled; toggling via the unchanged `UIFunctions.toggleMenu` mid-test
+    confirmed to leave buttons disabled; Advanced mode confirmed enabling
+    all seven.
+
+    Calculator: Fish became three subsections - Scaly (Lf/Bf), Eel (Lf/Bf,
+    defaulting to 0.66 m/0.08 m), Shared (wf/alpha/eel_vcrit) - fixing a
+    real accuracy gap item 15's dual-species compute left behind: both
+    species were silently sharing one Lf/Bf pair, so eel's "independent"
+    run wasn't actually independent for the geometry half. The Species
+    combo is gone (nothing reads it once both species always compute);
+    loading a config still routes its one species' Lf/Bf into the
+    matching field. Output grew a second card (Scaly/Eel side by side).
+    Verified: a real Calculate now produces materially different Pco_tip
+    per species from the same click, not the identical number item 15
+    silently had.
+
+    BSM report (`bsm_report.py`, full rewrite): every derivation step the
+    user's reference methodology document showed is here now - blade
+    profile table, effective fish length (both species' own derivation,
+    Eq 9-12/15), pump kinematics (Eq 6-7), strike velocity/collision
+    probability/mortality integrand at hub/mid-span/tip (Eq 19/5/20),
+    the full mutilation-ratio regime table (Table 3), survival (Eq 4),
+    and the empirical/observed comparison section - not just the tip-
+    point summary it had before. Deliberately still not MathJax (no
+    external CDN dependency in an offline report; the reference's own
+    equations rendered as the app's existing plain substituted-numbers
+    style instead, same idiom `_equation_block` already used). Takes an
+    optional second species' result and reports both scaly and eel in
+    one document now; `report_center.py`'s bsm_section passes both
+    automatically. Sensitivity's own standalone report button untouched
+    (single-species by design, item 15's scope boundary).
+
+    Every BSM plot now prints its own numbers, not just a shape to
+    eyeball: `_label_bars()` (new, `bsm_figures.py`) annotates each bar
+    with its % above it - `draw_pco`/`draw_pm`/`draw_comparison_bars` all
+    use it; `draw_vcrit_sweep`'s default-point markers gained the same
+    treatment. `draw_vcrit_sweep` also gained a `title` parameter -
+    Predict's mortality panel lost its species combo (dual-species
+    default already shows both) and gained a "Treatment" dropdown
+    instead (populated from the current prediction's own treatments,
+    "None" when there isn't a run) purely as a label on the plot ("so the
+    user knows the pump condition represented") - the BSM math itself has
+    no per-treatment input, this doesn't change what's computed.
+
+    Real bug fixed: eel critical velocity showed 2.0 m/s everywhere on
+    Predict, not the 8.0 m/s every saved `bsm_config` file actually has -
+    `ml_tab_predict.py`'s own spinbox default was a hardcoded, never-
+    correct 2.0 that had nothing to do with the Calculator's real value.
+    Now defaults to 8.0, and on the first BSM run this page ever sees,
+    syncs to *that run's own* eel_vcrit once (a `self._eel_vcrit_synced`
+    flag) - correct out of the box without guessing, while still
+    honouring a live manual override afterward exactly as before.
+
+    Model comparison's input boxes rebuilt to the exact spec given: Video
+    observed (editable label, Plot tickbox, Sensors deployed, Strikes
+    observed), Model 1 (editable label, Plot tickbox, Sensors deployed,
+    Predicted strike - a real rate+Wilson-CI now, not a bare percentage
+    spinner), Blade strike model (editable label, Scaly/Eel each a
+    read-only computed value + its own Show tickbox). Table headers and
+    figure bar labels track the editable label text live. Treatments are
+    a vertical stack now, not a 4-per-row grid. No deployment filter -
+    flagged rather than faked: the curated prediction dataset only ever
+    carries a treatment's *name*, never which deployment it came from, so
+    same-named treatments across deployments genuinely can't be told
+    apart with the data this page has access to; building that would mean
+    threading a deployment column through the whole dataset-creation
+    pipeline, well past this pass.
+
+    Initiate deployment now defaults its library from session_state
+    (Home) like every other page, while keeping its own "Choose library…"
+    override - deliberately not pushed back into the session, since this
+    page can create a library at an arbitrary path (any drive, a network
+    location) a session-library combo confined to the libraries folder
+    can't represent. Saving a deployment plan that creates at least one
+    new treatment folder (re-saving an existing one with nothing new
+    doesn't repeat this) now writes a `readme.txt` into the deployment
+    folder, opens that folder in Explorer (`os.startfile`), and shows the
+    same readme text in an in-app message box - one source of truth
+    (`_README_TEXT`) for both.
+
+    Export animations restructured per spec: Video preview is a pop-out
+    window now (non-modal - it and the Signal plot need to stay visible
+    together, the whole point of the scrubber), opened by a button moved
+    into the Signal box alongside the relocated Process/Save/Cancel
+    (previously their own row below the signal/video split). The space
+    Video preview vacated on the right now holds Sensor sync inputs
+    (moved from the left column, which is just the sensor picker now).
+    Graph channels' grid layout goes up to 3 rows of 3 (was 3 rows of 2,
+    `MAX_CHANNELS` 6->9, `_grid_shape()`'s column count now scales with
+    channel count instead of a fixed 2). "Graph plotting space" exposed
+    as a new Code option (`spin_graph_frac`, 5-90%, default 25% - was a
+    hardcoded `frame_height // 4` in two places in `video_sync.py`,
+    now `SyncOptions.graph_frac`) controlling how much of the output
+    frame's height the graph strip claims versus the video crop above it.
+
+    Verified headless throughout: sidebar state and button enablement at
+    every stage; per-species Calculator lf/bf confirmed reaching separate
+    `compute()` calls with different Pco_tip results; the BSM report
+    confirmed containing both species' full sections; eel_vcrit confirmed
+    syncing to 8.0 on first BSM result; Model comparison's dynamic
+    headers confirmed updating live on label edit; Initiate deployment's
+    `_lib_root` confirmed matching `session_state.library` at
+    construction; Export animations' video_preview_dialog confirmed a
+    real `QDialog` that opens/shows correctly, `_grid_shape` confirmed at
+    (3,3) for 9 channels, and `graph_frac` confirmed round-tripping
+    through `_config_values()`. Full `py_compile` and `MainWindow()`
+    construction after every batch, not only at the end; settings file
+    and git status checked clean throughout.
+
 ## Deferred - multiple collision detection
 
 Assessed, not implemented. The models are whole-window classifiers and

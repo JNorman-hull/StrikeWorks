@@ -18,9 +18,11 @@ them already has a working default before this dialog exists):
 
   Libraries folder   - the folder *containing* every library (was
                         changed via a "Libraries…" button on Home and on
-                        every LibrarySelector; Home's own copy is dropped
-                        in favour of this one central place - selecting
-                        *which* library within it stays on Home).
+                        every LibrarySelector/bespoke page picker - all
+                        dropped in favour of this one central place;
+                        selecting *which* library within it stays on
+                        Home, the only place library selection happens
+                        any more app-wide).
   Models folder       - default for Model prediction/Evaluate discovery
                         and Deploy's own default before a session library
                         is selected. Loading a model from anywhere else
@@ -29,6 +31,15 @@ them already has a working default before this dialog exists):
   Default output folder - fallback for reports/exports when no session
                         library is selected (StrikeWorks_user_output/
                         under the library takes over once one is).
+
+A fourth, different in kind - not a folder, and not required the way the
+three above are (each already has a working default; this one's default
+*is* "unset"):
+
+  Default model (Simple mode) - which deployed model Simple mode's
+                        Predict step uses automatically, no picker shown
+                        there. Unset (the normal state) means "most
+                        recently deployed" instead of a pinned choice.
 
 Changing the libraries folder here needs Home's own combo re-read
 afterwards, since library discovery lives there - `main.py` calls
@@ -86,6 +97,8 @@ class AdjustmentsDialog(QDialog):
             "own StrikeWorks_user_output/ folder instead.",
             settings.get_output_dir())
 
+        self.ed_default_model = self._model_row(v)
+
         v.addStretch()
         close_row = QHBoxLayout()
         close_row.addStretch()
@@ -130,3 +143,45 @@ class AdjustmentsDialog(QDialog):
             settings.set_models_dir(chosen)
         elif ed is self.ed_output:
             settings.set_output_dir(chosen)
+
+    def _model_row(self, v):
+        grp = Section("Default model (Simple mode)")
+        gv = QVBoxLayout(grp)
+        gv.setSpacing(6)
+
+        hint_lbl = QLabel(
+            "Which deployed model Simple mode's Predict step uses "
+            "automatically. Unset (the normal state) picks whichever "
+            "model was deployed most recently instead.")
+        hint_lbl.setStyleSheet(f"color:{MUTED};font-size:11px;")
+        hint_lbl.setWordWrap(True)
+        gv.addWidget(hint_lbl)
+
+        current = settings.get_default_model()
+        row = QHBoxLayout()
+        ed = QLineEdit(str(current) if current else "")
+        ed.setReadOnly(True)
+        ed.setPlaceholderText("Not set - uses the most recently deployed model")
+        row.addWidget(ed, stretch=1)
+        btn = QPushButton("Browse…")
+        btn.clicked.connect(lambda: self._browse_model(ed))
+        row.addWidget(btn)
+        btn_clear = QPushButton("Clear")
+        btn_clear.clicked.connect(lambda: self._clear_model(ed))
+        row.addWidget(btn_clear)
+        gv.addLayout(row)
+        v.addWidget(grp)
+        return ed
+
+    def _browse_model(self, ed):
+        chosen, _ = QFileDialog.getOpenFileName(
+            self, "Select default model", str(settings.get_models_dir()),
+            "Model files (*.joblib)")
+        if not chosen:
+            return
+        ed.setText(chosen)
+        settings.set_default_model(chosen)
+
+    def _clear_model(self, ed):
+        ed.setText("")
+        settings.set_default_model(None)

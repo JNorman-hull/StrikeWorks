@@ -210,8 +210,10 @@ def bsm_section(window):
                 image_paths["wf_pm"] = fig_dir / "sensitivity_pm_wf.png"
         except Exception:
             pass
-        html = build_bsm_report_html(res_, image_paths=image_paths,
-                                     embed_images=True)
+        other_species = "eel" if res_["params"]["species"] == "scaly" else "scaly"
+        res_other = (bsm_state.results or {}).get(other_species)
+        html = build_bsm_report_html(res_, res_other=res_other,
+                                     image_paths=image_paths, embed_images=True)
         return {"html": html}
 
     return ReportSection("bsm", "Blade strike modelling (mathematical)",

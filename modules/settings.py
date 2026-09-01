@@ -86,6 +86,27 @@ def set_output_dir(path) -> Path:
     return p
 
 
+def get_default_model():
+    """The pinned "default model" (Adjustments) - Simple mode's Predict
+    step uses this instead of guessing "most recent" when the user has
+    set one; unset (None) is the normal state, not an error. Doesn't
+    check existence - a model path can point into a library that isn't
+    the current session library, so a transient "not found right now"
+    isn't the same as "never configure this"."""
+    p = _load().get("default_model")
+    return Path(p) if p else None
+
+
+def set_default_model(path):
+    """`path=None` clears the pin - back to "most recent"."""
+    data = _load()
+    if path is None:
+        data.pop("default_model", None)
+    else:
+        data["default_model"] = str(Path(path))
+    _save(data)
+
+
 def get_last_library():
     """The session library from last time, or None (never set, or the
     folder no longer exists - a stale value is worse than starting

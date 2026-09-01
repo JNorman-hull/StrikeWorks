@@ -19,6 +19,11 @@ from .ml_figures import _PALETTE, _awaiting, fg_colour, style_axes, style_legend
 CEN_COLOR = _PALETTE[3]   # green - "the model's own estimate"
 OBS_COLOR = _PALETTE[0]   # blue - "what was actually observed"
 
+# dual-species default (Model comparison's Cen bars, Predict's mortality
+# vcrit sweep) - one colour per species so scaly/eel are visually
+# distinguishable wherever both appear on the same figure
+SPECIES_COLORS = {"scaly": CEN_COLOR, "eel": _PALETTE[4]}
+
 
 def _bar_style(ax, dark, ylabel):
     ax.set_ylabel(ylabel, fontsize=9)
@@ -27,21 +32,36 @@ def _bar_style(ax, dark, ylabel):
     style_axes(ax.figure, ax, dark)
 
 
+def _label_bars(ax, bars, values, dark=True):
+    """Prints each bar's own value (%) just above it - every BSM output
+    plot shows its actual numbers now, not just a shape to eyeball."""
+    fg = fg_colour(dark)
+    for bar, value in zip(bars, values):
+        ax.annotate(f"{value:.1f}%",
+                   xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                   xytext=(0, 3), textcoords="offset points",
+                   ha="center", va="bottom", fontsize=8, color=fg, zorder=5)
+
+
 def draw_pco(fig, res, dark=True):
     fig.clear()
     ax = fig.add_subplot(111)
     fg = fg_colour(dark)
     if "Pco_obs" in res:
-        ax.bar(["CEN", "Observed"], [res["Pco_tip"] * 100, res["Pco_obs"] * 100],
-               width=0.55, color=[CEN_COLOR, OBS_COLOR], edgecolor=fg)
+        values = [res["Pco_tip"] * 100, res["Pco_obs"] * 100]
+        bars = ax.bar(["CEN", "Observed"], values,
+                      width=0.55, color=[CEN_COLOR, OBS_COLOR], edgecolor=fg)
         ax.errorbar(1, res["Pco_obs"] * 100,
                     yerr=[[(res["Pco_obs"] - res["wilson_lo"]) * 100],
                           [(res["wilson_hi"] - res["Pco_obs"]) * 100]],
                     fmt="none", ecolor=fg, capsize=6, linewidth=1.2)
+        _label_bars(ax, bars, values, dark)
         _bar_style(ax, dark, "Collision probability (%) [95% CI]")
     else:
-        ax.bar(["CEN"], [res["Pco_tip"] * 100], width=0.55,
-               color=[CEN_COLOR], edgecolor=fg)
+        values = [res["Pco_tip"] * 100]
+        bars = ax.bar(["CEN"], values, width=0.55,
+                      color=[CEN_COLOR], edgecolor=fg)
+        _label_bars(ax, bars, values, dark)
         _bar_style(ax, dark, "Collision probability (%)")
     fig.tight_layout()
 
@@ -51,11 +71,14 @@ def draw_pm(fig, res, dark=True):
     ax = fig.add_subplot(111)
     fg = fg_colour(dark)
     if "Pco_obs" in res:
-        ax.bar(["CEN", "Observed"], [res["Pm"] * 100, res["Pm_obs"] * 100],
-               width=0.55, color=[CEN_COLOR, OBS_COLOR], edgecolor=fg)
+        values = [res["Pm"] * 100, res["Pm_obs"] * 100]
+        bars = ax.bar(["CEN", "Observed"], values,
+                      width=0.55, color=[CEN_COLOR, OBS_COLOR], edgecolor=fg)
     else:
-        ax.bar(["CEN"], [res["Pm"] * 100], width=0.55,
-               color=[CEN_COLOR], edgecolor=fg)
+        values = [res["Pm"] * 100]
+        bars = ax.bar(["CEN"], values, width=0.55,
+                      color=[CEN_COLOR], edgecolor=fg)
+    _label_bars(ax, bars, values, dark)
     _bar_style(ax, dark, "Mortality probability (%)")
     fig.tight_layout()
 
@@ -130,71 +153,92 @@ def draw_sweep_lines(fig, x_label, y_label, curves, design_label=None,
     fig.tight_layout()
 
 
-def draw_vcrit_sweep(fig, vcrit_vals, pm_vals, default_vcrit, default_pm,
-                     dark=True):
-    """Mortality probability vs critical velocity, for Biological
-    interpretation's "what if the critical velocity were different"
-    question - a plain line plus one highlighted point marking what the
-    species' own regression would derive by itself, so the sweep is read
-    against the actual default rather than an arbitrary baseline.
+def draw_vcrit_sweep(fig, series, dark=True, title=None):
+    """Mortality probability vs critical velocity - dual-species default:
+    one line per species, each with its own highlighted point marking
+    what that species' own regression would derive by itself, so each
+    sweep is read against its actual default rather than an arbitrary
+    baseline.
 
-    `vcrit_vals`/`pm_vals` empty (or None) draws the themed awaiting-data
-    placeholder instead of a blank white canvas - the same idiom
-    `ml_figures.draw_strike_rate`/`draw_region` use before a run exists.
+    `series`: list of (species_label, vcrit_vals, pm_vals, default_vcrit,
+    default_pm) - a species whose `vcrit_vals` is empty/None is skipped;
+    every series empty (or `series` itself empty) draws the themed
+    awaiting-data placeholder instead of a blank white canvas - the same
+    idiom `ml_figures.draw_strike_rate`/`draw_region` use before a run
+    exists. `title` - which treatment's pump condition this nominally
+    represents (Predict's own treatment picker, purely a label - BSM
+    itself has no per-treatment input), shown even on the placeholder so
+    "no treatment selected" is visible before a BSM run exists too.
     """
     fig.clear()
     ax = fig.add_subplot(111)
     fg = fg_colour(dark)
     _grid(ax, dark)
+    if title:
+        ax.set_title(title, fontsize=9, color=fg)
     ax.set_xlabel("Critical velocity vcrit (m/s)", fontsize=9)
     ax.set_ylabel("Mortality probability (%)", fontsize=9)
     ax.set_ylim(0, 100)
-    if vcrit_vals is None or len(vcrit_vals) == 0:
+    usable = [s for s in series if s[1] is not None and len(s[1])]
+    if not usable:
         ax.set_xticks([])
         _awaiting(ax, "Run a Blade Strike Modelling calculation first")
         style_axes(fig, ax, dark)
         fig.tight_layout()
         return
-    ax.plot(vcrit_vals, pm_vals, color=CEN_COLOR, linewidth=1.5, zorder=2)
-    ax.scatter([default_vcrit], [default_pm], s=50, color=OBS_COLOR,
-              edgecolor=fg, linewidth=0.8, zorder=4,
-              label=f"Regression default ({default_vcrit:.2f} m/s)")
+    for label, vcrit_vals, pm_vals, default_v, default_pm in usable:
+        color = SPECIES_COLORS.get(label, CEN_COLOR)
+        ax.plot(vcrit_vals, pm_vals, color=color, linewidth=1.5, zorder=2,
+               label=f"{label} default ({default_v:.2f} m/s)")
+        ax.scatter([default_v], [default_pm], s=50, color=color,
+                  edgecolor=fg, linewidth=0.8, zorder=4)
+        ax.annotate(f"{default_pm:.1f}%", xy=(default_v, default_pm),
+                   xytext=(6, 6), textcoords="offset points",
+                   fontsize=8, color=color, fontweight="bold", zorder=5)
     style_legend(ax.legend(loc="upper right", fontsize=8), dark)
     ax.tick_params(labelsize=8)
     style_axes(fig, ax, dark)
     fig.tight_layout()
 
 
-def draw_comparison_bars(fig, cen_value, comparisons, dark=True,
+def draw_comparison_bars(fig, cen_values, comparisons, dark=True,
                          ylabel="Strike / collision probability (%)"):
-    """The mathematical (CEN) estimate against one bar per comparison -
-    each treatment's data-driven strike rate, plus an optional manually
-    typed-in comparison - the "BSM vs predicted" figure on Biological
-    interpretation. `comparisons`: list of (label, value_pct, ci_lo, ci_hi)
-    - ci_lo/ci_hi may be None for a bar with no confidence interval.
+    """The mathematical (Cen) estimate against one bar per comparison -
+    each treatment's data-driven strike rate, plus optional manually
+    entered comparisons - the "BSM vs predicted" figure on Model
+    comparison. Dual-species default: one Cen bar per species with a
+    result, each in that species' own colour.
 
-    `cen_value` None draws the themed awaiting-data placeholder instead of
-    a blank white canvas - the same idiom `ml_figures.draw_strike_rate`/
-    `draw_region` use before a run exists.
+    `cen_values`: {species_label: value_pct_or_None}. `comparisons`: list
+    of (label, value_pct, ci_lo, ci_hi) - ci_lo/ci_hi may be None for a
+    bar with no confidence interval.
+
+    No Cen value and no comparisons draws the themed awaiting-data
+    placeholder instead of a blank white canvas - the same idiom
+    `ml_figures.draw_strike_rate`/`draw_region` use before a run exists.
     """
     fig.clear()
     ax = fig.add_subplot(111)
     fg = fg_colour(dark)
-    if cen_value is None:
+    cen_items = [(species, v) for species, v in (cen_values or {}).items()
+                if v is not None]
+    if not cen_items and not comparisons:
         ax.set_xticks([])
         _awaiting(ax, "Run a Blade Strike Modelling calculation first")
         _bar_style(ax, dark, ylabel)
         fig.tight_layout()
         return
-    labels = ["Cen"] + [c[0] for c in comparisons]
-    heights = [cen_value] + [c[1] for c in comparisons]
-    colors = [CEN_COLOR] + [OBS_COLOR] * len(comparisons)
-    ax.bar(labels, heights, width=0.55, color=colors, edgecolor=fg)
-    for i, (_label, value, lo, hi) in enumerate(comparisons, start=1):
+    labels = [f"Cen ({sp})" for sp, _ in cen_items] + [c[0] for c in comparisons]
+    heights = [v for _, v in cen_items] + [c[1] for c in comparisons]
+    colors = ([SPECIES_COLORS.get(sp, CEN_COLOR) for sp, _ in cen_items]
+              + [OBS_COLOR] * len(comparisons))
+    bars = ax.bar(labels, heights, width=0.55, color=colors, edgecolor=fg)
+    for i, (_label, value, lo, hi) in enumerate(comparisons, start=len(cen_items)):
         if lo is not None and hi is not None:
             ax.errorbar(i, value, yerr=[[max(0.0, value - lo)],
                                         [max(0.0, hi - value)]],
                        fmt="none", ecolor=fg, capsize=4, linewidth=1.0)
+    _label_bars(ax, bars, heights, dark)
     ax.tick_params(axis="x", labelsize=8,
                    rotation=30 if len(labels) > 3 else 0)
     _bar_style(ax, dark, ylabel)

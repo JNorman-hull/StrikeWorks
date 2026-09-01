@@ -37,16 +37,16 @@ import pandas as pd
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
-from PySide6.QtCore import Qt, QDir, QObject, QThread, Signal
+from PySide6.QtCore import Qt, QObject, QThread, Signal
 from PySide6.QtWidgets import (
-    QAbstractItemView, QFileDialog, QFileSystemModel, QGroupBox,
+    QAbstractItemView, QFileDialog, QGroupBox,
     QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox,
     QPushButton, QTreeWidgetItem, QVBoxLayout,
 )
 
 from . import deployment_index as di
 from . import sensor_config, settings
-from .page_process import _DirsOnlyProxy
+from .ml_widgets import MUTED
 
 # paths relative to a library root
 _CSV_DIR = Path("processed_sens_data") / "csv"
@@ -317,12 +317,12 @@ class DatasetPage(QObject):
     # without re-running any sensor-processing logic
     dataset_ready = Signal(object, str)   # (DataFrame, source description)
 
-    def __init__(self, ui, window):
+    def __init__(self, ui, window, session_state=None):
         super().__init__(window)
         self.ui = ui
         self.window = window
+        self.session_state = session_state
 
-        self._lib_dir = None
         self._root = None
         self._index = None
         self._thread = None
@@ -331,18 +331,14 @@ class DatasetPage(QObject):
         self._feat_path = None
         self._label_path = None
 
-        self._fs_model = QFileSystemModel()
-        self._fs_model.setFilter(QDir.Filter.Dirs | QDir.Filter.NoDotAndDotDot)
-        self._proxy = _DirsOnlyProxy()
-        self._proxy.setSourceModel(self._fs_model)
-
         self._bind_paths = []
 
         self._build_figure()
         self._build_bind_training_data()
         self._configure_widgets()
         self._connect()
-        self._init_tree()
+        self._on_session_library_changed(
+            session_state.library if session_state is not None else None)
 
     # ── setup ────────────────────────────────────────────────────────────────
     def _build_figure(self):
@@ -404,10 +400,14 @@ class DatasetPage(QObject):
 
     def _configure_widgets(self):
         u = self.ui
-        u.tree_ds_library.setModel(self._proxy)
-        u.tree_ds_library.setHeaderHidden(True)
-        for col in range(1, 4):
-            u.tree_ds_library.hideColumn(col)
+        # library selection is app-wide now (Home / session_state) - this
+        # box just shows which one is active, rather than picking it
+        u.tree_ds_library.setVisible(False)
+        u.btn_ds_change_libraries.setVisible(False)
+        self.lbl_library = QLabel("No library selected.")
+        self.lbl_library.setStyleSheet("color:#8a95aa;")
+        self.lbl_library.setWordWrap(True)
+        u.grp_ds_library.layout().insertWidget(0, self.lbl_library)
 
         u.console_ds.setStyleSheet(
             "QPlainTextEdit{background:#1b1e23;color:#d4d4d4;"
@@ -416,9 +416,9 @@ class DatasetPage(QObject):
 
     def _connect(self):
         u = self.ui
-        u.tree_ds_library.selectionModel().selectionChanged.connect(
-            self._on_library_selected)
-        u.btn_ds_change_libraries.clicked.connect(self._change_libraries)
+        if self.session_state is not None:
+            self.session_state.library_changed.connect(
+                self._on_session_library_changed)
         u.chk_ds_select_all.toggled.connect(self._set_all_checked)
         u.btn_ds_create.clicked.connect(self._run)
         u.btn_ds_save.clicked.connect(self._save)
@@ -427,39 +427,19 @@ class DatasetPage(QObject):
         u.btn_ds_append.clicked.connect(self._append_annotations)
         u.btn_ds_save_annotated.clicked.connect(self._save_annotation_outputs)
 
-    def _init_tree(self):
-        self._lib_dir = settings.get_libraries_dir()
-        self.ui.btn_ds_change_libraries.setToolTip(str(self._lib_dir))
-        fs_root = self._fs_model.setRootPath(str(self._lib_dir))
-        self.ui.tree_ds_library.setRootIndex(self._proxy.mapFromSource(fs_root))
-
-    def reload_libraries(self):
-        self._init_tree()
-
-    def _change_libraries(self):
-        chosen = QFileDialog.getExistingDirectory(
-            self.window, "Select libraries folder", str(self._lib_dir))
-        if not chosen:
+    # ── library selection (session_state - see session_state.py) ────────────
+    def _on_session_library_changed(self, root):
+        # no status.emit here - Home already shows the one unified
+        # "Library: X" message for a session-wide change (page_home.py)
+        self.lbl_library.setText(
+            f"Library: {root.name}" if root else "No library selected.")
+        if root is None:
+            self._root = None
+            self._index = None
+            self.ui.tree_ds_filter.clear()
+            self.ui.btn_ds_create.setEnabled(False)
             return
-        settings.set_libraries_dir(chosen)
-        self._root = None
-        self._index = None
-        self.ui.tree_ds_filter.clear()
-        self._init_tree()
-
-    # ── library / filter tree ────────────────────────────────────────────────
-    def _on_library_selected(self, selected, _deselected):
-        idxs = selected.indexes()
-        if not idxs:
-            return
-        folder = Path(self._fs_model.filePath(self._proxy.mapToSource(idxs[0])))
-        try:
-            rel = folder.relative_to(self._lib_dir)
-            root = self._lib_dir / rel.parts[0]
-        except (ValueError, IndexError):
-            root = folder
-        if root != self._root:
-            self._set_root(root)
+        self._set_root(root)
 
     def _set_root(self, root: Path):
         self._root = root
@@ -485,7 +465,6 @@ class DatasetPage(QObject):
         self._populate_tree(self._index)
         self.ui.btn_ds_create.setEnabled(True)
         self._log(f"Library: {root.name}  ({len(self._index)} sensors)\n")
-        self.status.emit(f"Library: {root.name}", 4000)
 
     def _populate_tree(self, df):
         """deployment_id -> treatment -> run -> file checkbox tree."""
@@ -804,8 +783,9 @@ class DatasetPage(QObject):
 
     # ── bind training data (join several model_features.csv) ────────────────
     def _bind_add_files(self):
+        start = str(self._root or settings.get_libraries_dir())
         paths, _ = QFileDialog.getOpenFileNames(
-            self.window, "Add model_features.csv file(s)", str(self._lib_dir),
+            self.window, "Add model_features.csv file(s)", start,
             "CSV files (*.csv)")
         added = 0
         for p in paths:

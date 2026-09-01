@@ -37,6 +37,7 @@ vice versa - an old library's sensors carry conditions but were never
 planned here): `_all_deployments()` merges both so neither location loses
 track of what the other already has.
 """
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -57,6 +58,14 @@ from .library_widgets import RAW_DIR as _RAW_DIR, VIDEO_FOLDER_NAME as _VIDEO_FO
 
 _NEW_DEPLOYMENT = "__new__"
 _SUMMARY_NAME = "deployment_summary.txt"
+_README_NAME = "readme.txt"
+_README_TEXT = (
+    "This is where raw files are stored.\n\n"
+    "Drag and drop your sensor files from the field straight into this "
+    "folder (or, with more than one treatment, into each treatment's own "
+    "subfolder below). Video for a treatment goes into that treatment's "
+    "own VIDEO subfolder."
+)
 
 
 class _TreatmentRow(QFrame):
@@ -149,18 +158,24 @@ class InitiateDeploymentPage(QObject):
 
     status = Signal(str, int)
 
-    def __init__(self, ui, window):
+    def __init__(self, ui, window, session_state=None):
         super().__init__(window)
         self.ui = ui
         self.window = window
+        self.session_state = session_state
 
-        self._lib_root = None
+        self._lib_root = session_state.library if session_state is not None else None
         self._deployments = []
         self._rows = []
         self._loading = False
 
         self._build(ui.content_initiate_deployment)
         self._connect()
+        if session_state is not None:
+            session_state.library_changed.connect(self._on_session_library_changed)
+        if self._lib_root is not None:
+            self.lbl_library.setText(str(self._lib_root))
+            self._load_deployments()
         self._refresh_state()
 
     # ── layout ───────────────────────────────────────────────────────────────
@@ -281,6 +296,17 @@ class InitiateDeploymentPage(QObject):
         self.btn_save.clicked.connect(self._save)
 
     # ── library ──────────────────────────────────────────────────────────────
+    # Defaults from the session library (Home; session_state.py) like every
+    # other page now, but keeps its own override too, unlike the pages that
+    # dropped theirs entirely - this page's job includes *creating* a
+    # library at an arbitrary location (any drive, a network path), which a
+    # picker confined to settings.get_libraries_dir() can't do; deliberately
+    # doesn't push that choice back into the session (see _choose_library).
+    def _on_session_library_changed(self, path):
+        self._lib_root = path
+        self.lbl_library.setText(str(path) if path else "No library selected")
+        self._load_deployments()
+
     def _choose_library(self):
         start = str(self._lib_root or settings.get_libraries_dir())
         chosen = QFileDialog.getExistingDirectory(
@@ -506,6 +532,28 @@ class InitiateDeploymentPage(QObject):
             f"and video into its {_VIDEO_FOLDER_NAME} subfolder.")
         self.lbl_state.setStyleSheet(f"color:{OK};")
         self.status.emit(f"Deployment plan saved to {path}", 5000)
+
+        # only for folders actually new this save - re-saving an existing
+        # deployment's plan (no new treatment folders) shouldn't reopen
+        # Explorer and re-show the readme every time
+        if any(state == "created" for _, state in created):
+            dep_dir = self._lib_root / _RAW_DIR / ident
+            self._open_deployment_folder(dep_dir)
+
+    def _open_deployment_folder(self, dep_dir):
+        """Writes readme.txt (same text shown in-app below, one source
+        for both) and opens the deployment folder in Explorer."""
+        readme_path = dep_dir / _README_NAME
+        try:
+            readme_path.write_text(_README_TEXT, encoding="utf-8")
+        except Exception:
+            pass
+        try:
+            os.startfile(str(dep_dir))
+        except Exception as e:
+            self.status.emit(f"Could not open folder: {e}", 6000)
+        QMessageBox.information(
+            self.window, "Deployment folder ready", _README_TEXT)
 
     def _build_folders(self, ident, names):
         """`raw_sens_data/<ident>/<name>/VIDEO/` for each treatment name -

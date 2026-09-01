@@ -195,54 +195,37 @@ class ExportAnimationsPage(QObject):
         apply_section_defaults(frame)
 
     def _build_browser(self):
-        """Left column: the sensor picker on top, height-matched (via the
-        splitter's default sizes) to the Signal box opposite it, and the
-        merged Text/Code sync inputs box in the space freed up below -
-        both user-resizable against each other, not fixed."""
+        """Left column: just the sensor picker now - the sync inputs box
+        that used to sit below it (Text/Code options/Graph channels) moved
+        into the space Video preview freed up on the right (see
+        _build_detail()) once Video preview became a pop-out window."""
         left = QWidget()
         left.setMinimumWidth(360)
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 5, 0)
-        lv.setSpacing(0)
-
-        left_split = QSplitter(Qt.Orientation.Vertical)
-        left_split.setChildrenCollapsible(False)
-
-        top = QWidget()
-        tv = QVBoxLayout(top)
-        tv.setContentsMargins(0, 0, 0, 0)
-        tv.setSpacing(8)
+        lv.setSpacing(8)
         self.lib_selector = LibrarySelector(sensor_list=True,
                                             list_columns=["Video", "Synced"],
-                                            session_state=self.session_state)
-        tv.addWidget(self.lib_selector, stretch=1)
+                                            session_state=self.session_state,
+                                            show_picker=False)
+        lv.addWidget(self.lib_selector, stretch=1)
         self.tbl_sensors = self.lib_selector.tbl_sensors
         self.lbl_loading = QLabel("")
         self.lbl_loading.setStyleSheet(f"color:{MUTED};")
-        tv.addWidget(self.lbl_loading)
-        left_split.addWidget(top)
-
-        # scrollable rather than squeezed by the splitter - the sync
-        # inputs box (Text/Code options/Graph channels) has grown past
-        # what fits comfortably in a fixed pane; the sensor picker above
-        # doesn't need this, its own table already scrolls
-        sync_scroll = QScrollArea()
-        sync_scroll.setWidgetResizable(True)
-        sync_scroll.setStyleSheet(
-            "QScrollArea{border:none;background:transparent;}")
-        sync_scroll.setWidget(self._build_sync_inputs())
-        left_split.addWidget(sync_scroll)
-        left_split.setSizes([2, 3])
-        lv.addWidget(left_split, stretch=1)
+        lv.addWidget(self.lbl_loading)
         return left
 
     def _build_detail(self):
-        """Right column: Signal (the sensor plot) and Video preview (the
-        frame scrubber) as two stacked, independently resizable rows -
-        both visible together, since matching a nadir point to a video
-        frame means looking at both at once, not switching between them.
-        The whole column is wrapped in a QScrollArea so a short window
-        scrolls it instead of squeezing both rows down further."""
+        """Right column: Signal (the sensor plot, plus the Video preview/
+        Process/Save actions - moved in from their own row) and Sensor
+        sync inputs (moved in from the left column) as two stacked,
+        independently resizable rows. Video preview itself is a pop-out
+        window (_build_video_preview_dialog()) rather than embedded here -
+        opening it and the Signal plot stay visible together on screen,
+        since matching a nadir point to a video frame means looking at
+        both at once. The whole column is wrapped in a QScrollArea so a
+        short window scrolls it instead of squeezing both rows down
+        further."""
         outer = QWidget()
         outer_v = QVBoxLayout(outer)
         outer_v.setContentsMargins(0, 0, 0, 0)
@@ -261,30 +244,17 @@ class ExportAnimationsPage(QObject):
         right_split = QSplitter(Qt.Orientation.Vertical)
         right_split.setChildrenCollapsible(False)
         right_split.addWidget(self._build_signal_side())
-        right_split.addWidget(self._build_video_side())
+        sync_scroll = QScrollArea()
+        sync_scroll.setWidgetResizable(True)
+        sync_scroll.setStyleSheet(
+            "QScrollArea{border:none;background:transparent;}")
+        sync_scroll.setWidget(self._build_sync_inputs())
+        right_split.addWidget(sync_scroll)
         right_split.setSizes([1, 1])
         right_split.setMinimumHeight(500)
         dv.addWidget(right_split, stretch=1)
 
-        act = QHBoxLayout()
-        self.btn_process = QPushButton("Process")
-        self.btn_process.setStyleSheet(
-            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-            "border-radius:5px;padding:4px 14px;font-weight:bold;}"
-            "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
-        self.btn_save = QPushButton("Save")
-        self.btn_cancel = QPushButton("Cancel")
-        self.btn_cancel.setVisible(False)
-        act.addWidget(self.btn_process)
-        act.addWidget(self.btn_save)
-        act.addWidget(self.btn_cancel)
-        act.addStretch()
-        dv.addLayout(act)
-
-        self.lbl_progress = QLabel("")
-        self.lbl_progress.setStyleSheet(f"color:{MUTED};")
-        self.lbl_progress.setWordWrap(True)
-        dv.addWidget(self.lbl_progress)
+        self._build_video_preview_dialog()
         return outer
 
     def _build_signal_side(self):
@@ -340,16 +310,50 @@ class ExportAnimationsPage(QObject):
         self.btn_reset_nadir.clicked.connect(self._reset_nadir_override)
         reset_row.addWidget(self.btn_reset_nadir)
         sv.addLayout(reset_row)
+
+        # Video preview/Process/Save/Cancel - moved in from their own row
+        # below the signal/video split, now that Video preview itself is
+        # a pop-out window rather than a row sharing this space
+        act = QHBoxLayout()
+        self.btn_video_preview = QPushButton("Video preview")
+        self.btn_video_preview.clicked.connect(self._open_video_preview)
+        act.addWidget(self.btn_video_preview)
+        self.btn_process = QPushButton("Process")
+        self.btn_process.setStyleSheet(
+            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
+            "border-radius:5px;padding:4px 14px;font-weight:bold;}"
+            "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
+        act.addWidget(self.btn_process)
+        self.btn_save = QPushButton("Save")
+        act.addWidget(self.btn_save)
+        self.btn_cancel = QPushButton("Cancel")
+        self.btn_cancel.setVisible(False)
+        act.addWidget(self.btn_cancel)
+        act.addStretch()
+        sv.addLayout(act)
+
+        self.lbl_progress = QLabel("")
+        self.lbl_progress.setStyleSheet(f"color:{MUTED};")
+        self.lbl_progress.setWordWrap(True)
+        sv.addWidget(self.lbl_progress)
         return grp
 
-    def _build_video_side(self):
+    def _build_video_preview_dialog(self):
         """Frame-exact scrubber (cv2, not QMediaPlayer - see __init__'s
         comment) for the sensor's task: scroll to the frame where the
         nadir/strike visibly occurs, then "Use this frame as sync frame"
         copies it into Sync frame (video). Also hosts "Generate preview
-        frame", which composites one frame exactly as the export would."""
-        grp = Section("Video preview")
-        gv = QVBoxLayout(grp)
+        frame", which composites one frame exactly as the export would.
+
+        A pop-out window (non-modal - see _open_video_preview()) instead
+        of embedded in the page, so it and the Signal plot above can be
+        looked at side by side on screen at the same time, which is the
+        whole point of this tool (matching a nadir point to a video
+        frame)."""
+        dlg = QDialog(self.window)
+        dlg.setWindowTitle("Video preview")
+        dlg.resize(520, 520)
+        gv = QVBoxLayout(dlg)
         gv.setSpacing(6)
 
         self.lbl_scrub_frame = QLabel("No video to preview.")
@@ -382,7 +386,14 @@ class ExportAnimationsPage(QObject):
         self.btn_preview_frame = QPushButton("Generate preview frame")
         action_row.addWidget(self.btn_preview_frame)
         gv.addLayout(action_row)
-        return grp
+
+        self.video_preview_dialog = dlg
+
+    def _open_video_preview(self):
+        dlg = self.video_preview_dialog
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
 
     def _build_sync_inputs(self):
         """Text inputs (overlay text) and Code options (sync/render
@@ -444,6 +455,15 @@ class ExportAnimationsPage(QObject):
             "Shifts the video content vertically (pixels) before the graph "
             "strip is stacked underneath it - use if the crop clips the "
             "footage or leaves a gap.")
+        self.spin_graph_frac = QSpinBox()
+        self.spin_graph_frac.setRange(5, 90)
+        self.spin_graph_frac.setSuffix(" %")
+        self.spin_graph_frac.setValue(int(video_sync.DEFAULT_GRAPH_FRAC * 100))
+        self.spin_graph_frac.setToolTip(
+            "How much of the output frame's height the graph strip claims "
+            "- the rest is the video crop above it. Ignored when 'No "
+            "video background' is ticked (the graph panels fill the "
+            "whole frame either way).")
         self.chk_labels = QCheckBox("Add labels")
         self.chk_labels.setChecked(True)
 
@@ -452,10 +472,11 @@ class ExportAnimationsPage(QObject):
                 ("Real fps (camera)", self.spin_real_fps),
                 ("Graph window (s)", self.spin_window),
                 ("Zoom", self.spin_zoom),
-                ("Frame nudge (px)", self.spin_video_nudge)]):
+                ("Frame nudge (px)", self.spin_video_nudge),
+                ("Graph plotting space", self.spin_graph_frac)]):
             opt_grid.addWidget(self._muted(label), row, 0)
             opt_grid.addWidget(widget, row, 1)
-        opt_grid.addWidget(self.chk_labels, 5, 0, 1, 2)
+        opt_grid.addWidget(self.chk_labels, 6, 0, 1, 2)
 
         logo_row = QHBoxLayout()
         self.lbl_logo_path = QLabel("No overlay image")
@@ -466,14 +487,14 @@ class ExportAnimationsPage(QObject):
         logo_row.addWidget(self.btn_choose_logo)
         self.btn_clear_logo = QPushButton("Clear")
         logo_row.addWidget(self.btn_clear_logo)
-        opt_grid.addLayout(logo_row, 6, 0, 1, 2)
+        opt_grid.addLayout(logo_row, 7, 0, 1, 2)
 
-        opt_grid.addWidget(self._muted("Overlay opacity"), 7, 0)
+        opt_grid.addWidget(self._muted("Overlay opacity"), 8, 0)
         self.spin_logo_opacity = QDoubleSpinBox()
         self.spin_logo_opacity.setRange(0.0, 1.0)
         self.spin_logo_opacity.setSingleStep(0.1)
         self.spin_logo_opacity.setValue(1.0)
-        opt_grid.addWidget(self.spin_logo_opacity, 7, 1)
+        opt_grid.addWidget(self.spin_logo_opacity, 8, 1)
         gv.addLayout(opt_grid)
 
         self._logo_path = None
@@ -509,7 +530,7 @@ class ExportAnimationsPage(QObject):
         opt_row.addWidget(self._muted("Layout"))
         self.cmb_channel_layout = QComboBox()
         self.cmb_channel_layout.addItem("Row (side by side)", "row")
-        self.cmb_channel_layout.addItem("Grid (up to 3 rows of 2)", "grid")
+        self.cmb_channel_layout.addItem("Grid (up to 3 rows of 3)", "grid")
         opt_row.addWidget(self.cmb_channel_layout)
         self.chk_no_video = QCheckBox("No video background (sensor animation)")
         self.chk_no_video.setToolTip(
@@ -913,6 +934,7 @@ class ExportAnimationsPage(QObject):
             "channels": self._current_channels(),
             "layout": self.cmb_channel_layout.currentData(),
             "no_video": self.chk_no_video.isChecked(),
+            "graph_frac": self.spin_graph_frac.value() / 100.0,
         }
 
     @staticmethod
@@ -980,6 +1002,8 @@ class ExportAnimationsPage(QObject):
         layout_idx = self.cmb_channel_layout.findData(cfg.get("layout", "row"))
         self.cmb_channel_layout.setCurrentIndex(max(layout_idx, 0))
         self.chk_no_video.setChecked(bool(cfg.get("no_video", False)))
+        self.spin_graph_frac.setValue(int(
+            float(cfg.get("graph_frac", video_sync.DEFAULT_GRAPH_FRAC)) * 100))
 
     def _save_config(self):
         if not self._cur_stem:
@@ -1065,7 +1089,8 @@ class ExportAnimationsPage(QObject):
             zoom=cfg["zoom"], add_labels=cfg["add_labels"],
             video_nudge_px=cfg["video_nudge_px"], logo_path=cfg["logo_path"],
             logo_opacity=cfg["logo_opacity"], channels=cfg["channels"],
-            layout=cfg["layout"], no_video=cfg["no_video"])
+            layout=cfg["layout"], no_video=cfg["no_video"],
+            graph_frac=cfg["graph_frac"])
         output_path = self._synced_path_for(self._cur_stem)
 
         self.btn_process.setEnabled(False)
@@ -1214,7 +1239,8 @@ class ExportAnimationsPage(QObject):
             zoom=cfg["zoom"], add_labels=cfg["add_labels"],
             video_nudge_px=cfg["video_nudge_px"], logo_path=cfg["logo_path"],
             logo_opacity=cfg["logo_opacity"], channels=cfg["channels"],
-            layout=cfg["layout"], no_video=cfg["no_video"])
+            layout=cfg["layout"], no_video=cfg["no_video"],
+            graph_frac=cfg["graph_frac"])
         frame_idx = (self.slider_scrub.value() if self._scrub_cap is not None
                     else cfg["nadir_frame"])
         try:

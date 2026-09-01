@@ -7,19 +7,30 @@
 """Controller for the Calculator page (Mathematical Blade Strike Modelling).
 
 Inputs (fish, pump, blade profile - loaded from a saved `bsm_config` file
-by picking it, no separate Load step) and a Calculate button. The result
-goes into one "Blade strike output" card holding every equation result
-(geometry, Pco, fMR, Pm, S, Wilson CI) - the figures and sweeps live on
-Analysis and reporting instead.
+by picking it, no separate Load step) and a Calculate button. Dual-species
+default (ROADMAP.md item 15): scaly and eel have genuinely different body
+dimensions, so the Fish section carries one Lf/Bf pair per species (eel
+defaults to 0.66 m / 0.08 m - a config file loaded via the combo above
+still only describes one species at a time, same shape the standalone
+Mathematical BSM scripts use, so it fills whichever species' fields match
+its own `species` field and leaves the other alone) with the rest of the
+fish/pump/blade inputs shared between them. Calculate always runs both,
+each into its own "Blade strike output" card - the figures and sweeps
+live on Analysis and reporting instead.
 
 "Observed strike data" is temporarily out of the visible UI (its widgets
 are still built - `read_inputs()`/`_validate()` reference them unchanged -
 just not attached to the layout) pending a decision on how to bring it
-back; `bsm_model.compute()` itself is untouched and still accepts it.
+back; `bsm_model.compute()` itself is untouched and still accepts it. It
+applies to both species' runs identically (the same deployment's observed
+strikes, not a per-species count).
 
-Publishes every result through `BSMState.set_result()` (Analysis and
-reporting re-sweeps from it) and writes `LATEST_RESULT_PATH` directly -
-Calculator owns the one BSM run, so it owns publishing it.
+Publishes both results through `BSMState.set_results()` (Model comparison/
+Predict's mortality panel react to it) and the scaly result through the
+older single-result `BSMState.set_result()` too, for Analysis and
+reporting's sweeps and this page's own `LATEST_RESULT_PATH` publish -
+unchanged single-result consumers that were never asked to become
+dual-species themselves (ROADMAP.md item 15's own scope boundary).
 """
 import json
 from pathlib import Path
@@ -36,7 +47,11 @@ from .bsm_model import compute
 from .bsm_state import LATEST_RESULT_PATH, build_latest_payload, output_card_rows
 from .ml_widgets import ACCENT, MUTED, MetaCard, Section, apply_section_defaults
 
-_NUMERIC = ("lf", "bf", "wf", "alpha", "eel_vcrit", "n", "N", "Q", "r", "bh")
+_EEL_LF_DEFAULT = 0.66
+_EEL_BF_DEFAULT = 0.08
+
+# shared across both species - only lf/bf are per-species now
+_NUMERIC = ("wf", "alpha", "eel_vcrit", "n", "N", "Q", "r", "bh")
 
 
 class CalculatorPage(QWidget):
@@ -123,10 +138,14 @@ class CalculatorPage(QWidget):
             self.status.emit(f"Could not load configuration: {e}", 6000)
             return
 
-        self.in_lf.setText(f"{p['lf']:g}")
-        self.in_bf.setText(f"{p['bf']:g}")
-        idx = self.in_species.findText(p["species"])
-        self.in_species.setCurrentIndex(idx if idx >= 0 else -1)
+        # the config file describes one species at a time (same shape the
+        # standalone Mathematical BSM scripts use) - route its lf/bf into
+        # whichever species' fields match, leave the other species alone
+        target_lf, target_bf = (
+            (self.in_lf_eel, self.in_bf_eel) if p["species"] == "eel"
+            else (self.in_lf_scaly, self.in_bf_scaly))
+        target_lf.setText(f"{p['lf']:g}")
+        target_bf.setText(f"{p['bf']:g}")
         self.in_wf.setText(f"{p['wf']:g}")
         self.in_alpha.setText(f"{p['alpha']:g}")
         self.in_eel_vcrit.setText(f"{p['eel_vcrit']:g}")
@@ -144,32 +163,51 @@ class CalculatorPage(QWidget):
             self.blade_tbl.setItem(i, 2, QTableWidgetItem(f"{b:g}"))
             self.blade_tbl.setItem(i, 3, QTableWidgetItem(f"{dl:g}"))
 
-        self.status.emit(f"Loaded configuration: {Path(path).stem}", 4000)
+        self.status.emit(
+            f"Loaded configuration: {Path(path).stem} ({p['species']})", 4000)
         self._validate()
 
     def _fish_group(self):
         g = Section("Fish")
-        grid = QGridLayout(g)
-        grid.setColumnStretch(1, 1)
-        self.in_lf = QLineEdit()
-        self.in_bf = QLineEdit()
-        self.in_species = QComboBox()
-        self.in_species.addItems(["scaly", "eel"])
-        self.in_species.setCurrentIndex(-1)
+        v = QVBoxLayout(g)
+
+        v.addWidget(self._bold_muted("Scaly"))
+        scaly_grid = QGridLayout()
+        scaly_grid.setColumnStretch(1, 1)
+        self.in_lf_scaly = QLineEdit()
+        self.in_bf_scaly = QLineEdit()
+        for i, (lbl, w) in enumerate([
+                ("Body length Lf (m)", self.in_lf_scaly),
+                ("Body height Bf (m)", self.in_bf_scaly)]):
+            scaly_grid.addWidget(self._muted(lbl), i, 0)
+            scaly_grid.addWidget(w, i, 1)
+        v.addLayout(scaly_grid)
+
+        v.addWidget(self._bold_muted("Eel"))
+        eel_grid = QGridLayout()
+        eel_grid.setColumnStretch(1, 1)
+        self.in_lf_eel = QLineEdit(f"{_EEL_LF_DEFAULT:g}")
+        self.in_bf_eel = QLineEdit(f"{_EEL_BF_DEFAULT:g}")
+        for i, (lbl, w) in enumerate([
+                ("Body length Lf (m)", self.in_lf_eel),
+                ("Body height Bf (m)", self.in_bf_eel)]):
+            eel_grid.addWidget(self._muted(lbl), i, 0)
+            eel_grid.addWidget(w, i, 1)
+        v.addLayout(eel_grid)
+
+        v.addWidget(self._bold_muted("Shared"))
+        shared_grid = QGridLayout()
+        shared_grid.setColumnStretch(1, 1)
         self.in_wf = QLineEdit()
         self.in_alpha = QLineEdit()
         self.in_eel_vcrit = QLineEdit()
-        rows = [
-            ("Body length Lf (m)", self.in_lf),
-            ("Body height Bf (m)", self.in_bf),
-            ("Species", self.in_species),
-            ("Rel. velocity wf (m/s)", self.in_wf),
-            ("Pre-rotation α (rad)", self.in_alpha),
-            ("Eel vcrit (m/s)", self.in_eel_vcrit),
-        ]
-        for i, (lbl, w) in enumerate(rows):
-            grid.addWidget(self._muted(lbl), i, 0)
-            grid.addWidget(w, i, 1)
+        for i, (lbl, w) in enumerate([
+                ("Rel. velocity wf (m/s)", self.in_wf),
+                ("Pre-rotation α (rad)", self.in_alpha),
+                ("Eel vcrit (m/s)", self.in_eel_vcrit)]):
+            shared_grid.addWidget(self._muted(lbl), i, 0)
+            shared_grid.addWidget(w, i, 1)
+        v.addLayout(shared_grid)
         return g
 
     def _pump_group(self):
@@ -259,8 +297,13 @@ class CalculatorPage(QWidget):
     def _output_group(self):
         g = Section("Blade strike output")
         v = QVBoxLayout(g)
-        self.card_output = MetaCard("Blade strike output")
-        v.addWidget(self.card_output)
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        self.card_output_scaly = MetaCard("Scaly")
+        self.card_output_eel = MetaCard("Eel")
+        row.addWidget(self.card_output_scaly, stretch=1)
+        row.addWidget(self.card_output_eel, stretch=1)
+        v.addLayout(row)
         self.wilson_lbl = QLabel("")
         self.wilson_lbl.setStyleSheet(f"color:{ACCENT};")
         self.wilson_lbl.setWordWrap(True)
@@ -273,9 +316,17 @@ class CalculatorPage(QWidget):
         lab.setStyleSheet(f"color:{MUTED};")
         return lab
 
+    @staticmethod
+    def _bold_muted(text):
+        lab = QLabel(text)
+        lab.setStyleSheet(f"color:{MUTED};font-weight:bold;")
+        return lab
+
     # ── validation ───────────────────────────────────────────────────────────
     def _numeric_widgets(self):
-        return [getattr(self, f"in_{k}") for k in _NUMERIC]
+        return ([self.in_lf_scaly, self.in_bf_scaly,
+                 self.in_lf_eel, self.in_bf_eel]
+                + [getattr(self, f"in_{k}") for k in _NUMERIC])
 
     def _validate(self, *_args):
         try:
@@ -284,9 +335,6 @@ class CalculatorPage(QWidget):
                     self.btn_calc.setEnabled(False)
                     return
                 float(w.text())
-            if self.in_species.currentIndex() < 0:
-                self.btn_calc.setEnabled(False)
-                return
             for i in range(self.blade_tbl.rowCount()):
                 for j in range(4):
                     item = self.blade_tbl.item(i, j)
@@ -307,22 +355,21 @@ class CalculatorPage(QWidget):
     def _wire_validation(self):
         for w in self._numeric_widgets() + [self.in_total, self.in_strike]:
             w.textChanged.connect(self._validate)
-        self.in_species.currentIndexChanged.connect(self._validate)
         self.blade_tbl.itemChanged.connect(self._validate)
         self.chk_use_observed.toggled.connect(self._validate)
         self._validate()
 
     # ── state in/out ─────────────────────────────────────────────────────────
     def read_inputs(self):
+        """{"scaly": p, "eel": p} - one `bsm_model.compute()`-shaped dict
+        per species, sharing every input except species/lf/bf."""
         rttr, d, b, dlt = [], [], [], []
         for i in range(self.blade_tbl.rowCount()):
             rttr.append(float(self.blade_tbl.item(i, 0).text()))
             d.append(float(self.blade_tbl.item(i, 1).text()))
             b.append(float(self.blade_tbl.item(i, 2).text()))
             dlt.append(float(self.blade_tbl.item(i, 3).text()))
-        return {
-            "lf": float(self.in_lf.text()), "bf": float(self.in_bf.text()),
-            "species": self.in_species.currentText(),
+        shared = {
             "wf": float(self.in_wf.text()), "alpha": float(self.in_alpha.text()),
             "eel_vcrit": float(self.in_eel_vcrit.text()),
             "n": int(float(self.in_n.text())), "N": float(self.in_N.text()),
@@ -333,27 +380,47 @@ class CalculatorPage(QWidget):
             "strike": int(float(self.in_strike.text())) if self.in_strike.text().strip() else 0,
             "use_observed": self.chk_use_observed.isChecked(),
         }
+        return {
+            "scaly": dict(shared, species="scaly",
+                         lf=float(self.in_lf_scaly.text()),
+                         bf=float(self.in_bf_scaly.text())),
+            "eel": dict(shared, species="eel",
+                       lf=float(self.in_lf_eel.text()),
+                       bf=float(self.in_bf_eel.text())),
+        }
 
     # ── run ──────────────────────────────────────────────────────────────────
     def calculate(self):
+        # dual-species default, and each species now has its own real body
+        # dimensions (lf/bf), not one shared pair - scaly still publishes
+        # through the older single-result API (LATEST_RESULT_PATH,
+        # Analysis and reporting's sweeps) since neither was asked to
+        # become dual-species itself (ROADMAP.md item 15's scope boundary).
         try:
-            res = compute(self.read_inputs())
+            inputs = self.read_inputs()
+            res_scaly = compute(inputs["scaly"])
+            res_eel = compute(inputs["eel"])
         except Exception as e:
             self.status.emit(f"Error: {e}", 6000)
             return
-        self.last_result = res
-        self._update_output_card(res)
-        self.calculated.emit(res)
-        self.bsm_state.set_result(res)
-        self._publish_latest(res)
+        self.last_result = res_scaly
+        self._update_output_cards(res_scaly, res_eel)
+        self.calculated.emit(res_scaly)
+        self.bsm_state.set_result(res_scaly)
+        self.bsm_state.set_results({"scaly": res_scaly, "eel": res_eel})
+        self._publish_latest(res_scaly)
         self.status.emit("Calculated.", 3000)
 
-    def _update_output_card(self, res):
-        self.card_output.set_rows(output_card_rows(res))
-        has_obs = "Pco_obs" in res
-        self.wilson_lbl.setText(
-            f"Wilson 95% CI on observed Pco: [{res['wilson_lo'] * 100:.4f}%, "
-            f"{res['wilson_hi'] * 100:.4f}%]" if has_obs else "")
+    def _update_output_cards(self, res_scaly, res_eel):
+        self.card_output_scaly.set_rows(output_card_rows(res_scaly))
+        self.card_output_eel.set_rows(output_card_rows(res_eel))
+        lines = []
+        for label, res in (("Scaly", res_scaly), ("Eel", res_eel)):
+            if "Pco_obs" in res:
+                lines.append(
+                    f"{label} - Wilson 95% CI on observed Pco: "
+                    f"[{res['wilson_lo'] * 100:.4f}%, {res['wilson_hi'] * 100:.4f}%]")
+        self.wilson_lbl.setText("\n".join(lines))
 
     def _publish_latest(self, res):
         payload = build_latest_payload(res)

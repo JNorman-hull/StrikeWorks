@@ -30,6 +30,7 @@ from modules.page_export_animations import ExportAnimationsPage
 from modules.session_state import SessionState
 from modules.page_home import HomePage
 from modules.page_adjustments import AdjustmentsDialog
+from modules.page_simple_mode import SimpleModeDialog
 from modules.bsm_state import BSMState
 from modules.page_bsm_calculator import CalculatorPage
 from modules.page_bsm_sensitivity import SensitivityPage
@@ -45,6 +46,10 @@ widgets = None
 # UI TEMPLATE CREDIT (shown under Settings > About)
 # ///////////////////////////////////////////////////////////////
 TEMPLATE_URL = "https://github.com/Wanderson-Magalhaes/Modern_GUI_PyDracula_PySide6_or_PyQt6"
+
+# matches UIFunctions.toggleMenu's own hardcoded "standard" icon-strip
+# width - the sidebar's starting, deactivated state (Simple/Advanced mode)
+_LEFT_MENU_COLLAPSED_WIDTH = 60
 
 
 class MainWindow(QMainWindow):
@@ -102,13 +107,14 @@ class MainWindow(QMainWindow):
         self.process_page = ProcessPage(widgets, self, self.session_state)
         self.process_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
-        self.validate_page = ValidatePage(widgets, self)
+        self.validate_page = ValidatePage(widgets, self, self.session_state)
         self.validate_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
-        self.dataset_page = DatasetPage(widgets, self)
+        self.dataset_page = DatasetPage(widgets, self, self.session_state)
         self.dataset_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
-        self.initiate_deployment_page = InitiateDeploymentPage(widgets, self)
+        self.initiate_deployment_page = InitiateDeploymentPage(
+            widgets, self, self.session_state)
         self.initiate_deployment_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
 
@@ -131,6 +137,9 @@ class MainWindow(QMainWindow):
         self.ml_prediction_page = MLPredictionPage(widgets, self, self.bsm_state)
         self.ml_prediction_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
+        # Simple mode reuses ml_prediction_page.state directly (Predict
+        # step) - constructed after it for exactly that reason
+        self.simple_mode_dialog = SimpleModeDialog(self)
         self.ml_training_page = MLTrainingPage(widgets, self)
         self.ml_training_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
@@ -302,6 +311,17 @@ class MainWindow(QMainWindow):
         # ///////////////////////////////////////////////////////////////
         widgets.stackedWidget.setCurrentWidget(widgets.home)
         self.setSelected(widgets.btn_home)
+
+        # SIMPLE/ADVANCED MODE - the sidebar starts collapsed to the
+        # existing PyDracula icon-strip width (toggleButton still works
+        # normally, purely cosmetic - it never got hidden, just started
+        # narrow) and every section button on it starts disabled; only
+        # Home's own "Advanced mode" button activates them, regardless of
+        # whether the sidebar itself is later toggled wide or narrow.
+        # ///////////////////////////////////////////////////////////////
+        widgets.leftMenuBg.setMinimumWidth(_LEFT_MENU_COLLAPSED_WIDTH)
+        widgets.leftMenuBg.setMaximumWidth(_LEFT_MENU_COLLAPSED_WIDTH)
+        self.set_sidebar_active(False)
 
 
     # APPLY THE "SELECTED" HIGHLIGHT TO A MENU BUTTON
@@ -512,6 +532,35 @@ class MainWindow(QMainWindow):
         # the libraries folder may have changed - Home owns library
         # discovery, so it's what re-reads settings.get_libraries_dir()
         self.home_page._refresh_library_combo()
+
+    # SIDEBAR ACTIVATION - Simple/Advanced mode (Home; page_simple_mode.py)
+    # The sidebar's own show/hide (`toggleButton`, unchanged - still just
+    # animates leftMenuBg between the 60px icon strip and MENU_WIDTH) is
+    # purely cosmetic now: every section button on it starts disabled
+    # (`_SIDEBAR_NAV_BUTTONS`, greyed out) regardless of width, and stays
+    # that way through any amount of toggling. Only Home's own "Advanced
+    # mode" button - `expand_sidebar()` - actually activates them; the
+    # sidebar's width and its buttons' enabled state are deliberately two
+    # separate things now, not one.
+    # ///////////////////////////////////////////////////////////////
+    _SIDEBAR_NAV_BUTTONS = (
+        "btn_bsm", "btn_setup_deploy", "btn_sensor", "btn_annotation",
+        "btn_model_training", "btn_model_prediction", "btn_export_report",
+    )
+
+    def set_sidebar_active(self, active):
+        for name in self._SIDEBAR_NAV_BUTTONS:
+            getattr(widgets, name).setEnabled(active)
+
+    def expand_sidebar(self):
+        widgets.leftMenuBg.setMinimumWidth(Settings.MENU_WIDTH)
+        widgets.leftMenuBg.setMaximumWidth(Settings.MENU_WIDTH)
+        self.set_sidebar_active(True)
+
+    # SIMPLE MODE - pop-up walkthrough (modules/page_simple_mode.py)
+    # ///////////////////////////////////////////////////////////////
+    def openSimpleMode(self):
+        self.simple_mode_dialog.exec()
 
 
     # RESIZE EVENTS

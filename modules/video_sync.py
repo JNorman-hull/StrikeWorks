@@ -64,8 +64,13 @@ DEFAULT_CHANNELS = [
 ]
 
 #: up to this many panels in one graph strip - past this a 150 dpi strip
-#: has no room left to be readable
-MAX_CHANNELS = 6
+#: has no room left to be readable (3 rows of 3 at the grid layout's cap)
+MAX_CHANNELS = 9
+
+#: fraction of the output frame's height the graph strip gets when there
+#: is a video crop above it - was a hardcoded quarter (// 4); still the
+#: default, just overridable now (SyncOptions.graph_frac)
+DEFAULT_GRAPH_FRAC = 0.25
 
 
 class SyncOptions:
@@ -74,7 +79,8 @@ class SyncOptions:
     def __init__(self, real_fps=1000, data_hz=2000, graph_window_s=0.3,
                 zoom=1.0, pressure_row_offset=20, video_nudge_px=0,
                 add_labels=True, logo_path=None, logo_opacity=1.0,
-                channels=None, layout="row", no_video=False):
+                channels=None, layout="row", no_video=False,
+                graph_frac=DEFAULT_GRAPH_FRAC):
         self.real_fps = real_fps
         self.data_hz = data_hz
         self.graph_window_s = graph_window_s
@@ -90,7 +96,7 @@ class SyncOptions:
         # higacc_x/y/z axes instead of the combined magnitude)
         self.channels = channels or DEFAULT_CHANNELS
         # "row": panels side by side (the original layout, fits under a
-        # video crop). "grid": up to 3 rows of 2 - only really usable
+        # video crop). "grid": up to 3 rows of 3 - only really usable
         # with no_video, where the panels get the whole frame to work
         # with instead of a quarter-height strip
         self.layout = layout
@@ -99,6 +105,10 @@ class SyncOptions:
         # a video overlay, for when there's no camera footage worth
         # keeping (or none at all)
         self.no_video = no_video
+        # how much of the output frame's height the graph strip claims
+        # when there IS a video crop above it (ignored when no_video) -
+        # was always exactly a quarter; now the user's own call
+        self.graph_frac = graph_frac
 
 
 def build_cursor_arrays(nadir_time_s, df, nadir_frame, total_frames, opts,
@@ -138,8 +148,8 @@ def build_cursor_arrays(nadir_time_s, df, nadir_frame, total_frames, opts,
 
 def _grid_shape(n, layout):
     if layout == "grid":
-        cols = 2 if n > 1 else 1
-        rows = -(-n // cols)   # ceil
+        cols = min(3, n) if n > 1 else 1
+        rows = -(-n // cols)   # ceil - up to 3 rows of 3 at MAX_CHANNELS
         return rows, cols
     return 1, n
 
@@ -307,7 +317,7 @@ def render_preview_frame(video_path, df, nadir_time_s, nadir_frame, fields,
             frame_width, frame_height, opts)
         video_h = frame_height
     else:
-        strip_h = frame_height // 4
+        strip_h = int(frame_height * opts.graph_frac)
         video_h = frame_height - strip_h
         video_crop = frame[opts.video_nudge_px:video_h + opts.video_nudge_px, :]
         graph_strip = make_graph_strip(
@@ -341,7 +351,7 @@ def process_video(video_path, df, nadir_time_s, nadir_frame, fields,
     if opts.no_video:
         strip_h = video_h = frame_height
     else:
-        strip_h = frame_height // 4
+        strip_h = int(frame_height * opts.graph_frac)
         video_h = frame_height - strip_h
 
     cursor_values = build_cursor_arrays(

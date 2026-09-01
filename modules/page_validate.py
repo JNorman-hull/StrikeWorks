@@ -24,16 +24,16 @@ import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 
-from PySide6.QtCore import Qt, QDir, QObject, QThread, QTimer, Signal
+from PySide6.QtCore import Qt, QObject, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QFileDialog, QFileSystemModel, QHBoxLayout, QMessageBox, QTreeWidgetItem,
-    QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QMessageBox, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import deployment_index as di
-from . import sensor_config, settings
-from .library_widgets import _DirsOnlyProxy, _EXCL_NAMES, _EXCL_SUFFIXES
+from . import sensor_config
+from .library_widgets import _EXCL_NAMES, _EXCL_SUFFIXES
+from .ml_widgets import MUTED
 from .plot_style import (
     add_export_button, build_export_data, reserve_top_margin,
     set_right_axis_active,
@@ -200,12 +200,12 @@ class ValidatePage(QObject):
 
     status = Signal(str, int)
 
-    def __init__(self, ui, window):
+    def __init__(self, ui, window, session_state=None):
         super().__init__(window)
         self.ui = ui
         self.window = window
+        self.session_state = session_state
 
-        self._lib_dir = None
         self._lib_root = None
         self._index_df = None
         self._csv_files = []
@@ -225,15 +225,11 @@ class ValidatePage(QObject):
         self._pending_path = None
         self._loading = False
 
-        self._fs_model = QFileSystemModel()
-        self._fs_model.setFilter(QDir.Filter.Dirs | QDir.Filter.NoDotAndDotDot)
-        self._proxy = _DirsOnlyProxy()
-        self._proxy.setSourceModel(self._fs_model)
-
         self._build_plot()
         self._configure_widgets()
         self._connect()
-        self._init_tree()
+        self._on_session_library_changed(
+            session_state.library if session_state is not None else None)
 
     # ── setup ────────────────────────────────────────────────────────────────
     def _build_plot(self):
@@ -293,10 +289,14 @@ class ValidatePage(QObject):
     def _configure_widgets(self):
         u = self.ui
 
-        u.tree_val_library.setModel(self._proxy)
-        u.tree_val_library.setHeaderHidden(True)
-        for col in range(1, 4):
-            u.tree_val_library.hideColumn(col)
+        # library selection is app-wide now (Home / session_state) - this
+        # box just shows which one is active, rather than picking it
+        u.tree_val_library.setVisible(False)
+        u.btn_val_change_libraries.setVisible(False)
+        self.lbl_library = QLabel("No library selected.")
+        self.lbl_library.setStyleSheet(f"color:{MUTED};")
+        self.lbl_library.setWordWrap(True)
+        u.grp_val_library.layout().insertWidget(0, self.lbl_library)
 
         u.cmb_val_left.clear()
         for k in _CHANNEL_ORDER:
@@ -316,9 +316,9 @@ class ValidatePage(QObject):
 
     def _connect(self):
         u = self.ui
-        u.tree_val_library.selectionModel().selectionChanged.connect(
-            self._on_library_selected)
-        u.btn_val_change_libraries.clicked.connect(self._change_libraries)
+        if self.session_state is not None:
+            self.session_state.library_changed.connect(
+                self._on_session_library_changed)
         u.tree_val_files.itemClicked.connect(self._on_file_clicked)
         u.cmb_val_left.currentIndexChanged.connect(self._on_axis_changed)
         u.cmb_val_right.currentIndexChanged.connect(self._on_axis_changed)
@@ -328,50 +328,25 @@ class ValidatePage(QObject):
         u.btn_val_jump.clicked.connect(self._jump_next_unvalidated)
         sensor_config.notifier.changed.connect(self._on_sensor_changed)
 
-    def _init_tree(self):
-        self._lib_dir = settings.get_libraries_dir()
-        self.ui.btn_val_change_libraries.setToolTip(str(self._lib_dir))
-        fs_root = self._fs_model.setRootPath(str(self._lib_dir))
-        self.ui.tree_val_library.setRootIndex(self._proxy.mapFromSource(fs_root))
-
-    def reload_libraries(self):
-        self._init_tree()
-
-    def _change_libraries(self):
-        chosen = QFileDialog.getExistingDirectory(
-            self.window, "Select libraries folder", str(self._lib_dir))
-        if not chosen:
-            return
-        settings.set_libraries_dir(chosen)
-        self._lib_root = None
+    # ── library selection (session_state - see session_state.py) ────────────
+    def _on_session_library_changed(self, lib_root):
+        # no status.emit here - Home already shows the one unified
+        # "Library: X" message for a session-wide change (page_home.py)
+        self._lib_root = lib_root
+        self.lbl_library.setText(
+            f"Library: {lib_root.name}" if lib_root else "No library selected.")
         self._index_df = None
         self._csv_files = []
         self.ui.tree_val_files.clear()
-        self._init_tree()
-        self._update_progress()
-
-    # ── library selection ────────────────────────────────────────────────────
-    def _on_library_selected(self, selected, _deselected):
-        idxs = selected.indexes()
-        if not idxs:
-            return
-        folder = Path(self._fs_model.filePath(self._proxy.mapToSource(idxs[0])))
-        try:
-            rel = folder.relative_to(self._lib_dir)
-            lib_root = self._lib_dir / rel.parts[0]
-        except (ValueError, IndexError):
-            lib_root = folder
-
-        if lib_root == self._lib_root:
-            return
-        self._lib_root = lib_root
         self._load_index()
         self._populate_file_tree()
         self._update_progress()
-        self.status.emit(f"Library: {lib_root.name}", 4000)
 
     # ── index ────────────────────────────────────────────────────────────────
     def _load_index(self):
+        if self._lib_root is None:
+            self._index_df = None
+            return
         idx_path = self._lib_root / _INDEX_REL
         if not idx_path.exists():
             self._index_df = None

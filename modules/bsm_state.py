@@ -70,12 +70,28 @@ def output_card_rows(res):
 
 
 class BSMState(QObject):
-    calculated = Signal(dict)   # the full result dict from bsm_model.compute()
+    calculated = Signal(dict)      # the full result dict from bsm_model.compute()
+    calculated_all = Signal(dict)  # {"scaly": res, "eel": res} - see set_results()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.last_result = None
+        self.results = {}   # {"scaly": res, "eel": res} - dual-species default
 
     def set_result(self, res):
         self.last_result = res
         self.calculated.emit(res)
+
+    def set_results(self, results_by_species):
+        """Dual-species default: Calculator computes both scaly and eel
+        every run (all other inputs - fish/pump/blade geometry, eel_vcrit
+        - are shared, so this costs one extra `compute()` call, not a
+        second data-entry pass). `last_result`/`calculated` are untouched
+        and keep meaning "whichever species the Calculator's own Species
+        combo has selected" for every pre-existing single-result consumer
+        (Calculator's own output card, Analysis and reporting's sweeps);
+        `results`/`calculated_all` are for the newer dual-species
+        consumers (Model comparison's Cen bars, Predict's mortality
+        panel) that want both at once, keyed by species name."""
+        self.results = results_by_species
+        self.calculated_all.emit(results_by_species)

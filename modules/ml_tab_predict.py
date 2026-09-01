@@ -36,6 +36,10 @@ from .ml_widgets import (
 
 FIG_MIN_W, FIG_MIN_H = 320, 300
 _VCRIT_MIN, _VCRIT_MAX, _VCRIT_STEP = 2.0, 10.0, 0.25
+# matches every saved bsm_config file's own eel_vcrit (input_data/
+# BSM_config/*.txt) - not 2.0, which was never anyone's actual value,
+# just an unrelated guess this spinbox happened to start at
+_EEL_VCRIT_DEFAULT = 8.0
 
 
 class _NumItem(QTableWidgetItem):
@@ -85,6 +89,8 @@ class PredictTab:
             c.setSizePolicy(QSizePolicy.Policy.Expanding,
                             QSizePolicy.Policy.Expanding)
 
+        self._eel_vcrit_synced = False  # see _on_bsm_results()
+
         self._build(frame)
         self._connect_state()
         self._refresh_model()
@@ -92,11 +98,9 @@ class PredictTab:
         self._refresh_config()
         self._refresh_validation()
         if self.bsm_state is not None:
-            self.bsm_state.calculated.connect(self._on_bsm_result)
-            if self.bsm_state.last_result is not None:
-                self._on_bsm_result(self.bsm_state.last_result)
-            else:
-                self._run_vcrit_sweep()
+            self.bsm_state.calculated_all.connect(self._on_bsm_results)
+            self._recalculate_mortality()
+            self._run_vcrit_sweep()
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
@@ -241,20 +245,27 @@ class PredictTab:
 
         # ── mortality inputs (moved here from Biological interpretation /
         # Model comparison - the BSM run this reads is independent of the
-        # model prediction above, only the species/critical-velocity
-        # choice lives on this page now) ────────────────────────────────
+        # model prediction above). Dual-species default: both scaly and
+        # eel are always shown together, not picked one at a time - only
+        # eel's critical velocity is still a real input (scaly's own
+        # regression derives its floor by itself). ─────────────────────
         mort_row = QHBoxLayout()
-        self.cmb_species = QComboBox()
-        self.cmb_species.addItems(["scaly", "eel"])
-        self.cmb_species.currentIndexChanged.connect(self._on_species_changed)
-        mort_row.addWidget(self._muted("Species"))
-        mort_row.addWidget(self.cmb_species)
+        self.cmb_mortality_treatment = QComboBox()
+        self.cmb_mortality_treatment.addItem("None", None)
+        self.cmb_mortality_treatment.currentIndexChanged.connect(
+            self._on_mortality_inputs_changed)
+        self.cmb_mortality_treatment.setToolTip(
+            "Which pump condition the mortality plot represents - a "
+            "label only, since the BSM run itself has no per-treatment "
+            "input; populated from the current prediction's treatments.")
+        mort_row.addWidget(self._muted("Treatment"))
+        mort_row.addWidget(self.cmb_mortality_treatment)
         self.spin_eel_vcrit = QDoubleSpinBox()
         self.spin_eel_vcrit.setRange(0.0, 50.0)
         self.spin_eel_vcrit.setDecimals(2)
-        self.spin_eel_vcrit.setValue(2.0)
+        self.spin_eel_vcrit.setValue(_EEL_VCRIT_DEFAULT)
         self.spin_eel_vcrit.setSuffix(" m/s")
-        self.spin_eel_vcrit.valueChanged.connect(self._on_species_changed)
+        self.spin_eel_vcrit.valueChanged.connect(self._on_mortality_inputs_changed)
         mort_row.addWidget(self._muted("Eel critical velocity"))
         mort_row.addWidget(self.spin_eel_vcrit)
         mort_row.addStretch()
@@ -644,6 +655,7 @@ class PredictTab:
         ml_figures.draw_region(self.fig_mc, s.summary,
                                s.class_names if mc_run else [], dark=True)
         self.canvas_mc.draw()
+        self._refresh_mortality_treatments()
         s.status.emit(f"Prediction complete - {k} strikes in {n} recordings.",
                       6000)
 
@@ -771,45 +783,83 @@ class PredictTab:
         return lab
 
     # ── mortality (BSM, moved here from Biological interpretation / Model
-    # comparison - independent of the model prediction above, driven only
-    # by the species/critical-velocity choice and the Calculator's last
-    # BSM run) ───────────────────────────────────────────────────────────
-    def _on_bsm_result(self, res):
+    # comparison - independent of the model prediction above). Dual-
+    # species default: scaly and eel are both recomputed from their own
+    # independent BSM run (BSMState.results, see bsm_state.py/page_bsm_
+    # calculator.py) every time, not one run relabelled twice - each
+    # species' own Pco/vstrike exposure is genuinely different (Leff_m/
+    # Leff_t depend on species), not just its mortality regression. ────
+    def _on_bsm_results(self, results):
+        # the first BSM run this page ever sees sets the spinbox to that
+        # run's own eel_vcrit (whatever the Calculator's config actually
+        # said, e.g. 8 m/s - not an arbitrary guess) rather than leaving
+        # it at a hardcoded default; after that, live overrides here are
+        # respected and never silently overwritten by a later Calculate
+        eel_res = results.get("eel")
+        if not self._eel_vcrit_synced and eel_res is not None:
+            self._eel_vcrit_synced = True
+            self.spin_eel_vcrit.blockSignals(True)
+            self.spin_eel_vcrit.setValue(eel_res["params"]["eel_vcrit"])
+            self.spin_eel_vcrit.blockSignals(False)
         self._recalculate_mortality()
         self._run_vcrit_sweep()
 
-    def _on_species_changed(self, *_args):
+    def _on_mortality_inputs_changed(self, *_args):
         self._recalculate_mortality()
         self._run_vcrit_sweep()
 
     def _recalculate_mortality(self):
-        res = self.bsm_state.last_result if self.bsm_state else None
-        if res is None:
-            return
-        species = self.cmb_species.currentText()
+        results = self.bsm_state.results if self.bsm_state else {}
         eel_vcrit = self.spin_eel_vcrit.value()
-        out = recompute_mortality(res, species, eel_vcrit=eel_vcrit,
-                                  threshold=None)
+        lines = []
+        for species in ("scaly", "eel"):
+            res = results.get(species)
+            if res is None:
+                continue
+            out = recompute_mortality(res, species, eel_vcrit=eel_vcrit,
+                                      threshold=None)
+            lines.append(
+                f"{species}: Pm={out['Pm'] * 100:.2f}%, "
+                f"S={out['S'] * 100:.2f}% (Cen Pco {res['Pco_tip'] * 100:.2f}%)")
         self.lbl_mortality.setText(
-            f"{species}: Pm={out['Pm'] * 100:.2f}%, S={out['S'] * 100:.2f}% "
-            f"(Pco unchanged from the Calculator run, "
-            f"{res['Pco_tip'] * 100:.2f}%).")
+            "\n".join(lines) if lines else
+            "Run a Blade Strike Modelling calculation first.")
 
     def _run_vcrit_sweep(self):
-        res = self.bsm_state.last_result if self.bsm_state else None
-        if res is None:
-            bsm_figures.draw_vcrit_sweep(self.fig_vcrit, [], None, None, None)
-            self.canvas_vcrit.draw()
-            return
-        species = self.cmb_species.currentText()
+        results = self.bsm_state.results if self.bsm_state else {}
         eel_vcrit = self.spin_eel_vcrit.value()
         vcrit_vals = np.arange(_VCRIT_MIN, _VCRIT_MAX + 1e-9, _VCRIT_STEP)
-        pm_vals = np.array([
-            recompute_mortality_at_vcrit(res, species, float(v))["Pm"] * 100
-            for v in vcrit_vals])
-        default_v = default_vcrit(res, species, eel_vcrit=eel_vcrit)
-        default_pm = recompute_mortality_at_vcrit(
-            res, species, default_v)["Pm"] * 100
-        bsm_figures.draw_vcrit_sweep(
-            self.fig_vcrit, vcrit_vals, pm_vals, default_v, default_pm)
+        series = []
+        for species in ("scaly", "eel"):
+            res = results.get(species)
+            if res is None:
+                series.append((species, None, None, None, None))
+                continue
+            pm_vals = np.array([
+                recompute_mortality_at_vcrit(res, species, float(v))["Pm"] * 100
+                for v in vcrit_vals])
+            default_v = default_vcrit(res, species, eel_vcrit=eel_vcrit)
+            default_pm = recompute_mortality_at_vcrit(
+                res, species, default_v)["Pm"] * 100
+            series.append((species, vcrit_vals, pm_vals, default_v, default_pm))
+        treatment = self.cmb_mortality_treatment.currentData()
+        title = f"Treatment: {treatment}" if treatment else "No treatment selected"
+        bsm_figures.draw_vcrit_sweep(self.fig_vcrit, series, title=title)
         self.canvas_vcrit.draw()
+
+    # ── mortality treatment picker (label only - see cmb_mortality_
+    # treatment's tooltip; BSM has no per-treatment input) ──────────────────
+    def _refresh_mortality_treatments(self):
+        summary = self.state.summary
+        names = (sorted(summary["treatment"].astype(str).unique())
+                 if summary is not None and len(summary) else [])
+        cmb = self.cmb_mortality_treatment
+        current = cmb.currentData()
+        cmb.blockSignals(True)
+        cmb.clear()
+        cmb.addItem("None", None)
+        for name in names:
+            cmb.addItem(name, name)
+        idx = cmb.findData(current) if current else 0
+        cmb.setCurrentIndex(idx if idx >= 0 else 0)
+        cmb.blockSignals(False)

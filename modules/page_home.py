@@ -135,15 +135,15 @@ class HomePage(QObject):
         mode_row.setSpacing(10)
         self.btn_simple_mode = QPushButton("Simple mode")
         self.btn_simple_mode.setMinimumHeight(44)
-        self.btn_simple_mode.setEnabled(False)
         self.btn_simple_mode.setToolTip(
-            "Coming soon - a guided deployment > processing > predicting > "
-            "reporting pipeline on top of Advanced mode's existing pages.")
+            "A guided walkthrough in one pop-up window - the same "
+            "backend actions Advanced mode's pages perform, behind a "
+            "much simpler front end.")
         mode_row.addWidget(self.btn_simple_mode)
         self.btn_advanced_mode = QPushButton("Advanced mode")
         self.btn_advanced_mode.setMinimumHeight(44)
         self.btn_advanced_mode.setToolTip(
-            "The current mode - every page, reached from the sidebar.")
+            "Every page, reached from the sidebar.")
         mode_row.addWidget(self.btn_advanced_mode)
         v.addLayout(mode_row)
 
@@ -155,6 +155,7 @@ class HomePage(QObject):
         self.btn_new_library.clicked.connect(self._new_library)
         self.btn_new_session.clicked.connect(self._new_session)
         self.btn_advanced_mode.clicked.connect(self._go_advanced)
+        self.btn_simple_mode.clicked.connect(self._go_simple)
         self.session_state.library_changed.connect(self._on_session_library_changed)
 
     # ── library combo ───────────────────────────────────────────────────────
@@ -229,12 +230,17 @@ class HomePage(QObject):
 
     # ── mode buttons ─────────────────────────────────────────────────────────
     def _go_advanced(self):
-        """Advanced mode is every page as it exists today - there's
-        nothing to switch on, just somewhere sensible to land. Simple
-        mode (a guided pipeline on top of these same pages) is a planned
-        follow-up, disabled here until it exists rather than a button
-        that goes nowhere."""
+        """Advanced mode is every page as it exists today. The sidebar's
+        section buttons start disabled (main.py, on launch) regardless of
+        whether the sidebar itself is toggled wide or narrow - this is
+        the one place that actually activates them."""
+        self.window.expand_sidebar()
         self.window.openPanel("setup_deploy")
+
+    def _go_simple(self):
+        """Simple mode - one pop-up window (page_simple_mode.py) instead
+        of the sidebar; deliberately does not expand_sidebar()."""
+        self.window.openSimpleMode()
 
     # ── new session ──────────────────────────────────────────────────────────
     def _new_session(self):
