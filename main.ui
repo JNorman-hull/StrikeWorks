@@ -1937,7 +1937,7 @@ Button */
                    <string notr="true">background-image: url(:/icons/images/icons/cil-medical-cross.png);</string>
                   </property>
                   <property name="text">
-                   <string>Biological interpretation</string>
+                   <string>Model comparison</string>
                   </property>
                  </widget>
                 </item>
@@ -3252,7 +3252,7 @@ background-repeat: no-repeat;</string>
                                     </font>
                                    </property>
                                    <property name="text">
-                                    <string>—</string>
+                                    <string>-</string>
                                    </property>
                                   </widget>
                                  </item>
@@ -3319,7 +3319,7 @@ background-repeat: no-repeat;</string>
                                     </font>
                                    </property>
                                    <property name="text">
-                                    <string>—</string>
+                                    <string>-</string>
                                    </property>
                                   </widget>
                                  </item>
@@ -3386,7 +3386,7 @@ background-repeat: no-repeat;</string>
                                     </font>
                                    </property>
                                    <property name="text">
-                                    <string>—</string>
+                                    <string>-</string>
                                    </property>
                                   </widget>
                                  </item>
@@ -3453,7 +3453,7 @@ background-repeat: no-repeat;</string>
                                     </font>
                                    </property>
                                    <property name="text">
-                                    <string>—</string>
+                                    <string>-</string>
                                    </property>
                                   </widget>
                                  </item>
@@ -3520,7 +3520,7 @@ background-repeat: no-repeat;</string>
                                     </font>
                                    </property>
                                    <property name="text">
-                                    <string>—</string>
+                                    <string>-</string>
                                    </property>
                                   </widget>
                                  </item>
@@ -3587,7 +3587,7 @@ background-repeat: no-repeat;</string>
                                     </font>
                                    </property>
                                    <property name="text">
-                                    <string>—</string>
+                                    <string>-</string>
                                    </property>
                                   </widget>
                                  </item>
@@ -3745,7 +3745,7 @@ background-repeat: no-repeat;</string>
                                      </font>
                                     </property>
                                     <property name="text">
-                                     <string>—</string>
+                                     <string>-</string>
                                     </property>
                                     <property name="alignment">
                                      <set>Qt::AlignCenter</set>

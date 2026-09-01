@@ -4,44 +4,29 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Controller for the Biological interpretation page (ROADMAP.md Chunk 5
-task 5's final piece).
+"""Controller for the Model comparison page (renamed from Biological
+interpretation - ROADMAP.md Chunk 5 task 5's final piece; the mortality
+box that used to live here moved to Model prediction > Predict, see
+ml_tab_predict.py).
 
-Two boxes:
-
-  - Comparison: each treatment's data-driven (ML model) strike rate
-    against the mathematical (BSM) collision-probability estimate, as a
-    table and a bar figure, plus a manual strike/total count that folds
-    into the same figure as its own "Manual" bar (Wilson 95% CI).
-  - Mortality: what the chosen species' own regression predicts from this
-    BSM run (no adjustable threshold - each species' fMR regression
-    already defines what counts as lethal), and a critical-velocity
-    sensitivity sweep (2-10 m/s, bypassing the regression's own vcrit
-    formula) marking the point the regression would derive by itself
-    (`bsm_model.default_vcrit` - 4.8 m/s for scaly's floor case).
-
-Longer-term (ROADMAP.md, not this pass): replace the mortality
-regression's assumed uniform strike distribution with the concentric
-strike locations the blade-strike model itself predicts.
+Comparison: each treatment's data-driven (ML model) strike rate against
+the mathematical (BSM) collision-probability estimate, as a table and a
+bar figure, plus a manual strike/total count that folds into the same
+figure as its own "Manual" bar (Wilson 95% CI).
 """
-import numpy as np
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QCheckBox, QDoubleSpinBox, QGridLayout, QLabel, QScrollArea,
+    QSizePolicy, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget,
+)
 
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QGridLayout, QLabel,
-    QScrollArea, QSizePolicy, QSpinBox, QSplitter, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
-)
-
 from . import bsm_figures
-from .bsm_model import default_vcrit, recompute_mortality, recompute_mortality_at_vcrit
 from .ml_widgets import MUTED, TEXT, Section, apply_section_defaults
 from .wilson_calc import wilson_interval
-
-_VCRIT_MIN, _VCRIT_MAX, _VCRIT_STEP = 2.0, 10.0, 0.25
 
 
 class BiologicalPage(QWidget):
@@ -53,14 +38,10 @@ class BiologicalPage(QWidget):
         self.bsm_state = bsm_state
         self.prediction_state = prediction_state
         self._build(frame)
-        bsm_state.calculated.connect(self._on_bsm_result)
+        bsm_state.calculated.connect(self._refresh_comparison)
         if prediction_state is not None:
             prediction_state.run_finished.connect(self._refresh_comparison)
-        if bsm_state.last_result is not None:
-            self._on_bsm_result(bsm_state.last_result)
-        else:
-            self._run_vcrit_sweep()
-            self._refresh_comparison()
+        self._refresh_comparison()
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
@@ -78,7 +59,6 @@ class BiologicalPage(QWidget):
         v.setContentsMargins(4, 6, 4, 6)
         v.setSpacing(10)
         v.addWidget(self._comparison_group())
-        v.addWidget(self._mortality_group())
         v.addStretch()
         apply_section_defaults(frame)
 
@@ -86,10 +66,16 @@ class BiologicalPage(QWidget):
         g = Section("Comparison")
         gv = QVBoxLayout(g)
 
-        self.tbl_compare = QTableWidget(0, 5)
+        gv.addWidget(self._muted("Treatments (deselect to leave out of the "
+                                 "table and figure)"))
+        self._treatment_checks = {}
+        self.treatment_check_row = QGridLayout()
+        gv.addLayout(self.treatment_check_row)
+
+        self.tbl_compare = QTableWidget(0, 6)
         self.tbl_compare.setHorizontalHeaderLabels(
-            ["Treatment", "N", "ML strike rate (95% CI)", "BSM Pco (CEN)",
-             "Difference (ML − BSM)"])
+            ["Treatment", "N", "Video ground truth", "Model 1.1 OOF",
+             "Previous model prediction", "Cen"])
         self.tbl_compare.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.tbl_compare.setMinimumHeight(120)
 
@@ -111,53 +97,26 @@ class BiologicalPage(QWidget):
         self.spin_manual_total = QSpinBox()
         self.spin_manual_total.setRange(0, 1000000)
         self.spin_manual_total.valueChanged.connect(self._recalculate_manual)
-        form.addWidget(self._muted("Manual: sensors deployed"), 0, 0)
+        form.addWidget(self._muted("Video ground truth: sensors deployed"), 0, 0)
         form.addWidget(self.spin_manual_total, 0, 1)
         self.spin_manual_strike = QSpinBox()
         self.spin_manual_strike.setRange(0, 1000000)
         self.spin_manual_strike.valueChanged.connect(self._recalculate_manual)
         form.addWidget(self._muted("Strikes observed"), 0, 2)
         form.addWidget(self.spin_manual_strike, 0, 3)
+        self.spin_prev_model = QDoubleSpinBox()
+        self.spin_prev_model.setRange(0.0, 100.0)
+        self.spin_prev_model.setDecimals(1)
+        self.spin_prev_model.setSuffix(" %")
+        self.spin_prev_model.setSpecialValueText("Not entered")
+        self.spin_prev_model.valueChanged.connect(self._refresh_comparison)
+        form.addWidget(self._muted("Previous model prediction"), 0, 4)
+        form.addWidget(self.spin_prev_model, 0, 5)
         gv.addLayout(form)
         self.lbl_manual = QLabel("")
         self.lbl_manual.setStyleSheet(f"color:{TEXT};")
         self.lbl_manual.setWordWrap(True)
         gv.addWidget(self.lbl_manual)
-        return g
-
-    def _mortality_group(self):
-        g = Section("Mortality")
-        gv = QVBoxLayout(g)
-
-        form = QGridLayout()
-        form.setHorizontalSpacing(10)
-        self.cmb_species = QComboBox()
-        self.cmb_species.addItems(["scaly", "eel"])
-        self.cmb_species.currentIndexChanged.connect(self._on_species_changed)
-        form.addWidget(self._muted("Species"), 0, 0)
-        form.addWidget(self.cmb_species, 0, 1)
-
-        self.spin_eel_vcrit = QDoubleSpinBox()
-        self.spin_eel_vcrit.setRange(0.0, 50.0)
-        self.spin_eel_vcrit.setDecimals(2)
-        self.spin_eel_vcrit.setValue(2.0)
-        self.spin_eel_vcrit.setSuffix(" m/s")
-        self.spin_eel_vcrit.valueChanged.connect(self._on_species_changed)
-        form.addWidget(self._muted("Eel critical velocity"), 0, 2)
-        form.addWidget(self.spin_eel_vcrit, 0, 3)
-        gv.addLayout(form)
-
-        self.lbl_mortality = QLabel("")
-        self.lbl_mortality.setStyleSheet(f"color:{TEXT};font-weight:bold;")
-        self.lbl_mortality.setWordWrap(True)
-        gv.addWidget(self.lbl_mortality)
-
-        self.fig_vcrit = Figure(figsize=(6.0, 3.2), dpi=100)
-        self.canvas_vcrit = FigureCanvas(self.fig_vcrit)
-        self.canvas_vcrit.setMinimumSize(220, 190)
-        self.canvas_vcrit.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        gv.addWidget(self.canvas_vcrit, stretch=1)
         return g
 
     @staticmethod
@@ -166,48 +125,34 @@ class BiologicalPage(QWidget):
         lab.setStyleSheet(f"color:{MUTED};")
         return lab
 
+    # ── treatments checklist ─────────────────────────────────────────────────
+    def _rebuild_treatment_checks(self, names):
+        """Rebuilds the checklist from whatever treatments are actually in
+        the current prediction summary, keeping each box's checked state
+        (matched by name) across refreshes rather than resetting every
+        treatment back to selected whenever a new run comes in."""
+        current_names = list(self._treatment_checks.keys())
+        if current_names == list(names):
+            return
+        keep = {n: cb.isChecked() for n, cb in self._treatment_checks.items()}
+        while self.treatment_check_row.count():
+            item = self.treatment_check_row.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+        self._treatment_checks = {}
+        for i, name in enumerate(names):
+            cb = QCheckBox(str(name))
+            cb.setChecked(keep.get(name, True))
+            cb.toggled.connect(self._refresh_comparison)
+            self.treatment_check_row.addWidget(cb, i // 4, i % 4)
+            self._treatment_checks[name] = cb
+
+    def _selected_treatments(self):
+        return {n for n, cb in self._treatment_checks.items() if cb.isChecked()}
+
     # ── reactions ────────────────────────────────────────────────────────────
-    def _on_bsm_result(self, res):
-        self._recalculate_mortality()
-        self._run_vcrit_sweep()
-        self._refresh_comparison()
-
-    def _on_species_changed(self, *_args):
-        self._recalculate_mortality()
-        self._run_vcrit_sweep()
-
-    def _recalculate_mortality(self):
-        res = self.bsm_state.last_result
-        if res is None:
-            return
-        species = self.cmb_species.currentText()
-        eel_vcrit = self.spin_eel_vcrit.value()
-        out = recompute_mortality(res, species, eel_vcrit=eel_vcrit,
-                                  threshold=None)
-        self.lbl_mortality.setText(
-            f"{species}: Pm={out['Pm'] * 100:.2f}%, S={out['S'] * 100:.2f}% "
-            f"(Pco unchanged from the Calculator run, "
-            f"{res['Pco_tip'] * 100:.2f}%).")
-
-    def _run_vcrit_sweep(self):
-        res = self.bsm_state.last_result
-        if res is None:
-            bsm_figures.draw_vcrit_sweep(self.fig_vcrit, [], None, None, None)
-            self.canvas_vcrit.draw()
-            return
-        species = self.cmb_species.currentText()
-        eel_vcrit = self.spin_eel_vcrit.value()
-        vcrit_vals = np.arange(_VCRIT_MIN, _VCRIT_MAX + 1e-9, _VCRIT_STEP)
-        pm_vals = np.array([
-            recompute_mortality_at_vcrit(res, species, float(v))["Pm"] * 100
-            for v in vcrit_vals])
-        default_v = default_vcrit(res, species, eel_vcrit=eel_vcrit)
-        default_pm = recompute_mortality_at_vcrit(
-            res, species, default_v)["Pm"] * 100
-        bsm_figures.draw_vcrit_sweep(
-            self.fig_vcrit, vcrit_vals, pm_vals, default_v, default_pm)
-        self.canvas_vcrit.draw()
-
     def _recalculate_manual(self, *_args):
         total = self.spin_manual_total.value()
         strike = self.spin_manual_strike.value()
@@ -224,23 +169,40 @@ class BiologicalPage(QWidget):
                 f"precision +/-{half * 100:.1f} percentage points.")
         self._refresh_comparison()
 
-    def _manual_comparison_bar(self):
-        """(label, value_pct, ci_lo, ci_hi) for the manual entry, or None
-        if it's empty/invalid - the extra bar in the comparison figure."""
+    def _video_ground_truth_bar(self):
+        """(label, value_pct, ci_lo, ci_hi) for the video ground truth
+        entry, or None if it's empty/invalid - an extra bar in the
+        comparison figure, same across every selected treatment (a single
+        deployment-wide count, not per treatment)."""
         total = self.spin_manual_total.value()
         strike = self.spin_manual_strike.value()
         if total == 0 or strike > total:
             return None
         lo, hi, _half = wilson_interval(strike / total, total, confidence=95)
-        return ("Manual", strike / total * 100, lo * 100, hi * 100)
+        return ("Video ground truth", strike / total * 100, lo * 100, hi * 100)
 
-    def _refresh_comparison(self):
+    def _previous_model_bar(self):
+        """(label, value_pct, None, None) for the previous-model-prediction
+        entry, or None if it hasn't been entered (spinbox at its
+        special-value "Not entered" floor of 0)."""
+        value = self.spin_prev_model.value()
+        if value <= 0:
+            return None
+        return ("Previous model prediction", value, None, None)
+
+    def _refresh_comparison(self, *_args):
         res = self.bsm_state.last_result
         pco_cen = res["Pco_tip"] * 100 if res is not None else None
         summary = (self.prediction_state.summary
                   if self.prediction_state is not None else None)
 
-        rows = summary if summary is not None and len(summary) else None
+        all_rows = summary if summary is not None and len(summary) else None
+        self._rebuild_treatment_checks(
+            list(all_rows["treatment"]) if all_rows is not None else [])
+        selected = self._selected_treatments()
+        rows = (all_rows[all_rows["treatment"].isin(selected)]
+                if all_rows is not None else None)
+
         self.tbl_compare.setRowCount(len(rows) if rows is not None else 0)
         comparisons = []
         if rows is not None:
@@ -248,21 +210,25 @@ class BiologicalPage(QWidget):
                 ml_rate = r["strike_rate"] * 100
                 self.tbl_compare.setItem(i, 0, QTableWidgetItem(str(r["treatment"])))
                 self.tbl_compare.setItem(i, 1, QTableWidgetItem(str(int(r["n"]))))
+                video = self._video_ground_truth_bar()
                 self.tbl_compare.setItem(i, 2, QTableWidgetItem(
+                    f"{video[1]:.1f}%" if video else ""))
+                self.tbl_compare.setItem(i, 3, QTableWidgetItem(
                     f"{ml_rate:.1f}% [{r['ci_lo'] * 100:.1f}%, {r['ci_hi'] * 100:.1f}%]"))
-                if pco_cen is None:
-                    self.tbl_compare.setItem(i, 3, QTableWidgetItem("Not calculated"))
-                    self.tbl_compare.setItem(i, 4, QTableWidgetItem(""))
-                else:
-                    self.tbl_compare.setItem(i, 3, QTableWidgetItem(f"{pco_cen:.1f}%"))
-                    self.tbl_compare.setItem(
-                        i, 4, QTableWidgetItem(f"{ml_rate - pco_cen:+.1f} pp"))
-                comparisons.append((str(r["treatment"]), ml_rate,
+                prev = self._previous_model_bar()
+                self.tbl_compare.setItem(i, 4, QTableWidgetItem(
+                    f"{prev[1]:.1f}%" if prev else ""))
+                self.tbl_compare.setItem(i, 5, QTableWidgetItem(
+                    f"{pco_cen:.1f}%" if pco_cen is not None else "Not calculated"))
+                comparisons.append((f"{r['treatment']} (Model 1.1 OOF)", ml_rate,
                                    r["ci_lo"] * 100, r["ci_hi"] * 100))
 
-        manual = self._manual_comparison_bar()
-        if manual is not None:
-            comparisons.append(manual)
+        video = self._video_ground_truth_bar()
+        if video is not None:
+            comparisons.append(video)
+        prev = self._previous_model_bar()
+        if prev is not None:
+            comparisons.append(prev)
 
         bsm_figures.draw_comparison_bars(self.fig_compare, pco_cen, comparisons)
         self.canvas_compare.draw()

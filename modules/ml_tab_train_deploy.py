@@ -205,7 +205,7 @@ class DeployTab:
             ("Negative class", card["negative_class"]),
             ("Included records", card["include_values"]),
             ("Input channels", len(card["input_channels"])
-             if isinstance(card["input_channels"], list) else "—"),
+             if isinstance(card["input_channels"], list) else "-"),
             ("Sequence length", card["sequence_length"]),
             ("Padding", card["padding"]),
             ("Class weighting", card["class_weighting"]),

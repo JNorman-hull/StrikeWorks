@@ -177,7 +177,7 @@ class ExportAnimationsPage(QObject):
     def _on_lib_changed(self):
         root = self.lib_selector.lib_root
         self._index_df = di.read_index(root) if root else None
-        if root:
+        if root and not self.lib_selector.syncing:
             self.status.emit(f"Library: {root.name}", 4000)
 
     # ── layout ───────────────────────────────────────────────────────────────
@@ -655,7 +655,7 @@ class ExportAnimationsPage(QObject):
             matches = self.lib_selector.video_matches_for(row["stem"])
             rows.append({
                 **row,
-                "video": "; ".join(m.name for m in matches) if matches else "—",
+                "video": "; ".join(m.name for m in matches) if matches else "-",
                 "synced": self._synced_path_for(row["stem"]).exists(),
             })
         self._sensor_rows = rows
@@ -665,7 +665,7 @@ class ExportAnimationsPage(QObject):
             rows, is_bad=lambda stem: di.is_bad(self._index_df, stem),
             is_done=lambda stem: synced_by_stem.get(stem, False),
             done_label="Synced",
-            extra=lambda r: [r["video"], "Yes" if r["synced"] else "—"])
+            extra=lambda r: [r["video"], "Yes" if r["synced"] else "-"])
 
     def _on_row_selected(self):
         items = self.tbl_sensors.selectedItems()

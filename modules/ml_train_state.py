@@ -91,13 +91,13 @@ GROUPING_PRESETS = {
                                for k in keys],
     },
     "model_1_1": {
-        "desc": "Pipeline model_1_1 — 1 | 2+3 | 4+5",
+        "desc": "Pipeline model_1_1 - 1 | 2+3 | 4+5",
         "build": lambda keys: _template(
             keys, [("region_1", ["1"]), ("region_2_3", ["2", "3"]),
                    ("region_4_5", ["4", "5"])]),
     },
     "model_1_2": {
-        "desc": "Pipeline model_1_2 — 1 | 2+3+4+5",
+        "desc": "Pipeline model_1_2 - 1 | 2+3+4+5",
         "build": lambda keys: _template(
             keys, [("region_1", ["1"]), ("region_2_5", ["2", "3", "4", "5"])]),
     },
@@ -388,7 +388,7 @@ class TrainingState(QObject):
         df = self.dataset_df
         if df is None:
             return {}
-        meta = {"name": self.dataset_path.name if self.dataset_path else "—"}
+        meta = {"name": self.dataset_path.name if self.dataset_path else "-"}
         per_file = df.groupby("file").size()
         meta["n_files"] = int(per_file.shape[0])
         meta["n_rows"] = int(len(df))

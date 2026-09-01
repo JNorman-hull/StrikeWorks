@@ -21,7 +21,7 @@ from PySide6.QtCore import QObject, Signal
 from .ml_state import PredictionState
 from .ml_tab_predict import PredictTab
 from .ml_tab_inspect import InspectTab
-from .ml_tab_report import ReportTab
+from .ml_tab_report import ReportDialog
 
 
 class MLPredictionPage(QObject):
@@ -29,10 +29,11 @@ class MLPredictionPage(QObject):
 
     status = Signal(str, int)
 
-    def __init__(self, ui, window):
+    def __init__(self, ui, window, bsm_state=None):
         super().__init__(window)
         self.ui = ui
         self.window = window
+        self.bsm_state = bsm_state
 
         self.state = PredictionState(self)
         try:
@@ -42,9 +43,15 @@ class MLPredictionPage(QObject):
         self.state.status.connect(self.status)
 
         self.tab_predict = PredictTab(ui.frame_ml_predict, self.state, window,
-                                      goto_inspect=self.goto_inspect)
+                                      goto_inspect=self.goto_inspect,
+                                      bsm_state=bsm_state)
         self.tab_inspect = InspectTab(ui.frame_ml_inspect, self.state, window)
-        self.tab_report  = ReportTab(ui.frame_ml_report, self.state, window)
+        self.report_dialog = ReportDialog(self.state, window)
+        # frame_ml_report is nested inside tab_ml_report (the actual tab
+        # page widget main.ui adds) - indexOf needs the tab page itself
+        idx = ui.tabs_ml_prediction.indexOf(ui.tab_ml_report)
+        if idx >= 0:
+            ui.tabs_ml_prediction.removeTab(idx)
 
         # auto-load the deployed models from the default folder (silent -
         # a missing folder just leaves the compatibility check red)
@@ -69,4 +76,10 @@ class MLPredictionPage(QObject):
             self.tab_inspect.apply_filter_preset(preset)
 
     def goto_report(self):
-        self.window.navigate_to("btn_export_report")
+        self.open_report()
+
+    def open_report(self):
+        """Export and report - a pop-up dialog (see ml_tab_report.py)
+        rather than a page/tab, opened from the pinned sidebar button."""
+        self.report_dialog.refresh()
+        self.report_dialog.exec()

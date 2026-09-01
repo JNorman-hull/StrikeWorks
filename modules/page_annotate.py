@@ -146,7 +146,7 @@ class AnnotationPage(QObject):
     def _on_lib_changed(self):
         self._load_index()
         self._load_dataset_stems()
-        if self.lib_selector.lib_root:
+        if self.lib_selector.lib_root and not self.lib_selector.syncing:
             self.status.emit(f"Library: {self.lib_selector.lib_root.name}", 4000)
 
     # ── layout ───────────────────────────────────────────────────────────────
@@ -502,7 +502,7 @@ class AnnotationPage(QObject):
             matches = self.lib_selector.video_matches_for(row["stem"])
             rows.append({
                 **row,
-                "video": "; ".join(m.name for m in matches) if matches else "—",
+                "video": "; ".join(m.name for m in matches) if matches else "-",
             })
         self._sensor_rows = rows
 

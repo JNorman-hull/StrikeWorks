@@ -27,12 +27,40 @@ Every generated report is written under ``OUTPUT_DATA_DIR`` - one place for
 every report's output, rather than each page picking its own folder
 (a user-chosen dialog, a library-relative path, or nothing at all).
 """
+import re
 from datetime import datetime
 from pathlib import Path
 
 from . import ml_report, settings
 
 _HR = "<hr style='margin:32px 0;border:none;border-top:2px solid #cbd5e1;'/>"
+
+
+def _slug(text):
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", str(text)).strip("_") or "model"
+
+
+def save_figure(fig, base_path, formats=("png",), dpi=300):
+    """Saves `fig` under `base_path` once per requested format (a bare
+    extension, e.g. "png"/"svg") at `dpi` - the Export and report dialog's
+    own figure-output settings, threaded down to every section that
+    renders its own matplotlib figure rather than going through
+    `ml_figures`/`ml_train_figures` (which already take `formats`/`dpi`
+    themselves). Returns the .png path if one was produced (HTML embedding
+    needs a raster image), else whichever format was produced first."""
+    formats = formats or ("png",)
+    png_path = None
+    first_path = None
+    for fmt in formats:
+        p = Path(base_path).with_suffix(f".{fmt}")
+        try:
+            fig.savefig(p, dpi=dpi, bbox_inches="tight")
+        except Exception:
+            continue
+        first_path = first_path or p
+        if fmt == "png":
+            png_path = p
+    return png_path or first_path
 
 
 class ReportSection:
@@ -190,7 +218,7 @@ def bsm_section(window):
                          available, reason, build)
 
 
-def study_design_section(window):
+def study_design_section(window, formats=("png",), dpi=300):
     # The precision calculator (Study design) always has a value - it
     # opens with sensible defaults rather than requiring input - so this
     # section is always available; the deployment plan half is folded in
@@ -226,9 +254,10 @@ def study_design_section(window):
         fig_dir = out_dir / "study_design_figures"
         fig_dir.mkdir(parents=True, exist_ok=True)
         try:
-            png = fig_dir / "precision_ci_vs_n.png"
-            precision.fig_precision.savefig(png, dpi=200, bbox_inches="tight")
-            h.append(ml_report._img_tag(png, True))
+            png = save_figure(precision.fig_precision,
+                              fig_dir / "precision_ci_vs_n", formats, dpi)
+            if png:
+                h.append(ml_report._img_tag(png, True))
         except Exception:
             pass
 
@@ -419,36 +448,46 @@ def available_model_entries(window):
     return entries
 
 
-def training_section(window, get_entry):
+def training_section(window, get_entry, all_models=None,
+                     formats=("png",), dpi=300):
     """`get_entry()` - a no-arg callable, typically the Report page's own
     model-picker combo's `currentData` - returns the `ModelEntry` to
     report on, called at build time so it always reflects whichever
     model is currently selected there, not whatever was last opened on
-    Model training > Evaluate."""
-    available = bool(available_model_entries(window))
+    Model training > Evaluate. `all_models` - an optional no-arg callable,
+    typically the dialog's "All models" checkbox - reports on every
+    available model (each with its own figures) instead of just the one
+    picked, when it returns True."""
+    entries_avail = available_model_entries(window)
+    available = bool(entries_avail)
     reason = "" if available else "No trained or deployed models found."
 
-    def build(out_dir):
-        entry_ = get_entry()
-        if entry_ is None:
-            return None
+    def _one(out_dir, entry_):
         from . import ml_model_library, ml_train_figures
-        fig_dir = out_dir / "training_figures"
+        fig_dir = out_dir / "training_figures" / _slug(entry_.label)
         fig_dir.mkdir(parents=True, exist_ok=True)
         image_paths = {}
         try:
             figs = ml_train_figures.render_model_figures(
                 fig_dir, entry_.metrics, entry_.cv_predictions,
-                entry_.curves, formats=("png",))
+                entry_.curves, formats=formats, dpi=dpi)
             image_paths = {name: paths[0] for name, paths in figs.items()}
         except Exception:
             pass
         mp = getattr(window, "ml_prediction_page", None)
         pred_state = getattr(mp, "state", None) if mp is not None else None
         app_version = getattr(pred_state, "app_version", "") if pred_state else ""
-        html = ml_model_library.build_model_report_html(
+        return ml_model_library.build_model_report_html(
             entry_, image_paths=image_paths, embed_images=True,
             app_version=app_version)
+
+    def build(out_dir):
+        want_all = bool(all_models and all_models())
+        targets = entries_avail if want_all else [get_entry()]
+        targets = [e for e in targets if e is not None]
+        if not targets:
+            return None
+        html = _HR.join(_one(out_dir, e) for e in targets)
         return {"html": html}
 
     return ReportSection("training", "Model training", available, reason,
@@ -484,12 +523,12 @@ def misclassification_section(window, get_entry):
         h.append(f"<h1 style='color:{dark};'>Misclassification Report</h1>")
         h.append(f"<h2 style='color:{dark};'>{esc(entry_.label)}</h2>")
         h.append(f"<p>{len(rows)} misclassified recording(s).</p>")
-        rows_ = [[r["file"], f"{r['true']} → {r['pred']}",
+        rows_ = [[r["file"], r["true"], r["pred"],
                   f"{r['confidence']:.3f}", r["treatment"],
                   "; ".join(dict.fromkeys(
                       p.name for p in r.get("video_matches", [])))
-                  or "—"] for r in rows]
-        h.append(table(["File", "True → Predicted", "Confidence",
+                  or "-"] for r in rows]
+        h.append(table(["File", "True", "Predicted", "Confidence",
                         "Treatment", "Video"], rows_))
 
         # session corrections are page-local editing state, not part of
@@ -536,8 +575,8 @@ def deployment_summary_section(window):
                 Path(e.model_path).name if e.model_path else e.label,
                 e.kind, e.version or "",
                 (f"{perf['overall_accuracy']:.3f}"
-                 if "overall_accuracy" in perf else "—"),
-                f"{perf['roc_auc']:.3f}" if "roc_auc" in perf else "—",
+                 if "overall_accuracy" in perf else "-"),
+                f"{perf['roc_auc']:.3f}" if "roc_auc" in perf else "-",
             ])
         h.append(table(["Model file", "Stage", "Version", "Accuracy",
                         "ROC AUC"], rows))
@@ -548,7 +587,7 @@ def deployment_summary_section(window):
                          reason, build)
 
 
-def prediction_section(window):
+def prediction_section(window, formats=("png",), dpi=300):
     mp = getattr(window, "ml_prediction_page", None)
     state = getattr(mp, "state", None) if mp is not None else None
     available = state is not None and state.summary is not None
@@ -561,7 +600,8 @@ def prediction_section(window):
         fig_dir = out_dir / "prediction_figures"
         fig_dir.mkdir(parents=True, exist_ok=True)
         try:
-            figs = ml_figures.render_figures(state, fig_dir, formats=("png",))
+            figs = ml_figures.render_figures(state, fig_dir, formats=formats,
+                                             dpi=dpi)
             image_paths = {name: paths[0] for name, paths in figs.items()}
         except Exception:
             image_paths = {}
@@ -578,7 +618,11 @@ def prediction_section(window):
                          build)
 
 
-def biological_section(window):
+def biological_section(window, formats=("png",), dpi=300):
+    """Model comparison (renamed from Biological interpretation) - ML vs
+    Blade Strike Modelling per treatment. Mortality moved to Model
+    prediction > Predict (its own "Prediction configuration"/"Prediction
+    figures" - see ml_tab_predict.py), so it no longer appears here."""
     bio = getattr(window, "biological_page", None)
     bsm_state = getattr(bio, "bsm_state", None) if bio is not None else None
     available = bsm_state is not None and bsm_state.last_result is not None
@@ -588,13 +632,12 @@ def biological_section(window):
         if bio is None:
             return None
         esc, table, dark = ml_report._esc, ml_report._data_table, ml_report._DARK
-        fig_dir = out_dir / "biological_figures"
+        fig_dir = out_dir / "model_comparison_figures"
         fig_dir.mkdir(parents=True, exist_ok=True)
 
         h = ["<div style='font-family:Segoe UI, Arial, sans-serif;"
              "color:#1e293b;font-size:13px;'>"]
-        h.append(f"<h1 style='color:{dark};'>Biological Interpretation "
-                 "Report</h1>")
+        h.append(f"<h1 style='color:{dark};'>Model Comparison Report</h1>")
         h.append(f"<h2 style='color:{dark};'>Comparison: ML vs Blade Strike "
                  "Modelling</h2>")
         t = bio.tbl_compare
@@ -608,37 +651,31 @@ def biological_section(window):
         if bio.lbl_manual.text():
             h.append(f"<p>{esc(bio.lbl_manual.text())}</p>")
         try:
-            cmp_png = fig_dir / "comparison_bars.png"
-            bio.fig_compare.savefig(cmp_png, dpi=200, bbox_inches="tight")
-            h.append(ml_report._img_tag(cmp_png, True))
-        except Exception:
-            pass
-
-        h.append(f"<h2 style='color:{dark};'>Mortality</h2>")
-        if bio.lbl_mortality.text():
-            h.append(f"<p>{esc(bio.lbl_mortality.text())}</p>")
-        try:
-            vcrit_png = fig_dir / "vcrit_sweep.png"
-            bio.fig_vcrit.savefig(vcrit_png, dpi=200, bbox_inches="tight")
-            h.append(ml_report._img_tag(vcrit_png, True))
+            cmp_png = save_figure(bio.fig_compare,
+                                  fig_dir / "comparison_bars", formats, dpi)
+            if cmp_png:
+                h.append(ml_report._img_tag(cmp_png, True))
         except Exception:
             pass
         h.append("</div>")
         return {"html": "".join(h)}
 
-    return ReportSection("biological", "Biological interpretation",
+    return ReportSection("biological", "Model comparison",
                          available, reason, build)
 
 
-def all_sections(window, training_entry_getter=None, misclass_entry_getter=None):
+def all_sections(window, training_entry_getter=None, misclass_entry_getter=None,
+                 all_models=None, formats=("png",), dpi=300):
     """Every report section, in the order the report is assembled.
 
     `training_entry_getter`/`misclass_entry_getter`: no-arg callables
     returning the `ModelEntry` those two sections should report on -
-    typically the Report page's own per-section model-picker combos
-    (`ml_tab_report.py`). Default to whichever model is first in
+    typically the Export and report dialog's own per-section model-picker
+    combos (`ml_tab_report.py`). Default to whichever model is first in
     `available_model_entries` when not supplied, so this still works
-    standalone without a combo box behind it.
+    standalone without a combo box behind it. `all_models` - optional
+    no-arg callable, the dialog's "All models" checkbox for the evaluation
+    report. `formats`/`dpi` - the dialog's figure-output settings.
     """
     if training_entry_getter is None or misclass_entry_getter is None:
         entries = available_model_entries(window)
@@ -647,12 +684,13 @@ def all_sections(window, training_entry_getter=None, misclass_entry_getter=None)
         misclass_entry_getter = misclass_entry_getter or default_getter
     return [
         bsm_section(window),
-        study_design_section(window),
+        study_design_section(window, formats=formats, dpi=dpi),
         process_section(window),
         annotation_section(window),
-        training_section(window, training_entry_getter),
+        training_section(window, training_entry_getter, all_models=all_models,
+                         formats=formats, dpi=dpi),
         misclassification_section(window, misclass_entry_getter),
         deployment_summary_section(window),
-        prediction_section(window),
-        biological_section(window),
+        prediction_section(window, formats=formats, dpi=dpi),
+        biological_section(window, formats=formats, dpi=dpi),
     ]

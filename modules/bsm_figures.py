@@ -186,7 +186,7 @@ def draw_comparison_bars(fig, cen_value, comparisons, dark=True,
         _bar_style(ax, dark, ylabel)
         fig.tight_layout()
         return
-    labels = ["CEN"] + [c[0] for c in comparisons]
+    labels = ["Cen"] + [c[0] for c in comparisons]
     heights = [cen_value] + [c[1] for c in comparisons]
     colors = [CEN_COLOR] + [OBS_COLOR] * len(comparisons)
     ax.bar(labels, heights, width=0.55, color=colors, edgecolor=fg)

@@ -121,8 +121,14 @@ class MainWindow(QMainWindow):
         self.export_animations_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
 
+        # MATHEMATICAL BLADE STRIKE MODELLING STATE - constructed before
+        # Model Prediction since its Predict tab now hosts the mortality
+        # panel (moved there from Biological interpretation / Model
+        # comparison) and needs bsm_state to read the Calculator's result.
+        self.bsm_state = BSMState(self)
+
         # MACHINE LEARNING ANALYSIS PAGES
-        self.ml_prediction_page = MLPredictionPage(widgets, self)
+        self.ml_prediction_page = MLPredictionPage(widgets, self, self.bsm_state)
         self.ml_prediction_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
         self.ml_training_page = MLTrainingPage(widgets, self)
@@ -145,11 +151,12 @@ class MainWindow(QMainWindow):
         # MATHEMATICAL BLADE STRIKE MODELLING PAGES (Chunk 5 task 5)
         # Calculator owns each run; Analysis and reporting reacts to its
         # `calculated` signal via the shared BSMState and also owns export
-        # (the standalone Reporting page was folded into it). Biological
-        # interpretation additionally compares against Model prediction's
-        # data-driven per-treatment results.
+        # (the standalone Reporting page was folded into it). Model
+        # comparison (formerly Biological interpretation) additionally
+        # compares against Model prediction's data-driven per-treatment
+        # results; bsm_state itself is constructed earlier, above, for
+        # Model prediction > Predict's mortality panel.
         # ///////////////////////////////////////////////////////////////
-        self.bsm_state = BSMState(self)
         self.bsm_calculator_page = CalculatorPage(
             widgets.content_bsm_calculator, self, self.bsm_state)
         self.bsm_calculator_page.status.connect(
@@ -252,6 +259,12 @@ class MainWindow(QMainWindow):
         # _SUBMENU_TARGETS) instead of one near-identical method per section
         for btn_name in self._SUBMENU_TARGETS:
             getattr(widgets, btn_name).clicked.connect(self.submenuButtonClick)
+
+        # "Export and report" opens a pop-up dialog (ml_tab_report.py)
+        # rather than navigating to a page/tab, so it's wired directly
+        # instead of through _SUBMENU_TARGETS/submenuButtonClick.
+        widgets.btn_export_report.clicked.connect(
+            self.ml_prediction_page.open_report)
 
         # SETTINGS PANEL (right hand box)
         def openCloseRightBox():
@@ -365,15 +378,11 @@ class MainWindow(QMainWindow):
         # Mathematical Blade Strike Modelling
         "btn_bsm_calculator":       ("page_bsm_calculator", None, None),
         "btn_bsm_sensitivity":      ("page_bsm_sensitivity", None, None),
-        # Export and report - pinned to the bottom of the sidebar (see
-        # the relocation right after uiDefinitions() below), a single
-        # destination rather than a multi-page section, so it isn't in
-        # _PANEL_SECTIONS and doesn't open the slide-out panel. Was
-        # "Report" (a Model prediction sub-page) plus the separate empty
-        # "Final reporting" stub - both replaced by report_center.py's
-        # unified hub, reached from here app-wide instead of nested
-        # under one section.
-        "btn_export_report": ("page_ml_prediction", "tabs_ml_prediction", 2),
+        # Export and report is NOT here - it's pinned to the bottom of the
+        # sidebar (see the relocation right after uiDefinitions() below)
+        # and opens a pop-up dialog (ml_tab_report.py) rather than
+        # navigating to a page/tab, wired directly to
+        # ml_prediction_page.open_report() instead.
     }
 
     def _section_for_button(self, btn_name):

@@ -614,7 +614,7 @@ class TrainTab:
         for r, (_, row) in enumerate(per_file.iterrows()):
             for c, col in enumerate(cols):
                 val = row[col]
-                text = "—" if pd.isna(val) else str(val)
+                text = "-" if pd.isna(val) else str(val)
                 self.tbl_preview.setItem(r, c, QTableWidgetItem(text))
 
     # ── widget -> state ──────────────────────────────────────────────────────
@@ -844,7 +844,7 @@ class TrainTab:
         seq = s.seq_length if not s.seq_auto \
             else s.dataset_meta.get("seq_max", "N")
         self.lbl_chan_count.setText(
-            f"{n} channels selected   —   expected input: "
+            f"{n} channels selected   -   expected input: "
             f"{n} channels × {seq} time points")
 
     def _refresh_sequence(self):
@@ -887,9 +887,9 @@ class TrainTab:
             if nonzero:
                 total = sum(nonzero)
                 k = len(nonzero)
-                lines.append("— region model —")
+                lines.append("- region model -")
                 lines += [f"{lab}:  {total / (k * c):.2f}" if c
-                          else f"{lab}:  —" for lab, c in mc_counts]
+                          else f"{lab}:  -" for lab, c in mc_counts]
         self.lbl_weights.setText("\n".join(lines))
 
     def _refresh_ready(self):

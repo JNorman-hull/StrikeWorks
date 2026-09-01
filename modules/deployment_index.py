@@ -297,7 +297,7 @@ def describe(treatment) -> str:
     runs = treatment.get("runs")
     if runs:
         bits.append(f"{runs} run(s)")
-    return f"{name} — {', '.join(bits)}" if bits else name
+    return f"{name} - {', '.join(bits)}" if bits else name
 
 
 # ── writing ──────────────────────────────────────────────────────────────────

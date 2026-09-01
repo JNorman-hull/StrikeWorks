@@ -2633,7 +2633,7 @@ class Ui_MainWindow(object):
         self.btn_deploy_train.setText(QCoreApplication.translate("MainWindow", u"Deploy", None))
         self.btn_misclassification.setText(QCoreApplication.translate("MainWindow", u"Misclassification analysis", None))
         self.btn_inspect_pred.setText(QCoreApplication.translate("MainWindow", u"Inspect", None))
-        self.btn_biological.setText(QCoreApplication.translate("MainWindow", u"Biological interpretation", None))
+        self.btn_biological.setText(QCoreApplication.translate("MainWindow", u"Model comparison", None))
         self.btn_bsm_calculator.setText(QCoreApplication.translate("MainWindow", u"Calculator", None))
         self.btn_bsm_sensitivity.setText(QCoreApplication.translate("MainWindow", u"Analysis and reporting", None))
         self.titleRightInfo.setText("")

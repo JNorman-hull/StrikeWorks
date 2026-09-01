@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 
 from . import deployment_index as di
 from . import settings
-from .ml_widgets import ACCENT, MUTED, TEXT, MetaCard, Section, apply_section_defaults
+from .ml_widgets import ACCENT, MUTED, MetaCard, Section, apply_section_defaults
 from .session_state import OUTPUT_DIR_NAME
 
 _LOGO_RESOURCE = ":/images/images/images/PyDracula_vertical.png"
@@ -66,12 +66,15 @@ class HomePage(QObject):
         outer.setContentsMargins(24, 24, 24, 24)
         outer.setSpacing(0)
 
+        outer.addStretch(1)
         content_row = QHBoxLayout()
         content_row.setSpacing(24)
-        content_row.addWidget(self._build_card_column(), stretch=0)
         content_row.addStretch(1)
+        content_row.addWidget(self._build_card_column(), stretch=0)
         content_row.addWidget(self._build_logo(), stretch=0)
-        outer.addLayout(content_row, stretch=1)
+        content_row.addStretch(1)
+        outer.addLayout(content_row)
+        outer.addStretch(1)
 
         apply_section_defaults(frame)
 
@@ -89,18 +92,13 @@ class HomePage(QObject):
         bounded to a fixed width - a "login box" rather than content
         stretched across the whole page."""
         col = QWidget()
+        col.setObjectName("homeSessionBox")
         col.setMaximumWidth(_CARD_WIDTH)
+        col.setStyleSheet(
+            "#homeSessionBox{border:1px solid #ffffff;border-radius:10px;}")
         v = QVBoxLayout(col)
-        v.setContentsMargins(0, 0, 0, 0)
+        v.setContentsMargins(20, 20, 20, 20)
         v.setSpacing(12)
-
-        title = QLabel("StrikeWorks")
-        title.setStyleSheet(f"color:{TEXT};font-size:20px;font-weight:bold;")
-        v.addWidget(title)
-        subtitle = QLabel("Select the library this session works in.")
-        subtitle.setStyleSheet(f"color:{MUTED};")
-        subtitle.setWordWrap(True)
-        v.addWidget(subtitle)
 
         grp = Section("Session library")
         gv = QVBoxLayout(grp)
@@ -221,6 +219,13 @@ class HomePage(QObject):
             self.cmb_library.blockSignals(False)
         self.lbl_library_path.setText(str(path) if path else "No library selected.")
         self._refresh_summary()
+        # the one unified "Library: X" status message for a session-wide
+        # library change - every soft-synced page's own LibrarySelector
+        # suppresses its own copy of this message while syncing (see
+        # LibrarySelector.syncing in library_widgets.py), so this is the
+        # only place it's ever shown from a Home-driven change
+        if path is not None:
+            self.status.emit(f"Library: {path.name}", 4000)
 
     # ── mode buttons ─────────────────────────────────────────────────────────
     def _go_advanced(self):

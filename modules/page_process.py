@@ -132,7 +132,7 @@ class StatCard(QFrame):
         self._title = QLabel(title)
         self._title.setStyleSheet(f"color:{_MUTED};font-size:10px;")
 
-        self._value = QLabel("—")
+        self._value = QLabel("-")
         f = QFont("Segoe UI", 18)
         f.setBold(True)
         self._value.setFont(f)
@@ -152,7 +152,7 @@ class StatCard(QFrame):
         self._detail.setText(detail)
 
     def clear(self):
-        self.set("—", "")
+        self.set("-", "")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -353,7 +353,8 @@ class ProcessPage(QObject):
             self.ui.tree_index.setRootIndex(self._idx_proxy.mapFromSource(idx_root))
 
         self._refresh_meta_tab()
-        self.status.emit(f"Library: {root.name}", 4000)
+        if not self.lib_selector.syncing:
+            self.status.emit(f"Library: {root.name}", 4000)
         self._log(f"\nLibrary: {root}")
 
     def _on_index_select(self, selected, _deselected):
@@ -692,7 +693,7 @@ class ProcessPage(QObject):
                            ("sites", "Distinct sites"),
                            ("delineated", "Delineated signals"),
                            ("treatments", "Distinct treatments")):
-                put(p, "—", cap, "No library selected")
+                put(p, "-", cap, "No library selected")
             return
 
         n = len(df)
@@ -705,14 +706,14 @@ class ProcessPage(QObject):
             put("coverage", f"{done}/{n}", "Complete deployment info",
                 f"{pct:.0f}% complete, {n - done} outstanding")
         else:
-            put("coverage", "—", "Complete deployment info", "column not present")
+            put("coverage", "-", "Complete deployment info", "column not present")
 
         if "bad_sens" in df.columns:
             bad = int((df["bad_sens"].astype(str).str.upper() == "Y").sum())
             put("quality", bad, "Flagged bad_sens",
                 f"{n - bad} sensor(s) clean")
         else:
-            put("quality", "—", "Flagged bad_sens", "column not present")
+            put("quality", "-", "Flagged bad_sens", "column not present")
 
         if "site" in df.columns:
             sites = [s for s in df["site"].astype(str).unique()
@@ -720,7 +721,7 @@ class ProcessPage(QObject):
             put("sites", len(sites), "Distinct sites",
                 ", ".join(sites[:3]) if sites else "none recorded")
         else:
-            put("sites", "—", "Distinct sites", "column not present")
+            put("sites", "-", "Distinct sites", "column not present")
 
         if "delineated" in df.columns:
             deline = int((df["delineated"].astype(str).str.upper() == "Y").sum())
@@ -729,7 +730,7 @@ class ProcessPage(QObject):
             put("delineated", f"{deline}/{n}", "Delineated signals",
                 f"{trimmed} trimmed, {n - deline} awaiting delineation")
         else:
-            put("delineated", "—", "Delineated signals", "column not present")
+            put("delineated", "-", "Delineated signals", "column not present")
 
         if "treatment" in df.columns:
             treatments = [t for t in df["treatment"].astype(str).unique()
@@ -741,7 +742,7 @@ class ProcessPage(QObject):
                 f"{runs} distinct run(s): "
                 + (", ".join(treatments[:3]) if treatments else "none recorded"))
         else:
-            put("treatments", "—", "Distinct treatments", "column not present")
+            put("treatments", "-", "Distinct treatments", "column not present")
 
     def _on_meta_select_all(self, checked):
         if checked:

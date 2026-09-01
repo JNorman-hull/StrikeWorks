@@ -181,7 +181,7 @@ def session_entries(state):
         if not res:
             continue
         out.append(ModelEntry(
-            label=f"This session — {kind} model",
+            label=f"This session - {kind} model",
             kind=kind, metrics=res["metrics"],
             cv_predictions=res["cv_predictions"], curves=res["curves"],
             source="session"))

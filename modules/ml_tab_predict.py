@@ -14,6 +14,7 @@ shared PredictionState - this module never loads models or datasets itself.
 import re
 from pathlib import Path
 
+import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
@@ -21,16 +22,20 @@ from PySide6.QtCore import Qt, QElapsedTimer, QTimer
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout,
     QHeaderView, QLabel, QMessageBox, QPushButton, QScrollArea, QSizePolicy,
-    QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
-from . import ml_figures
+from . import bsm_figures, ml_figures
+from .bsm_model import (
+    default_vcrit, recompute_mortality, recompute_mortality_at_vcrit,
+)
 from .ml_widgets import (
     ACCENT, BAD, MUTED, OK, PALETTE, PINK, TEXT, WARN,
     CARD_W2, CARD_H2, MetaCard, RingCard, Spinner, Section, apply_section_defaults,
 )
 
 FIG_MIN_W, FIG_MIN_H = 320, 300
+_VCRIT_MIN, _VCRIT_MAX, _VCRIT_STEP = 2.0, 10.0, 0.25
 
 
 class _NumItem(QTableWidgetItem):
@@ -58,10 +63,11 @@ def _model_version(path):
 class PredictTab:
     """Builds the Predict tab UI into `frame` and binds it to `state`."""
 
-    def __init__(self, frame, state, window, goto_inspect=None):
+    def __init__(self, frame, state, window, goto_inspect=None, bsm_state=None):
         self.state = state
         self.window = window
         self._goto_inspect = goto_inspect
+        self.bsm_state = bsm_state
 
         self._elapsed = QElapsedTimer()
         self._tick = QTimer()
@@ -72,7 +78,9 @@ class PredictTab:
         self.canvas_bin = FigureCanvas(self.fig_bin)
         self.fig_mc = Figure(figsize=(4.3, 3.4), dpi=100)
         self.canvas_mc = FigureCanvas(self.fig_mc)
-        for c in (self.canvas_bin, self.canvas_mc):
+        self.fig_vcrit = Figure(figsize=(4.3, 3.4), dpi=100)
+        self.canvas_vcrit = FigureCanvas(self.fig_vcrit)
+        for c in (self.canvas_bin, self.canvas_mc, self.canvas_vcrit):
             c.setMinimumSize(FIG_MIN_W, FIG_MIN_H)
             c.setSizePolicy(QSizePolicy.Policy.Expanding,
                             QSizePolicy.Policy.Expanding)
@@ -83,9 +91,35 @@ class PredictTab:
         self._refresh_dataset()
         self._refresh_config()
         self._refresh_validation()
+        if self.bsm_state is not None:
+            self.bsm_state.calculated.connect(self._on_bsm_result)
+            if self.bsm_state.last_result is not None:
+                self._on_bsm_result(self.bsm_state.last_result)
+            else:
+                self._run_vcrit_sweep()
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
+        outer = QVBoxLayout(frame)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        tabs = QTabWidget()
+        outer.addWidget(tabs)
+
+        tab1 = QWidget()
+        self._build_setup_tab(tab1)
+        tabs.addTab(tab1, "Model, dataset and run")
+
+        tab2 = QWidget()
+        self._build_results_tab(tab2)
+        tabs.addTab(tab2, "Results")
+
+        ml_figures.draw_strike_rate(self.fig_bin, None, dark=True)
+        ml_figures.draw_region(self.fig_mc, None, [], dark=True)
+
+        apply_section_defaults(frame)
+
+    def _build_setup_tab(self, frame):
         outer = QVBoxLayout(frame)
         outer.setContentsMargins(0, 0, 0, 0)
 
@@ -181,7 +215,7 @@ class PredictTab:
         mode_row.addWidget(self.cmb_mode, stretch=1)
         gv.addLayout(mode_row)
 
-        self.lbl_thresh = QLabel("Decision threshold: —")
+        self.lbl_thresh = QLabel("Decision threshold: -")
         self.lbl_thresh.setStyleSheet(f"color:{TEXT};")
         gv.addWidget(self.lbl_thresh)
 
@@ -204,6 +238,31 @@ class PredictTab:
         self.lbl_override_note.setStyleSheet(f"color:{WARN};")
         self.lbl_override_note.setVisible(False)
         gv.addWidget(self.lbl_override_note)
+
+        # ── mortality inputs (moved here from Biological interpretation /
+        # Model comparison - the BSM run this reads is independent of the
+        # model prediction above, only the species/critical-velocity
+        # choice lives on this page now) ────────────────────────────────
+        mort_row = QHBoxLayout()
+        self.cmb_species = QComboBox()
+        self.cmb_species.addItems(["scaly", "eel"])
+        self.cmb_species.currentIndexChanged.connect(self._on_species_changed)
+        mort_row.addWidget(self._muted("Species"))
+        mort_row.addWidget(self.cmb_species)
+        self.spin_eel_vcrit = QDoubleSpinBox()
+        self.spin_eel_vcrit.setRange(0.0, 50.0)
+        self.spin_eel_vcrit.setDecimals(2)
+        self.spin_eel_vcrit.setValue(2.0)
+        self.spin_eel_vcrit.setSuffix(" m/s")
+        self.spin_eel_vcrit.valueChanged.connect(self._on_species_changed)
+        mort_row.addWidget(self._muted("Eel critical velocity"))
+        mort_row.addWidget(self.spin_eel_vcrit)
+        mort_row.addStretch()
+        gv.addLayout(mort_row)
+        self.lbl_mortality = QLabel("")
+        self.lbl_mortality.setStyleSheet(f"color:{TEXT};font-weight:bold;")
+        self.lbl_mortality.setWordWrap(True)
+        gv.addWidget(self.lbl_mortality)
 
         gv.addStretch()
         row2.addWidget(grp_cfg, stretch=1)
@@ -236,6 +295,25 @@ class PredictTab:
         rv.addStretch()
         row2.addWidget(grp_run, stretch=1)
         v.addLayout(row2)
+
+        v.addStretch()
+
+    def _build_results_tab(self, frame):
+        outer = QVBoxLayout(frame)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet(
+            "QScrollArea{border:none;background:transparent;}")
+        outer.addWidget(scroll)
+
+        body = QWidget()
+        body.setStyleSheet("background:transparent;")
+        scroll.setWidget(body)
+        v = QVBoxLayout(body)
+        v.setContentsMargins(4, 6, 4, 6)
+        v.setSpacing(10)
 
         # ── row 3: prediction summary cards ─────────────────────────────────
         grp_sum = Section("Prediction summary")
@@ -276,16 +354,12 @@ class PredictTab:
         figs_split.setChildrenCollapsible(False)
         figs_split.addWidget(self.canvas_bin)
         figs_split.addWidget(self.canvas_mc)
-        figs_split.setSizes([1, 1])
+        figs_split.addWidget(self.canvas_vcrit)
+        figs_split.setSizes([1, 1, 1])
         fv.addWidget(figs_split)
         v.addWidget(grp_figs)
 
         v.addStretch()
-
-        ml_figures.draw_strike_rate(self.fig_bin, None, dark=True)
-        ml_figures.draw_region(self.fig_mc, None, [], dark=True)
-
-        apply_section_defaults(frame)
 
     # ── state wiring ─────────────────────────────────────────────────────────
     def _connect_state(self):
@@ -444,7 +518,7 @@ class PredictTab:
         else:
             self.lbl_thresh.setText(
                 f"Decision threshold: {dep:.4f} (deployed)"
-                if dep is not None else "Decision threshold: —")
+                if dep is not None else "Decision threshold: -")
 
         self.chk_override.blockSignals(True)
         self.chk_override.setChecked(s.threshold_overridden)
@@ -570,7 +644,7 @@ class PredictTab:
         ml_figures.draw_region(self.fig_mc, s.summary,
                                s.class_names if mc_run else [], dark=True)
         self.canvas_mc.draw()
-        s.status.emit(f"Prediction complete — {k} strikes in {n} recordings.",
+        s.status.emit(f"Prediction complete - {k} strikes in {n} recordings.",
                       6000)
 
     def _on_run_failed(self, msg):
@@ -689,3 +763,53 @@ class PredictTab:
     def _inspect_low_conf(self):
         if self._goto_inspect:
             self._goto_inspect("low_conf")
+
+    @staticmethod
+    def _muted(text):
+        lab = QLabel(text)
+        lab.setStyleSheet(f"color:{MUTED};")
+        return lab
+
+    # ── mortality (BSM, moved here from Biological interpretation / Model
+    # comparison - independent of the model prediction above, driven only
+    # by the species/critical-velocity choice and the Calculator's last
+    # BSM run) ───────────────────────────────────────────────────────────
+    def _on_bsm_result(self, res):
+        self._recalculate_mortality()
+        self._run_vcrit_sweep()
+
+    def _on_species_changed(self, *_args):
+        self._recalculate_mortality()
+        self._run_vcrit_sweep()
+
+    def _recalculate_mortality(self):
+        res = self.bsm_state.last_result if self.bsm_state else None
+        if res is None:
+            return
+        species = self.cmb_species.currentText()
+        eel_vcrit = self.spin_eel_vcrit.value()
+        out = recompute_mortality(res, species, eel_vcrit=eel_vcrit,
+                                  threshold=None)
+        self.lbl_mortality.setText(
+            f"{species}: Pm={out['Pm'] * 100:.2f}%, S={out['S'] * 100:.2f}% "
+            f"(Pco unchanged from the Calculator run, "
+            f"{res['Pco_tip'] * 100:.2f}%).")
+
+    def _run_vcrit_sweep(self):
+        res = self.bsm_state.last_result if self.bsm_state else None
+        if res is None:
+            bsm_figures.draw_vcrit_sweep(self.fig_vcrit, [], None, None, None)
+            self.canvas_vcrit.draw()
+            return
+        species = self.cmb_species.currentText()
+        eel_vcrit = self.spin_eel_vcrit.value()
+        vcrit_vals = np.arange(_VCRIT_MIN, _VCRIT_MAX + 1e-9, _VCRIT_STEP)
+        pm_vals = np.array([
+            recompute_mortality_at_vcrit(res, species, float(v))["Pm"] * 100
+            for v in vcrit_vals])
+        default_v = default_vcrit(res, species, eel_vcrit=eel_vcrit)
+        default_pm = recompute_mortality_at_vcrit(
+            res, species, default_v)["Pm"] * 100
+        bsm_figures.draw_vcrit_sweep(
+            self.fig_vcrit, vcrit_vals, pm_vals, default_v, default_pm)
+        self.canvas_vcrit.draw()

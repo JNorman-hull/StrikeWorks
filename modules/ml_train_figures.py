@@ -402,9 +402,10 @@ def draw_all(figures, metrics, cv_predictions, curves, dark=False):
 
 
 def render_model_figures(out_dir, metrics, cv_predictions, curves,
-                         formats=("png",)):
+                         formats=("png",), dpi=300):
     """Render the evaluation figures for one model to files (publication
-    styling). Returns {figure name: path} for the first format."""
+    styling). Returns {figure name: [path, ...]}, one path per requested
+    format - callers that only want one (`paths[0]`) get the first."""
     from matplotlib.figure import Figure
 
     binary = "roc_auc" in (metrics or {}).get("out_of_fold_performance", {})
@@ -444,9 +445,9 @@ def render_model_figures(out_dir, metrics, cv_predictions, curves,
     for name, draw in spec:
         fig = Figure(figsize=(6.0, 4.4), dpi=100)
         draw(fig)
+        out[name] = []
         for fmt in formats:
             p = out_dir / f"{name}.{fmt}"
-            fig.savefig(p, dpi=300, bbox_inches="tight")
-            if name not in out:
-                out[name] = p
+            fig.savefig(p, dpi=dpi, bbox_inches="tight")
+            out[name].append(p)
     return out

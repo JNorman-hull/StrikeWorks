@@ -609,7 +609,7 @@ class DatasetPage(QObject):
                 f"Dataset created - {n_ok} files, {n_rows:,} rows.", 5000)
             self.dataset_ready.emit(
                 self._result,
-                "Sensor Processing — Dataset creation")
+                "Sensor Processing - Dataset creation")
         else:
             self.status.emit("Dataset creation produced no output.", 6000)
         self._refresh_append_enabled()
@@ -709,7 +709,7 @@ class DatasetPage(QObject):
             f"{len(dropped)} dropped, {len(merged):,} rows.", 6000)
         self.dataset_ready.emit(
             self._result,
-            "Sensor Processing — Dataset creation (annotated)")
+            "Sensor Processing - Dataset creation (annotated)")
 
     # ── figure ───────────────────────────────────────────────────────────────
     def _bar(self, ax, labels, heights, title, ylabel, fmt, ymax=None):

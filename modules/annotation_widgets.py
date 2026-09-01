@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 from . import annotation_schema as asch
 from .ml_widgets import MUTED
 
-_BLANK = "—"   # em dash: "no value entered"
+_BLANK = "-"   # em dash: "no value entered"
 
 
 class AnnotationValueEditor(QWidget):
@@ -107,7 +107,7 @@ class _ValueListDialog(QDialog):
         super().__init__(parent)
         self.var_name = var_name
         var = asch.get(var_name)
-        self.setWindowTitle(f"Known values — {var.label if var else var_name}")
+        self.setWindowTitle(f"Known values - {var.label if var else var_name}")
         self.resize(320, 360)
 
         v = QVBoxLayout(self)
@@ -156,7 +156,7 @@ class _ValueListDialog(QDialog):
         var = asch.get(self.var_name)
         label = var.label if var else self.var_name
         text, ok = QInputDialog.getText(
-            self, f"Add value — {label}", "New value:")
+            self, f"Add value - {label}", "New value:")
         text = text.strip()
         if not ok or not text:
             return

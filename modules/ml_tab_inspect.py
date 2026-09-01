@@ -449,7 +449,7 @@ class InspectTab:
             is_strike = int(r["predicted_strike"]) == 1
             items = [
                 QTableWidgetItem(str(r["file"])),
-                QTableWidgetItem(str(r.get("treatment", "—"))),
+                QTableWidgetItem(str(r.get("treatment", "-"))),
                 QTableWidgetItem("Strike" if is_strike else "No strike"),
                 _NumItem(f"{r['probability_strike']:.3f}",
                          float(r["probability_strike"])),
@@ -459,15 +459,15 @@ class InspectTab:
                 region = r.get("predicted_region", "")
                 rc = r.get("region_confidence")
                 items.append(QTableWidgetItem(
-                    str(region) if isinstance(region, str) and region else "—"))
+                    str(region) if isinstance(region, str) and region else "-"))
                 items.append(_NumItem(
-                    f"{rc:.3f}" if pd.notna(rc) else "—",
+                    f"{rc:.3f}" if pd.notna(rc) else "-",
                     float(rc) if pd.notna(rc) else -1.0))
             if have_gt:
                 gt_strike, gt_label, _gt_cls = s.ground_truth_for(r)
                 if gt_strike is None:
-                    items.append(QTableWidgetItem("—"))
-                    items.append(QTableWidgetItem("—"))
+                    items.append(QTableWidgetItem("-"))
+                    items.append(QTableWidgetItem("-"))
                 else:
                     items.append(QTableWidgetItem(gt_label))
                     match = is_strike == gt_strike
@@ -538,7 +538,7 @@ class InspectTab:
 
         is_strike = int(row["predicted_strike"]) == 1
         self.lbl_rec.setText(f"Recording: {row['file']}")
-        self.lbl_tx.setText(f"Treatment: {row.get('treatment', '—')}")
+        self.lbl_tx.setText(f"Treatment: {row.get('treatment', '-')}")
         self.lbl_verdict.setText("STRIKE" if is_strike else "NO STRIKE")
         self.lbl_verdict.setStyleSheet(
             f"color:{PINK if is_strike else INFO};"

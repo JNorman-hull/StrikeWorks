@@ -88,6 +88,11 @@ class LibrarySelector(QWidget):
         self._list_columns = list(list_columns)
         self._cache = None           # last populate_sensor_list() call, for re-filtering
         self._session_state = session_state
+        self._syncing = False        # True while set_library() is soft-syncing this
+                                      # picker to the session library - hosts check
+                                      # this to skip their own "Library: X" status
+                                      # message, which the session change already
+                                      # gets exactly once from wherever it originated
         self._build(sensor_list)
         self._connect()
         start = session_state.library if session_state is not None else None
@@ -104,13 +109,27 @@ class LibrarySelector(QWidget):
         fresh everywhere it's reflected, not just on Home. Also how
         `SessionState.library_changed` re-syncs this picker when the
         session library changes elsewhere."""
-        if path is None:
-            self.cmb_library.blockSignals(True)
-            self.cmb_library.setCurrentIndex(-1)
-            self.cmb_library.blockSignals(False)
-            self._on_library_changed()
-            return
-        self._populate_libraries(select=path)
+        self._syncing = True
+        try:
+            if path is None:
+                self.cmb_library.blockSignals(True)
+                self.cmb_library.setCurrentIndex(-1)
+                self.cmb_library.blockSignals(False)
+                self._on_library_changed()
+                return
+            self._populate_libraries(select=path)
+        finally:
+            self._syncing = False
+
+    @property
+    def syncing(self):
+        """True while a soft-sync (`set_library()`, from the session
+        library changing elsewhere) is driving this picker, as opposed to
+        the user changing this page's own combo directly. Checked by host
+        pages before emitting their own "Library: X" status message, so
+        one session-wide library change doesn't produce one such message
+        per soft-synced page."""
+        return self._syncing
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, sensor_list):

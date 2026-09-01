@@ -342,7 +342,7 @@ class EvaluateTab:
             cv_rows.append([key, (f"{mean:.3f}", mean), (f"{std:.3f}", std)])
         if "n_folds" in cv:
             cv_rows.insert(0, ["n_folds", (str(cv["n_folds"]),
-                                           cv["n_folds"]), ("—", 0)])
+                                           cv["n_folds"]), ("-", 0)])
         self._fill(self.tbl_cv, ["Metric", "Mean", "SD"], cv_rows)
 
         # figures

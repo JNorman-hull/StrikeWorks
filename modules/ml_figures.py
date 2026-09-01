@@ -156,7 +156,7 @@ def draw_region(fig, summary, class_names, dark=False):
     fig.tight_layout()
 
 
-def render_figures(state, out_dir, formats=("png",)):
+def render_figures(state, out_dir, formats=("png",), dpi=300):
     """Render the prediction figures to files (publication styling).
 
     Only figures applicable to the run are produced (the region figure needs
@@ -174,7 +174,7 @@ def render_figures(state, out_dir, formats=("png",)):
     out["predicted_strike_rate"] = []
     for fmt in formats:
         p = out_dir / f"predicted_strike_rate.{fmt}"
-        fig.savefig(p, dpi=300, bbox_inches="tight")
+        fig.savefig(p, dpi=dpi, bbox_inches="tight")
         out["predicted_strike_rate"].append(p)
 
     if state.class_names and state.run_meta.get("mode") == "multiclass":
@@ -183,6 +183,6 @@ def render_figures(state, out_dir, formats=("png",)):
         out["predicted_strike_region"] = []
         for fmt in formats:
             p = out_dir / f"predicted_strike_region.{fmt}"
-            fig2.savefig(p, dpi=300, bbox_inches="tight")
+            fig2.savefig(p, dpi=dpi, bbox_inches="tight")
             out["predicted_strike_region"].append(p)
     return out

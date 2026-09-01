@@ -351,7 +351,7 @@ class MetaCard(QFrame):
     @staticmethod
     def _fmt(value):
         if value is None or value == "" or value == []:
-            return "—"
+            return "-"
         if isinstance(value, (list, tuple)):
             return ", ".join(str(v) for v in value)
         return str(value)

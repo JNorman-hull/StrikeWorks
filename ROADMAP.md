@@ -7,11 +7,11 @@ to be picked up cold from this file plus the code.
 
 A dummy library, "Testbed" (single treatment), exists in the libraries
 folder for exercising the whole pipeline end to end during development -
-see "Future — end-to-end pipeline test bed" below.
+see "Future - end-to-end pipeline test bed" below.
 
 ## Done
 
-**Chunk 1 — ML analysis polish** (commit `f05f200`)
+**Chunk 1 - ML analysis polish** (commit `f05f200`)
 Collapsible `Section` panels everywhere with `SECTION_DEFAULTS` in
 `modules/ml_widgets.py` (all open; flip to `False` to start collapsed).
 Predict: compatibility folded into the Dataset box, READY TO PREDICT
@@ -23,15 +23,15 @@ misclassifications, ROC/PR derived from CV predictions when absent,
 multiclass gained one-vs-rest ROC and accuracy-by-treatment, report export
 includes misclassifications and per-treatment performance.
 
-**Chunk 2 — label/target flexibility** (commit `6a4de50`)
+**Chunk 2 - label/target flexibility** (commit `6a4de50`)
 `LevelGrouper` widget; class variable is any small-cardinality per-file
 column; `GROUPING_PRESETS` are templates applied to observed levels;
 `level_key()` shared by `ml_train_state` and `train_worker`; editable class
 names and positive-class name.
 
-**Chunk 3 — Prepare page: sensor configurations and study design**
+**Chunk 3 - Prepare page: sensor configurations and study design**
 
-*Tab 1 — Sensor configuration.* `modules/sensor_config.py` is the single
+*Tab 1 - Sensor configuration.* `modules/sensor_config.py` is the single
 source of truth: a `SensorConfig`, the shipped `rapid` and `micro_eel`
 configurations, a JSON store in `~/.strikeworks_sensors.json` (which only
 holds a shipped configuration once it has actually been edited, so app
@@ -40,18 +40,18 @@ updates to the defaults are not shadowed), a `PARSERS` registry and a
 (extension, packet size, native rate, how it reaches the grid) plus two
 rates that are deliberately separate:
 
-  * `timebase_hz` — the counter clock the raw files are stamped from
-  * `output_rate_hz` — the uniform grid the processed CSV is written on
+  * `timebase_hz` - the counter clock the raw files are stamped from
+  * `output_rate_hz` - the uniform grid the processed CSV is written on
 
 RAPID is 2000/2000. `.imp` arrives at 100 Hz and is interpolated up. `.hig`
 arrives at 2000 Hz but only in bursts around events (~29% of a run, gaps up
 to 13 s), so it is *standardised*: every recorded sample keeps its own slot
 and the gaps are filled with 0. Also on the tab: which three-axis sensors
 get a magnitude channel (`higacc`/`inacc`/`rot`, all on by default) and the
-nadir detection method — one method today, dispatched through
+nadir detection method - one method today, dispatched through
 `rapid_functions.NADIR_METHODS` so a second is a function plus an entry.
 
-The analysis window is *not* here — it is a downstream decision; the sensor
+The analysis window is *not* here - it is a downstream decision; the sensor
 only answers what a window is worth in samples (`window_samples(seconds)`).
 
 `modules/index_schema.py` holds the index's column list, transcribed from
@@ -66,11 +66,11 @@ parses names with the configured pattern and calls the registered parser;
 window; `page_dataset` derives target rows from its 200 ms window and the
 sensor's rate; `rapid_functions` takes clock, packet sizes, output rate,
 per-file method, magnitudes and nadir method as arguments. RAPID output is
-byte-for-byte unchanged — including `higacc_mag_g`, which the reader
+byte-for-byte unchanged - including `higacc_mag_g`, which the reader
 rounds to the device's precision and post-processing must therefore not
 recompute.
 
-*Tab 2 — Study design.* Plans a deployment: site, deployment ID, machine
+*Tab 2 - Study design.* Plans a deployment: site, deployment ID, machine
 and type, then one treatment per row (head, flow, BEP, RPM) with a run
 count, each `+` copying the row above. Saving writes one row per treatment
 *per run* into the library's `global_sensor_index.csv` with
@@ -88,7 +88,7 @@ extraction); the Metadata tab still edits individual sensors.
 
 ## Done (continued)
 
-**Chunk 4, Stage 1 — Annotation & Video Analysis section**
+**Chunk 4, Stage 1 - Annotation & Video Analysis section**
 A third top-level sidebar section, wired the same way Sensor Processing and
 Machine Learning Analysis are (`main.py:_PANEL_SECTIONS`/`_configure_panel`/
 `openPanel`, one shared `extraTopMenu` frame in `main.ui`). Dataset creation
@@ -97,7 +97,7 @@ and click handler; the page widget itself never needed to move - stacked-
 widget children are flat, menu structure is a `main.py`-side concept).
 `modules/page_annotate.py` added as the new page's controller.
 
-**Chunk 4, Stage 2 — the Annotate page**
+**Chunk 4, Stage 2 - the Annotate page**
 Built on Inspect's own shape (`ml_tab_inspect.py`): a fixed-width browser on
 the left (library -> deployment -> treatment -> sensor, mirroring Inspect's
 filter-combo pattern), a detail area filling the rest, itself split half
@@ -173,14 +173,14 @@ The video button globs `<deployment>/<treatment>/<video-folder>/
 `subprocess.Popen` (disabled with no match; a chooser if more than one) -
 no new dependency, no embedded player.
 
-## Chunk 4 — Annotation & Video Analysis page tree (remaining)
+## Chunk 4 - Annotation & Video Analysis page tree (remaining)
 
-### Page — Annotate
+### Page - Annotate
 Done - see above. Superseded by Chunk 5: the Annotate page gains a
 Reporting tab and Delineation/Misclassification are now tasks 6/3 below,
 in the new section layout, not standalone additions to the old tree.
 
-## Chunk 5 — app-wide restructure (in progress)
+## Chunk 5 - app-wide restructure (in progress)
 
 A full information-architecture pass: new top-level sections, several
 current tabs promoted to their own sidebar entries, and a handful of
@@ -1618,7 +1618,191 @@ per-page tweaks.
     hifistrike_settings.json` afterward and confirmed to leave it in the
     correct end state, not just assumed clean.
 
-## Deferred — multiple collision detection
+14. Follow-up (2026-09-01), same session again: the "still 3 messages"
+    root cause, a Home visual polish pass, Export and report's conversion
+    from a tab to a pop-up dialog, a Misclassification analysis cleanup
+    pass, an app-wide em dash -> hyphen sweep, and the first step of the
+    two-species BSM plan (Biological interpretation -> Model comparison,
+    Mortality moved to Predict).
+
+    Library message bug, actually fixed this time: item 13's fix (blocked
+    signals through `setCurrentIndex`) correctly cut 6 messages to 3, but
+    "3" was still one per soft-synced page (Process/Annotate/Export
+    animations), not the single unified message the user actually asked
+    for. Root cause: every `LibrarySelector.library_changed` handler that
+    shows a "Library: X" status message fires the same way whether the
+    library changed because *that* page's own combo was touched, or
+    because the session library changed elsewhere and this picker just
+    soft-synced to it. Fix: `LibrarySelector` now tracks `self._syncing`
+    (true only while `set_library()` - the soft-sync entry point - is
+    driving a change) and exposes it as `.syncing`; the three host pages'
+    own status-emit sites now skip the message when `syncing` is true.
+    Home's own `_on_session_library_changed` is the one place left that
+    unconditionally emits "Library: X" - since every session-wide change
+    always reaches it via `session_state.library_changed`, this is the
+    single unified message point, while a user's direct change on
+    Process/Annotate/Export's own combo (not session-driven) still gets
+    its own message as before, matching soft sync's "independently
+    overridable per page" design. Verified headless both ways: a
+    session-wide change now produces exactly 1 message (from Home, not
+    the 3 soft-synced pages); a direct change on one page's own combo
+    still produces exactly 1 message (from that page).
+
+    Home page polish: session library box and logo now centred as one
+    unit both horizontally and vertically (stretches on every side of
+    the row, not just between them) so they stay centred through window
+    resizes rather than pinned left/right. The box got a white 1px
+    outline (`#homeSessionBox` object-name-scoped stylesheet - plain
+    `QWidget{border:...}` would have leaked onto every child widget,
+    since Qt stylesheets cascade by type selector). The "StrikeWorks /
+    Select the library this session works in" heading text removed - the
+    logo already carries the branding, and the box's own "Session
+    library" section title already says what it's for.
+
+    Export and report: was the third tab of Model Prediction; now a
+    pop-up `QDialog` (`ReportDialog` in `ml_tab_report.py`, same "simple
+    pop-out window" shape Adjustments already established) opened from
+    the pinned sidebar button, which is wired directly to `ml_prediction_
+    page.open_report()` instead of through `_SUBMENU_TARGETS`/
+    `submenuButtonClick` now that it doesn't navigate to a page/tab. The
+    Report tab is removed from `tabs_ml_prediction` at runtime via
+    `removeTab` (needed `ui.tab_ml_report`, the actual tab-page widget
+    main.ui adds - not `ui.frame_ml_report`, the frame nested inside it;
+    caught by checking `tabs_ml_prediction.count()` headlessly rather than
+    assuming `indexOf` had matched). Report sections are now one row per
+    section (checkbox + inline status, not a wrapped line underneath) and
+    four actions replace the old five: Preview report (assembles the
+    checked sections and opens `report.html` in the system browser via
+    `QDesktopServices.openUrl`), Export full report (same assembly,
+    written to disk), Export all (selects every *available* section
+    first), Export StrikeWorks analysis (renamed from "Export analysis
+    (prediction only)" - unchanged underneath, `ml_report.export_analysis`
+    already was the self-contained report+tables+figures+provenance
+    package this label describes). A new Figure output section exposes
+    `.png`/`.svg` checkboxes (both on by default) and a DPI spinner
+    (300 default) that thread through to every section that renders its
+    own figure - `report_center.save_figure()` is the new shared helper
+    for the sections using bare matplotlib `Figure.savefig()`
+    (Study design, Model comparison), and `ml_figures.render_figures`/
+    `ml_train_figures.render_model_figures` both gained a `dpi=` kwarg
+    alongside their existing `formats=`. A stub "Output size" combo sits
+    alongside, disabled, for planned per-figure size presets - not built
+    this pass.
+
+    Real bug found and fixed while wiring the evaluation report's figures
+    through: `ml_train_figures.render_model_figures` returned `{name:
+    Path}` (one path, not a list) while every caller destructured it as
+    `{name: paths[0] for name, paths in figs.items()}` - `Path` isn't
+    subscriptable, so this raised on every call and was silently
+    swallowed by the `try/except Exception: pass` around it. The model
+    evaluation/training report has therefore never actually included its
+    figures. Fixed by returning `{name: [path, ...]}` like `ml_figures.
+    render_figures` already does. The evaluation report also gained an
+    "All models" checkbox (only enabled with more than one model
+    available) - checked, `training_section`'s `build()` iterates every
+    available model instead of just the one picked in the combo,
+    concatenating each one's own report+figures.
+
+    Misclassification analysis: the video column's duplicate-filename
+    display bug was a second copy of the same fix - `report_center.py`'s
+    own copy of this table already deduplicated by name
+    (`dict.fromkeys(p.name for p in matches)`) but the page's own table
+    population never got the matching fix, so two on-disk videos with the
+    same name in different folders (a real, not just resolved-duplicate,
+    case) still showed twice on the page itself. "Generate misclassification
+    report" button removed (report_center.py's unified hub already covers
+    this - `misclassification_section`). The left panel's fixed 380px
+    minimum width removed so it resizes like the rest of the splitter.
+    "True -> Predicted" became two columns, "True" and "Predicted" storing
+    each value separately - the arrow checked app-wide and found nowhere
+    else in this true/predicted shape (other arrows in the app are
+    unrelated navigation/log affordances, left alone). The signal plot
+    gained the same "Model selection" / "Full sensor" choice Inspect's own
+    "Model input signal" already offers, reusing the same two-option
+    combo idiom - "Model selection" keeps the existing model-channels-only
+    behaviour, "Full sensor" lists every numeric column in the file. The
+    "Drag to box-zoom..." hint text (a leftover from a different page's
+    copy-paste origin, not actually describing anything unique here) is
+    no longer set on file load.
+
+    Em dash -> hyphen sweep: every literal em dash (`—`) replaced
+    with a plain hyphen across every source/doc file that had one (19
+    files - `.py`, `.ui`, `.md`) via a small one-off script rather than
+    by hand, since it's a pure mechanical substitution with no room for
+    misjudgement. Arrow characters (`→`) were left alone outside the
+    misclassification true/predicted case above - that was a specific,
+    named ask, not a request to strip every navigational "->" cue
+    app-wide too.
+
+    First step of the two-species BSM plan: Biological interpretation
+    renamed to Model comparison (`btn_biological`'s text in both main.ui
+    and the generated `ui_main.py` - main.ui alone doesn't drive the
+    running app, `ui_main.py` does). Its Mortality box (species picker,
+    eel critical-velocity input, the vcrit sensitivity sweep figure)
+    moved out entirely to Model prediction > Predict, since mortality is
+    a property of the *model's* prediction run, not something that
+    belongs on a page about comparing it against BSM. This forced `bsm_
+    state` to be constructed earlier in main.py - before `MLPredictionPage`
+    now, not after - since Predict's mortality panel needs it; `Biological
+    Page` (still the class name; only the sidebar text and report title
+    changed, to avoid renaming call sites for no behavioural benefit) no
+    longer takes/needs it at all beyond what Model comparison's own table
+    already used it for. Predict itself split into two sub-tabs ("Model,
+    dataset and run" / "Results") via a nested `QTabWidget`, matching the
+    request precisely: tab 1 is Model + Dataset + Prediction configuration
+    (now including the moved-in species/vcrit inputs) + Run; tab 2 is
+    Prediction summary + Results by treatment + Prediction figures (now
+    three panels - strike rate, region, and the moved-in vcrit sweep).
+    `report_center.py`'s `biological_section` renamed to "Model
+    comparison" in its title (key left as `"biological"` internally) and
+    no longer reports Mortality content, since that's no longer this
+    page's data.
+
+    Comparison page (Model comparison's own "Comparison" box, not
+    renamed - it's still comparing, just no longer alongside Mortality)
+    relabelled per the request: "Manual" -> "Video ground truth" (same
+    sensors-deployed/strikes-observed inputs); the existing ML strike
+    rate column is labelled "Model 1.1 OOF" (it already was the current
+    model's own out-of-fold cross-validated rate, just unlabelled as
+    such); "Previous model prediction" is a new manually-entered
+    percentage input (no per-treatment source exists for it, so it's one
+    deployment-wide value like Video ground truth, not per-treatment);
+    "Cen" is the existing BSM Pco value, relabelled from "CEN"/"BSM Pco
+    (CEN)". Treatments are now a checklist (one box per treatment found
+    in the current prediction summary, all checked by default, state
+    preserved across refreshes by name) rather than every treatment
+    always appearing - unchecking one drops it from both the table and
+    the comparison bar figure. Caveat, stated plainly: the request to
+    "recreate the figure pf_q09_barplot_pco.png" from an external source
+    script was implemented as relabelling the existing flat per-entry bar
+    chart (`bsm_figures.draw_comparison_bars`) to use the four requested
+    labels, not a verified pixel-for-pixel match to that file - it wasn't
+    provided or found in this repo to compare against.
+
+    The Blade Strike Modelling report (`bsm_report.py`) was assessed
+    against "should be the full report, like the source ported code" and
+    left unchanged: it already carries inputs, derived geometry, the full
+    symbol-substituted-numbers-result equation breakdown (the same form
+    the standalone Mathematical BSM scripts print to console), results
+    table, and every available figure - a deliberate earlier design
+    decision (its own docstring) to match the app's report family rather
+    than port the old MVP's separate MathJax builder. Flagging this
+    explicitly rather than silently doing nothing, in case "full report"
+    meant something more specific that wasn't visible from this repo
+    alone.
+
+    Verified headless throughout: full `MainWindow()` construction after
+    every batch of changes, not just at the end; the library-message fix
+    confirmed both directions (1 message on a session-wide change, 1 on a
+    direct per-page change - not 0, not 3); the Report tab's actual
+    removal from `tabs_ml_prediction` confirmed via `.count()`/`.tabText()`
+    after the `ui.frame_ml_report` vs `ui.tab_ml_report` `indexOf` bug was
+    caught and fixed; Predict's inner tab widget and the moved-in
+    mortality controls (`cmb_species`, `canvas_vcrit`) confirmed present
+    on the tab object; every module compiled (`py_compile`) after each
+    batch of edits, not only at the end.
+
+## Deferred - multiple collision detection
 
 Assessed, not implemented. The models are whole-window classifiers and
 `predict_worker._pad()` truncates anything longer than
@@ -1641,7 +1825,7 @@ balanced centred windows, whereas scanning is overwhelmingly negative, so
 precision will drop and the threshold needs re-tuning against passages with
 known multiple collisions.
 
-## Future — end-to-end pipeline test bed
+## Future - end-to-end pipeline test bed
 
 Not started. A repeatable full run through every stage, against the
 "Testbed" dummy library (single treatment, small enough to reprocess from
