@@ -30,9 +30,7 @@ every report's output, rather than each page picking its own folder
 from datetime import datetime
 from pathlib import Path
 
-from . import ml_report
-
-OUTPUT_DATA_DIR = Path(__file__).resolve().parent.parent / "output_data"
+from . import ml_report, settings
 
 _HR = "<hr style='margin:32px 0;border:none;border-top:2px solid #cbd5e1;'/>"
 
@@ -56,9 +54,18 @@ class ReportSection:
         self.build = build
 
 
-def default_output_dir():
+def default_output_dir(window=None):
+    """`<session library>/StrikeWorks_user_output/Report_<timestamp>/`
+    when a session library is selected (`session_state.py`) - falls back
+    to `settings.get_output_dir()` (the Adjustments dialog's own setting
+    for it, itself defaulting to the app-root `output_data/`) when there
+    isn't one, so this still works with no library chosen (or in a
+    headless/test context with no `window`)."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return OUTPUT_DATA_DIR / f"Report_{ts}"
+    session_state = getattr(window, "session_state", None)
+    base = (session_state.output_dir() if session_state is not None else None) \
+        or settings.get_output_dir()
+    return base / f"Report_{ts}"
 
 
 def _wrap_document(body_html, title="StrikeWorks Report"):

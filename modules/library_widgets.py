@@ -79,16 +79,38 @@ class LibrarySelector(QWidget):
     selection_changed = Signal()       # tbl_sensors selection changed
     row_activated = Signal(int, int)   # row, column - tbl_sensors double-click
 
-    def __init__(self, parent=None, sensor_list=False, list_columns=()):
+    def __init__(self, parent=None, sensor_list=False, list_columns=(),
+                session_state=None):
         super().__init__(parent)
         self._lib_dir = settings.get_libraries_dir()
         self._lib_root = None
         self._deployment_map = {}   # stem (upper) -> (deployment, treatment)
         self._list_columns = list(list_columns)
         self._cache = None           # last populate_sensor_list() call, for re-filtering
+        self._session_state = session_state
         self._build(sensor_list)
         self._connect()
-        self._populate_libraries()
+        start = session_state.library if session_state is not None else None
+        self._populate_libraries(select=start)
+        if session_state is not None:
+            session_state.library_changed.connect(self.set_library)
+
+    # ── session library soft-sync (session_state.py) ─────────────────────────
+    def set_library(self, path):
+        """Selects `path` in the library combo if it's one of the
+        libraries currently listed. `path=None` (New Session) clears this
+        picker's own selection too, rather than leaving it dangling on
+        whatever library it had before - a fresh session should read as
+        fresh everywhere it's reflected, not just on Home. Also how
+        `SessionState.library_changed` re-syncs this picker when the
+        session library changes elsewhere."""
+        if path is None:
+            self.cmb_library.blockSignals(True)
+            self.cmb_library.setCurrentIndex(-1)
+            self.cmb_library.blockSignals(False)
+            self._on_library_changed()
+            return
+        self._populate_libraries(select=path)
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, sensor_list):
@@ -183,6 +205,12 @@ class LibrarySelector(QWidget):
         return self.cmb_treatment.currentData()
 
     def _populate_libraries(self, select=None):
+        # signals stay blocked through setCurrentIndex too - _on_library_
+        # changed() is called explicitly, once, at the end regardless;
+        # without this, an index that actually changes fires it a second
+        # time via currentIndexChanged, doubling every status message and
+        # re-scan this triggers (very visible once several pages soft-
+        # sync to the same session library change at once)
         self.cmb_library.blockSignals(True)
         self.cmb_library.clear()
         try:
@@ -191,13 +219,14 @@ class LibrarySelector(QWidget):
             libs = []
         for lib in libs:
             self.cmb_library.addItem(lib.name, str(lib))
-        self.cmb_library.blockSignals(False)
         self.btn_change_libs.setToolTip(str(self._lib_dir))
         if not libs:
             self._lib_root = None
+            self.cmb_library.blockSignals(False)
             return
         idx = self.cmb_library.findData(str(select)) if select else 0
         self.cmb_library.setCurrentIndex(max(0, idx))
+        self.cmb_library.blockSignals(False)
         self._on_library_changed()
 
     def _change_libraries(self):

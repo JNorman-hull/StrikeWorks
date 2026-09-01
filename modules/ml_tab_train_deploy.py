@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
-from .ml_train_state import DEFAULT_MODELS_DIR
+from . import settings
 from .ml_widgets import ACCENT, BAD, MUTED, OK, MetaCard, Spinner, Section, apply_section_defaults
 
 
@@ -32,11 +32,21 @@ class DeployTab:
     def __init__(self, frame, state, window):
         self.state = state
         self.window = window
-        self.models_dir = DEFAULT_MODELS_DIR
+        self.models_dir = self._default_models_dir()
 
         self._build(frame)
         self._connect_state()
         self._refresh()
+
+    def _default_models_dir(self):
+        """`<session library>/StrikeWorks_user_output/models/` when a
+        session library is selected, else the original app-root
+        `models/` folder - "Change models folder…" below still points
+        this anywhere; deploying was never meant to be library-locked,
+        only its *default* destination follows the session library."""
+        session_state = getattr(self.window, "session_state", None)
+        out = session_state.output_dir() if session_state is not None else None
+        return (out / "models") if out is not None else settings.get_models_dir()
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):

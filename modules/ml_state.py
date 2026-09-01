@@ -31,8 +31,9 @@ import pandas as pd
 
 from PySide6.QtCore import QObject, QThread, Signal
 
+from . import settings
+
 _WORKER     = Path(__file__).parent / "predict_worker.py"
-_MODELS_DIR = Path(__file__).parent.parent / "models"
 
 # Ground-truth annotation columns, in preference order. Nothing downstream
 # assumes a particular name: whichever of these a dataset carries is used,
@@ -136,7 +137,7 @@ class PredictionState(QObject):
         super().__init__(parent)
 
         # models
-        self.models_dir       = _MODELS_DIR
+        self.models_dir       = settings.get_models_dir()
         self.bin_model_path   = None
         self.bin_metrics_path = None
         self.bin_metrics      = None

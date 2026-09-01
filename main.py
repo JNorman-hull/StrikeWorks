@@ -27,6 +27,9 @@ from modules.page_stub import StubPage
 from modules.page_initiate_deployment import InitiateDeploymentPage
 from modules.page_misclassification import MisclassificationPage
 from modules.page_export_animations import ExportAnimationsPage
+from modules.session_state import SessionState
+from modules.page_home import HomePage
+from modules.page_adjustments import AdjustmentsDialog
 from modules.bsm_state import BSMState
 from modules.page_bsm_calculator import CalculatorPage
 from modules.page_bsm_sensitivity import SensitivityPage
@@ -77,6 +80,18 @@ class MainWindow(QMainWindow):
         # ///////////////////////////////////////////////////////////////
         UIFunctions.uiDefinitions(self)
 
+        # SESSION STATE + HOME (library selection) - constructed before
+        # every page below, and in that order: Home's own construction is
+        # what resolves session_state.library (persisted last library, or
+        # auto-selecting the first one found - see page_home.py), so any
+        # page reading it at construction time (soft-synced pickers,
+        # default output folders) sees the real answer instead of None.
+        # ///////////////////////////////////////////////////////////////
+        self.session_state = SessionState(self)
+        self.home_page = HomePage(widgets, self, self.session_state)
+        self.home_page.status.connect(
+            lambda msg, ms: print(f"[status] {msg}"))
+
         # PAGE CONTROLLERS
         # ///////////////////////////////////////////////////////////////
         # Prepare comes first: the sensor chosen here drives raw import,
@@ -84,7 +99,7 @@ class MainWindow(QMainWindow):
         self.prepare_page = PreparePage(widgets, self)
         self.prepare_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
-        self.process_page = ProcessPage(widgets, self)
+        self.process_page = ProcessPage(widgets, self, self.session_state)
         self.process_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
         self.validate_page = ValidatePage(widgets, self)
@@ -98,10 +113,11 @@ class MainWindow(QMainWindow):
             lambda msg, ms: print(f"[status] {msg}"))
 
         # ANNOTATION & VIDEO ANALYSIS PAGES
-        self.annotation_page = AnnotationPage(widgets, self)
+        self.annotation_page = AnnotationPage(widgets, self, self.session_state)
         self.annotation_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
-        self.export_animations_page = ExportAnimationsPage(widgets, self)
+        self.export_animations_page = ExportAnimationsPage(
+            widgets, self, self.session_state)
         self.export_animations_page.status.connect(
             lambda msg, ms: print(f"[status] {msg}"))
 
@@ -242,6 +258,7 @@ class MainWindow(QMainWindow):
             UIFunctions.toggleRightBox(self, True)
         widgets.settingsTopBtn.clicked.connect(openCloseRightBox)
         widgets.btn_about.clicked.connect(self.openAbout)
+        widgets.btn_adjustments.clicked.connect(self.openAdjustments)
 
         # UNIFORM TABLE STYLING - one pass over every QTableWidget in the
         # app (built by every page above) rather than each page styling
@@ -477,6 +494,15 @@ class MainWindow(QMainWindow):
     def openAbout(self):
         QDesktopServices.openUrl(QUrl(TEMPLATE_URL))
         print(f"Opened UI template credit: {TEMPLATE_URL}")
+
+    # ADJUSTMENTS - folder settings (modules/page_adjustments.py)
+    # ///////////////////////////////////////////////////////////////
+    def openAdjustments(self):
+        dlg = AdjustmentsDialog(self)
+        dlg.exec()
+        # the libraries folder may have changed - Home owns library
+        # discovery, so it's what re-reads settings.get_libraries_dir()
+        self.home_page._refresh_library_combo()
 
 
     # RESIZE EVENTS

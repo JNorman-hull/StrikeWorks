@@ -1200,11 +1200,14 @@ per-page tweaks.
      primitives - worth evaluating (what it actually buys over what's
      already unified and working) before committing either way; the A4
      styling half of this request is done above without it.
-   - "Selection information" (Process page's four StatCards, most likely
-     - not confirmed) "to be one of the JSON type outputs from elsewhere
-     in the app" - which JSON output, and which panel, needs confirming
-     before changing anything; guessing here risks solving the wrong
-     problem.
+   - "Selection information" (Process page's four StatCards). Clarified
+     (2026-08-31): not pointed at an existing JSON output from another
+     page - it produces its own new JSON, built from the sensor
+     selection, and can keep the same StatCard display. Part of a wider
+     push to unify app design around consistent JSON-shaped outputs.
+     Still not started - scope it against whatever comes out of the
+     output-location decisions in the session-management item below,
+     since "where does this JSON live" is the same question.
    - Dual-species (scaly + eel) BSM calculation, on by default, feeding
      everything downstream (every visual, table, and report currently
      built around one species per run) - a real data-model change to
@@ -1434,6 +1437,186 @@ per-page tweaks.
     everything collapsing to bare minimums first. Verified headless:
     `MainWindow()` still constructs; each page's expected scroll-area
     count confirmed via `findChildren`.
+12. Follow-up (2026-08-31), session management: Phase 1 of the design
+    discussed and scoped this session (Home page, session-wide library,
+    soft-synced pickers, unified per-library output). Decisions made
+    before building: (1) soft sync for now - existing pickers keep their
+    own combo, defaulted to the session library, not torn out for one
+    single picker yet (planned later); (2) output unifies per library
+    (`StrikeWorks_user_output/`) but *loading* models/training data stays
+    a free file/folder browse from anywhere, unaffected - resolves the
+    tension that a model or a bound training set (see item 8's "Bind
+    training data") can legitimately span more than one library; (3)
+    temp-copy-until-save autosave explicitly out of scope for this pass.
+
+    New `modules/session_state.py`: `SessionState(QObject)`, one shared
+    `library` (persisted across restarts via new `settings.
+    get_last_library`/`set_last_library`, cleared - not just left stale -
+    by New Session) and `library_changed(path_or_None)` signal, plus
+    `output_dir()` = `<library>/StrikeWorks_user_output/` (never creates
+    the folder itself - every real write site already does its own
+    `mkdir(parents=True, exist_ok=True)` right before writing, the
+    existing convention everywhere else in this app; computing "where
+    would this go" for a resume check or at page construction shouldn't
+    leave empty folders on disk as a side effect - caught and fixed
+    during this pass, see below).
+
+    New `modules/page_home.py`: `HomePage`, built into the previously-
+    empty `home` stub widget (background image, no children at all) -
+    a library combo + "Libraries…" folder change (same convention
+    `LibrarySelector` already uses), "New session" with a confirm dialog,
+    and a resume summary (`MetaCard`) reading straight from the library's
+    own files - deployments/treatments (`deployment_index.py`), sensors
+    indexed/flagged bad, whether `model_features.csv` exists, and how
+    much is under `StrikeWorks_user_output/` already. Deliberately reads
+    files directly rather than reaching into other pages' in-memory
+    state, so it's correct even before those pages have been visited.
+    Constructed first, right after `SessionState`, before every other
+    page - it's what actually resolves `session_state.library` (persisted
+    value, or auto-selecting the first library found, same fallback-to-
+    first-item convention `LibrarySelector` itself already used), so
+    anything reading it at construction time downstream sees the real
+    answer instead of `None`.
+
+    `LibrarySelector.__init__` gained an optional `session_state` arg:
+    seeds its combo from `session_state.library` and re-syncs on
+    `library_changed` (`set_library()`, reusing `_populate_libraries`'s
+    existing select-by-path logic) - wired into the three pages that use
+    it (Process, Annotate, Export animations; `main.py` now constructs
+    `SessionState` before them and threads it through each constructor).
+    `path=None` (New Session) explicitly deselects the combo rather than
+    leaving it dangling on the old library - caught by testing: the
+    initial version left every soft-synced picker still showing the old
+    library after New Session, since `None` had been read as "no
+    preference, don't touch me" rather than "clear it."
+
+    Output redirected to `StrikeWorks_user_output/` for three write
+    paths, loading left untouched everywhere: `report_center.
+    default_output_dir(window)` (was `OUTPUT_DATA_DIR`, the app-root
+    `output_data/`, still the fallback with no library selected);
+    Export animations' `_video_output_dir()` (was the app-root
+    `processed_video/`, keyed off this page's own `_lib_root` rather than
+    the session library directly, so overriding just this page's picker
+    still writes to the right place); Model training > Deploy's default
+    `models_dir` (was the app-root `models/`, still overridable via the
+    existing "Change models folder…" button, and deliberately only the
+    *default* - not forced). Model discovery (Predict/Evaluate/
+    Misclassification's own `models_dir`) was deliberately left pointed
+    at the original app-root default, not switched to the library
+    default: existing users have real deployed models there today, and
+    auto-loading from a folder that's initially empty under the new
+    convention would silently stop finding them. A model newly deployed
+    to a library's output folder needs the existing "Select models
+    folder" browse to be picked up in Predict/Evaluate/Misclassification
+    right now - a known, accepted gap for this pass, not fixed blind.
+
+    Verified headless throughout, including catching and fixing two real
+    bugs before calling it done: (1) the library combo (Home and every
+    soft-synced picker) visually defaulted to index 0 via Qt's own
+    behaviour, but `session_state` was never told - `blockSignals(True)`
+    during population meant `currentIndexChanged` never fired for it, so
+    state and the visible UI silently disagreed until a user happened to
+    touch the combo. Fixed by explicitly applying the combo's landed-on
+    value back into the session after population. (2) the premature
+    folder-creation issue above, caught by literally finding empty
+    `StrikeWorks_user_output/`, `processed_video/`, `models/` folders
+    left behind in a real test library after nothing more than
+    constructing the app - fixed by making `output_dir()` default to
+    `create=False` and removing the eager `mkdir()` calls that had been
+    added alongside it, relying on each real write site's own existing
+    `mkdir`. Full soft-sync propagation (Home → Process/Annotate/Export
+    animations, both directions) and New Session's reset were exercised
+    directly; report generation was run end-to-end into the new
+    library-scoped location and confirmed on disk, then cleaned up.
+
+    Not yet done, follow-up work: the other pages with their own bespoke
+    library pickers (Initiate deployment, Validate, Dataset, Biological)
+    aren't soft-synced yet - only the three `LibrarySelector`-based pages
+    are, for this pass. Phase 2 (a fuller resume view, once there's a
+    real sense of what else is worth surfacing) and the eventual single-
+    picker unification (replacing soft sync entirely) remain open,
+    intentionally deferred per the design conversation.
+13. Follow-up (2026-08-31), same session again: a real double-fire bug
+    caught from a screenshot, Home's visual redesign, and Adjustments -
+    the app-wide folder settings the gear icon's `btn_adjustments` button
+    had sat unwired to since the PyDracula template.
+
+    Bug: selecting a library produced six "Library: X" status toasts
+    (three soft-synced pages x two each) instead of three. Root cause
+    predates this session's soft-sync work: `LibrarySelector.
+    _populate_libraries()` called `setCurrentIndex()` *outside* its
+    `blockSignals` guard and then called `_on_library_changed()`
+    explicitly right after - `currentIndexChanged` fired it once via the
+    signal, then the explicit call fired it again, for every library
+    selection the app has ever done, on every page. Soft-sync just made
+    it visible by tripling the fan-out. Fixed by keeping signals blocked
+    through `setCurrentIndex` too, relying solely on the explicit call.
+
+    Home redesign, matching a reference screenshot: content bounded to a
+    fixed-width card ("login box" style, `_CARD_WIDTH = 360`) instead of
+    stretched full-width; the StrikeWorks logo restored as a real
+    `QLabel`/`QPixmap` (`:/images/images/images/PyDracula_vertical.png` -
+    the same resource the old stub used as a stretched CSS background,
+    now shown properly sized) rather than lost when the stub background
+    was replaced with real content two follow-ups ago; "Simple mode" /
+    "Advanced mode" buttons added - Simple disabled with a tooltip
+    (nothing to switch to yet, a dead button reads worse than a disabled
+    one), Advanced opens the "Setup and deploy" panel (there's nothing to
+    actually switch on - every page already is "advanced mode" - so it's
+    just a sensible landing spot). "New library" added (create an empty
+    folder under the libraries directory and select it) alongside New
+    session, matching the reference image.
+
+    Adjustments: `btn_adjustments` already existed in main.ui (gear icon
+    > Adjustments, next to About/More) but nothing was ever connected to
+    it. New `modules/page_adjustments.py`: a plain `QDialog` ("a simple
+    pop-out window" is exactly what a modal dialog already gives, no
+    main.ui restructuring needed) with three folder settings, all backed
+    by new `settings.py` entries defaulting to each one's existing
+    hardcoded path so nothing regresses for anyone who never opens it:
+    Libraries folder (moved here from Home's own "Libraries…" button -
+    Home now only picks *which* library, not where the libraries
+    themselves live), Models folder (Predict/Evaluate/Misclassification's
+    default discovery location, and Deploy's own default before a
+    session library exists), Default output folder (report_center's
+    fallback when no session library is selected). Every call site that
+    used to read a hardcoded constant (`ml_state._MODELS_DIR`,
+    `ml_train_state.DEFAULT_MODELS_DIR` via three importers, `report_
+    center.OUTPUT_DATA_DIR`) now reads the matching `settings.get_*_dir()`
+    instead - loading a model or dataset from somewhere else entirely is
+    still an untouched free browse everywhere it already was; only the
+    *starting point* is now configurable.
+
+    A real mistake made and corrected live during this pass, worth
+    recording plainly: while building Adjustments, found `libraries_dir`
+    persisted as `C:\python_projects` and, going on older context from
+    earlier in this session, assumed it was corruption and "fixed" it to
+    the OneDrive/SharePoint libraries path - without checking against the
+    reference screenshot the user had just sent, which showed
+    `C:\python_projects\AA_qsight` as their actual, current, working
+    library. Reverted that guess immediately on noticing the screenshot
+    contradicted it - then the user clarified the *opposite*: the
+    SharePoint folder is the real one, `C:\python_projects` was just
+    being browsed temporarily. Restored to SharePoint, the stale
+    `last_library` this left behind cleared. Net effect: two unforced
+    guesses at a setting that was never actually broken, corrected only
+    because the user was watching closely enough to catch both. The
+    actual lesson isn't "which path was right" - it's that a persisted
+    value the user hasn't complained about shouldn't be treated as a bug
+    to fix based on inference from old context; if it looks wrong, ask
+    or check current evidence (the screenshot was sitting right there)
+    before changing it.
+
+    Verified headless throughout: the double-fire fix confirmed (3
+    "Library:" messages instead of 6, with per-page emit tracking, not
+    just eyeballing output); the redesigned Home page's logo pixmap
+    confirmed non-null and correctly sized via `findChildren(QLabel)`;
+    Simple/Advanced mode buttons' enabled state and Advanced's panel-open
+    behaviour exercised directly; the Adjustments dialog constructed and
+    its three fields confirmed reading the right settings; every settings
+    mutation made while testing was checked against `~/.
+    hifistrike_settings.json` afterward and confirmed to leave it in the
+    correct end state, not just assumed clean.
 
 ## Deferred — multiple collision detection
 

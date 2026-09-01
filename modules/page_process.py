@@ -161,10 +161,11 @@ class ProcessPage(QObject):
 
     status = Signal(str, int)
 
-    def __init__(self, ui, window):
+    def __init__(self, ui, window, session_state=None):
         super().__init__(window)
         self.ui = ui
         self.window = window
+        self.session_state = session_state
 
         self._root = None        # selected library root
         self._raw_dir = None
@@ -216,7 +217,7 @@ class ProcessPage(QObject):
     def _build_library_selector(self):
         lv = QVBoxLayout(self.ui.frame_process_library)
         lv.setContentsMargins(0, 0, 0, 0)
-        self.lib_selector = LibrarySelector()
+        self.lib_selector = LibrarySelector(session_state=self.session_state)
         lv.addWidget(self.lib_selector)
 
     def _configure_widgets(self):

@@ -1,0 +1,15 @@
+{
+  "pump": "PF-FS700 (Axial)",
+  "shaft_speed": "500 RPM",
+  "camera": "Chronos HD 2.1 (1000 fps)",
+  "sensor": "RAPID (2000 Hz)",
+  "nadir_frame": 375,
+  "real_fps": 1000,
+  "graph_window_s": 6.12,
+  "zoom": 1.0,
+  "video_nudge_px": 100,
+  "add_labels": true,
+  "logo_path": "C:/python_projects/StrikeWorks/images/images/1920_1080_video logo.png",
+  "logo_opacity": 1.0,
+  "nadir_time_override": null
+}

@@ -26,9 +26,8 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from . import ml_model_library, ml_train_figures
+from . import ml_model_library, ml_train_figures, settings
 from .ml_tab_predict import _NumItem
-from .ml_train_state import DEFAULT_MODELS_DIR
 from .ml_widgets import (
     BAD, MUTED, OK, TEXT, WARN, CARD_W2, CARD_H2, MetaCard, RingCard, Section,
     apply_section_defaults,
@@ -43,7 +42,7 @@ class EvaluateTab:
     def __init__(self, frame, state, window, models_dir=None):
         self.state = state
         self.window = window
-        self.models_dir = Path(models_dir or DEFAULT_MODELS_DIR)
+        self.models_dir = Path(models_dir or settings.get_models_dir())
         self._entries = []
         self._entry = None
 

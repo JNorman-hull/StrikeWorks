@@ -101,10 +101,11 @@ class AnnotationPage(QObject):
 
     status = Signal(str, int)
 
-    def __init__(self, ui, window):
+    def __init__(self, ui, window, session_state=None):
         super().__init__(window)
         self.ui = ui
         self.window = window
+        self.session_state = session_state
 
         self._index_df = None
         self._sensor_rows = []          # [{"path", "stem", "deployment", "video"}]
@@ -257,7 +258,8 @@ class AnnotationPage(QObject):
         lv.setSpacing(8)
 
         self.lib_selector = LibrarySelector(sensor_list=True,
-                                            list_columns=["Video"])
+                                            list_columns=["Video"],
+                                            session_state=self.session_state)
         lv.addWidget(self.lib_selector, stretch=1)
         # kept as aliases so the rest of this module's existing references
         # (chk_show_flags, tbl_sensors, lbl_progress) keep working unchanged

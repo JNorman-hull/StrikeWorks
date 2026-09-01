@@ -58,6 +58,7 @@ from PySide6.QtWidgets import (
 from . import deployment_index as di
 from . import sensor_config, video_sync
 from .library_widgets import LibrarySelector
+from .session_state import OUTPUT_DIR_NAME
 from .ml_widgets import ACCENT, MUTED, TEXT, Section, apply_section_defaults
 from .page_annotate import LOSSLESSCUT_EXE
 from .page_validate import (
@@ -127,10 +128,11 @@ class ExportAnimationsPage(QObject):
 
     status = Signal(str, int)
 
-    def __init__(self, ui, window):
+    def __init__(self, ui, window, session_state=None):
         super().__init__(window)
         self.ui = ui
         self.window = window
+        self.session_state = session_state
 
         self._sensor_rows = []
         self._index_df = None
@@ -211,7 +213,8 @@ class ExportAnimationsPage(QObject):
         tv.setContentsMargins(0, 0, 0, 0)
         tv.setSpacing(8)
         self.lib_selector = LibrarySelector(sensor_list=True,
-                                            list_columns=["Video", "Synced"])
+                                            list_columns=["Video", "Synced"],
+                                            session_state=self.session_state)
         tv.addWidget(self.lib_selector, stretch=1)
         self.tbl_sensors = self.lib_selector.tbl_sensors
         self.lbl_loading = QLabel("")
@@ -653,7 +656,7 @@ class ExportAnimationsPage(QObject):
             rows.append({
                 **row,
                 "video": "; ".join(m.name for m in matches) if matches else "—",
-                "synced": _synced_path_for(row["stem"]).exists(),
+                "synced": self._synced_path_for(row["stem"]).exists(),
             })
         self._sensor_rows = rows
         synced_by_stem = {r["stem"]: r["synced"] for r in rows}
@@ -764,13 +767,35 @@ class ExportAnimationsPage(QObject):
         # scrub the synced output if one already exists (checking the
         # overlay/alignment that produced it), otherwise the raw matched
         # video (finding the sync frame in the first place)
-        synced = _synced_path_for(self._cur_stem)
+        synced = self._synced_path_for(self._cur_stem)
         if synced.exists():
             self._open_scrubber(synced)
         elif self._video_matches:
             self._open_scrubber(self._video_matches[0])
         else:
             self._open_scrubber(None)
+
+    # ── output location (session_state.py) ──────────────────────────────────
+    def _video_output_dir(self):
+        """`<the library this page is currently browsing>/
+        StrikeWorks_user_output/processed_video/` - falls back to the
+        original app-root `processed_video/` folder with no library
+        selected, so this still works before Home has been used at all.
+        Keyed off this page's own `_lib_root` (soft-synced from the
+        session library but independently changeable) rather than the
+        session library directly, so overriding this page's picker alone
+        still writes to the right place. Loading/reviewing a video (the
+        scrubber, LosslessCut) stays unaffected either way - only where a
+        *new* export/config is written by default changes."""
+        if self._lib_root is None:
+            return _PROCESSED_VIDEO_DIR
+        return self._lib_root / OUTPUT_DIR_NAME / "processed_video"
+
+    def _config_path_for(self, stem):
+        return self._video_output_dir() / f"{stem}_sync_config.json"
+
+    def _synced_path_for(self, stem):
+        return self._video_output_dir() / f"{stem}_synced.mp4"
 
     def _video_frame_count_and_duration(self):
         """(frames, seconds) for the current sensor's matched video, from
@@ -920,7 +945,7 @@ class ExportAnimationsPage(QObject):
                 row = match.iloc[0]
         treatment = str(row.get("treatment", "") or "") if row is not None else ""
 
-        cfg = _read_json(_config_path_for(self._cur_stem)) or {}
+        cfg = _read_json(self._config_path_for(self._cur_stem)) or {}
         # index-sourced defaults are only used when nothing was saved
         # before - text inputs stay editable either way
         self.ed_pump.setText(cfg.get("pump") or self._pump_default_from_row(row))
@@ -959,7 +984,7 @@ class ExportAnimationsPage(QObject):
     def _save_config(self):
         if not self._cur_stem:
             return
-        path = _config_path_for(self._cur_stem)
+        path = self._config_path_for(self._cur_stem)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(self._config_values(), indent=2))
         self.status.emit(f"Sync configuration saved for {self._cur_stem}.", 4000)
@@ -1041,7 +1066,7 @@ class ExportAnimationsPage(QObject):
             video_nudge_px=cfg["video_nudge_px"], logo_path=cfg["logo_path"],
             logo_opacity=cfg["logo_opacity"], channels=cfg["channels"],
             layout=cfg["layout"], no_video=cfg["no_video"])
-        output_path = _synced_path_for(self._cur_stem)
+        output_path = self._synced_path_for(self._cur_stem)
 
         self.btn_process.setEnabled(False)
         self.btn_cancel.setVisible(True)
@@ -1225,9 +1250,3 @@ def _read_json(path):
         return None
 
 
-def _config_path_for(stem):
-    return _PROCESSED_VIDEO_DIR / f"{stem}_sync_config.json"
-
-
-def _synced_path_for(stem):
-    return _PROCESSED_VIDEO_DIR / f"{stem}_synced.mp4"

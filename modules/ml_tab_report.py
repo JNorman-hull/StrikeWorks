@@ -232,7 +232,7 @@ class ReportTab:
                 "more - see the notes under each section.")
             return
 
-        out_dir = report_center.default_output_dir()
+        out_dir = report_center.default_output_dir(self.window)
         try:
             doc_path, warnings = report_center.assemble(
                 self._sections, out_dir, checked)

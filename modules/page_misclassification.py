@@ -53,7 +53,6 @@ from . import annotation_schema as asch
 from . import ml_model_library
 from . import settings
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
-from .ml_train_state import DEFAULT_MODELS_DIR
 from .ml_widgets import ACCENT, BAD, MUTED, OK, Section, apply_section_defaults
 from .page_annotate import LOSSLESSCUT_EXE
 from .library_widgets import RAW_DIR as _RAW_DIR
@@ -312,7 +311,8 @@ class MisclassificationPage(QObject):
         self._entries = []
         if self.training_state is not None:
             self._entries += ml_model_library.session_entries(self.training_state)
-        self._entries += ml_model_library.discover_models(DEFAULT_MODELS_DIR)
+        self._entries += ml_model_library.discover_models(
+            settings.get_models_dir())
 
         self.cmb_model.blockSignals(True)
         self.cmb_model.clear()
