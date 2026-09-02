@@ -859,6 +859,9 @@ class SimpleModeDialog(QDialog):
             new_row = pd.DataFrame([{"file": self._cur_validate_stem}])
             index_df = pd.concat([index_df, new_row], ignore_index=True)
             mask = index_df["file"] == self._cur_validate_stem
+        if di.BAD_SENS_COL not in index_df.columns:
+            index_df[di.BAD_SENS_COL] = ""
+        index_df[di.BAD_SENS_COL] = index_df[di.BAD_SENS_COL].astype(object)
         index_df.loc[mask, di.BAD_SENS_COL] = (
             "Y" if self.chk_mark_bad.isChecked() else "N")
         self._save_validate_index(index_df)
@@ -888,6 +891,12 @@ class SimpleModeDialog(QDialog):
         index_df.loc[mask, _NADIR_V_COL] = nadir_v
         index_df.loc[mask, "nadir_window_start"] = time[start]
         index_df.loc[mask, "nadir_window_end"] = time[end]
+        if _VALIDATED_COL not in index_df.columns:
+            index_df[_VALIDATED_COL] = ""
+        # a column read back as float (blank/NaN with no prior string
+        # value) will not take "Y" in place without widening first -
+        # pandas warns (soon errors) otherwise
+        index_df[_VALIDATED_COL] = index_df[_VALIDATED_COL].astype(object)
         index_df.loc[mask, _VALIDATED_COL] = "Y"
         return index_df
 
