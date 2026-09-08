@@ -122,7 +122,12 @@ class PrecisionCalcTab:
         self.tbl_sweep.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.tbl_sweep.setMinimumHeight(160)
 
-        self.fig_precision = Figure(figsize=(5.0, 3.2), dpi=100)
+        # figsize matches ml_figures.render_figures' own convention (the
+        # Predict page's "predicted blade strike rate" figure) so this
+        # section's exported report figure comes out the same size -
+        # Qt's canvas widget still controls the on-screen GUI size here,
+        # this only changes the pixel dimensions savefig() produces
+        self.fig_precision = Figure(figsize=(6.0, 4.2), dpi=100)
         self.canvas_precision = FigureCanvas(self.fig_precision)
         self.canvas_precision.setMinimumSize(220, 190)
         self.canvas_precision.setSizePolicy(

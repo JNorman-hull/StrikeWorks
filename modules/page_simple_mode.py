@@ -29,10 +29,10 @@ of, both from the spec:
                       folded into one click that also writes straight
                       into input_data/ instead of a save-file dialog.
 
-Deliberately simplified from Advanced mode's Validate page: the signal
-preview here is read-only (no draggable nadir line) - correcting a
-specific sensor's nadir by hand is still what Validate itself is for;
-this page's whole point is not needing to.
+The signal preview's nadir line is draggable, same as Advanced mode's
+Validate page - Auto process all handles the bulk case with zero
+per-file review, but any sensor (already validated or not) can still be
+corrected by hand and re-saved with Save + Next.
 """
 import os
 from datetime import datetime
@@ -45,7 +45,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QFileDialog, QGridLayout, QHBoxLayout,
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
@@ -77,13 +77,27 @@ _WIN_SEC = 0.2
 _WIN_DIR = Path("processed_sens_data") / "nadir_window"
 _NEW_DEPLOYMENT = "__new__"
 _INPUT_DATA_DIR = Path(__file__).parent.parent / "input_data"
+_IMAGES_DIR = Path(__file__).parent.parent / "images" / "images"
 
-# Steps shown in the left list - Process covers two stack pages (file
-# inventory, then validate/segment); Welcome and Finished are bookends
-# reached only via Next/Back, not directly clickable.
-_STEPS = ["Deployment", "Process", "Predict", "Report"]
-_STEP_FOR_PAGE = {1: 0, 2: 1, 3: 1, 4: 2, 5: 3}
-_FIRST_PAGE_FOR_STEP = {0: 1, 1: 2, 2: 4, 3: 5}
+# The left step list: (label, indent level, stack page index or None).
+# None means a non-clickable group heading - "Process" and "Report" are
+# each a heading over two real pages (file inventory/validate,
+# report-view/download) rather than a page of their own.
+_LIST_ITEMS = [
+    ("Home",     0, 0),
+    ("Deploy",   0, 1),
+    ("Process",  0, None),
+    ("Process",  1, 2),
+    ("Validate", 1, 3),
+    ("Predict",  0, 4),
+    ("Report",   0, None),
+    ("Output",   1, 5),
+    ("Download", 1, 6),
+]
+
+# pages that already show their own big logo - the small horizontal one
+# (fixed bottom-left, present on every other page) would just duplicate it
+_NO_SMALL_LOGO_PAGES = {0, 6}
 
 
 class SimpleModeDialog(QDialog):
@@ -105,6 +119,7 @@ class SimpleModeDialog(QDialog):
         self._validate_files = []       # [{"stem","path"}]
         self._cur_validate_stem = None
         self._built_dataset_path = None
+        self._win_sec = _WIN_SEC   # ROI window width - user-adjustable via cmb_window
         self._process_thread = None
         self._extract_thread = None
 
@@ -121,10 +136,13 @@ class SimpleModeDialog(QDialog):
 
         top_bar = QHBoxLayout()
         top_bar.setContentsMargins(10, 6, 10, 0)
-        title = QLabel("Simple mode")
+        title = QLabel("StrikeWorks simple blade strike prediction")
         title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
         top_bar.addWidget(title)
         top_bar.addStretch()
+        btn_about = QPushButton("About")
+        btn_about.clicked.connect(self._show_about)
+        top_bar.addWidget(btn_about)
         btn_gear = QPushButton("⚙")
         btn_gear.setToolTip("Adjustments")
         btn_gear.setFixedWidth(30)
@@ -136,12 +154,34 @@ class SimpleModeDialog(QDialog):
         body.setContentsMargins(10, 10, 10, 0)
         body.setSpacing(10)
 
+        left_col = QVBoxLayout()
+        left_col.setSpacing(6)
         self.step_list = QListWidget()
-        self.step_list.setMaximumWidth(150)
-        for step in _STEPS:
-            self.step_list.addItem(step)
+        self.step_list.setSizePolicy(QSizePolicy.Policy.Fixed,
+                                     QSizePolicy.Policy.Fixed)
+        for label, indent, page in _LIST_ITEMS:
+            item = QListWidgetItem(("    " if indent else "") + label)
+            item.setData(Qt.ItemDataRole.UserRole, page)
+            if page is None:
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+                f = item.font()
+                f.setBold(True)
+                item.setFont(f)
+            self.step_list.addItem(item)
         self.step_list.itemClicked.connect(self._on_step_clicked)
-        body.addWidget(self.step_list)
+        # size the container to exactly what the list needs - no leftover
+        # empty space below the last item, no wasted width either
+        fm = self.step_list.fontMetrics()
+        width = max(fm.horizontalAdvance(("    " if i else "") + t)
+                    for t, i, _p in _LIST_ITEMS) + 36
+        self.step_list.setFixedWidth(width)
+        height = (sum(self.step_list.sizeHintForRow(i)
+                      for i in range(self.step_list.count()))
+                 + 2 * self.step_list.frameWidth())
+        self.step_list.setFixedHeight(height)
+        left_col.addWidget(self.step_list)
+        left_col.addStretch()
+        body.addLayout(left_col)
 
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_welcome_page())
@@ -156,17 +196,41 @@ class SimpleModeDialog(QDialog):
 
         nav = QHBoxLayout()
         nav.setContentsMargins(10, 6, 10, 10)
-        self.btn_back = QPushButton("< Back")
-        self.btn_back.clicked.connect(self._go_back)
+        self.logo_h = self._make_logo("PyDracula_horizontal.png", width=160)
+        if self.logo_h is not None:
+            nav.addWidget(self.logo_h)
         self.btn_next = QPushButton("Next >")
         self.btn_next.clicked.connect(self._go_next)
+        self.btn_back = QPushButton("< Back")
+        self.btn_back.clicked.connect(self._go_back)
         btn_close = QPushButton("Close")
         btn_close.clicked.connect(self.reject)
-        nav.addWidget(self.btn_back)
         nav.addStretch()
+        nav.addWidget(self.btn_back)
         nav.addWidget(self.btn_next)
         nav.addWidget(btn_close)
         outer.addLayout(nav)
+
+    def _show_about(self):
+        QMessageBox.information(
+            self, "About",
+            "Copyright Hull University - contact J.Norman2@hull.ac.uk")
+
+    @staticmethod
+    def _make_logo(filename, width):
+        """Loads an images/images/<filename> logo scaled to `width`, or
+        None if it's missing - callers skip adding the widget rather than
+        show a broken image."""
+        path = _IMAGES_DIR / filename
+        if not path.exists():
+            return None
+        pix = QPixmap(str(path))
+        if pix.isNull():
+            return None
+        lbl = QLabel()
+        lbl.setPixmap(pix.scaledToWidth(
+            width, Qt.TransformationMode.SmoothTransformation))
+        return lbl
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -196,19 +260,28 @@ class SimpleModeDialog(QDialog):
             self._sync_step_highlight()
 
     def _on_step_clicked(self, item):
-        step_idx = self.step_list.row(item)
-        self.stack.setCurrentIndex(_FIRST_PAGE_FOR_STEP[step_idx])
+        page = item.data(Qt.ItemDataRole.UserRole)
+        if page is None:
+            return   # a group heading ("Process"/"Report") - not clickable
+        self.stack.setCurrentIndex(page)
         self._sync_step_highlight()
 
     def _sync_step_highlight(self):
         page = self.stack.currentIndex()
-        step = _STEP_FOR_PAGE.get(page)
         self.step_list.blockSignals(True)
-        self.step_list.setCurrentRow(step if step is not None else -1)
+        target_row = next(
+            (i for i in range(self.step_list.count())
+             if self.step_list.item(i).data(Qt.ItemDataRole.UserRole) == page),
+            -1)
+        self.step_list.setCurrentRow(target_row)
         self.step_list.blockSignals(False)
         self.btn_back.setEnabled(page > 0)
+        last_page = self.stack.count() - 1
         self.btn_next.setText(
-            "Finish" if page == self.stack.count() - 2 else "Next >")
+            "Finish" if page == last_page - 1 else "Next >")
+        self.btn_next.setEnabled(page != last_page)
+        if self.logo_h is not None:
+            self.logo_h.setVisible(page not in _NO_SMALL_LOGO_PAGES)
 
     @staticmethod
     def _muted(text):
@@ -222,11 +295,13 @@ class SimpleModeDialog(QDialog):
         page = QWidget()
         v = QVBoxLayout(page)
         v.addStretch()
-        title = QLabel("Blade strike prediction")
-        title.setStyleSheet(f"color:{TEXT};font-size:26px;font-weight:bold;")
-        v.addWidget(title)
-        subtitle = QLabel("Deploy. Process. Predict. Report")
-        subtitle.setStyleSheet(f"color:{MUTED};font-size:14px;font-style:italic;")
+        logo = self._make_logo("PyDracula_vertical.png", width=220)
+        if logo is not None:
+            logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            v.addWidget(logo)
+        subtitle = QLabel("Deploy. Process. Predict.")
+        subtitle.setStyleSheet(f"color:{MUTED};font-size:28px;font-style:italic;")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v.addWidget(subtitle)
         v.addStretch()
         return page
@@ -395,12 +470,21 @@ class SimpleModeDialog(QDialog):
             self.lbl_files_found.setText("")
             return
         dep_dir = self._lib_root / _RAW_DIR / ident
-        n = len(list(dep_dir.rglob("*"))) if dep_dir.exists() else 0
-        n_files = sum(1 for p in dep_dir.rglob("*") if p.is_file()
-                     and p.name != "readme.txt") if dep_dir.exists() else 0
+        if not dep_dir.exists():
+            self.lbl_files_found.setText("")
+            return
+        # a RAPID recording is always 2 files (.IMP + .HIG) - counting raw
+        # files directly overstates "how many sensors" 2x (and VIDEO
+        # clips would inflate it further, so those are excluded too)
+        n_exts = max(1, len(sensor_config.active().required_extensions or [".imp"]))
+        n_files = sum(
+            1 for p in dep_dir.rglob("*")
+            if p.is_file() and p.name != "readme.txt"
+            and _VIDEO_FOLDER_NAME not in p.relative_to(dep_dir).parts)
+        n_recordings = n_files // n_exts
         self.lbl_files_found.setText(
-            f"{n_files} sensor file(s) found in folder" if dep_dir.exists()
-            else "")
+            f"{n_recordings} sensor recording(s) found in folder "
+            f"({n_files} file(s))")
 
     def _create_and_open_folder(self):
         if self._lib_root is None:
@@ -661,11 +745,13 @@ class SimpleModeDialog(QDialog):
         lv.addWidget(self.validate_list, stretch=1)
 
         mark_row = QHBoxLayout()
-        self.btn_mark = QPushButton("Mark")
+        self.btn_mark = QPushButton("Mark bad")
+        self.btn_mark.setStyleSheet(f"color:{BAD};font-weight:bold;")
         self.btn_mark.clicked.connect(self._mark_good_bad)
         mark_row.addWidget(self.btn_mark)
-        self.chk_mark_bad = QCheckBox("Bad (unticked = Good)")
-        mark_row.addWidget(self.chk_mark_bad)
+        self.chk_show_bad = QCheckBox("Show bad")
+        self.chk_show_bad.toggled.connect(self._refresh_validate_list)
+        mark_row.addWidget(self.chk_show_bad)
         lv.addLayout(mark_row)
 
         self.lbl_validated_count = QLabel("Validated: 0 / 0")
@@ -701,9 +787,11 @@ class SimpleModeDialog(QDialog):
             pen=pg.mkPen(120, 170, 255, 90))
         pi.addItem(self._validate_region)
         self._validate_nadir_line = pg.InfiniteLine(
-            angle=90, movable=False,
+            angle=90, movable=True,
             pen=pg.mkPen(color=(255, 220, 0), width=2), label="Nadir",
             labelOpts={"position": 0.92, "color": (180, 150, 0)})
+        self._validate_nadir_line.sigPositionChanged.connect(
+            self._on_validate_nadir_moved)
         pi.addItem(self._validate_nadir_line)
         self._validate_curve = None
         self._validate_curve2 = None
@@ -717,6 +805,11 @@ class SimpleModeDialog(QDialog):
         self.btn_auto_process_all.setStyleSheet(f"color:{OK};font-weight:bold;")
         self.btn_auto_process_all.clicked.connect(self._auto_process_all)
         bottom.addWidget(self.btn_auto_process_all)
+        bottom.addWidget(self._muted("ROI window:"))
+        self.cmb_window = QComboBox()
+        self.cmb_window.currentIndexChanged.connect(self._on_validate_win_size_changed)
+        bottom.addWidget(self.cmb_window)
+        self._fill_validate_window_combo()
         self.lbl_all_validated = QLabel("")
         self.lbl_all_validated.setStyleSheet(f"color:{MUTED};")
         bottom.addWidget(self.lbl_all_validated)
@@ -755,18 +848,29 @@ class SimpleModeDialog(QDialog):
     def _refresh_validate_list(self):
         index_df = self._validate_index()
         validated = set()
+        bad = set()
         if index_df is not None and _VALIDATED_COL in index_df.columns:
             validated = set(index_df[index_df[_VALIDATED_COL]
                             .astype(str).str.upper() == "Y"]["file"])
+        if index_df is not None and di.BAD_SENS_COL in index_df.columns:
+            bad = set(index_df[index_df[di.BAD_SENS_COL]
+                      .astype(str).str.upper() == "Y"]["file"])
+        show_bad = self.chk_show_bad.isChecked()
         self.validate_list.clear()
         for f in self._validate_files:
+            is_bad = f["stem"] in bad
+            if is_bad and not show_bad:
+                continue
             item = QListWidgetItem(f["stem"])
-            if f["stem"] in validated:
+            if is_bad:
+                item.setForeground(QColor(BAD))
+            elif f["stem"] in validated:
                 item.setForeground(QColor(OK))
             self.validate_list.addItem(item)
         n_val = sum(1 for f in self._validate_files if f["stem"] in validated)
         self.lbl_validated_count.setText(
-            f"Validated: {n_val} / {len(self._validate_files)}")
+            f"Validated: {n_val} / {len(self._validate_files)}"
+            + (f" ({len(bad)} bad)" if bad else ""))
         self.lbl_all_validated.setText(
             "All sensors validated" if self._validate_files
             and n_val == len(self._validate_files) else "")
@@ -818,10 +922,54 @@ class SimpleModeDialog(QDialog):
 
     def _window_bounds(self, time, nadir_idx, n):
         fs = sensor_config.active().output_rate_hz or 2000
-        half_n = int(round(_WIN_SEC / 2 * fs))
+        half_n = int(round(self._win_sec / 2 * fs))
         start = max(0, nadir_idx - half_n)
         end = min(n - 1, nadir_idx + half_n)
         return start, end
+
+    def _update_validate_region(self, t: float):
+        self._validate_region.setRegion(
+            (t - self._win_sec / 2, t + self._win_sec / 2))
+
+    def _fill_validate_window_combo(self):
+        """Offer 100-1000 ms, defaulting to this page's own width - same
+        convention as Advanced mode's Validate page (page_validate.py's
+        own _fill_window_combo)."""
+        cmb = self.cmb_window
+        want = int(round(self._win_sec * 1000))
+        options = sorted(set(range(100, 1001, 100)) | {want})
+        cmb.blockSignals(True)
+        cmb.clear()
+        for ms in options:
+            cmb.addItem(f"{ms} ms", ms)
+        cmb.setCurrentIndex(max(0, cmb.findData(want)))
+        cmb.blockSignals(False)
+
+    def _on_validate_win_size_changed(self):
+        ms = self.cmb_window.currentData()
+        if ms is None:
+            return
+        self._win_sec = ms / 1000.0
+        if self._cur_validate_time is not None and self._cur_validate_nadir_idx is not None:
+            self._update_validate_region(
+                float(self._cur_validate_time[self._cur_validate_nadir_idx]))
+
+    def _on_validate_nadir_moved(self):
+        """The nadir line is user-draggable (movable=True) so any sensor -
+        already validated or not - can be corrected: dragging snaps to the
+        nearest sample and moves the ROI window preview with it; nothing
+        is written to disk until Save + Next."""
+        time = self._cur_validate_time
+        if time is None:
+            return
+        raw_t = self._validate_nadir_line.value()
+        idx = int(np.argmin(np.abs(time - raw_t)))
+        self._cur_validate_nadir_idx = idx
+        t_snap = float(time[idx])
+        self._validate_nadir_line.blockSignals(True)
+        self._validate_nadir_line.setPos(t_snap)
+        self._validate_nadir_line.blockSignals(False)
+        self._update_validate_region(t_snap)
 
     def _draw_validate_plot(self):
         pi = self._pw_validate.plotItem
@@ -841,14 +989,19 @@ class SimpleModeDialog(QDialog):
             self._vb2_validate.addItem(self._validate_curve2)
             self._validate_curve2.setData(time, self._cur_validate_hig)
             self._vb2_validate.enableAutoRange("y", True)
-        start, end = self._window_bounds(
-            time, self._cur_validate_nadir_idx, len(self._cur_validate_df))
-        self._validate_region.setRegion((time[start], time[end]))
-        self._validate_nadir_line.setPos(time[self._cur_validate_nadir_idx])
+        t = float(time[self._cur_validate_nadir_idx])
+        self._validate_nadir_line.blockSignals(True)
+        self._validate_nadir_line.setPos(t)
+        self._validate_nadir_line.blockSignals(False)
+        self._update_validate_region(t)
         pi.enableAutoRange("x", True)
         pi.enableAutoRange("y", True)
 
     def _mark_good_bad(self):
+        """Always marks the current sensor Bad - marking bad doesn't
+        un-validate it (Save and export excludes bad sensors from the
+        dataset separately, via the same bad_sens=N filter every other
+        dataset-building path already uses)."""
         if not self._cur_validate_stem or self._lib_root is None:
             return
         index_df = self._validate_index()
@@ -862,12 +1015,10 @@ class SimpleModeDialog(QDialog):
         if di.BAD_SENS_COL not in index_df.columns:
             index_df[di.BAD_SENS_COL] = ""
         index_df[di.BAD_SENS_COL] = index_df[di.BAD_SENS_COL].astype(object)
-        index_df.loc[mask, di.BAD_SENS_COL] = (
-            "Y" if self.chk_mark_bad.isChecked() else "N")
+        index_df.loc[mask, di.BAD_SENS_COL] = "Y"
         self._save_validate_index(index_df)
-        self.lbl_all_validated.setText(
-            f"{self._cur_validate_stem} marked "
-            f"{'Bad' if self.chk_mark_bad.isChecked() else 'Good'}.")
+        self.lbl_all_validated.setText(f"{self._cur_validate_stem} marked Bad.")
+        self._refresh_validate_list()
 
     def _save_one_validated(self, index_df, stem, df, time, pres, nadir_idx):
         """Writes the ROI window CSV and updates `index_df` in place for
@@ -875,7 +1026,7 @@ class SimpleModeDialog(QDialog):
         (page_validate.py._do_save_window/_do_update_index), reused here
         for both the single-file and Auto process all paths."""
         start, end = self._window_bounds(time, nadir_idx, len(df))
-        ms = int(round(_WIN_SEC * 1000))
+        ms = int(round(self._win_sec * 1000))
         out_dir = self._lib_root / _WIN_DIR
         out_dir.mkdir(parents=True, exist_ok=True)
         df.iloc[start:end + 1].to_csv(out_dir / f"{stem}_{ms}ms.csv", index=False)
@@ -906,17 +1057,37 @@ class SimpleModeDialog(QDialog):
         index_df = self._validate_index()
         if index_df is None:
             return
+        stem = self._cur_validate_stem
         index_df = self._save_one_validated(
-            index_df, self._cur_validate_stem, self._cur_validate_df,
+            index_df, stem, self._cur_validate_df,
             self._cur_validate_time, self._cur_validate_pres,
             self._cur_validate_nadir_idx)
         self._save_validate_index(index_df)
         self._refresh_validate_list()
-        self._jump_next_unvalidated_validate()
+        self._jump_next_in_list_validate(stem)
 
     def _reset_current_validate(self):
         if self._cur_validate_stem:
             self._load_validate_file(self._cur_validate_stem)
+
+    def _jump_next_in_list_validate(self, from_stem):
+        """Advances to the next sensor in on-screen list order (whatever
+        is currently visible, respecting Show bad) - unlike "Jump to next
+        unvalidated" below, this doesn't skip already-validated sensors,
+        so Save + Next keeps stepping through the list even after Auto
+        process all has already validated everything."""
+        index_df = self._validate_index()
+        bad = set()
+        if index_df is not None and di.BAD_SENS_COL in index_df.columns:
+            bad = set(index_df[index_df[di.BAD_SENS_COL]
+                      .astype(str).str.upper() == "Y"]["file"])
+        show_bad = self.chk_show_bad.isChecked()
+        visible = [f["stem"] for f in self._validate_files
+                  if show_bad or f["stem"] not in bad]
+        if from_stem in visible:
+            idx = visible.index(from_stem)
+            if idx + 1 < len(visible):
+                self._load_validate_file(visible[idx + 1])
 
     def _jump_next_unvalidated_validate(self):
         index_df = self._validate_index()
@@ -1056,19 +1227,48 @@ class SimpleModeDialog(QDialog):
         self.btn_run_predict.setEnabled(state.dataset_df is not None)
 
     def _auto_select_model(self, state):
-        if not state.bin_candidates:
-            state.load_models_from_dir(state.models_dir)
-        candidates = state.bin_candidates
-        if not candidates:
-            return
-        default = settings.get_default_model()
-        if default is not None and Path(default) in candidates:
-            if state.bin_model_path != Path(default):
-                state.select_bin_model(Path(default))
-            return
-        newest = max(candidates, key=lambda p: p.stat().st_mtime)
-        if state.bin_model_path != newest:
-            state.select_bin_model(newest)
+        """Defaults to the stable 'binary1'/'multiclass1' models in the
+        shared app-root models folder (settings.get_models_dir()) - the
+        one place both of the real, named production models actually
+        live - not "whatever finished training most recently" and not a
+        per-library deploy folder (Advanced mode's own Deploy tab writes
+        versioned models like binary1_0/binary1_1 into the *session
+        library's* StrikeWorks_user_output/models/, which is a different,
+        per-run destination Simple mode was never meant to follow). The
+        only way to deviate from the shared folder is a deliberate pin in
+        Adjustments (settings.get_default_model/get_default_mc_model),
+        which can point anywhere.
+
+        Always rescans rather than trusting `state.bin_candidates` already
+        being non-empty - some earlier load (construction time, or a demo
+        run switching libraries) may have pointed `state.models_dir`
+        somewhere else entirely."""
+        models_dir = settings.get_models_dir()
+        state.load_models_from_dir(models_dir)
+
+        bin_candidates = state.bin_candidates
+        if bin_candidates:
+            default = settings.get_default_model()
+            if default is not None and Path(default) in bin_candidates:
+                chosen = Path(default)
+            else:
+                chosen = (next((p for p in bin_candidates if p.stem == "binary1"),
+                               None)
+                          or max(bin_candidates, key=lambda p: p.stat().st_mtime))
+            if state.bin_model_path != chosen:
+                state.select_bin_model(chosen)
+
+        mc_candidates = state.mc_candidates
+        if mc_candidates:
+            mc_default = settings.get_default_mc_model()
+            if mc_default is not None and Path(mc_default) in mc_candidates:
+                mc_chosen = Path(mc_default)
+            else:
+                mc_chosen = (next((p for p in mc_candidates
+                                   if p.stem == "multiclass1"), None)
+                             or max(mc_candidates, key=lambda p: p.stat().st_mtime))
+            if state.mc_model_path != mc_chosen:
+                state.select_mc_model(mc_chosen)
 
     def _load_dataset_csv(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -1214,6 +1414,10 @@ class SimpleModeDialog(QDialog):
         page = QWidget()
         v = QVBoxLayout(page)
         v.addStretch()
+        logo = self._make_logo("PyDracula_vertical.png", width=220)
+        if logo is not None:
+            logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            v.addWidget(logo)
         title = QLabel("Finished!")
         title.setStyleSheet(f"color:{TEXT};font-size:20px;font-style:italic;"
                             "font-weight:bold;")

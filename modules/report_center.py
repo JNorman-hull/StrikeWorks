@@ -63,6 +63,44 @@ def save_figure(fig, base_path, formats=("png",), dpi=300):
     return png_path or first_path
 
 
+def _nested_deployment_table(deployments, root, di):
+    """One table - deployment identity columns (rowspan across each
+    deployment's own treatment rows) followed by that treatment's own
+    columns - so treatments are nested inside their deployment in the
+    output table itself, rather than a separate table per deployment
+    under a plain heading."""
+    esc, dark, bord = ml_report._esc, ml_report._DARK, ml_report._BORD
+    dep_headers = [label for _, label in di.DEPLOYMENT_FIELDS]
+    tx_headers = [label for _, label in di.TREATMENT_FIELDS] + ["Runs"]
+
+    def th(text):
+        return (f"<th style='border-bottom:2px solid {bord};padding:4px 10px;"
+                f"text-align:left;color:{dark};'>{esc(text)}</th>")
+
+    def td(text, rowspan=None):
+        span = f" rowspan='{rowspan}'" if rowspan else ""
+        weight = "font-weight:600;" if rowspan else ""
+        return (f"<td{span} style='border-bottom:1px solid {bord};"
+                f"padding:3px 10px;vertical-align:top;{weight}'>"
+                f"{esc(text)}</td>")
+
+    head = "".join(th(t) for t in dep_headers + tx_headers)
+    body = []
+    for dep_entry in deployments:
+        ident = dep_entry.get("deployment_id", "")
+        tx = di.treatments(root, ident) or [{}]
+        dep_cells = [dep_entry.get(c, "") for c, _ in di.DEPLOYMENT_FIELDS]
+        for i, t in enumerate(tx):
+            tx_cells = ([t.get(c, "") for c, _ in di.TREATMENT_FIELDS]
+                       + [t.get("runs", "")])
+            cells = ([td(c, rowspan=len(tx)) for c in dep_cells] if i == 0
+                    else [])
+            cells += [td(c) for c in tx_cells]
+            body.append(f"<tr>{''.join(cells)}</tr>")
+    return (f"<table cellspacing='0' cellpadding='0' style='margin:6px 0;'>"
+            f"<tr>{head}</tr>{''.join(body)}</table>")
+
+
 class ReportSection:
     """One report source: cheap availability check + HTML body builder.
 
@@ -171,7 +209,7 @@ def assemble(sections, out_dir, checked_keys):
 # has finished constructing, since only the *cheap* availability check runs
 # eagerly; `build()` itself is only ever called once the app is fully up).
 # ═════════════════════════════════════════════════════════════════════════════
-def bsm_section(window):
+def bsm_section(window, formats=("png",), dpi=300):
     sens = getattr(window, "bsm_sensitivity_page", None)
     bsm_state = getattr(window, "bsm_state", None)
     res = bsm_state.last_result if bsm_state is not None else None
@@ -179,18 +217,45 @@ def bsm_section(window):
     reason = "" if available else "Run a calculation on Calculator first."
 
     def build(out_dir):
-        from . import bsm_io
+        from matplotlib.figure import Figure
+        from . import bsm_figures, bsm_io
         from .bsm_report import build_bsm_report_html
         res_ = bsm_state.last_result
         if res_ is None:
             return None
+        other_species = "eel" if res_["params"]["species"] == "scaly" else "scaly"
+        res_other = (bsm_state.results or {}).get(other_species)
+
         fig_dir = out_dir / "bsm_figures"
         fig_dir.mkdir(parents=True, exist_ok=True)
         image_paths = {}
+        # Fresh, report-sized figures per species (figsize/dpi matching
+        # ml_figures.render_figures' own convention - the "predicted
+        # blade strike rate" figure the user pointed to as the size/
+        # formatting to use) rather than reusing the Sensitivity page's
+        # single live GUI figure, which only ever holds whichever one
+        # species was drawn there most recently - that was why the eel
+        # bars never made it into a dual-species report.
+        for species_key, res_species in ((res_["params"]["species"], res_),
+                                         (other_species, res_other)):
+            if res_species is None:
+                continue
+            try:
+                fig_pco = Figure(figsize=(6.0, 4.2), dpi=100)
+                bsm_figures.draw_pco(fig_pco, res_species, dark=False)
+                p = save_figure(fig_pco, fig_dir / f"barplot_pco_{species_key}",
+                                formats, dpi)
+                if p:
+                    image_paths[f"pco_{species_key}"] = p
+                fig_pm = Figure(figsize=(6.0, 4.2), dpi=100)
+                bsm_figures.draw_pm(fig_pm, res_species, dark=False)
+                p = save_figure(fig_pm, fig_dir / f"barplot_pm_{species_key}",
+                                formats, dpi)
+                if p:
+                    image_paths[f"pm_{species_key}"] = p
+            except Exception:
+                pass
         try:
-            bsm_io.export_results(res_, sens.fig_pco, sens.fig_pm, fig_dir)
-            image_paths["pco"] = fig_dir / "barplot_pco.png"
-            image_paths["pm"] = fig_dir / "barplot_pm.png"
             if getattr(sens, "wf_q_curves", None):
                 bsm_io.export_sweep_lines(
                     sens.wf_q_curves, sens.fig_wf_q, fig_dir,
@@ -210,8 +275,6 @@ def bsm_section(window):
                 image_paths["wf_pm"] = fig_dir / "sensitivity_pm_wf.png"
         except Exception:
             pass
-        other_species = "eel" if res_["params"]["species"] == "scaly" else "scaly"
-        res_other = (bsm_state.results or {}).get(other_species)
         html = build_bsm_report_html(res_, res_other=res_other,
                                      image_paths=image_paths, embed_images=True)
         return {"html": html}
@@ -294,32 +357,17 @@ def study_design_section(window, formats=("png",), dpi=300):
         deployments = di.deployments(root)
         h.append(f"<h2 style='color:{dark};'>Deployments</h2>")
         if deployments:
-            headers = [label for _, label in di.DEPLOYMENT_FIELDS]
-            rows = [[d.get(c, "") for c, _ in di.DEPLOYMENT_FIELDS]
-                    for d in deployments]
-            h.append(table(headers, rows))
+            h.append(_nested_deployment_table(deployments, root, di))
         else:
-            h.append("<p style='color:#64748b;'>No deployment plan recorded "
-                     "yet.</p>")
-
-        headers = [label for _, label in di.TREATMENT_FIELDS] + ["Runs"]
-        for dep_entry in deployments:
-            ident = dep_entry.get("deployment_id", "")
-            tx = di.treatments(root, ident)
-            if not tx:
-                continue
-            h.append(f"<h3 style='color:{dark};'>Treatments &mdash; "
-                     f"{di.describe_deployment(dep_entry)}</h3>")
-            rows = [[t.get(c, "") for c, _ in di.TREATMENT_FIELDS] +
-                    [t.get("runs", "")] for t in tx]
-            h.append(table(headers, rows))
-        if not deployments:
             tx = di.treatments(root)
             if tx:
-                h.append(f"<h3 style='color:{dark};'>Treatments</h3>")
+                headers = [label for _, label in di.TREATMENT_FIELDS] + ["Runs"]
                 rows = [[t.get(c, "") for c, _ in di.TREATMENT_FIELDS] +
                         [t.get("runs", "")] for t in tx]
                 h.append(table(headers, rows))
+            else:
+                h.append("<p style='color:#64748b;'>No deployment plan "
+                         "recorded yet.</p>")
 
         h.append("</div>")
         return {"html": "".join(h)}
@@ -387,6 +435,17 @@ def annotation_section(window):
         root = getattr(ann, "_lib_root", None)
         if root is None:
             return None
+        # ann._index_df/_dataset_stems are only ever refreshed when the
+        # Annotate page itself changes library or saves an annotation -
+        # not when some other page (processing, a deployment plan, a
+        # demo run) writes the same index/model_features.csv on disk.
+        # Re-reading here means the report reflects what's actually on
+        # disk right now, not a stale snapshot from whenever Annotate was
+        # last opened.
+        if hasattr(ann, "_load_index"):
+            ann._load_index()
+        if hasattr(ann, "_load_dataset_stems"):
+            ann._load_dataset_stems()
         df = ann._library_sensor_rows()
         if df is None:
             return None
@@ -685,8 +744,11 @@ def all_sections(window, training_entry_getter=None, misclass_entry_getter=None,
         training_entry_getter = training_entry_getter or default_getter
         misclass_entry_getter = misclass_entry_getter or default_getter
     return [
-        bsm_section(window),
+        # study design comes first - it's the one carrying the
+        # library/folder structure/deployments overview, which the user
+        # wants to see ahead of everything else
         study_design_section(window, formats=formats, dpi=dpi),
+        bsm_section(window, formats=formats, dpi=dpi),
         process_section(window),
         annotation_section(window),
         training_section(window, training_entry_getter, all_models=all_models,

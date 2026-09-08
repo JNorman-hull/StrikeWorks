@@ -443,11 +443,20 @@ def render_model_figures(out_dir, metrics, cv_predictions, curves,
     out_dir.mkdir(parents=True, exist_ok=True)
     out = {}
     for name, draw in spec:
-        fig = Figure(figsize=(6.0, 4.4), dpi=100)
-        draw(fig)
-        out[name] = []
-        for fmt in formats:
-            p = out_dir / f"{name}.{fmt}"
-            fig.savefig(p, dpi=dpi, bbox_inches="tight")
-            out[name].append(p)
+        # one figure's own isolated try/except - a single bad draw (e.g.
+        # a chart type that can't handle this run's particular data
+        # shape) used to abort the whole loop uncaught, silently dropping
+        # every figure after it from the report (only whichever rendered
+        # first would ever show up)
+        try:
+            fig = Figure(figsize=(6.0, 4.4), dpi=100)
+            draw(fig)
+            paths = []
+            for fmt in formats:
+                p = out_dir / f"{name}.{fmt}"
+                fig.savefig(p, dpi=dpi, bbox_inches="tight")
+                paths.append(p)
+            out[name] = paths
+        except Exception:
+            continue
     return out

@@ -525,12 +525,19 @@ class AnnotationPage(QObject):
     def _variable_value_counts(self, df):
         """[(variable label, value, count), ...] across every annotated
         sensor row, one group per variable, most common value first."""
+        from .ml_train_state import level_key
         rows = []
         for var in asch.all_variables():
             if var.name not in df.columns:
                 continue
             values = df[var.name].astype(str).str.strip()
             values = values[values.astype(bool) & (values.str.lower() != "nan")]
+            # a numeric-looking annotation column (e.g. concentric_pump_region)
+            # round-trips through the index CSV as float ("2.0") even when
+            # the value stored was the plain string "2" - normalise so
+            # in-session and reloaded-from-disk values count identically,
+            # same rule the training pipeline already applies (level_key)
+            values = values.map(level_key)
             for value, count in values.value_counts().items():
                 rows.append((var.label, value, int(count)))
         return rows
@@ -944,6 +951,7 @@ class AnnotationPage(QObject):
             self._load_annotations_for_current()
 
     def _load_annotations_for_current(self):
+        from .ml_train_state import level_key
         row = None
         if self._index_df is not None and "file" in self._index_df.columns:
             match = self._index_df[self._index_df["file"] == self._cur_stem]
@@ -951,7 +959,7 @@ class AnnotationPage(QObject):
                 row = match.iloc[0]
         for name, editor in self._editors.items():
             value = row.get(name, "") if row is not None else ""
-            value = "" if pd.isna(value) else value
+            value = "" if pd.isna(value) else level_key(value)
             editor.set_current(value)
         self.chk_no_annotations.setChecked(False)
 

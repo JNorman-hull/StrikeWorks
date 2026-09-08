@@ -205,7 +205,7 @@ class TrainingState(QObject):
         # validation config
         self.split_mode = "cv_only"          # "cv_only" | "holdout_cv"
         self.test_size = 0.20
-        self.n_folds = 10
+        self.n_folds = 5
         self.shuffle = True
         self.random_seed = 42
 

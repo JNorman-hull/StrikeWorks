@@ -87,23 +87,40 @@ def set_output_dir(path) -> Path:
 
 
 def get_default_model():
-    """The pinned "default model" (Adjustments) - Simple mode's Predict
-    step uses this instead of guessing "most recent" when the user has
-    set one; unset (None) is the normal state, not an error. Doesn't
-    check existence - a model path can point into a library that isn't
-    the current session library, so a transient "not found right now"
-    isn't the same as "never configure this"."""
+    """The pinned "default binary model" (Adjustments) - Simple mode's
+    Predict step uses this instead of the 'binary1' convention when the
+    user has set one; unset (None) is the normal state, not an error.
+    Doesn't check existence - a model path can point into a library that
+    isn't the current session library, so a transient "not found right
+    now" isn't the same as "never configure this"."""
     p = _load().get("default_model")
     return Path(p) if p else None
 
 
 def set_default_model(path):
-    """`path=None` clears the pin - back to "most recent"."""
+    """`path=None` clears the pin - back to the 'binary1' convention."""
     data = _load()
     if path is None:
         data.pop("default_model", None)
     else:
         data["default_model"] = str(Path(path))
+    _save(data)
+
+
+def get_default_mc_model():
+    """The pinned "default multiclass model" (Adjustments) - same rule as
+    `get_default_model`, just for the region/multiclass stage."""
+    p = _load().get("default_mc_model")
+    return Path(p) if p else None
+
+
+def set_default_mc_model(path):
+    """`path=None` clears the pin - back to the 'multiclass1' convention."""
+    data = _load()
+    if path is None:
+        data.pop("default_mc_model", None)
+    else:
+        data["default_mc_model"] = str(Path(path))
     _save(data)
 
 
@@ -123,6 +140,18 @@ def set_last_library(path):
         data.pop("last_library", None)
     else:
         data["last_library"] = str(Path(path))
+    _save(data)
+
+
+def get_dev_mode() -> bool:
+    """Whether the Dev console (Adjustments) should be attached at
+    startup - persisted so it comes back on for the next launch too."""
+    return bool(_load().get("dev_mode", False))
+
+
+def set_dev_mode(enabled: bool):
+    data = _load()
+    data["dev_mode"] = bool(enabled)
     _save(data)
 
 

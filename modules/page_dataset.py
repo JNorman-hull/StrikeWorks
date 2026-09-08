@@ -151,8 +151,17 @@ class _ExtractThread(QThread):
     def _meta_lookup(self):
         if self._index_df is None or "file" not in self._index_df.columns:
             return {}
-        available = [c for c in _META_COLS if c in self._index_df.columns]
-        return self._index_df.set_index("file")[available].to_dict(orient="index")
+        # plan rows (deployment_index.save_plan's own "label_pad" rows,
+        # one per treatment/run) all share the same literal filename, so a
+        # library with more than one deployment has more than one -
+        # set_index("file") on the raw index then crashes with "index
+        # must be unique", which run()'s except-and-emit-zero swallows as
+        # a silent "no rows" instead of the real cause. sensor_rows()
+        # drops them the same way _run_unsegmented already does.
+        df = di.sensor_rows(self._index_df)
+        available = [c for c in _META_COLS if c in df.columns]
+        return (df.drop_duplicates("file", keep="last")
+                  .set_index("file")[available].to_dict(orient="index"))
 
     def _attach_meta(self, df, stem, meta):
         info = meta.get(stem, {})

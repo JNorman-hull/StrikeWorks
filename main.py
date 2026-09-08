@@ -30,6 +30,7 @@ from modules.page_export_animations import ExportAnimationsPage
 from modules.session_state import SessionState
 from modules.page_home import HomePage
 from modules.page_adjustments import AdjustmentsDialog
+from modules.dev_console import DevConsole
 from modules.page_simple_mode import SimpleModeDialog
 from modules.bsm_state import BSMState
 from modules.page_bsm_calculator import CalculatorPage
@@ -84,6 +85,14 @@ class MainWindow(QMainWindow):
         # SET UI DEFINITIONS
         # ///////////////////////////////////////////////////////////////
         UIFunctions.uiDefinitions(self)
+
+        # DEV CONSOLE - constructed (hidden, no stdout/stderr tee) before
+        # every page below, but deliberately never auto-shown here even if
+        # settings.get_dev_mode() was left on from a previous session -
+        # it should only ever appear because the user opened it, from
+        # Adjustments' Dev mode toggle or "Show console" button.
+        # ///////////////////////////////////////////////////////////////
+        self.dev_console = DevConsole(self)
 
         # SESSION STATE + HOME (library selection) - constructed before
         # every page below, and in that order: Home's own construction is
