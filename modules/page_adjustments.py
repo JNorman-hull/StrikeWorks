@@ -131,6 +131,15 @@ class AdjustmentsDialog(QDialog):
             "own StrikeWorks_user_output/ folder instead.")
         v.addWidget(grp_out)
 
+        grp_input = Section("Default input data folder")
+        gv = QVBoxLayout(grp_input)
+        gv.setSpacing(6)
+        self.ed_input_data = self._folder_field(
+            gv, settings.get_input_data_dir(), "default input data folder",
+            "Where Simple mode's Save and export (and the dev demo "
+            "runner) write exported model-ready datasets by default.")
+        v.addWidget(grp_input)
+
         self._dev_mode_row(v)
 
         v.addStretch()
@@ -171,6 +180,8 @@ class AdjustmentsDialog(QDialog):
             settings.set_models_dir(chosen)
         elif ed is self.ed_output:
             settings.set_output_dir(chosen)
+        elif ed is self.ed_input_data:
+            settings.set_input_data_dir(chosen)
 
     def _model_field(self, gv, label_text, getter, setter, glob_pattern, tip):
         row = QHBoxLayout()

@@ -257,7 +257,15 @@ class UIFunctions(MainWindow):
 
         if Settings.ENABLE_CUSTOM_TITLE_BAR:
             #STANDARD TITLE BAR
-            self.setWindowFlags(Qt.FramelessWindowHint)
+            # OR onto the existing flags rather than replacing them
+            # outright - setWindowFlags(Qt.FramelessWindowHint) alone
+            # silently drops the implicit Qt.Window type QMainWindow
+            # starts with, which is what tells Windows this is a normal
+            # top-level app window; without it, Windows treats it as a
+            # plain popup and never gives it a taskbar button at all
+            # (confirmed via GetWindowLong: no WS_EX_APPWINDOW without
+            # this fix, even though the window itself displays fine).
+            self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
             self.setAttribute(Qt.WA_TranslucentBackground)
 
             # MOVE WINDOW / MAXIMIZE / RESTORE

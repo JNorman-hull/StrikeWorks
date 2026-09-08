@@ -55,8 +55,12 @@ from .page_dataset import OPT_SEGMENTED, _ExtractThread
 from .page_initiate_deployment import _README_TEXT
 from .page_process import _ProcessThread
 
-_INPUT_DATA_DIR = Path(__file__).parent.parent / "input_data"
-_ANNOTATIONS_CSV = _INPUT_DATA_DIR / "Pumpflow_2024_datatset1_only_annotations.csv"
+# a bundled dev-fixture file, always at the real app install's own
+# input_data/ - deliberately NOT settings.get_input_data_dir() (a *user*
+# default output location that can point anywhere the user likes; this
+# demo fixture only ever lives in one place, the source tree/install)
+_ANNOTATIONS_CSV = (settings.app_root() / "input_data"
+                    / "Pumpflow_2024_datatset1_only_annotations.csv")
 # the source CSV's own columns (verified against it directly):
 # file, concentric_pump_region, passage_type, leading_type, other_type -
 # human-readable values ("No contact", "Leading edge strike", ...). The
@@ -666,9 +670,10 @@ class DevRunner(_RunnerBase):
                    f"{dataset_path.name} (Annotate's own dataset).")
 
     def _write_dataset_csv(self, df):
-        _INPUT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        out_dir = settings.get_input_data_dir()
+        out_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = _INPUT_DATA_DIR / f"{self.DEPLOYMENT['deployment_id']}_devrun_{ts}.csv"
+        path = out_dir / f"{self.DEPLOYMENT['deployment_id']}_devrun_{ts}.csv"
         df.to_csv(path, index=False)
         self._log(f"Dataset written to {path.name} ({len(df)} rows) - this session's data.")
         return path

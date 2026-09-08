@@ -15,9 +15,13 @@ the same "pick from a folder" shape as `LibrarySelector`, just for a plain
 folder of config files rather than a sensor library.
 """
 import configparser
-from pathlib import Path
 
-CONFIG_DIR = Path(__file__).parent.parent / "input_data" / "BSM_config"
+from . import settings
+
+# a bundled app resource (shipped presets), always at the real app root -
+# settings.get_input_data_dir() is a *user* data location and could point
+# anywhere, which these presets must not follow
+CONFIG_DIR = settings.app_root() / "input_data" / "BSM_config"
 
 _BLADE_KEYS = ("rttr", "d_vals", "beta_vals", "delta_vals")
 

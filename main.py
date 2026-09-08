@@ -11,6 +11,33 @@
 import sys
 import os
 import platform
+from pathlib import Path
+
+# WORKER DISPATCH (predict_worker.py / train_worker.py, launched as a
+# subprocess by ml_state.py / ml_train_state.py via modules/worker_launch.py)
+# - checked before any GUI import so a frozen build's worker subprocess
+# never pulls in PySide6/Qt at all. From source the worker runs directly
+# as its own script (`sys.executable <script>.py args...`); a frozen exe
+# has no bundled interpreter to hand a loose .py file to, so it instead
+# re-invokes itself as `<exe> --worker <name> args...` and lands here.
+# ///////////////////////////////////////////////////////////////
+if len(sys.argv) > 2 and sys.argv[1] == "--worker":
+    _worker_name = sys.argv[2]
+    sys.argv = [sys.argv[0]] + sys.argv[3:]
+    import traceback
+    try:
+        if _worker_name == "predict":
+            from modules.predict_worker import main as _worker_main
+        elif _worker_name == "train":
+            from modules.train_worker import main as _worker_main
+        else:
+            print(f"Unknown worker: {_worker_name}", file=sys.stderr)
+            sys.exit(1)
+        _worker_main()
+    except Exception:
+        traceback.print_exc()
+        sys.exit(1)
+    sys.exit(0)
 
 # IMPORT / GUI AND MODULES AND WIDGETS
 # ///////////////////////////////////////////////////////////////
@@ -52,6 +79,17 @@ TEMPLATE_URL = "https://github.com/Wanderson-Magalhaes/Modern_GUI_PyDracula_PySi
 # width - the sidebar's starting, deactivated state (Simple/Advanced mode)
 _LEFT_MENU_COLLAPSED_WIDTH = 60
 
+# APP ICON - __file__-relative, not a bare "icon.ico", so it still
+# resolves once frozen: PyInstaller's `datas` (StrikeWorks.spec) bundles
+# icon.ico into _internal/, and __file__ for this module resolves there
+# too under a onedir build - the same reasoning _build_splash() below
+# already relies on for the PyDracula logo. A relative "icon.ico" would
+# instead be looked up against the process's current working directory,
+# which is *not* guaranteed to be the .exe's own folder (e.g. launched
+# from a pinned taskbar/Start Menu shortcut) - silently resolving to
+# nothing, which is what was leaving the taskbar button blank.
+_ICON_PATH = Path(__file__).parent / "icon.ico"
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -73,6 +111,10 @@ class MainWindow(QMainWindow):
         title = "StrikeWorks"
         # APPLY TEXTS
         self.setWindowTitle(title)
+        # set directly on this window too, not just QApplication - a
+        # frameless custom-title-bar window (below) can otherwise lose
+        # the app-level default and fall back to a generic taskbar icon
+        self.setWindowIcon(QIcon(str(_ICON_PATH)))
         # NOTE: the header label (titleRightInfo) is deliberately NOT set here.
         # Its text comes from main.ui so it can be edited in Qt Designer.
         # Calling setText() on a widget here overrides the .ui at startup and
@@ -299,10 +341,6 @@ class MainWindow(QMainWindow):
         for tbl in self.findChildren(QTableWidget):
             style_table(tbl)
 
-        # SHOW APP
-        # ///////////////////////////////////////////////////////////////
-        self.show()
-
         # SET CUSTOM THEME
         # ///////////////////////////////////////////////////////////////
         useCustomTheme = False
@@ -331,6 +369,54 @@ class MainWindow(QMainWindow):
         widgets.leftMenuBg.setMinimumWidth(_LEFT_MENU_COLLAPSED_WIDTH)
         widgets.leftMenuBg.setMaximumWidth(_LEFT_MENU_COLLAPSED_WIDTH)
         self.set_sidebar_active(False)
+
+        # SHOW APP - deliberately last: every page/dialog above is built
+        # and every layout/theme/sidebar tweak above is applied *before*
+        # the window is ever made visible, so nothing appears in a half-
+        # built state while the splash screen (main.py's __main__) is
+        # still up. Also why main.py constructs MainWindow() first and
+        # only calls splash.finish() after - it needs the window to
+        # already be showing before it decides to drop the splash.
+        # _ensure_taskbar_button() runs first, on the still-hidden native
+        # window - see its own docstring for why that ordering matters.
+        # ///////////////////////////////////////////////////////////////
+        self._ensure_taskbar_button()
+        self.show()
+
+    def _ensure_taskbar_button(self):
+        """Windows-only. Qt.FramelessWindowHint (ui_functions.py,
+        uiDefinitions) makes Windows create this window as WS_POPUP
+        rather than a normal WS_OVERLAPPED top-level window - confirmed
+        via GetWindowLong on a real build: exStyle carried no
+        WS_EX_APPWINDOW at all. Unlike a normal window, WS_POPUP does
+        NOT get an automatic taskbar button, so the running app was
+        simply missing from the taskbar entirely (not just showing the
+        wrong icon).
+
+        Must run BEFORE the first show(), not after: Windows decides
+        whether to create a taskbar button when a window is first made
+        visible, and toggling WS_EX_APPWINDOW afterwards (even paired
+        with a hide()/show() cycle) does not reliably force it to
+        reconsider - confirmed by testing exactly that ordering, which
+        left the app not just missing its button but transiently
+        minimized (DWM re-evaluating a frameless/layered top-level
+        window mid-flight is not something to provoke twice). Calling
+        winId() forces the native handle to exist without showing
+        anything, so the style bit is already correct by the time
+        show() runs for the first time."""
+        if platform.system() != "Windows":
+            return
+        import ctypes
+        GWL_EXSTYLE = -20
+        WS_EX_APPWINDOW = 0x00040000
+        WS_EX_TOOLWINDOW = 0x00000080
+        try:
+            hwnd = int(self.winId())
+            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            style = (style | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+        except Exception:
+            pass
 
 
     # APPLY THE "SELECTED" HIGHLIGHT TO A MENU BUTTON
@@ -590,9 +676,82 @@ class MainWindow(QMainWindow):
         if event.buttons() == Qt.RightButton:
             print('Mouse click: RIGHT CLICK')
 
+def _build_splash():
+    """Loading splash shown while MainWindow() constructs every page -
+    same look as Simple mode's Welcome page (page_simple_mode.py): the
+    PyDracula_vertical logo + "Deploy. Process. Predict.", plus a
+    "Loading application..." message for this moment specifically."""
+    pix = QPixmap(420, 480)
+    pix.fill(QColor("#21252b"))   # PyDracula's own dark background
+    painter = QPainter(pix)
+    logo_path = Path(__file__).parent / "images" / "images" / "PyDracula_vertical.png"
+    logo = QPixmap(str(logo_path)) if logo_path.exists() else None
+    if logo is not None and not logo.isNull():
+        logo = logo.scaledToWidth(220, Qt.TransformationMode.SmoothTransformation)
+        painter.drawPixmap((pix.width() - logo.width()) // 2, 50, logo)
+    painter.setPen(QColor("#dddddd"))
+    font = QFont()
+    font.setPointSize(13)
+    font.setItalic(True)
+    painter.setFont(font)
+    painter.drawText(pix.rect().adjusted(0, 300, 0, -100),
+                     int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop),
+                     "Deploy. Process. Predict.")
+    painter.end()
+
+    splash = QSplashScreen(pix)
+    # stay above every other window for the whole loading window,
+    # including MainWindow's own brief pre-final-layout state and any
+    # other top-level widget that happens to construct itself in the
+    # process - nothing should visibly pop up in front of/beside it
+    splash.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+    splash.showMessage(
+        "Loading application...",
+        int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom),
+        QColor("#8a95aa"))
+    return splash
+
+
+def _ensure_default_folders():
+    """Creates the four default data folders (libraries/models/
+    output_data/input_data) if they don't already exist - packaged, these
+    live next to the .exe (settings.app_root()); a fresh install should
+    show them immediately rather than only after something happens to
+    write into one for the first time. Cheap and safe to call on every
+    launch, source or frozen."""
+    from modules import settings
+    for getter in (settings.get_libraries_dir, settings.get_models_dir,
+                  settings.get_output_dir, settings.get_input_data_dir):
+        try:
+            getter().mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+
+
+def _set_windows_app_id():
+    """Windows groups/identifies taskbar buttons by AppUserModelID, not
+    by window icon alone - without explicitly setting one, a Python-based
+    exe can get folded under (and iconed as) a generic "python"/host
+    identity rather than showing its own icon.ico. No-op off Windows."""
+    if platform.system() != "Windows":
+        return
+    import ctypes
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "StrikeWorks.App")
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
+    _set_windows_app_id()
+    _ensure_default_folders()
     app = QApplication(sys.argv)
-    app.setWindowIcon(QIcon("icon.ico"))
+    app.setWindowIcon(QIcon(str(_ICON_PATH)))
     table_copy.install(app)
+    splash = _build_splash()
+    splash.show()
+    app.processEvents()
     window = MainWindow()
+    splash.finish(window)
     sys.exit(app.exec_())

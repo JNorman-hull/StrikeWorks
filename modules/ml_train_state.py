@@ -35,8 +35,8 @@ import pandas as pd
 from PySide6.QtCore import QObject, QThread, Signal
 
 from . import sensor_config, settings
+from .worker_launch import worker_command
 
-_WORKER = Path(__file__).parent / "train_worker.py"
 _APP_ROOT = Path(__file__).parent.parent
 _RUNS_DIR = _APP_ROOT / "training_runs"
 DEFAULT_MODELS_DIR = _APP_ROOT / "models"
@@ -709,7 +709,7 @@ class TrainingState(QObject):
         cfg_path = self.out_dir / "train_config.json"
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(self.build_config(), f, indent=2)
-        cmd = [sys.executable, str(_WORKER),
+        cmd = worker_command("train") + [
                "--config", str(cfg_path), "--stage", stage]
         self._thread = _StreamThread(cmd)
         self._thread.line.connect(self._on_line)

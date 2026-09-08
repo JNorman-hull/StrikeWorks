@@ -76,7 +76,6 @@ _VALIDATED_COL = "hstrike_processed"
 _WIN_SEC = 0.2
 _WIN_DIR = Path("processed_sens_data") / "nadir_window"
 _NEW_DEPLOYMENT = "__new__"
-_INPUT_DATA_DIR = Path(__file__).parent.parent / "input_data"
 _IMAGES_DIR = Path(__file__).parent.parent / "images" / "images"
 
 # The left step list: (label, indent level, stack page index or None).
@@ -1150,8 +1149,9 @@ class SimpleModeDialog(QDialog):
             return
         ident = self.dep_edits[di.DEPLOYMENT_COL].text().strip() or "dataset"
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        _INPUT_DATA_DIR.mkdir(parents=True, exist_ok=True)
-        out_path = _INPUT_DATA_DIR / f"{ident}_{stamp}.csv"
+        out_dir = settings.get_input_data_dir()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{ident}_{stamp}.csv"
         try:
             df.to_csv(out_path, index=False)
         except Exception as e:

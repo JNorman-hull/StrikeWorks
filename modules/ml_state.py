@@ -32,8 +32,7 @@ import pandas as pd
 from PySide6.QtCore import QObject, QThread, Signal
 
 from . import settings
-
-_WORKER     = Path(__file__).parent / "predict_worker.py"
+from .worker_launch import worker_command
 
 # Ground-truth annotation columns, in preference order. Nothing downstream
 # assumes a particular name: whichever of these a dataset carries is used,
@@ -95,7 +94,7 @@ class _WorkerThread(QThread):
             self.failed.emit(f"Could not write dataset for the worker: {e}")
             return
 
-        cmd = [sys.executable, str(_WORKER),
+        cmd = worker_command("predict") + [
                "--bin-model",   str(self._bin_model),
                "--bin-metrics", str(self._bin_metrics),
                "--data",        str(self._data),

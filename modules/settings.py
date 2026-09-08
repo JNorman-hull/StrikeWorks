@@ -14,12 +14,27 @@ The settings file and key are deliberately identical to the MVP's
 the libraries folder already configured there.
 """
 import json
+import sys
 from pathlib import Path
 
+
+def app_root() -> Path:
+    """Where the four default data folders (libraries/models/output_data/
+    input_data) live. Packaged (PyInstaller), that's next to the .exe
+    itself - `Path(__file__).parent.parent` would instead resolve inside
+    the bundled _internal folder, since modules/settings.py's own file
+    lives there once frozen, not at the real app root a user would look
+    in. From source it's the repo root, same as before."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).parent.parent
+
+
 _SETTINGS_FILE = Path.home() / ".hifistrike_settings.json"
-_DEFAULT_LIBRARIES = Path(__file__).parent.parent / "libraries"
-_DEFAULT_MODELS = Path(__file__).parent.parent / "models"
-_DEFAULT_OUTPUT = Path(__file__).parent.parent / "output_data"
+_DEFAULT_LIBRARIES = app_root() / "libraries"
+_DEFAULT_MODELS = app_root() / "models"
+_DEFAULT_OUTPUT = app_root() / "output_data"
+_DEFAULT_INPUT_DATA = app_root() / "input_data"
 
 
 def _load() -> dict:
@@ -82,6 +97,24 @@ def set_output_dir(path) -> Path:
     p = Path(path)
     data = _load()
     data["output_dir"] = str(p)
+    _save(data)
+    return p
+
+
+def get_input_data_dir() -> Path:
+    """Default folder for exported model-ready datasets - Simple mode's
+    Save and export, the dev demo runner's own dataset write - the
+    Adjustments dialog's own setting for it. Unrelated to bsm_config.py's
+    CONFIG_DIR (the bundled BSM_config presets shipped with the app
+    itself, always at app_root() regardless of this setting)."""
+    p = _load().get("input_data_dir")
+    return Path(p) if p else _DEFAULT_INPUT_DATA
+
+
+def set_input_data_dir(path) -> Path:
+    p = Path(path)
+    data = _load()
+    data["input_data_dir"] = str(p)
     _save(data)
     return p
 
