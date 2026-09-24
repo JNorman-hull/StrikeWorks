@@ -88,8 +88,17 @@ def _img_tag(path, embed):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-def build_report_html(state, image_paths=None, embed_images=False):
-    """Assemble the full report. `image_paths` maps figure name -> file."""
+def build_report_html(state, image_paths=None, embed_images=False,
+                      processing_review=None):
+    """Assemble the full report. `image_paths` maps figure name -> file.
+
+    `processing_review` is an optional [(label, value), ...] list -
+    Simple mode's own Validate-step summary (auto- vs. user-validated,
+    how many sensors got flagged for a HIG-in-window check and how many
+    of those were actually reviewed, how many had their nadir moved by a
+    human) passed in from page_simple_mode.py's _download_report. None
+    for Advanced mode's own report generation, which has no equivalent
+    concept - the section is simply omitted then."""
     s = state
     prov = s.provenance()
     meta = s.run_meta or {}
@@ -229,6 +238,11 @@ def build_report_html(state, image_paths=None, embed_images=False):
                  "prediction accuracy can be reviewed per recording on the "
                  "Inspect tab.</p>")
 
+    # ── processing review (Simple mode's Validate step only) ─────────────────
+    if processing_review:
+        h.append(f"<h2 style='color:{_DARK};'>Processing review</h2>")
+        h.append(_kv_table(processing_review))
+
     # ── notes / warnings ─────────────────────────────────────────────────────
     warnings = [f"{label}: {detail}" for st, label, detail in s.checks
                 if st == "warn"]
@@ -305,8 +319,10 @@ A4_REPORT_CSS = (
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-def export_analysis(state, parent_dir):
-    """Create the self-contained analysis package. Returns its Path."""
+def export_analysis(state, parent_dir, processing_review=None):
+    """Create the self-contained analysis package. Returns its Path.
+
+    `processing_review` - see build_report_html's own docstring."""
     if state.summary is None or state.run_id is None:
         raise RuntimeError("No prediction run to export.")
 
@@ -326,7 +342,8 @@ def export_analysis(state, parent_dir):
 
     # report with embedded figures - fully self-contained
     body = build_report_html(state, image_paths=image_paths,
-                             embed_images=True)
+                             embed_images=True,
+                             processing_review=processing_review)
     (out / "report.html").write_text(wrap_html_document(body),
                                      encoding="utf-8")
 

@@ -131,7 +131,7 @@ class SimpleDevRunner(_RunnerBase):
         ident = self.DEPLOYMENT["deployment_id"]
         for column, edit in dlg.dep_edits.items():
             edit.setText(self.DEPLOYMENT.get(column, ""))
-        dlg._clear_treatments()
+        dlg.treatment_table.clear_rows()
         dlg._add_treatment(dict(self.TREATMENT))
 
         with self._headless_dialogs():

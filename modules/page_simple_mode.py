@@ -5,7 +5,10 @@
 #
 # ///////////////////////////////////////////////////////////////
 """Simple mode - a guided, one-window walkthrough of Deployment > Process >
-Predict > Report (2026-09-01, spec: simple_spec/1.png-7.png).
+Predict > Report, and (2026-09-11) the app's default landing experience -
+main.py opens it automatically on launch, ahead of the full Advanced GUI.
+Spec: simple_spec/Home.png, Deploy.png, Validate.png, Predict.png
+(2026-09-11, superseding the earlier simple_spec/1.png-7.png drafts).
 
 Every step below calls the *same* backend pieces Advanced mode's pages
 use - `deployment_index`, `sensor_config`, `_ProcessThread` (page_process.py),
@@ -44,23 +47,25 @@ import pyqtgraph as pg
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtCore import QThread, Qt, Signal
+from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QFileDialog, QGridLayout, QHBoxLayout,
-    QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
-    QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget,
+    QLabel, QLayout, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
+    QPushButton, QScrollArea, QSizePolicy, QSpinBox, QStackedWidget,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import deployment_index as di
-from . import ml_figures, ml_report, sensor_config, settings
+from . import ml_figures, ml_report, sensor_config, settings, win_utils
 from .ml_widgets import (
     ACCENT, BAD, MUTED, OK, PALETTE, PINK, TEXT, WARN, MetaCard, RingCard,
-    Section, apply_section_defaults,
+    Section, Spinner, apply_section_defaults, style_table,
 )
 from .page_dataset import OPT_SEGMENTED, _ExtractThread, _standardise
-from .page_initiate_deployment import _README_TEXT, _TreatmentRow
+from .plot_style import add_export_button, build_export_data
+from .page_home import library_status_rows
+from .page_initiate_deployment import _README_TEXT
 from .page_process import _ProcessThread, _parse_name
 
 pg.setConfigOptions(antialias=True, background="#21252b",
@@ -72,11 +77,25 @@ _INDEX_REL = di.INDEX_REL
 _VIDEO_FOLDER_NAME = "VIDEO"
 _NADIR_T_COL = "pres_min.time."
 _NADIR_V_COL = "pres_min.kPa."
-_VALIDATED_COL = "hstrike_processed"
+_VALIDATED_COL = "hstrike_processed"   # Y once a window's been saved at all - auto OR user
+_USER_VALIDATED_COL = "hstrike_user_validated"   # Y only once a human reviewed it
+_FLAGGED_COL = "hstrike_flagged"   # Y = auto process's own "worth a look" heuristic
+_USER_ADJUSTED_COL = "hstrike_user_adjusted"   # Y = human moved the nadir and re-saved
+_HIG_WINDOW_MAX_COL = "hstrike_hig_window_max_g"
+# Auto process all's one heuristic for "this nadir position might be
+# wrong": a real blade-strike window should show a real HIG (impact
+# accelerometer) peak - a low one inside the saved window suggests Auto
+# process picked a window that missed the actual event. Ad hoc, and
+# deliberately just one check for now (not a hard science threshold) -
+# the goal is to point a human at the sensors worth a second look, not to
+# auto-reject anything; Auto process all still saves every sensor's
+# window regardless of this flag.
+_FLAG_HIG_THRESHOLD_G = 95.0
 _WIN_SEC = 0.2
 _WIN_DIR = Path("processed_sens_data") / "nadir_window"
 _NEW_DEPLOYMENT = "__new__"
 _IMAGES_DIR = Path(__file__).parent.parent / "images" / "images"
+_ICON_PATH = Path(__file__).parent.parent / "icon.ico"
 
 # The left step list: (label, indent level, stack page index or None).
 # None means a non-clickable group heading - "Process" and "Report" are
@@ -98,25 +117,288 @@ _LIST_ITEMS = [
 # (fixed bottom-left, present on every other page) would just duplicate it
 _NO_SMALL_LOGO_PAGES = {0, 6}
 
+# the guidance line shown above Back/Next/Close, per stack page index -
+# spec text where the mockups (simple_spec/Home.png, Deploy.png,
+# Validate.png, Predict.png) give it, short consistent text of the same
+# kind for the three steps they don't cover
+_GUIDANCE = {
+    0: "Pressing next continues with blade strike prediction…",
+    1: "Create a deployment and add data to continue…",
+    2: "Select files and process them to continue…",
+    3: "Pressing next continues with data saved here or an existing dataset…",
+    4: "Continue to plot and export data…",
+    5: "Review the report, then continue to download…",
+    6: "Download your report to finish, or close.",
+}
+
+
+class _TreatmentTable(QTableWidget):
+    """Editable table of treatments - simple_spec/Deploy.png's table view
+    ("MAKE TREATMENT ENTRY LIKE AN ACTUAL TABLE? WOULD BE CLEANER"),
+    replacing the stacked _TreatmentRow cards (page_initiate_deployment.py)
+    Advanced mode still uses - those got visually noisy once a deployment
+    has more than a couple of treatments, since each card re-renders its
+    own column headers. Simple-mode-only; Advanced mode is untouched.
+
+    One header row, one real data row per treatment: plain editable cells
+    for the di.TREATMENT_FIELDS columns, a QSpinBox for the run count, a
+    Remove button - deliberately shaped like _TreatmentRow's own
+    values()/name() so the call sites barely change.
+    """
+
+    changed = Signal()
+
+    _RUNS_COL = len(di.TREATMENT_FIELDS)
+    _REMOVE_COL = len(di.TREATMENT_FIELDS) + 1
+
+    def __init__(self, parent=None):
+        headers = ([label for _c, label in di.TREATMENT_FIELDS]
+                  + ["Number of runs", ""])
+        super().__init__(0, len(headers), parent)
+        self.setHorizontalHeaderLabels(headers)
+        self.verticalHeader().setVisible(False)
+        style_table(self)
+        self.itemChanged.connect(lambda _i: self.changed.emit())
+
+    def add_row(self, values=None):
+        values = values or {}
+        row = self.rowCount()
+        self.insertRow(row)
+        for col, (column, _label) in enumerate(di.TREATMENT_FIELDS):
+            self.setItem(row, col, QTableWidgetItem(str(values.get(column, ""))))
+
+        spin = QSpinBox()
+        spin.setRange(1, di.MAX_RUNS)
+        spin.setValue(int(values.get("runs", 1) or 1))
+        spin.setToolTip("Runs can be assigned during processing.")
+        spin.valueChanged.connect(lambda _v: self.changed.emit())
+        self.setCellWidget(row, self._RUNS_COL, spin)
+
+        btn_remove = QPushButton("Remove")
+        btn_remove.setToolTip("Remove this treatment")
+        btn_remove.clicked.connect(lambda: self._remove_row_with_widget(btn_remove))
+        self.setCellWidget(row, self._REMOVE_COL, btn_remove)
+
+        self.resizeColumnsToContents()
+        self.changed.emit()
+
+    def _remove_row_with_widget(self, btn):
+        for r in range(self.rowCount()):
+            if self.cellWidget(r, self._REMOVE_COL) is btn:
+                self.removeRow(r)
+                self.changed.emit()
+                return
+
+    def row_values(self, row):
+        out = {}
+        for col, (column, _label) in enumerate(di.TREATMENT_FIELDS):
+            item = self.item(row, col)
+            out[column] = item.text().strip() if item is not None else ""
+        spin = self.cellWidget(row, self._RUNS_COL)
+        out["runs"] = spin.value() if spin is not None else 1
+        return out
+
+    def all_values(self):
+        return [self.row_values(r) for r in range(self.rowCount())]
+
+    def names(self):
+        col = next(i for i, (c, _l) in enumerate(di.TREATMENT_FIELDS)
+                  if c == di.TREATMENT_COL)
+        names = []
+        for r in range(self.rowCount()):
+            item = self.item(r, col)
+            names.append(item.text().strip() if item is not None else "")
+        return names
+
+    def clear_rows(self):
+        self.setRowCount(0)
+
+
+class _AutoProcessThread(QThread):
+    """Auto process all's own per-sensor loop (nadir detect, save the ROI
+    window CSV, update the index, compute the HIG-in-window flag), off
+    the GUI thread. Reading + writing 70+ sensors' CSVs one at a time,
+    over a library that can be OneDrive-synced, used to run synchronously
+    on the GUI thread and simply freeze the app for however long that
+    took - no progress, no way to tell it hadn't hung, and pressing
+    anything (including trying to close the app) did nothing until it
+    finished.
+
+    Self-contained rather than calling back into SimpleModeDialog's own
+    _detect_nadir_idx/_window_bounds/_save_one_validated - those are safe
+    to call cross-thread in principle (no widget access), but duplicating
+    the handful of lines that matter here keeps this thread's contract
+    to plain data in, an updated index DataFrame out, with nothing
+    implicitly depending on dialog state that could change underneath it
+    while it runs."""
+
+    progress = Signal(int, int)          # n done so far, total
+    done = Signal(object, int)           # updated index_df, n_done
+
+    def __init__(self, lib_root, win_sec, validate_files, index_df, parent=None):
+        super().__init__(parent)
+        self._lib_root = lib_root
+        self._win_sec = win_sec
+        self._validate_files = validate_files
+        self._index_df = index_df
+
+    @staticmethod
+    def _detect_nadir_idx(stem, df, time, pres, index_df):
+        if (index_df is not None and "file" in index_df.columns
+                and _NADIR_T_COL in index_df.columns):
+            row = index_df[index_df["file"] == stem]
+            if not row.empty:
+                val = row[_NADIR_T_COL].iloc[0]
+                if pd.notna(val):
+                    return int(np.argmin(np.abs(time - float(val))))
+        if pres is not None and len(pres):
+            return int(np.argmin(pres))
+        return len(df) // 2
+
+    def run(self):
+        index_df = self._index_df
+        validated = set()
+        if _VALIDATED_COL in index_df.columns:
+            validated = set(index_df[index_df[_VALIDATED_COL]
+                            .astype(str).str.upper() == "Y"]["file"])
+
+        fs = sensor_config.active().output_rate_hz or 2000
+        half_n = int(round(self._win_sec / 2 * fs))
+        ms = int(round(self._win_sec * 1000))
+        out_dir = self._lib_root / _WIN_DIR
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        for col in (_VALIDATED_COL, _FLAGGED_COL):
+            if col not in index_df.columns:
+                index_df[col] = ""
+            index_df[col] = index_df[col].astype(object)
+
+        total = len(self._validate_files)
+        n_done = 0
+        for i, f in enumerate(self._validate_files):
+            stem = f["stem"]
+            if stem in validated:
+                self.progress.emit(i + 1, total)
+                continue
+            try:
+                df = pd.read_csv(f["path"], low_memory=False)
+            except Exception:
+                self.progress.emit(i + 1, total)
+                continue
+            time = (df["time_s"].to_numpy(dtype=float) if "time_s" in df.columns
+                    else np.arange(len(df), dtype=float))
+            pres = (df["pressure_kpa"].to_numpy(dtype=float)
+                    if "pressure_kpa" in df.columns else None)
+            hig = (df["higacc_mag_g"].to_numpy(dtype=float)
+                  if "higacc_mag_g" in df.columns else None)
+            nadir_idx = self._detect_nadir_idx(stem, df, time, pres, index_df)
+            start = max(0, nadir_idx - half_n)
+            end = min(len(df) - 1, nadir_idx + half_n)
+            df.iloc[start:end + 1].to_csv(out_dir / f"{stem}_{ms}ms.csv", index=False)
+
+            nadir_t = float(time[nadir_idx])
+            nadir_v = float(pres[nadir_idx]) if pres is not None else float("nan")
+            hig_window_max = (float(np.max(hig[start:end + 1]))
+                              if hig is not None and len(hig) else float("nan"))
+
+            mask = index_df["file"] == stem
+            if not mask.any():
+                new_row = pd.DataFrame([{"file": stem}])
+                index_df = pd.concat([index_df, new_row], ignore_index=True)
+                index_df[_VALIDATED_COL] = index_df[_VALIDATED_COL].astype(object)
+                index_df[_FLAGGED_COL] = index_df[_FLAGGED_COL].astype(object)
+                mask = index_df["file"] == stem
+            index_df.loc[mask, _NADIR_T_COL] = nadir_t
+            index_df.loc[mask, _NADIR_V_COL] = nadir_v
+            index_df.loc[mask, "nadir_window_start"] = time[start]
+            index_df.loc[mask, "nadir_window_end"] = time[end]
+            index_df.loc[mask, _HIG_WINDOW_MAX_COL] = hig_window_max
+            index_df.loc[mask, _VALIDATED_COL] = "Y"
+            is_flagged = (not np.isnan(hig_window_max)
+                         and hig_window_max < _FLAG_HIG_THRESHOLD_G)
+            index_df.loc[mask, _FLAGGED_COL] = "Y" if is_flagged else "N"
+            n_done += 1
+            self.progress.emit(i + 1, total)
+
+        self.done.emit(index_df, n_done)
+
 
 class SimpleModeDialog(QDialog):
-    """Pop-up wizard for Simple mode. Built once (`main.py`), reopened via
-    `exec()` each time - see `page_home.py._go_simple()`."""
+    """Pop-up wizard for Simple mode - the app's default landing
+    experience (main.py opens it automatically, right after MainWindow is
+    shown). Built once, reopened via `exec()` each time; "Development
+    toolkit" on its own Home page (`_go_development_toolkit`) is what
+    switches to the full Advanced GUI instead."""
 
     def __init__(self, window):
         super().__init__(window)
         self.window = window
-        self.setWindowTitle("Simple mode")
-        self.resize(1180, 660)
+        self.setWindowTitle("StrikeWorks")
+        self.setWindowIcon(QIcon(str(_ICON_PATH)))
+        # resizable, not setFixedSize() - fixing it at exactly 1340x700
+        # forced every page's own layout to compress into that regardless
+        # of what its content actually needed, which is what was causing
+        # overlapping/clipped labels (worst on Deploy, now the tallest
+        # page - see its own left column, wrapped in a QScrollArea below
+        # for exactly this reason). resize() only sets the *initial* size
+        # and setMinimumSize() the floor the user can still shrink it to
+        # by hand - it can still grow if a page genuinely needs more.
+        #
+        # 700 content height doesn't actually fit a 1366x768 screen once
+        # the taskbar (~48px) and this window's own title bar (~32px) are
+        # accounted for - confirmed directly (a real screenshot showed
+        # Back/Next/Close and the logo clipped behind the taskbar), and
+        # the old minimum of 650 left almost no real headroom to shrink
+        # out of that state by hand. 640/560 both sit comfortably inside
+        # a 768-tall screen's usable work area; the real layout-driven
+        # minimum (every page's own content) is smaller still (~556x475
+        # measured directly), so 900x560 as an explicit floor is a chosen
+        # "don't get uncomfortably cramped" limit, not one forced by any
+        # page's content.
+        self.resize(1340, 640)
+        self.setMinimumSize(900, 560)
+        # a hard ceiling too - confirmed directly (user testing) that the
+        # SetNoConstraint fix above didn't fully stop the jump-while-
+        # dragging-by-the-title-bar bug, narrowing it to specifically
+        # Deploy/Validate/Predict (the pages with the most dynamic child
+        # content: MetaCard.set_rows() rebuilding its grid, pyqtgraph's
+        # PlotWidget, RingCard). Whatever the exact trigger turns out to
+        # be, Windows' native interactive-move loop negotiates window
+        # size against Qt's minimum/maximum directly (WM_GETMINMAXINFO) -
+        # a QLayout's own SetConstraint has no say over that - so an
+        # explicit maximum is what actually stops it from being able to
+        # jump to some larger "natural" size mid-drag, regardless of
+        # which internal mechanism was asking for one.
+        self.setMaximumSize(1600, 900)
+        # this dialog, not MainWindow, is the app's first visible window
+        # now (main.py's __main__) - same missing-taskbar-button issue
+        # MainWindow itself had and for the same underlying reason (see
+        # win_utils.py), just triggered by MainWindow staying hidden as
+        # its owner rather than by FramelessWindowHint
+        win_utils.ensure_taskbar_button(self)
 
         self._lib_root = None
         self._deployments = []
-        self._treatment_rows = []
         self._process_files = []
         self._process_treatment_by_stem = {}
         self._process_batch_done = []
         self._validate_files = []       # [{"stem","path"}]
         self._cur_validate_stem = None
+        # the rest of the currently-loaded sensor's data - previously only
+        # ever set inside _load_validate_file() itself, so anything that
+        # read them (this Export button included) before a file had ever
+        # been loaded hit a bare AttributeError instead of behaving like
+        # "nothing loaded yet"
+        self._cur_validate_df = None
+        self._cur_validate_time = None
+        self._cur_validate_pres = None
+        self._cur_validate_hig = None
+        self._cur_validate_nadir_idx = None
+        self._loaded_nadir_idx = None
+        self._auto_process_thread = None
+        self._validate_dirty = False    # written since the last Save and export
+        self._advance_after_export = False   # "Save and continue" on the unsaved-data prompt
+        self.went_to_dev_toolkit = False
         self._built_dataset_path = None
         self._win_sec = _WIN_SEC   # ROI window width - user-adjustable via cmb_window
         self._process_thread = None
@@ -126,31 +408,36 @@ class SimpleModeDialog(QDialog):
         state = self.window.ml_prediction_page.state
         state.run_finished.connect(self._on_predict_finished)
         state.run_failed.connect(self._on_predict_failed)
+        self.window.session_state.library_changed.connect(
+            self._on_session_library_changed_simple)
 
     # ── top-level layout ────────────────────────────────────────────────────
     def _build(self):
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        # a plain 5px border on every side - not the old 0px outer +
+        # top_bar's own (10, 6, 10, 0) margins, which existed to frame
+        # the heading text that's since been removed (DELETE THIS HEADING
+        # TEXT, Home.png) and left ~40px of dead space above the page
+        # list once that text was gone. About/Settings moved into the
+        # top of the right-hand column below instead of their own row -
+        # level with where the page list itself starts, not above it.
+        outer.setContentsMargins(5, 5, 5, 5)
         outer.setSpacing(0)
-
-        top_bar = QHBoxLayout()
-        top_bar.setContentsMargins(10, 6, 10, 0)
-        title = QLabel("StrikeWorks simple blade strike prediction")
-        title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
-        top_bar.addWidget(title)
-        top_bar.addStretch()
-        btn_about = QPushButton("About")
-        btn_about.clicked.connect(self._show_about)
-        top_bar.addWidget(btn_about)
-        btn_gear = QPushButton("⚙")
-        btn_gear.setToolTip("Adjustments")
-        btn_gear.setFixedWidth(30)
-        btn_gear.clicked.connect(self.window.openAdjustments)
-        top_bar.addWidget(btn_gear)
-        outer.addLayout(top_bar)
+        # SetNoConstraint - otherwise this top-level layout can resize the
+        # whole dialog to fit whatever the *current* stack page's own
+        # size hint is, and Qt/Windows can apply that queued resize mid-
+        # drag during a native interactive title-bar move (which runs its
+        # own nested message loop, unlike anything a plain script-driven
+        # move()/resize() call ever triggers). Confirmed to only happen
+        # navigating away from Home - the one page with no Section/
+        # QScrollArea/PlotWidget of its own to have a "current page size
+        # hint" that could differ enough from the window's actual size to
+        # provoke it. This makes the window's size purely a function of
+        # resize()/the user's own dragging, never of which page is showing.
+        outer.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
 
         body = QHBoxLayout()
-        body.setContentsMargins(10, 10, 10, 0)
+        body.setContentsMargins(5, 0, 5, 0)
         body.setSpacing(10)
 
         left_col = QVBoxLayout()
@@ -182,6 +469,31 @@ class SimpleModeDialog(QDialog):
         left_col.addStretch()
         body.addLayout(left_col)
 
+        right_col = QVBoxLayout()
+        right_col.setContentsMargins(0, 0, 0, 0)
+        right_col.setSpacing(6)
+
+        top_row = QHBoxLayout()
+        top_row.addStretch()
+        btn_about = QPushButton("About")
+        # autoDefault(True) is a QPushButton's own default - the first
+        # button added to a QDialog with no default button set otherwise
+        # picks it up automatically, which is what was reading as
+        # "stuck active" (most Windows styles draw the default button
+        # with a permanent highlighted border, not just while pressed).
+        # Neither About nor Settings should ever be Enter-triggered.
+        btn_about.setAutoDefault(False)
+        btn_about.setDefault(False)
+        btn_about.clicked.connect(self._show_about)
+        top_row.addWidget(btn_about)
+        btn_settings = QPushButton("Settings")
+        btn_settings.setAutoDefault(False)
+        btn_settings.setDefault(False)
+        btn_settings.setToolTip("Adjustments")
+        btn_settings.clicked.connect(self.window.openAdjustments)
+        top_row.addWidget(btn_settings)
+        right_col.addLayout(top_row)
+
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_welcome_page())
         self.stack.addWidget(self._build_deployment_page())
@@ -190,8 +502,17 @@ class SimpleModeDialog(QDialog):
         self.stack.addWidget(self._build_predict_page())
         self.stack.addWidget(self._build_report_page())
         self.stack.addWidget(self._build_finished_page())
-        body.addWidget(self.stack, stretch=1)
+        right_col.addWidget(self.stack, stretch=1)
+        body.addLayout(right_col, stretch=1)
         outer.addLayout(body, stretch=1)
+
+        guidance_row = QHBoxLayout()
+        guidance_row.setContentsMargins(10, 0, 10, 0)
+        guidance_row.addStretch()
+        self.lbl_guidance = QLabel("")
+        self.lbl_guidance.setStyleSheet(f"color:{MUTED};font-style:italic;")
+        guidance_row.addWidget(self.lbl_guidance)
+        outer.addLayout(guidance_row)
 
         nav = QHBoxLayout()
         nav.setContentsMargins(10, 6, 10, 10)
@@ -233,6 +554,7 @@ class SimpleModeDialog(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self.went_to_dev_toolkit = False
         self.stack.setCurrentIndex(0)
         self._sync_step_highlight()
         self._refresh_deployment_step()
@@ -245,12 +567,70 @@ class SimpleModeDialog(QDialog):
         elif idx == 2:
             self._refresh_validate_step()
         elif idx == 3:
+            if not self._confirm_leave_validate():
+                return
+            action = self._confirm_unsaved_dataset()
+            if action == "cancel":
+                return
+            if action == "save":
+                # advancing happens once the export actually finishes -
+                # _on_extract_done, guarded by _advance_after_export
+                self._advance_after_export = True
+                self._save_and_export()
+                return
             self._refresh_predict_step()
         elif idx == 4:
             self._refresh_report_step()
         if idx < self.stack.count() - 1:
             self.stack.setCurrentIndex(idx + 1)
             self._sync_step_highlight()
+
+    def _confirm_unsaved_dataset(self):
+        """Whether it's safe to leave Validate for Predict without first
+        (re-)running Save and export - Predict otherwise runs against
+        whatever dataset CSV happened to be exported last, silently
+        stale against anything validated/flagged since. Returns "proceed"
+        (nothing outstanding), "save" (user chose Save and continue -
+        _go_next must not advance the page itself; _on_extract_done does,
+        once export actually finishes), or "cancel" (stay on Validate)."""
+        if self._built_dataset_path is not None and not self._validate_dirty:
+            return "proceed"
+        box = QMessageBox(self.window)
+        box.setWindowTitle("Unsaved processed data")
+        box.setText("Processed data not saved or has unsaved changes. Continue?")
+        btn_save = box.addButton("Save and continue",
+                                 QMessageBox.ButtonRole.AcceptRole)
+        btn_continue = box.addButton("Continue",
+                                     QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(btn_save)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is btn_save:
+            return "save"
+        if clicked is btn_continue:
+            return "proceed"
+        return "cancel"
+
+    def _confirm_leave_validate(self):
+        """Flagged sensors are the ones Auto process all itself couldn't
+        be sure about - the user may well only need to check those and
+        trust the rest, so this only counts flagged-and-unreviewed (not
+        every un-user-validated sensor) and only prompts when that count
+        is non-zero. True = proceed (nothing outstanding, or the user
+        said Yes); False = stay on Validate."""
+        _auto, user_validated, flagged, _bad = self._validation_status()
+        outstanding = [f for f in self._validate_files
+                       if f["stem"] in flagged and f["stem"] not in user_validated]
+        if not outstanding:
+            return True
+        reply = QMessageBox.question(
+            self.window, "Sensors flagged for review",
+            f"Caution, {len(outstanding)}/{len(flagged)} flagged sensors "
+            "still need user-validation. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        return reply == QMessageBox.StandardButton.Yes
 
     def _go_back(self):
         idx = self.stack.currentIndex()
@@ -281,6 +661,7 @@ class SimpleModeDialog(QDialog):
         self.btn_next.setEnabled(page != last_page)
         if self.logo_h is not None:
             self.logo_h.setVisible(page not in _NO_SMALL_LOGO_PAGES)
+        self.lbl_guidance.setText(_GUIDANCE.get(page, ""))
 
     @staticmethod
     def _muted(text):
@@ -302,8 +683,49 @@ class SimpleModeDialog(QDialog):
         subtitle.setStyleSheet(f"color:{MUTED};font-size:28px;font-style:italic;")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v.addWidget(subtitle)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_blade_strike = QPushButton("Blade strike\n(next)")
+        btn_blade_strike.setMinimumSize(140, 44)
+        btn_blade_strike.setStyleSheet(
+            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
+            "border-radius:5px;font-weight:bold;}")
+        btn_blade_strike.clicked.connect(self._go_next)
+        btn_row.addWidget(btn_blade_strike)
+        btn_dev_toolkit = QPushButton("Development\ntoolkit")
+        btn_dev_toolkit.setMinimumSize(140, 44)
+        btn_dev_toolkit.setStyleSheet(
+            f"QPushButton{{background-color:{BAD};color:#ffffff;"
+            "border-radius:5px;font-weight:bold;}")
+        btn_dev_toolkit.clicked.connect(self._go_development_toolkit)
+        btn_row.addWidget(btn_dev_toolkit)
+        btn_row.addStretch()
+        v.addSpacing(20)
+        v.addLayout(btn_row)
+
         v.addStretch()
         return page
+
+    def _go_development_toolkit(self):
+        """"Development toolkit" (Home.png) - the opt-in door to the full
+        Advanced GUI, reusing HomePage's own entry logic exactly
+        (expand_sidebar + land on Setup/deploy) rather than duplicating
+        it. MainWindow is never shown by default any more (main.py) - set
+        its state *then* show it, so it appears already in Advanced mode
+        rather than flashing the (still-narrow) Home page first - and only
+        then close this wizard so it's what the user actually sees.
+
+        went_to_dev_toolkit records that this, specifically, is why the
+        wizard closed - MainWindow.openSimpleMode() reads it back so
+        main.py's own startup call can tell "chose Development toolkit"
+        (show MainWindow, already done above) from "closed any other way"
+        (Close button, window X - quit the whole app instead; see that
+        module's own comment)."""
+        self.went_to_dev_toolkit = True
+        self.window.home_page._go_advanced()
+        self.window.show()
+        self.reject()
 
     # ── page 1: deployment ───────────────────────────────────────────────────
     def _build_deployment_page(self):
@@ -322,6 +744,39 @@ class SimpleModeDialog(QDialog):
         left = QWidget()
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 0, 0)
+
+        grp_lib = Section("Session library")
+        libv = QVBoxLayout(grp_lib)
+        self.cmb_library_deploy = QComboBox()
+        self.cmb_library_deploy.currentIndexChanged.connect(
+            self._on_library_combo_deploy_changed)
+        libv.addWidget(self.cmb_library_deploy)
+        self.lbl_library_path_deploy = QLabel("No library selected.")
+        self.lbl_library_path_deploy.setStyleSheet(f"color:{MUTED};")
+        self.lbl_library_path_deploy.setWordWrap(True)
+        libv.addWidget(self.lbl_library_path_deploy)
+        lib_action_row = QHBoxLayout()
+        btn_new_library = QPushButton("New library")
+        btn_new_library.setFlat(True)
+        btn_new_library.setStyleSheet(f"color:{ACCENT};text-align:left;")
+        btn_new_library.clicked.connect(
+            lambda: self.window.home_page._new_library(parent=self))
+        lib_action_row.addWidget(btn_new_library)
+        lib_action_row.addStretch()
+        btn_new_session = QPushButton("New session")
+        btn_new_session.setFlat(True)
+        btn_new_session.setStyleSheet(f"color:{ACCENT};text-align:right;")
+        btn_new_session.clicked.connect(
+            lambda: self.window.home_page._new_session(parent=self))
+        lib_action_row.addWidget(btn_new_session)
+        libv.addLayout(lib_action_row)
+        lv.addWidget(grp_lib)
+
+        grp_lib_status = Section("Library status")
+        lsv = QVBoxLayout(grp_lib_status)
+        self.card_library_status = MetaCard("Nothing selected yet")
+        lsv.addWidget(self.card_library_status)
+        lv.addWidget(grp_lib_status)
 
         grp_sensor = Section("Sensors")
         sv = QVBoxLayout(grp_sensor)
@@ -352,8 +807,10 @@ class SimpleModeDialog(QDialog):
         dv.addLayout(form)
         lv.addWidget(grp_dep)
 
-        self.btn_create_folder = QPushButton("Create & open data folder")
-        self.btn_create_folder.setMinimumHeight(32)
+        self.btn_create_folder = QPushButton("Create & open\ndata folder")
+        self.btn_create_folder.setMinimumHeight(40)
+        self.btn_create_folder.setFixedWidth(120)
+        self.btn_create_folder.setToolTip("Create & open data folder")
         self.btn_create_folder.clicked.connect(self._create_and_open_folder)
         lv.addWidget(self.btn_create_folder)
 
@@ -361,14 +818,27 @@ class SimpleModeDialog(QDialog):
         self.lbl_files_found.setStyleSheet(f"color:{OK};")
         lv.addWidget(self.lbl_files_found)
         lv.addStretch()
-        row.addWidget(left, stretch=2)
+
+        # scrolls internally rather than forcing the whole dialog taller -
+        # this column grew to four stacked sections (Session library,
+        # Library status, Sensors, Deployment) and was the actual reason
+        # the window needed to keep growing past a fixed 1340x700 to
+        # avoid squeezing/overlapping its own labels
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setStyleSheet(
+            "QScrollArea{border:none;background:transparent;}")
+        left_scroll.setWidget(left)
+        row.addWidget(left_scroll, stretch=2)
 
         right = QWidget()
         rv = QVBoxLayout(right)
         rv.setContentsMargins(0, 0, 0, 0)
-        self.treatment_col = QVBoxLayout()
-        rv.addLayout(self.treatment_col)
+        self.treatment_table = _TreatmentTable()
+        self.treatment_table.changed.connect(self._refresh_treatment_summary)
+        rv.addWidget(self.treatment_table, stretch=1)
         self.btn_add_treatment = QPushButton("+ Add treatment")
+        self.btn_add_treatment.setFixedWidth(120)
         self.btn_add_treatment.clicked.connect(lambda: self._add_treatment())
         rv.addWidget(self.btn_add_treatment)
         self.lbl_treatment_summary = QLabel("")
@@ -383,6 +853,44 @@ class SimpleModeDialog(QDialog):
     # -- deployment step logic -----------------------------------------------
     def _refresh_deployment_step(self):
         self._lib_root = self.window.session_state.library
+        self._refresh_library_combo_deploy(select=self._lib_root)
+        self._refresh_library_status_card()
+        self._load_deployments()
+
+    # -- session library (soft-synced to session_state, like every other
+    # page's own picker - see page_home.py's docstring) ---------------------
+    def _refresh_library_combo_deploy(self, select=None):
+        self.cmb_library_deploy.blockSignals(True)
+        self.cmb_library_deploy.clear()
+        for lib in settings.list_libraries():
+            self.cmb_library_deploy.addItem(lib.name, str(lib))
+        want = str(select) if select else None
+        idx = self.cmb_library_deploy.findData(want) if want else -1
+        if idx >= 0:
+            self.cmb_library_deploy.setCurrentIndex(idx)
+        self.cmb_library_deploy.blockSignals(False)
+        self.lbl_library_path_deploy.setText(
+            str(self._lib_root) if self._lib_root else "No library selected.")
+
+    def _refresh_library_status_card(self):
+        title, rows = library_status_rows(
+            self._lib_root, self.window.session_state)
+        self.card_library_status.set_title(title)
+        self.card_library_status.set_rows(rows)
+
+    def _on_library_combo_deploy_changed(self, _idx):
+        path = self.cmb_library_deploy.currentData()
+        self.window.session_state.set_library(path)
+
+    def _on_session_library_changed_simple(self, path):
+        """Soft-sync for this page's own library combo - fires whenever
+        the session library changes from anywhere (this combo, the
+        Advanced Home page, New library/New session) so Deploy always
+        reflects the one true session library, same as every other
+        soft-synced page in the app."""
+        self._lib_root = path
+        self._refresh_library_combo_deploy(select=path)
+        self._refresh_library_status_card()
         self._load_deployments()
 
     def _on_sensor_config_changed(self, *_args):
@@ -410,7 +918,7 @@ class SimpleModeDialog(QDialog):
         self._show_deployment(self.cmb_deployment.currentData())
 
     def _show_deployment(self, ident):
-        self._clear_treatments()
+        self.treatment_table.clear_rows()
         is_new = ident is None or ident == _NEW_DEPLOYMENT
         if is_new:
             for edit in self.dep_edits.values():
@@ -429,39 +937,20 @@ class SimpleModeDialog(QDialog):
 
     def _add_treatment(self, values=None):
         if values is None:
-            values = (dict(self._treatment_rows[-1].values())
-                      if self._treatment_rows else {})
-            used = {r.name() for r in self._treatment_rows}
-            n = len(self._treatment_rows) + 1
+            existing = self.treatment_table.all_values()
+            values = dict(existing[-1]) if existing else {}
+            used = set(self.treatment_table.names())
+            n = self.treatment_table.rowCount() + 1
             while f"Treatment {n}" in used:
                 n += 1
             values[di.TREATMENT_COL] = f"Treatment {n}"
-        row = _TreatmentRow(values, on_change=self._refresh_treatment_summary,
-                            on_remove=self._remove_treatment)
-        self.treatment_col.addWidget(row)
-        self._treatment_rows.append(row)
-        self._refresh_treatment_summary()
-        return row
-
-    def _remove_treatment(self, row):
-        if row not in self._treatment_rows:
-            return
-        self._treatment_rows.remove(row)
-        row.setParent(None)
-        row.deleteLater()
-        self._refresh_treatment_summary()
-
-    def _clear_treatments(self):
-        for row in list(self._treatment_rows):
-            row.setParent(None)
-            row.deleteLater()
-        self._treatment_rows = []
+        self.treatment_table.add_row(values)
 
     def _refresh_treatment_summary(self, *_args):
-        n_rows = sum(r.runs() for r in self._treatment_rows)
+        values = self.treatment_table.all_values()
+        n_rows = sum(int(v.get("runs", 1) or 1) for v in values)
         self.lbl_treatment_summary.setText(
-            f"{len(self._treatment_rows)} treatment(s), {n_rows} row(s)"
-            if self._treatment_rows else "")
+            f"{len(values)} treatment(s), {n_rows} row(s)" if values else "")
 
     def _refresh_files_found(self):
         ident = self.dep_edits[di.DEPLOYMENT_COL].text().strip()
@@ -496,14 +985,14 @@ class SimpleModeDialog(QDialog):
             QMessageBox.warning(self.window, "Missing deployment ID",
                                 "The deployment needs an ID.")
             return
-        names = [r.name() for r in self._treatment_rows]
+        names = self.treatment_table.names()
         if not names or any(not n for n in names):
             QMessageBox.warning(self.window, "Missing treatment",
                                 "Add at least one named treatment.")
             return
 
         deployment = {c: e.text().strip() for c, e in self.dep_edits.items()}
-        treatments = [r.values() for r in self._treatment_rows]
+        treatments = self.treatment_table.all_values()
         try:
             di.save_plan(self._lib_root, deployment, treatments)
             dep_dir = self._lib_root / _RAW_DIR / ident
@@ -716,9 +1205,10 @@ class SimpleModeDialog(QDialog):
         for stem in self._process_batch_done:
             t = self._process_treatment_by_stem.get(stem, "")
             by_treatment.setdefault(t, []).append(stem)
+        all_treatments = self.treatment_table.all_values()
         for treatment_name, stems in by_treatment.items():
-            row = next((r.values() for r in self._treatment_rows
-                       if r.name() == treatment_name), None)
+            row = next((v for v in all_treatments
+                       if v.get(di.TREATMENT_COL) == treatment_name), None)
             if row is None:
                 continue
             treatment_values = dict(deployment)
@@ -734,11 +1224,20 @@ class SimpleModeDialog(QDialog):
         title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
         v.addWidget(title)
 
-        split = QSplitter(Qt.Orientation.Horizontal)
-        split.setChildrenCollapsible(False)
+        # a fixed-width left pane, not a draggable QSplitter -
+        # setSizes([1, 2]) below only ever set an *initial* proportion,
+        # never a constraint, so the list kept growing wider than
+        # intended and had to be dragged back by hand every time
+        # (simple_spec/Validate.png shows no splitter handle - a plain
+        # fixed-width column instead)
+        split = QHBoxLayout()
+        split.setContentsMargins(0, 0, 0, 0)
+        split.setSpacing(10)
 
         left = QWidget()
+        left.setFixedWidth(240)
         lv = QVBoxLayout(left)
+        lv.setContentsMargins(0, 0, 0, 0)
         self.validate_list = QListWidget()
         self.validate_list.itemClicked.connect(self._on_validate_file_clicked)
         lv.addWidget(self.validate_list, stretch=1)
@@ -763,13 +1262,18 @@ class SimpleModeDialog(QDialog):
         self.btn_reset_v = QPushButton("Reset current sensor")
         self.btn_reset_v.clicked.connect(self._reset_current_validate)
         lv.addWidget(self.btn_reset_v)
-        self.btn_jump_v = QPushButton("Jump to next unvalidated")
+        self.btn_jump_v = QPushButton("Jump to next flagged")
         self.btn_jump_v.clicked.connect(self._jump_next_unvalidated_validate)
         lv.addWidget(self.btn_jump_v)
         split.addWidget(left)
 
         right = QWidget()
         rv = QVBoxLayout(right)
+        toolbar = QHBoxLayout()
+        toolbar.addStretch()
+        add_export_button(toolbar, self._validate_export_data, self.window,
+                          file_stub="validate_signal")
+        rv.addLayout(toolbar)
         self._pw_validate = pg.PlotWidget()
         pi = self._pw_validate.plotItem
         pi.setLabel("bottom", "Time (s)")
@@ -795,15 +1299,25 @@ class SimpleModeDialog(QDialog):
         self._validate_curve = None
         self._validate_curve2 = None
         rv.addWidget(self._pw_validate, stretch=1)
-        split.addWidget(right)
-        split.setSizes([1, 2])
-        v.addWidget(split, stretch=1)
+        split.addWidget(right, stretch=1)
+        v.addLayout(split, stretch=1)
 
         bottom = QHBoxLayout()
+        auto_col = QVBoxLayout()
+        auto_col.setSpacing(2)
+        auto_row = QHBoxLayout()
         self.btn_auto_process_all = QPushButton("Auto process all")
         self.btn_auto_process_all.setStyleSheet(f"color:{OK};font-weight:bold;")
         self.btn_auto_process_all.clicked.connect(self._auto_process_all)
-        bottom.addWidget(self.btn_auto_process_all)
+        auto_row.addWidget(self.btn_auto_process_all)
+        self._auto_spinner = Spinner(size=20)
+        self._auto_spinner.setVisible(False)
+        auto_row.addWidget(self._auto_spinner)
+        auto_col.addLayout(auto_row)
+        auto_col.addWidget(self._muted(
+            "Tip: press Auto process all first, then check the sensors "
+            "it flagged for review."))
+        bottom.addLayout(auto_col)
         bottom.addWidget(self._muted("ROI window:"))
         self.cmb_window = QComboBox()
         self.cmb_window.currentIndexChanged.connect(self._on_validate_win_size_changed)
@@ -825,6 +1339,18 @@ class SimpleModeDialog(QDialog):
         self._vb2_validate.setGeometry(pi.vb.sceneBoundingRect())
         self._vb2_validate.linkedViewChanged(pi.vb, self._vb2_validate.XAxis)
 
+    def _validate_export_data(self):
+        """Feeds the "Export ▾" toolbar button (plot_style.add_export_button,
+        the same one Advanced mode's own Validate page uses) - None while
+        nothing is loaded yet, matching build_export_data's own contract."""
+        time = self._cur_validate_time
+        if time is None or not len(time):
+            return None
+        return build_export_data(
+            time, "Pressure (kPa)", self._cur_validate_pres,
+            "HIG acc mag (g)", self._cur_validate_hig,
+            (float(time[0]), float(time[-1])))
+
     # -- process-validate step logic ------------------------------------------
     def _validate_index(self):
         return di.read_index(self._lib_root) if self._lib_root else None
@@ -844,35 +1370,76 @@ class SimpleModeDialog(QDialog):
                 self._validate_files.append({"stem": p.stem, "path": p})
         self._refresh_validate_list()
 
-    def _refresh_validate_list(self):
+    def _validation_status(self):
+        """(auto_validated, user_validated, flagged, bad) stem sets from
+        the current index - the one place every Validate-step method
+        reads these from, so the list, the counts, Jump, and the Next
+        confirmation can't quietly disagree with each other."""
         index_df = self._validate_index()
-        validated = set()
+        auto_validated = set()
+        user_validated = set()
+        flagged = set()
         bad = set()
-        if index_df is not None and _VALIDATED_COL in index_df.columns:
-            validated = set(index_df[index_df[_VALIDATED_COL]
-                            .astype(str).str.upper() == "Y"]["file"])
-        if index_df is not None and di.BAD_SENS_COL in index_df.columns:
-            bad = set(index_df[index_df[di.BAD_SENS_COL]
-                      .astype(str).str.upper() == "Y"]["file"])
+        if index_df is not None:
+            if _VALIDATED_COL in index_df.columns:
+                auto_validated = set(index_df[index_df[_VALIDATED_COL]
+                                     .astype(str).str.upper() == "Y"]["file"])
+            if _USER_VALIDATED_COL in index_df.columns:
+                user_validated = set(index_df[index_df[_USER_VALIDATED_COL]
+                                     .astype(str).str.upper() == "Y"]["file"])
+            if _FLAGGED_COL in index_df.columns:
+                flagged = set(index_df[index_df[_FLAGGED_COL]
+                              .astype(str).str.upper() == "Y"]["file"])
+            if di.BAD_SENS_COL in index_df.columns:
+                bad = set(index_df[index_df[di.BAD_SENS_COL]
+                          .astype(str).str.upper() == "Y"]["file"])
+        return auto_validated, user_validated, flagged, bad
+
+    def _refresh_validate_list(self):
+        auto_validated, user_validated, flagged, bad = self._validation_status()
         show_bad = self.chk_show_bad.isChecked()
+
+        # flagged-and-not-yet-user-validated first (what actually needs
+        # attention), then everything else in its normal order - stable
+        # sort keeps each group's own relative order unchanged
+        needs_review = lambda f: f["stem"] in flagged and f["stem"] not in user_validated
+        ordered = sorted(self._validate_files, key=lambda f: not needs_review(f))
+
         self.validate_list.clear()
-        for f in self._validate_files:
-            is_bad = f["stem"] in bad
+        for f in ordered:
+            stem = f["stem"]
+            is_bad = stem in bad
             if is_bad and not show_bad:
                 continue
-            item = QListWidgetItem(f["stem"])
+            # plain stem, no decoration - WARN colour alone marks
+            # "flagged, needs review" below; a text prefix here used to
+            # break _on_validate_file_clicked/_load_validate_file's own
+            # item.text() == stem lookups for exactly the flagged rows,
+            # so clicking (or Jump to next flagged landing on) one
+            # silently did nothing
+            item = QListWidgetItem(stem)
             if is_bad:
                 item.setForeground(QColor(BAD))
-            elif f["stem"] in validated:
+            elif stem in user_validated:
                 item.setForeground(QColor(OK))
+            elif needs_review(f):
+                item.setForeground(QColor(WARN))
+            elif stem in auto_validated:
+                item.setForeground(QColor(ACCENT))
             self.validate_list.addItem(item)
-        n_val = sum(1 for f in self._validate_files if f["stem"] in validated)
+
+        total = len(self._validate_files)
+        n_auto = sum(1 for f in self._validate_files if f["stem"] in auto_validated)
+        n_flagged = sum(1 for f in self._validate_files if f["stem"] in flagged)
+        n_user = sum(1 for f in self._validate_files if f["stem"] in user_validated)
         self.lbl_validated_count.setText(
-            f"Validated: {n_val} / {len(self._validate_files)}"
-            + (f" ({len(bad)} bad)" if bad else ""))
+            f"Auto-validated: {n_auto}/{total}\n"
+            f"Flagged: {n_flagged}\n"
+            f"User-validated: {n_user}/{total}"
+            + (f"\n({len(bad)} bad)" if bad else ""))
         self.lbl_all_validated.setText(
-            "All sensors validated" if self._validate_files
-            and n_val == len(self._validate_files) else "")
+            "All sensors validated" if total and n_auto == total
+            and (n_flagged == 0 or n_user >= n_flagged) else "")
 
     def _on_validate_file_clicked(self, item):
         stem = item.text()
@@ -899,6 +1466,10 @@ class SimpleModeDialog(QDialog):
         self._cur_validate_nadir_idx = self._detect_nadir_idx(stem, df,
                                                                self._cur_validate_time,
                                                                self._cur_validate_pres)
+        # the as-loaded nadir, before any dragging - compared against at
+        # save time to tell "human re-confirmed this" from "human moved
+        # it" (_USER_ADJUSTED_COL, surfaced in the Report step)
+        self._loaded_nadir_idx = self._cur_validate_nadir_idx
         self._draw_validate_plot()
         # select it in the list too, for Jump/Auto-process consistency
         for i in range(self.validate_list.count()):
@@ -1019,11 +1590,20 @@ class SimpleModeDialog(QDialog):
         self.lbl_all_validated.setText(f"{self._cur_validate_stem} marked Bad.")
         self._refresh_validate_list()
 
-    def _save_one_validated(self, index_df, stem, df, time, pres, nadir_idx):
+    def _save_one_validated(self, index_df, stem, df, time, pres, hig, nadir_idx,
+                            user_validated=False, nadir_changed=False):
         """Writes the ROI window CSV and updates `index_df` in place for
         one sensor - the same operation Validate's own Save+Next performs
         (page_validate.py._do_save_window/_do_update_index), reused here
-        for both the single-file and Auto process all paths."""
+        for both the single-file and Auto process all paths.
+
+        `user_validated=True` means a human reviewed and (re-)saved this
+        sensor via Save+Next, as opposed to Auto process all - see the
+        module-level _VALIDATED_COL/_USER_VALIDATED_COL/_FLAGGED_COL
+        comments for what each column tracks. `nadir_changed` records
+        whether the saved nadir differs from what was loaded (a human
+        actually moved it, not just re-confirmed it) - both flow into the
+        Report step's "Processing review"."""
         start, end = self._window_bounds(time, nadir_idx, len(df))
         ms = int(round(self._win_sec * 1000))
         out_dir = self._lib_root / _WIN_DIR
@@ -1032,6 +1612,8 @@ class SimpleModeDialog(QDialog):
 
         nadir_t = float(time[nadir_idx])
         nadir_v = float(pres[nadir_idx]) if pres is not None else float("nan")
+        hig_window_max = (float(np.max(hig[start:end + 1]))
+                          if hig is not None and len(hig) else float("nan"))
         mask = index_df["file"] == stem
         if not mask.any():
             new_row = pd.DataFrame([{"file": stem}])
@@ -1041,13 +1623,24 @@ class SimpleModeDialog(QDialog):
         index_df.loc[mask, _NADIR_V_COL] = nadir_v
         index_df.loc[mask, "nadir_window_start"] = time[start]
         index_df.loc[mask, "nadir_window_end"] = time[end]
-        if _VALIDATED_COL not in index_df.columns:
-            index_df[_VALIDATED_COL] = ""
+        index_df.loc[mask, _HIG_WINDOW_MAX_COL] = hig_window_max
+
         # a column read back as float (blank/NaN with no prior string
         # value) will not take "Y" in place without widening first -
         # pandas warns (soon errors) otherwise
-        index_df[_VALIDATED_COL] = index_df[_VALIDATED_COL].astype(object)
+        for col in (_VALIDATED_COL, _FLAGGED_COL, _USER_VALIDATED_COL,
+                   _USER_ADJUSTED_COL):
+            if col not in index_df.columns:
+                index_df[col] = ""
+            index_df[col] = index_df[col].astype(object)
+
         index_df.loc[mask, _VALIDATED_COL] = "Y"
+        is_flagged = not np.isnan(hig_window_max) and hig_window_max < _FLAG_HIG_THRESHOLD_G
+        index_df.loc[mask, _FLAGGED_COL] = "Y" if is_flagged else "N"
+        if user_validated:
+            index_df.loc[mask, _USER_VALIDATED_COL] = "Y"
+            if nadir_changed:
+                index_df.loc[mask, _USER_ADJUSTED_COL] = "Y"
         return index_df
 
     def _save_and_next_validate(self):
@@ -1057,10 +1650,14 @@ class SimpleModeDialog(QDialog):
         if index_df is None:
             return
         stem = self._cur_validate_stem
+        nadir_changed = (self._loaded_nadir_idx is not None
+                         and self._cur_validate_nadir_idx != self._loaded_nadir_idx)
         index_df = self._save_one_validated(
             index_df, stem, self._cur_validate_df,
-            self._cur_validate_time, self._cur_validate_pres,
-            self._cur_validate_nadir_idx)
+            self._cur_validate_time, self._cur_validate_pres, self._cur_validate_hig,
+            self._cur_validate_nadir_idx, user_validated=True,
+            nadir_changed=nadir_changed)
+        self._validate_dirty = True
         self._save_validate_index(index_df)
         self._refresh_validate_list()
         self._jump_next_in_list_validate(stem)
@@ -1089,13 +1686,17 @@ class SimpleModeDialog(QDialog):
                 self._load_validate_file(visible[idx + 1])
 
     def _jump_next_unvalidated_validate(self):
-        index_df = self._validate_index()
-        validated = set()
-        if index_df is not None and _VALIDATED_COL in index_df.columns:
-            validated = set(index_df[index_df[_VALIDATED_COL]
-                            .astype(str).str.upper() == "Y"]["file"])
+        """Flagged-and-unreviewed first (what actually needs a look),
+        then anything Auto process all hasn't even auto-validated yet
+        (e.g. it was skipped or added after the last Auto process all
+        run) - matches the list's own sort order in _refresh_validate_list."""
+        auto_validated, user_validated, flagged, _bad = self._validation_status()
         for f in self._validate_files:
-            if f["stem"] not in validated:
+            if f["stem"] in flagged and f["stem"] not in user_validated:
+                self._load_validate_file(f["stem"])
+                return
+        for f in self._validate_files:
+            if f["stem"] not in auto_validated:
                 self._load_validate_file(f["stem"])
                 return
 
@@ -1105,29 +1706,30 @@ class SimpleModeDialog(QDialog):
         index_df = self._validate_index()
         if index_df is None:
             index_df = pd.DataFrame({"file": []})
-        validated = set()
-        if _VALIDATED_COL in index_df.columns:
-            validated = set(index_df[index_df[_VALIDATED_COL]
-                            .astype(str).str.upper() == "Y"]["file"])
-        n_done = 0
-        for f in self._validate_files:
-            if f["stem"] in validated:
-                continue
-            try:
-                df = pd.read_csv(f["path"], low_memory=False)
-            except Exception:
-                continue
-            time = (df["time_s"].to_numpy(dtype=float) if "time_s" in df.columns
-                    else np.arange(len(df), dtype=float))
-            pres = (df["pressure_kpa"].to_numpy(dtype=float)
-                    if "pressure_kpa" in df.columns else None)
-            nadir_idx = self._detect_nadir_idx(f["stem"], df, time, pres)
-            index_df = self._save_one_validated(
-                index_df, f["stem"], df, time, pres, nadir_idx)
-            n_done += 1
+        self.btn_auto_process_all.setEnabled(False)
+        self.btn_save_export.setEnabled(False)
+        self._auto_spinner.start()
+        self.lbl_all_validated.setText("Auto-processing…")
+        self._auto_process_thread = _AutoProcessThread(
+            self._lib_root, self._win_sec, list(self._validate_files), index_df)
+        self._auto_process_thread.progress.connect(self._on_auto_process_progress)
+        self._auto_process_thread.done.connect(self._on_auto_process_done)
+        self._auto_process_thread.start()
+
+    def _on_auto_process_progress(self, done, total):
+        self.lbl_all_validated.setText(f"Auto-processing… {done}/{total}")
+
+    def _on_auto_process_done(self, index_df, n_done):
+        self._auto_spinner.stop()
+        self.btn_auto_process_all.setEnabled(True)
+        self.btn_save_export.setEnabled(True)
+        self._validate_dirty = True
         self._save_validate_index(index_df)
         self._refresh_validate_list()
-        self.lbl_all_validated.setText(f"Auto-processed {n_done} sensor(s).")
+        _auto, _user, flagged, _bad = self._validation_status()
+        n_flagged = sum(1 for f in self._validate_files if f["stem"] in flagged)
+        self.lbl_all_validated.setText(
+            f"Auto-processed {n_done} sensor(s), {n_flagged} flagged for review.")
 
     def _save_and_export(self):
         if self._lib_root is None:
@@ -1146,6 +1748,7 @@ class SimpleModeDialog(QDialog):
         df = self._extract_thread.result if self._extract_thread else None
         if df is None or not len(df):
             self.lbl_all_validated.setText("Dataset build produced no rows.")
+            self._advance_after_export = False
             return
         ident = self.dep_edits[di.DEPLOYMENT_COL].text().strip() or "dataset"
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1156,8 +1759,10 @@ class SimpleModeDialog(QDialog):
             df.to_csv(out_path, index=False)
         except Exception as e:
             self.lbl_all_validated.setText(f"Save failed: {e}")
+            self._advance_after_export = False
             return
         self._built_dataset_path = out_path
+        self._validate_dirty = False
         self.lbl_all_validated.setText(
             f"Saved and exported {n_rows} row(s) to {out_path.name}")
         # feed straight into the shared PredictionState (window.
@@ -1165,9 +1770,23 @@ class SimpleModeDialog(QDialog):
         # wires its own dataset_ready the same way
         self.window.ml_prediction_page.on_dataset_ready(
             df, f"Simple mode - {ident}")
+        if self._advance_after_export:
+            # "Save and continue" on the unsaved-data prompt (_go_next) -
+            # the advance it deferred happens here, now that the export
+            # this needed has actually finished
+            self._advance_after_export = False
+            self._refresh_predict_step()
+            self.stack.setCurrentIndex(4)
+            self._sync_step_highlight()
 
     # ── page 4: predict ──────────────────────────────────────────────────────
     def _build_predict_page(self):
+        """Centred, single-column layout (simple_spec/Predict.png) -
+        Dataset card, then Load/Run buttons, then status text, then the
+        two result rings side by side ("Predicted strikes" and "Strike
+        classes" - the per-region/class breakdown a multiclass run
+        produces, mirroring Advanced mode's own card_regions ring;
+        ml_tab_predict.py._refresh_cards)."""
         page = QWidget()
         v = QVBoxLayout(page)
         v.setSpacing(10)
@@ -1175,49 +1794,58 @@ class SimpleModeDialog(QDialog):
         title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
         v.addWidget(title)
 
-        row = QHBoxLayout()
-        row.setSpacing(10)
-        left = QWidget()
-        lv = QVBoxLayout(left)
-        lv.setContentsMargins(0, 0, 0, 0)
-
-        self.btn_load_dataset = QPushButton("Load dataset CSV…")
-        self.btn_load_dataset.setMinimumHeight(32)
-        self.btn_load_dataset.clicked.connect(self._load_dataset_csv)
-        lv.addWidget(self.btn_load_dataset)
+        # equal stretch above/below - unequal (1 above, 2 below, as this
+        # briefly was) pins the content block near the top since most of
+        # any extra room the dialog is resized into only ever grows the
+        # larger side, reading as if the content itself had a fixed
+        # height/position rather than genuinely centring
+        v.addStretch(1)
 
         grp_ds = Section("Dataset")
+        grp_ds.setMaximumWidth(430)
         dv = QVBoxLayout(grp_ds)
         self.card_predict_dataset = MetaCard("Curated sensor dataset")
         dv.addWidget(self.card_predict_dataset)
-        lv.addWidget(grp_ds)
+        ds_row = QHBoxLayout()
+        ds_row.addStretch()
+        ds_row.addWidget(grp_ds)
+        ds_row.addStretch()
+        v.addLayout(ds_row)
 
-        grp_run = Section("Run")
-        rv = QVBoxLayout(grp_run)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        self.btn_load_dataset = QPushButton("Load dataset CSV…")
+        self.btn_load_dataset.setMinimumSize(180, 40)
+        self.btn_load_dataset.clicked.connect(self._load_dataset_csv)
+        btn_row.addWidget(self.btn_load_dataset)
         self.btn_run_predict = QPushButton("Run prediction")
-        self.btn_run_predict.setMinimumHeight(32)
+        self.btn_run_predict.setMinimumSize(180, 40)
         self.btn_run_predict.clicked.connect(self._run_predict)
-        rv.addWidget(self.btn_run_predict)
+        btn_row.addWidget(self.btn_run_predict)
+        btn_row.addStretch()
+        v.addLayout(btn_row)
+
         self.lbl_predict_status = QLabel("")
         self.lbl_predict_status.setStyleSheet(f"color:{MUTED};")
-        self.lbl_predict_status.setWordWrap(True)
-        rv.addWidget(self.lbl_predict_status)
-        lv.addWidget(grp_run)
-        lv.addStretch()
-        row.addWidget(left, stretch=1)
+        self.lbl_predict_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(self.lbl_predict_status)
 
-        right = QWidget()
-        rv2 = QVBoxLayout(right)
-        rv2.setContentsMargins(0, 0, 0, 0)
         self.lbl_predict_done = QLabel("")
         self.lbl_predict_done.setStyleSheet(f"color:{OK};font-weight:bold;")
-        rv2.addWidget(self.lbl_predict_done)
-        self.card_predicted_strikes = RingCard("Predicted strikes")
-        rv2.addWidget(self.card_predicted_strikes)
-        rv2.addStretch()
-        row.addWidget(right, stretch=1)
+        self.lbl_predict_done.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(self.lbl_predict_done)
 
-        v.addLayout(row, stretch=1)
+        cards_row = QHBoxLayout()
+        cards_row.setSpacing(16)
+        cards_row.addStretch()
+        self.card_predicted_strikes = RingCard("Predicted strikes")
+        cards_row.addWidget(self.card_predicted_strikes)
+        self.card_strike_classes = RingCard("Strike classes")
+        cards_row.addWidget(self.card_strike_classes)
+        cards_row.addStretch()
+        v.addLayout(cards_row)
+
+        v.addStretch(1)
         return page
 
     def _refresh_predict_step(self):
@@ -1341,6 +1969,18 @@ class SimpleModeDialog(QDialog):
                 ("No strike", n_total - n_strike, PALETTE[0]),
             ])
 
+        mc_run = meta.get("mode") == "multiclass"
+        have_classes = (mc_run and df is not None and len(df) and state.class_names
+                        and all(f"n_{cn}" in df.columns for cn in state.class_names))
+        self.card_strike_classes.setVisible(bool(have_classes))
+        if have_classes:
+            self.card_strike_classes.set_segments([
+                (cn, int(df[f"n_{cn}"].sum()), PALETTE[i % len(PALETTE)])
+                for i, cn in enumerate(state.class_names)
+            ])
+        else:
+            self.card_strike_classes.clear()
+
     def _on_predict_failed(self, msg):
         self.btn_run_predict.setEnabled(True)
         self.lbl_predict_status.setStyleSheet(f"color:{BAD};")
@@ -1409,6 +2049,38 @@ class SimpleModeDialog(QDialog):
                                class_names if mc_run else [], dark=True)
         self.canvas_report_mc.draw()
 
+    def _processing_review_rows(self):
+        """How Validate actually went for this library - auto vs. user
+        validation, how many sensors Auto process all's own HIG-in-window
+        check flagged for a second look, and how many of those a human
+        actually moved the nadir on (not just re-confirmed). Not shown in
+        this wizard's own Report step (that page is prediction output,
+        not processing history) - fed into the *downloaded* report
+        instead (_download_report -> ml_report.export_analysis), which is
+        what "added to the report" actually meant."""
+        total = len(self._validate_files)
+        if not total:
+            return []
+        auto_validated, user_validated, flagged, _bad = self._validation_status()
+        index_df = self._validate_index()
+        n_adjusted = 0
+        if index_df is not None and _USER_ADJUSTED_COL in index_df.columns:
+            n_adjusted = int((index_df[_USER_ADJUSTED_COL]
+                             .astype(str).str.upper() == "Y").sum())
+        n_flagged = sum(1 for f in self._validate_files if f["stem"] in flagged)
+        n_flagged_reviewed = sum(1 for f in self._validate_files
+                                 if f["stem"] in flagged and f["stem"] in user_validated)
+        return [
+            ("Auto-validated",
+             f"{sum(1 for f in self._validate_files if f['stem'] in auto_validated)}/{total}"),
+            ("Flagged for review (HIG < "
+             f"{_FLAG_HIG_THRESHOLD_G:.0f}g)", n_flagged),
+            ("Flagged sensors reviewed", f"{n_flagged_reviewed}/{n_flagged}"),
+            ("User-validated (any sensor)",
+             f"{sum(1 for f in self._validate_files if f['stem'] in user_validated)}/{total}"),
+            ("Nadir moved by user", n_adjusted),
+        ]
+
     # ── page 6: finished ─────────────────────────────────────────────────────
     def _build_finished_page(self):
         page = QWidget()
@@ -1442,11 +2114,14 @@ class SimpleModeDialog(QDialog):
                 "Run a prediction first (Predict step).")
             return
         dirpath = QFileDialog.getExistingDirectory(
-            self.window, "Download StrikeWorks report to folder", "")
+            self.window, "Download StrikeWorks report to folder",
+            str(settings.get_output_dir()))
         if not dirpath:
             return
         try:
-            out = ml_report.export_analysis(state, dirpath)
+            out = ml_report.export_analysis(
+                state, dirpath,
+                processing_review=self._processing_review_rows())
         except Exception as e:
             QMessageBox.critical(self.window, "Download failed", str(e))
             return

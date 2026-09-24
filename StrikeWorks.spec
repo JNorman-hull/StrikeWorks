@@ -57,6 +57,13 @@ hiddenimports = (
     + collect_submodules("sktime")
     + collect_submodules("numba")
     + ["numba.core.typing.cffi_utils"]
+    # ml_report.export_analysis (ml_report.py) saves figures as .svg via
+    # ml_figures.py's savefig(path, ...) - matplotlib resolves the backend
+    # from the file extension at call time, which PyInstaller's static
+    # import graph never sees, so it's silently missing from a frozen
+    # build without this (observed: "No module named
+    # 'matplotlib.backends.backend_svg'" on report download).
+    + ["matplotlib.backends.backend_svg"]
 )
 
 a = Analysis(

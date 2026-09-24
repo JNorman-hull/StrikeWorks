@@ -52,11 +52,19 @@ def _save(data: dict):
 
 
 def get_libraries_dir() -> Path:
-    """Return the configured libraries directory, or the bundled default."""
+    """Return the configured libraries directory, or the bundled default.
+
+    Deliberately does NOT check Path(p).exists() - unlike the other three
+    folder getters below, this one used to, which meant a configured
+    folder that happened to be momentarily unreachable (a cloud-synced
+    folder - e.g. OneDrive - not yet mounted/settled at the moment the
+    app read it) silently fell back to the bundled default instead of the
+    real one, indistinguishable from "the setting wasn't retained" from
+    the user's point of view even though it was still sitting correctly
+    in the settings file the whole time. Trust what was set, same as
+    models/output/input-data below."""
     p = _load().get("libraries_dir")
-    if p and Path(p).exists():
-        return Path(p)
-    return _DEFAULT_LIBRARIES
+    return Path(p) if p else _DEFAULT_LIBRARIES
 
 
 def set_libraries_dir(path) -> Path:
@@ -66,6 +74,16 @@ def set_libraries_dir(path) -> Path:
     data["libraries_dir"] = str(p)
     _save(data)
     return p
+
+
+def list_libraries() -> list:
+    """Every library folder under the configured libraries directory,
+    sorted by name - the one scan every library combo (Home, Simple
+    mode's Deploy page) populates itself from."""
+    try:
+        return sorted(p for p in get_libraries_dir().iterdir() if p.is_dir())
+    except Exception:
+        return []
 
 
 def get_models_dir() -> Path:

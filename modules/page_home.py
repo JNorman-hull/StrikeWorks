@@ -131,42 +131,20 @@ class HomePage(QObject):
         sv.addWidget(self.card_status)
         v.addWidget(grp_sum)
 
-        mode_row = QHBoxLayout()
-        mode_row.setSpacing(10)
-        self.btn_simple_mode = QPushButton("Simple mode")
-        self.btn_simple_mode.setMinimumHeight(44)
-        self.btn_simple_mode.setToolTip(
-            "A guided walkthrough in one pop-up window - the same "
-            "backend actions Advanced mode's pages perform, behind a "
-            "much simpler front end.")
-        mode_row.addWidget(self.btn_simple_mode)
-        self.btn_advanced_mode = QPushButton("Advanced mode")
-        self.btn_advanced_mode.setMinimumHeight(44)
-        self.btn_advanced_mode.setToolTip(
-            "Every page, reached from the sidebar.")
-        mode_row.addWidget(self.btn_advanced_mode)
-        v.addLayout(mode_row)
-
         v.addStretch()
         return col
 
     def _connect(self):
         self.cmb_library.currentIndexChanged.connect(self._on_combo_changed)
-        self.btn_new_library.clicked.connect(self._new_library)
-        self.btn_new_session.clicked.connect(self._new_session)
-        self.btn_advanced_mode.clicked.connect(self._go_advanced)
-        self.btn_simple_mode.clicked.connect(self._go_simple)
+        self.btn_new_library.clicked.connect(lambda: self._new_library())
+        self.btn_new_session.clicked.connect(lambda: self._new_session())
         self.session_state.library_changed.connect(self._on_session_library_changed)
 
     # ── library combo ───────────────────────────────────────────────────────
     def _refresh_library_combo(self, select=None):
-        lib_dir = settings.get_libraries_dir()
         self.cmb_library.blockSignals(True)
         self.cmb_library.clear()
-        try:
-            libs = sorted(p for p in lib_dir.iterdir() if p.is_dir())
-        except Exception:
-            libs = []
+        libs = settings.list_libraries()
         for lib in libs:
             self.cmb_library.addItem(lib.name, str(lib))
 
@@ -187,9 +165,10 @@ class HomePage(QObject):
         if str(self.session_state.library or "") != str(current or ""):
             self.session_state.set_library(current)
 
-    def _new_library(self):
+    def _new_library(self, parent=None):
+        parent = parent or self.window
         name, ok = QInputDialog.getText(
-            self.window, "New library", "Library name:")
+            parent, "New library", "Library name:")
         name = name.strip()
         if not ok or not name:
             return
@@ -197,13 +176,13 @@ class HomePage(QObject):
         new_root = lib_dir / name
         if new_root.exists():
             QMessageBox.warning(
-                self.window, "Already exists",
+                parent, "Already exists",
                 f"A library named “{name}” already exists.")
             return
         try:
             new_root.mkdir(parents=True)
         except Exception as e:
-            QMessageBox.critical(self.window, "Could not create library", str(e))
+            QMessageBox.critical(parent, "Could not create library", str(e))
             return
         self._refresh_library_combo(select=str(new_root))
         self.status.emit(f"Created library: {name}", 4000)
@@ -243,9 +222,10 @@ class HomePage(QObject):
         self.window.openSimpleMode()
 
     # ── new session ──────────────────────────────────────────────────────────
-    def _new_session(self):
+    def _new_session(self, parent=None):
+        parent = parent or self.window
         reply = QMessageBox.warning(
-            self.window, "New session",
+            parent, "New session",
             "Starting a new session clears the selected library here and "
             "on every page that follows it. Anything already saved to "
             "disk (processed files, annotations, deployed models, "
@@ -260,48 +240,56 @@ class HomePage(QObject):
 
     # ── resume summary ──────────────────────────────────────────────────────
     def _refresh_summary(self):
-        root = self.session_state.library
-        if root is None:
-            self.card_status.set_title("Nothing selected yet")
-            self.card_status.set_rows([])
-            return
-
-        self.card_status.set_title(root.name)
-        rows = []
-
-        deployments = di.deployments(root)
-        treatments = di.treatments(root)
-        rows.append(("Deployments", len(deployments) or "None recorded"))
-        rows.append(("Treatments", len(treatments) or "None recorded"))
-
-        index_df = di.read_index(root)
-        if index_df is not None:
-            sensors = di.sensor_rows(index_df)
-            n = len(sensors)
-            bad = 0
-            if di.BAD_SENS_COL in sensors.columns:
-                bad = int((sensors[di.BAD_SENS_COL].astype(str).str.strip()
-                          .str.upper() == "Y").sum())
-            rows.append(("Sensors indexed",
-                        f"{n} ({bad} flagged bad)" if bad else n))
-        else:
-            rows.append(("Sensors indexed", "Not processed yet"))
-
-        dataset_path = root / "processed_sens_data" / "model_features.csv"
-        if dataset_path.exists():
-            try:
-                n_rows = len(pd.read_csv(dataset_path, usecols=[0]))
-                rows.append(("Dataset built", f"Yes ({n_rows} rows)"))
-            except Exception:
-                rows.append(("Dataset built", "Yes"))
-        else:
-            rows.append(("Dataset built", "Not yet"))
-
-        out_dir = self.session_state.output_dir(create=False)
-        if out_dir is not None and out_dir.exists():
-            n_items = sum(1 for _ in out_dir.iterdir())
-            rows.append((OUTPUT_DIR_NAME, f"{n_items} item(s)"))
-        else:
-            rows.append((OUTPUT_DIR_NAME, "Nothing generated yet"))
-
+        title, rows = library_status_rows(
+            self.session_state.library, self.session_state)
+        self.card_status.set_title(title)
         self.card_status.set_rows(rows)
+
+
+# ── shared "library status" summary ─────────────────────────────────────────
+def library_status_rows(root, session_state):
+    """(title, rows) for a MetaCard - Deployments/Treatments/Sensors
+    indexed/Dataset built/StrikeWorks_user_output. Shared by Home's own
+    resume summary (above) and Simple mode's Deploy page "Library status"
+    card (page_simple_mode.py) - one definition of what "library status"
+    means, not two copies that can drift apart."""
+    if root is None:
+        return "Nothing selected yet", []
+    rows = []
+
+    deployments = di.deployments(root)
+    treatments = di.treatments(root)
+    rows.append(("Deployments", len(deployments) or "None recorded"))
+    rows.append(("Treatments", len(treatments) or "None recorded"))
+
+    index_df = di.read_index(root)
+    if index_df is not None:
+        sensors = di.sensor_rows(index_df)
+        n = len(sensors)
+        bad = 0
+        if di.BAD_SENS_COL in sensors.columns:
+            bad = int((sensors[di.BAD_SENS_COL].astype(str).str.strip()
+                      .str.upper() == "Y").sum())
+        rows.append(("Sensors indexed",
+                    f"{n} ({bad} flagged bad)" if bad else n))
+    else:
+        rows.append(("Sensors indexed", "Not processed yet"))
+
+    dataset_path = root / "processed_sens_data" / "model_features.csv"
+    if dataset_path.exists():
+        try:
+            n_rows = len(pd.read_csv(dataset_path, usecols=[0]))
+            rows.append(("Dataset built", f"Yes ({n_rows} rows)"))
+        except Exception:
+            rows.append(("Dataset built", "Yes"))
+    else:
+        rows.append(("Dataset built", "Not yet"))
+
+    out_dir = session_state.output_dir(create=False)
+    if out_dir is not None and out_dir.exists():
+        n_items = sum(1 for _ in out_dir.iterdir())
+        rows.append((OUTPUT_DIR_NAME, f"{n_items} item(s)"))
+    else:
+        rows.append((OUTPUT_DIR_NAME, "Nothing generated yet"))
+
+    return root.name, rows

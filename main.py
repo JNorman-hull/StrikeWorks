@@ -65,6 +65,7 @@ from modules.page_bsm_sensitivity import SensitivityPage
 from modules.page_bsm_biological import BiologicalPage
 from modules.ml_widgets import style_table
 from modules import table_copy
+from modules import win_utils
 os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
 
 # SET AS GLOBAL WIDGETS
@@ -134,7 +135,7 @@ class MainWindow(QMainWindow):
         # it should only ever appear because the user opened it, from
         # Adjustments' Dev mode toggle or "Show console" button.
         # ///////////////////////////////////////////////////////////////
-        self.dev_console = DevConsole(self)
+        self.dev_console = DevConsole()
 
         # SESSION STATE + HOME (library selection) - constructed before
         # every page below, and in that order: Home's own construction is
@@ -293,6 +294,28 @@ class MainWindow(QMainWindow):
         bottomMenuLayout = QVBoxLayout(bottomMenu)
         bottomMenuLayout.setContentsMargins(0, 0, 0, 0)
         bottomMenuLayout.setSpacing(0)
+
+        # "Simple mode" - a way back into the guided wizard for anyone who
+        # landed in Advanced mode (Development toolkit, or Close on Simple
+        # mode with nothing chosen) and wants it again without relaunching
+        # the app. Built the same way as btn_export_report just above it
+        # (a plain QPushButton matching its sizePolicy/font/cursor, since
+        # neither has any widget of its own in main.ui to relocate from).
+        widgets.btn_simple_mode_nav = QPushButton()
+        widgets.btn_simple_mode_nav.setObjectName("btn_simple_mode_nav")
+        widgets.btn_simple_mode_nav.setSizePolicy(
+            widgets.btn_export_report.sizePolicy())
+        widgets.btn_simple_mode_nav.setMinimumSize(QSize(0, 45))
+        widgets.btn_simple_mode_nav.setFont(widgets.btn_export_report.font())
+        widgets.btn_simple_mode_nav.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor))
+        widgets.btn_simple_mode_nav.setLayoutDirection(Qt.LeftToRight)
+        widgets.btn_simple_mode_nav.setStyleSheet(
+            "background-image: url(:/icons/images/icons/cil-external-link.png);")
+        widgets.btn_simple_mode_nav.setText("Simple mode")
+        widgets.btn_simple_mode_nav.clicked.connect(self.openSimpleMode)
+        bottomMenuLayout.addWidget(widgets.btn_simple_mode_nav)
+
         bottomMenuLayout.addWidget(widgets.btn_export_report)
         widgets.leftMenuFrame.layout().addStretch(1)
         widgets.leftMenuFrame.layout().addWidget(bottomMenu)
@@ -370,53 +393,24 @@ class MainWindow(QMainWindow):
         widgets.leftMenuBg.setMaximumWidth(_LEFT_MENU_COLLAPSED_WIDTH)
         self.set_sidebar_active(False)
 
-        # SHOW APP - deliberately last: every page/dialog above is built
-        # and every layout/theme/sidebar tweak above is applied *before*
-        # the window is ever made visible, so nothing appears in a half-
-        # built state while the splash screen (main.py's __main__) is
-        # still up. Also why main.py constructs MainWindow() first and
-        # only calls splash.finish() after - it needs the window to
-        # already be showing before it decides to drop the splash.
-        # _ensure_taskbar_button() runs first, on the still-hidden native
-        # window - see its own docstring for why that ordering matters.
+        # NOT shown here - Simple mode (page_simple_mode.py) is the app's
+        # default landing experience now, opened over this window by
+        # main.py's __main__ while this stays hidden; showing it
+        # unconditionally at the end of construction (as this used to do)
+        # meant it appeared *behind* that modal dialog immediately on
+        # launch instead of staying out of the way until the user actually
+        # asks for it ("Development toolkit", or closing Simple mode with
+        # nothing chosen - both call/fall back to MainWindow.show()
+        # themselves, in main.py and page_simple_mode.py respectively).
+        # win_utils.ensure_taskbar_button() still runs unconditionally
+        # here though: it must happen before this window's *first* show()
+        # ever, from whichever of those two paths that turns out to be -
+        # see its own docstring for why. SimpleModeDialog gets the same
+        # call, in its own __init__ (page_simple_mode.py) - it's the one
+        # actually shown first now, and had the identical missing-button
+        # symptom for the same underlying reason (see that module).
         # ///////////////////////////////////////////////////////////////
-        self._ensure_taskbar_button()
-        self.show()
-
-    def _ensure_taskbar_button(self):
-        """Windows-only. Qt.FramelessWindowHint (ui_functions.py,
-        uiDefinitions) makes Windows create this window as WS_POPUP
-        rather than a normal WS_OVERLAPPED top-level window - confirmed
-        via GetWindowLong on a real build: exStyle carried no
-        WS_EX_APPWINDOW at all. Unlike a normal window, WS_POPUP does
-        NOT get an automatic taskbar button, so the running app was
-        simply missing from the taskbar entirely (not just showing the
-        wrong icon).
-
-        Must run BEFORE the first show(), not after: Windows decides
-        whether to create a taskbar button when a window is first made
-        visible, and toggling WS_EX_APPWINDOW afterwards (even paired
-        with a hide()/show() cycle) does not reliably force it to
-        reconsider - confirmed by testing exactly that ordering, which
-        left the app not just missing its button but transiently
-        minimized (DWM re-evaluating a frameless/layered top-level
-        window mid-flight is not something to provoke twice). Calling
-        winId() forces the native handle to exist without showing
-        anything, so the style bit is already correct by the time
-        show() runs for the first time."""
-        if platform.system() != "Windows":
-            return
-        import ctypes
-        GWL_EXSTYLE = -20
-        WS_EX_APPWINDOW = 0x00040000
-        WS_EX_TOOLWINDOW = 0x00000080
-        try:
-            hwnd = int(self.winId())
-            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            style = (style | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW
-            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
-        except Exception:
-            pass
+        win_utils.ensure_taskbar_button(self)
 
 
     # APPLY THE "SELECTED" HIGHLIGHT TO A MENU BUTTON
@@ -655,7 +649,16 @@ class MainWindow(QMainWindow):
     # SIMPLE MODE - pop-up walkthrough (modules/page_simple_mode.py)
     # ///////////////////////////////////////////////////////////////
     def openSimpleMode(self):
+        """Runs Simple mode's wizard modally. Returns True if it was left
+        via "Development toolkit" (which already made MainWindow visible
+        itself - page_simple_mode.py's _go_development_toolkit), False
+        if closed any other way (Close button, window X). main.py's own
+        startup call uses this to decide whether to fall back to showing
+        MainWindow or quit the app entirely; the sidebar's own "Simple
+        mode" button - already in Advanced mode, by definition, whenever
+        it's reachable - ignores the return value."""
         self.simple_mode_dialog.exec()
+        return self.simple_mode_dialog.went_to_dev_toolkit
 
 
     # RESIZE EVENTS
@@ -680,23 +683,43 @@ def _build_splash():
     """Loading splash shown while MainWindow() constructs every page -
     same look as Simple mode's Welcome page (page_simple_mode.py): the
     PyDracula_vertical logo + "Deploy. Process. Predict.", plus a
-    "Loading application..." message for this moment specifically."""
+    "Loading application..." message for this moment specifically.
+
+    The logo + tagline are centred as one block within the space above
+    the loading message (not pinned near the top with the message just
+    tacked on at the bottom) - they used to be positioned independently
+    at fixed offsets, which read as slightly top-heavy/off-centre."""
     pix = QPixmap(420, 480)
     pix.fill(QColor("#21252b"))   # PyDracula's own dark background
     painter = QPainter(pix)
+
     logo_path = Path(__file__).parent / "images" / "images" / "PyDracula_vertical.png"
     logo = QPixmap(str(logo_path)) if logo_path.exists() else None
     if logo is not None and not logo.isNull():
         logo = logo.scaledToWidth(220, Qt.TransformationMode.SmoothTransformation)
-        painter.drawPixmap((pix.width() - logo.width()) // 2, 50, logo)
-    painter.setPen(QColor("#dddddd"))
+
     font = QFont()
     font.setPointSize(13)
     font.setItalic(True)
     painter.setFont(font)
-    painter.drawText(pix.rect().adjusted(0, 300, 0, -100),
+    tagline = "Deploy. Process. Predict."
+    tagline_h = painter.fontMetrics().height()
+
+    bottom_reserved = 60   # room for the "Loading application..." message
+    usable_h = pix.height() - bottom_reserved
+    spacing = 20
+    logo_h = logo.height() if logo is not None and not logo.isNull() else 0
+    block_h = logo_h + (spacing if logo_h else 0) + tagline_h
+    top = max(20, (usable_h - block_h) // 2)
+
+    if logo is not None and not logo.isNull():
+        painter.drawPixmap((pix.width() - logo.width()) // 2, top, logo)
+        top += logo_h + spacing
+
+    painter.setPen(QColor("#dddddd"))
+    painter.drawText(0, top, pix.width(), tagline_h,
                      int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop),
-                     "Deploy. Process. Predict.")
+                     tagline)
     painter.end()
 
     splash = QSplashScreen(pix)
@@ -753,5 +776,21 @@ if __name__ == "__main__":
     splash.show()
     app.processEvents()
     window = MainWindow()
-    splash.finish(window)
+    # MainWindow itself is NOT shown here (see its own __init__) - Simple
+    # mode is what the user actually sees first, and QSplashScreen.finish()
+    # only hides the splash once the widget passed to it isVisible(), so
+    # it's closed directly instead of via finish(window), which would
+    # otherwise silently no-op forever against a window that's staying
+    # hidden on purpose.
+    splash.close()
+    # exec() blocks in its own nested Qt event loop until the user closes
+    # Simple mode or picks "Development toolkit" (which shows MainWindow,
+    # already switched to Advanced mode, itself - page_simple_mode.py's
+    # _go_development_toolkit, and is what the True return means here).
+    # Any other way out (Close button, window X) means the user never
+    # asked for the full app at all - quit outright rather than falling
+    # back to showing it anyway, which used to happen unconditionally.
+    went_to_dev_toolkit = window.openSimpleMode()
+    if not went_to_dev_toolkit:
+        sys.exit(0)
     sys.exit(app.exec_())

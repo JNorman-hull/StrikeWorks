@@ -54,10 +54,24 @@ class _StreamTee(QObject):
 
 
 class DevConsole(QDialog):
-    """Non-modal pop-out log window. One instance, owned by MainWindow,
-    reused every time Dev mode toggles back on rather than rebuilt."""
+    """Non-modal pop-out log window. One instance, held by MainWindow
+    (`self.dev_console`) and reused every time Dev mode toggles back on
+    rather than rebuilt - but deliberately built with NO Qt parent
+    (`super().__init__(None)`), not `DevConsole(window)`.
 
-    def __init__(self, window):
+    A window-modal dialog (Adjustments - page_adjustments.py) blocks more
+    than just its own direct parent on Windows in practice: anything else
+    sharing that parent's window group gets blocked too, and a QDialog
+    parented to MainWindow is exactly that - a sibling of Adjustments
+    itself, not just of MainWindow. Confirmed directly: with a parent
+    here, the console sat behind Adjustments and refused all input
+    (including its own Close button) until Adjustments was closed first -
+    exactly backwards from "stays interactive with Adjustments open",
+    which is the entire reason Adjustments uses WindowModal instead of
+    the exec()-default applicationModal in the first place (see its own
+    docstring). No parent takes it out of that group entirely."""
+
+    def __init__(self, window=None):
         super().__init__(window)
         self.setWindowTitle("Dev console")
         self.setMinimumSize(700, 400)
