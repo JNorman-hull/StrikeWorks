@@ -44,8 +44,12 @@ import pandas as pd
 from PySide6.QtCore import QObject, Signal
 
 from . import index_schema
+from .raw_layout import UNGROUPED
 
 INDEX_REL = Path("processed_sens_data") / "index" / "global_sensor_index.csv"
+#: the library's running annotated dataset (Annotate's Save + next) - it
+#: carries deployment_id/treatment/run too, so a relabel follows into it
+DATASET_REL = Path("processed_sens_data") / "model_features.csv"
 
 #: value in the `file` column that marks a row as plan, not sensor
 PAD_FILE = "label_pad"
@@ -84,8 +88,16 @@ TREATMENT_FIELDS = [
 DEPLOYMENT_COLUMNS = [c for c, _ in DEPLOYMENT_FIELDS]
 TREATMENT_COLUMNS = [c for c, _ in TREATMENT_FIELDS]
 
+#: which sensor configuration (sensor_config.py key) a deployment was
+#: planned for - held on its plan rows and stamped onto its sensors, so
+#: reopening a deployment restores its sensor and downstream stages can
+#: follow it. Not an index_schema column: the parser's own output stays
+#: exactly the MVP's, this only appears once a plan records one.
+SENSOR_CONFIG_COL = "sensor_config"
+
 #: every column a treatment carries onto a sensor when one is assigned
-STAMPED_COLUMNS = DEPLOYMENT_COLUMNS + TREATMENT_COLUMNS + [RUN_COL]
+STAMPED_COLUMNS = (DEPLOYMENT_COLUMNS + TREATMENT_COLUMNS
+                   + [RUN_COL, SENSOR_CONFIG_COL])
 
 MAX_RUNS = 100
 
@@ -159,15 +171,17 @@ def _row_values(row, cols):
     return {c: _clean(row.get(c, "")) for c in cols}
 
 
-def _plan_or_sensor_rows(root):
+def _plan_or_sensor_rows(root, df=None):
     """Plan rows if the library has them, else its processed sensor rows.
 
     A library planned in StrikeWorks has plan rows. One processed before
     this existed does not, but its sensors still carry the conditions, so
     reading those back is how an existing library opens with its
-    deployments already filled in.
+    deployments already filled in. `df` - the index, if the caller has
+    already read it.
     """
-    df = read_index(root)
+    if df is None:
+        df = read_index(root)
     if df is None:
         return None
     planned = plan_rows(df)
@@ -176,13 +190,13 @@ def _plan_or_sensor_rows(root):
     return sensor_rows(df)
 
 
-def deployments(root):
+def deployments(root, df=None):
     """Every deployment in a library, as {column: value}.
 
     Distinct combinations of site / deployment ID / machine / type, in the
-    order they appear.
+    order they appear. `df` - the index, if the caller has already read it.
     """
-    rows = _plan_or_sensor_rows(root)
+    rows = _plan_or_sensor_rows(root, df)
     if rows is None or rows.empty:
         return []
     out, seen = [], set()
@@ -194,6 +208,7 @@ def deployments(root):
         if key in seen:
             continue
         seen.add(key)
+        entry[SENSOR_CONFIG_COL] = _clean(row.get(SENSOR_CONFIG_COL, ""))
         out.append(entry)
     return out
 
@@ -207,13 +222,13 @@ def describe_deployment(deployment) -> str:
     return ident or site or "(unnamed deployment)"
 
 
-def treatments(root, deployment_id=None):
+def treatments(root, deployment_id=None, df=None):
     """The treatments in a library, or in one deployment.
 
     Each entry carries its deployment fields, its conditions, and ``runs``:
-    how many runs are planned for it.
+    how many runs are planned for it. `df` - the index, if already read.
     """
-    rows = _plan_or_sensor_rows(root)
+    rows = _plan_or_sensor_rows(root, df)
     if rows is None or rows.empty:
         return []
 
@@ -227,7 +242,8 @@ def treatments(root, deployment_id=None):
             continue
         key = (ident, name)
         if key not in grouped:
-            entry = _row_values(row, DEPLOYMENT_COLUMNS + TREATMENT_COLUMNS)
+            entry = _row_values(row, DEPLOYMENT_COLUMNS + TREATMENT_COLUMNS
+                                + [SENSOR_CONFIG_COL])
             entry["runs"] = set()
             grouped[key] = entry
             order.append(key)
@@ -315,7 +331,7 @@ def _conform(df):
     return df
 
 
-def save_plan(root, deployment, treatments_in):
+def save_plan(root, deployment, treatments_in, sensor_key=None):
     """Write one deployment's plan into the library's index.
 
     One row per treatment per run. Sensor rows are left exactly as they
@@ -323,6 +339,8 @@ def save_plan(root, deployment, treatments_in):
     as many deployments as it needs.
 
     Each entry in `treatments_in` is {column: value} plus ``runs``, a count.
+    `sensor_key` records the sensor configuration the deployment uses
+    (``SENSOR_CONFIG_COL``); None keeps whatever `deployment` carries.
     Returns (path, n_rows_written).
     """
     root = Path(root)
@@ -332,6 +350,7 @@ def save_plan(root, deployment, treatments_in):
     cols = columns()
     defaults = index_schema.defaults()
     ident = str(deployment.get(DEPLOYMENT_COL, "")).strip()
+    sensor_key = sensor_key or deployment.get(SENSOR_CONFIG_COL, "") or ""
 
     rows = []
     for treatment in treatments_in:
@@ -346,8 +365,9 @@ def save_plan(root, deployment, treatments_in):
                 if col in row:
                     row[col] = value
             row[RUN_COL] = run
+            row[SENSOR_CONFIG_COL] = sensor_key
             rows.append(row)
-    new = pd.DataFrame(rows, columns=cols)
+    new = pd.DataFrame(rows, columns=cols + [SENSOR_CONFIG_COL])
 
     existing = read_index(root)
     if existing is None:
@@ -435,4 +455,126 @@ def set_row_values(root, file, values: dict) -> int:
         df.loc[mask, col] = value
 
     df.to_csv(index_path(root), index=False)
+    return n
+
+
+# ── relabelling (deployment editor's Update) ─────────────────────────────────
+def _relabel_frame(df, where, values):
+    """Set `values` on every row of `df` matching all of `where` (compared
+    as cleaned text). Returns the number of rows changed."""
+    if df is None:
+        return 0
+    mask = pd.Series(True, index=df.index)
+    for col, want in where.items():
+        if col not in df.columns:
+            return 0
+        mask &= df[col].map(_clean) == str(want).strip()
+    n = int(mask.sum())
+    if not n:
+        return 0
+    for col, value in values.items():
+        if col not in df.columns:
+            df[col] = ""
+        df[col] = df[col].astype(object)
+        df.loc[mask, col] = value
+    return n
+
+
+def relabel(root, where, values):
+    """Relabel index rows (plan and sensor alike) matching `where`, and the
+    same rows of the library's running dataset (``DATASET_REL``) - so a
+    renamed deployment/treatment follows through everything already
+    processed or annotated under the old name. Returns index rows changed."""
+    n = 0
+    df = read_index(root)
+    if df is not None:
+        n = _relabel_frame(df, where, values)
+        if n:
+            df.to_csv(index_path(root), index=False)
+    dataset = Path(root) / DATASET_REL
+    if dataset.exists():
+        try:
+            ds = pd.read_csv(dataset, low_memory=False)
+            if _relabel_frame(ds, where, values):
+                ds.to_csv(dataset, index=False)
+        except Exception:
+            pass
+    return n
+
+
+def rename_deployment(root, old, new):
+    return relabel(root, {DEPLOYMENT_COL: old}, {DEPLOYMENT_COL: new})
+
+
+def rename_treatment(root, deployment_id, old, new):
+    return relabel(root, {DEPLOYMENT_COL: deployment_id, TREATMENT_COL: old},
+                   {TREATMENT_COL: new})
+
+
+def restamp_deployment(root, deployment_id):
+    """Re-apply one deployment's saved plan to its already-processed
+    sensors: deployment fields, each sensor's treatment conditions (by
+    treatment name) and the sensor configuration. Runs are left alone - a
+    sensor's run comes from where its file sits. Returns rows changed."""
+    df = read_index(root)
+    if df is None or FILE_COL not in df.columns or DEPLOYMENT_COL not in df.columns:
+        return 0
+    plan = {t[TREATMENT_COL]: t for t in treatments(root, deployment_id)}
+    if not plan:
+        return 0
+    sensors = ~is_plan_row(df) & (df[DEPLOYMENT_COL].map(_clean)
+                                  == str(deployment_id).strip())
+    if TREATMENT_COL not in df.columns:
+        return 0
+    n = 0
+    cols = DEPLOYMENT_COLUMNS + TREATMENT_COLUMNS + [SENSOR_CONFIG_COL]
+    for name, t in plan.items():
+        mask = sensors & (df[TREATMENT_COL].map(_clean) == name)
+        if not mask.any():
+            continue
+        n += int(mask.sum())
+        for col in cols:
+            value = str(t.get(col, "")).strip()
+            if not value:
+                continue
+            if col not in df.columns:
+                df[col] = ""
+            df[col] = df[col].astype(object)
+            df.loc[mask, col] = value
+    if n:
+        df.to_csv(index_path(root), index=False)
+    return n
+
+
+def stamp_by_location(root, located):
+    """Label freshly processed recordings from where their raw files sit.
+
+    `located` is [{"stem", "deployment", "treatment", "run"}, ...] (see
+    raw_layout.locate). Each (deployment, treatment, run) group is stamped
+    with that deployment's saved plan - its deployment fields and the
+    treatment's conditions - plus the run from the folder; a deployment or
+    treatment with no saved plan still gets its name and run, so nothing
+    processed is ever left unlabelled. Returns rows changed."""
+    groups = {}
+    for f in located:
+        key = (f.get("deployment", UNGROUPED), f.get("treatment", UNGROUPED),
+               f.get("run") or "1")
+        groups.setdefault(key, []).append(f["stem"])
+
+    dep_entries, plans = {}, {}
+    n = 0
+    for (dep, treat, run), stems in groups.items():
+        if not dep or dep == UNGROUPED:
+            continue   # loose in raw_sens_data itself - nothing to label with
+        if dep not in dep_entries:
+            dep_entries[dep] = next(
+                (d for d in deployments(root)
+                 if d.get(DEPLOYMENT_COL, "") == dep), {})
+            plans[dep] = {t[TREATMENT_COL]: t for t in treatments(root, dep)}
+        values = dict(dep_entries[dep])
+        values[DEPLOYMENT_COL] = dep
+        if treat and treat != UNGROUPED:
+            values.update(plans[dep].get(treat, {}))
+            values[TREATMENT_COL] = treat
+        n += apply_treatment(root, stems, values, run=run)
     return n

@@ -106,6 +106,11 @@ class _WorkerThread(QThread):
             cmd += ["--threshold", str(self._threshold)]
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            # the worker's own output, for the dev console (dev_console.py
+            # mirrors print) - captured above, so it went nowhere before
+            for line in (r.stdout + r.stderr).splitlines():
+                if line.strip():
+                    print(f"[predict-worker] {line}")
             if r.returncode != 0:
                 self.failed.emit(
                     (r.stderr + r.stdout).strip() or "Worker exited non-zero")

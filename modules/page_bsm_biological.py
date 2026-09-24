@@ -25,7 +25,9 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from . import bsm_figures
-from .ml_widgets import MUTED, TEXT, Section, apply_section_defaults
+from .ml_widgets import (
+    MUTED, TEXT, Section, apply_section_defaults, centred, discard_widget,
+)
 from .wilson_calc import wilson_interval
 
 
@@ -86,16 +88,29 @@ class BiologicalPage(QWidget):
         self.canvas_compare.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
+        # table and plot share the width half and half by default (still
+        # draggable) - tiny setSizes values used to be overridden by the
+        # widgets' own size hints, leaving the table a narrow strip
         row = QSplitter(Qt.Orientation.Horizontal)
         row.setChildrenCollapsible(False)
         row.addWidget(self.tbl_compare)
         row.addWidget(self.canvas_compare)
-        row.setSizes([1, 1])
+        row.setStretchFactor(0, 1)
+        row.setStretchFactor(1, 1)
+        row.setSizes([1000, 1000])
+        row.setMinimumHeight(320)
         gv.addWidget(row, stretch=1)
 
-        gv.addWidget(self._video_observed_group())
-        gv.addWidget(self._model1_group())
-        gv.addWidget(self._bsm_group())
+        # the three input boxes: half the page width, centred, rather than
+        # stretched edge to edge
+        inputs = QWidget()
+        iv = QVBoxLayout(inputs)
+        iv.setContentsMargins(0, 0, 0, 0)
+        iv.setSpacing(8)
+        iv.addWidget(self._video_observed_group())
+        iv.addWidget(self._model1_group())
+        iv.addWidget(self._bsm_group())
+        gv.addWidget(centred(inputs, share=0.5))
         return g
 
     def _video_observed_group(self):
@@ -217,8 +232,7 @@ class BiologicalPage(QWidget):
             item = self.treatment_check_col.takeAt(0)
             w = item.widget()
             if w is not None:
-                w.setParent(None)
-                w.deleteLater()
+                discard_widget(w)
         self._treatment_checks = {}
         for name in names:
             cb = QCheckBox(str(name))

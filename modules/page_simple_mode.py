@@ -4,41 +4,30 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Simple mode - a guided, one-window walkthrough of Deployment > Process >
-Predict > Report, and (2026-09-11) the app's default landing experience -
-main.py opens it automatically on launch, ahead of the full Advanced GUI.
-Spec: simple_spec/Home.png, Deploy.png, Validate.png, Predict.png
-(2026-09-11, superseding the earlier simple_spec/1.png-7.png drafts).
+"""Simple mode - a guided, one-window walkthrough of Deploy > Process >
+Validate > Predict > Report, and the app's default landing experience -
+main.py opens it on launch, ahead of the full Advanced GUI.
+Spec: simple_spec/Home.png, Deploy.png, Validate.png, Predict.png.
 
-Every step below calls the *same* backend pieces Advanced mode's pages
-use - `deployment_index`, `sensor_config`, `_ProcessThread` (page_process.py),
-`_ExtractThread` (page_dataset.py), the shared `PredictionState`
-(`window.ml_prediction_page.state`), `ml_figures`, `ml_report` - nothing
-new was invented at the data layer, only a much smaller front end sits on
-top of it, per the spec images.
+Every step runs on the same pieces Advanced mode uses - for the first
+three, literally the same widgets/code:
 
-Two things this pass adds that Advanced mode doesn't have an equivalent
-of, both from the spec:
+  Deploy    - deployment_editor.DeploymentEditor (also Advanced mode's
+              Create and edit deployment page).
+  Process   - inventory_widgets.FileInventory (also Advanced mode's Raw
+              data processing page): every recording labelled with the
+              deployment / treatment / run folder it sits in.
+  Validate  - validation_core (also Advanced mode's Annotate page): Auto
+              process all, the HIG-in-window flag that points a person at
+              the sensors worth a second look, user validation, Save and
+              export.
+  Predict   - the shared PredictionState (window.ml_prediction_page.state).
+  Report    - ml_figures / ml_report.
 
-  Auto process all  - accepts every processed sensor's own already-
-                      detected nadir/ROI (the same detection Validate
-                      falls back to - `pres_min.time.` from the index, or
-                      the pressure minimum) and saves it, with zero
-                      per-file manual review. Sensors already flagged
-                      bad_sens=Y by Process (not computed here - that
-                      flag already exists in the index by this point)
-                      stay flagged; nothing here overrides it to "good".
-  Save and export   - Dataset creation's "bind segmented windows" step,
-                      folded into one click that also writes straight
-                      into input_data/ instead of a save-file dialog.
-
-The signal preview's nadir line is draggable, same as Advanced mode's
-Validate page - Auto process all handles the bulk case with zero
-per-file review, but any sensor (already validated or not) can still be
-corrected by hand and re-saved with Save + Next.
+The signal preview's nadir line is draggable - Auto process all handles the
+bulk case with no per-file review, then the flagged sensors (or any other)
+can be corrected by hand and re-saved with Save + Next.
 """
-import os
-from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -47,53 +36,29 @@ import pyqtgraph as pg
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
-from PySide6.QtCore import QThread, Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFileDialog, QGridLayout, QHBoxLayout,
-    QLabel, QLayout, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
-    QPushButton, QScrollArea, QSizePolicy, QSpinBox, QStackedWidget,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QLayout,
+    QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSizePolicy,
+    QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import deployment_index as di
-from . import ml_figures, ml_report, sensor_config, settings, win_utils
+from . import ml_figures, ml_report, settings, win_utils
+from . import validation_core as vc
+from .deployment_editor import DeploymentEditor
+from .inventory_widgets import FileInventory
 from .ml_widgets import (
     ACCENT, BAD, MUTED, OK, PALETTE, PINK, TEXT, WARN, MetaCard, RingCard,
-    Section, Spinner, apply_section_defaults, style_table,
+    Section, Spinner,
 )
-from .page_dataset import OPT_SEGMENTED, _ExtractThread, _standardise
 from .plot_style import add_export_button, build_export_data
-from .page_home import library_status_rows
-from .page_initiate_deployment import _README_TEXT
-from .page_process import _ProcessThread, _parse_name
 
 pg.setConfigOptions(antialias=True, background="#21252b",
                     foreground="#c8cdd6")
 
-_RAW_DIR = Path("raw_sens_data")
-_CSV_DIR = Path("processed_sens_data") / "csv"
-_INDEX_REL = di.INDEX_REL
-_VIDEO_FOLDER_NAME = "VIDEO"
-_NADIR_T_COL = "pres_min.time."
-_NADIR_V_COL = "pres_min.kPa."
-_VALIDATED_COL = "hstrike_processed"   # Y once a window's been saved at all - auto OR user
-_USER_VALIDATED_COL = "hstrike_user_validated"   # Y only once a human reviewed it
-_FLAGGED_COL = "hstrike_flagged"   # Y = auto process's own "worth a look" heuristic
-_USER_ADJUSTED_COL = "hstrike_user_adjusted"   # Y = human moved the nadir and re-saved
-_HIG_WINDOW_MAX_COL = "hstrike_hig_window_max_g"
-# Auto process all's one heuristic for "this nadir position might be
-# wrong": a real blade-strike window should show a real HIG (impact
-# accelerometer) peak - a low one inside the saved window suggests Auto
-# process picked a window that missed the actual event. Ad hoc, and
-# deliberately just one check for now (not a hard science threshold) -
-# the goal is to point a human at the sensors worth a second look, not to
-# auto-reject anything; Auto process all still saves every sensor's
-# window regardless of this flag.
-_FLAG_HIG_THRESHOLD_G = 95.0
-_WIN_SEC = 0.2
-_WIN_DIR = Path("processed_sens_data") / "nadir_window"
-_NEW_DEPLOYMENT = "__new__"
+_WIN_SEC = vc.WIN_SEC
 _IMAGES_DIR = Path(__file__).parent.parent / "images" / "images"
 _ICON_PATH = Path(__file__).parent.parent / "icon.ico"
 
@@ -130,197 +95,6 @@ _GUIDANCE = {
     5: "Review the report, then continue to download…",
     6: "Download your report to finish, or close.",
 }
-
-
-class _TreatmentTable(QTableWidget):
-    """Editable table of treatments - simple_spec/Deploy.png's table view
-    ("MAKE TREATMENT ENTRY LIKE AN ACTUAL TABLE? WOULD BE CLEANER"),
-    replacing the stacked _TreatmentRow cards (page_initiate_deployment.py)
-    Advanced mode still uses - those got visually noisy once a deployment
-    has more than a couple of treatments, since each card re-renders its
-    own column headers. Simple-mode-only; Advanced mode is untouched.
-
-    One header row, one real data row per treatment: plain editable cells
-    for the di.TREATMENT_FIELDS columns, a QSpinBox for the run count, a
-    Remove button - deliberately shaped like _TreatmentRow's own
-    values()/name() so the call sites barely change.
-    """
-
-    changed = Signal()
-
-    _RUNS_COL = len(di.TREATMENT_FIELDS)
-    _REMOVE_COL = len(di.TREATMENT_FIELDS) + 1
-
-    def __init__(self, parent=None):
-        headers = ([label for _c, label in di.TREATMENT_FIELDS]
-                  + ["Number of runs", ""])
-        super().__init__(0, len(headers), parent)
-        self.setHorizontalHeaderLabels(headers)
-        self.verticalHeader().setVisible(False)
-        style_table(self)
-        self.itemChanged.connect(lambda _i: self.changed.emit())
-
-    def add_row(self, values=None):
-        values = values or {}
-        row = self.rowCount()
-        self.insertRow(row)
-        for col, (column, _label) in enumerate(di.TREATMENT_FIELDS):
-            self.setItem(row, col, QTableWidgetItem(str(values.get(column, ""))))
-
-        spin = QSpinBox()
-        spin.setRange(1, di.MAX_RUNS)
-        spin.setValue(int(values.get("runs", 1) or 1))
-        spin.setToolTip("Runs can be assigned during processing.")
-        spin.valueChanged.connect(lambda _v: self.changed.emit())
-        self.setCellWidget(row, self._RUNS_COL, spin)
-
-        btn_remove = QPushButton("Remove")
-        btn_remove.setToolTip("Remove this treatment")
-        btn_remove.clicked.connect(lambda: self._remove_row_with_widget(btn_remove))
-        self.setCellWidget(row, self._REMOVE_COL, btn_remove)
-
-        self.resizeColumnsToContents()
-        self.changed.emit()
-
-    def _remove_row_with_widget(self, btn):
-        for r in range(self.rowCount()):
-            if self.cellWidget(r, self._REMOVE_COL) is btn:
-                self.removeRow(r)
-                self.changed.emit()
-                return
-
-    def row_values(self, row):
-        out = {}
-        for col, (column, _label) in enumerate(di.TREATMENT_FIELDS):
-            item = self.item(row, col)
-            out[column] = item.text().strip() if item is not None else ""
-        spin = self.cellWidget(row, self._RUNS_COL)
-        out["runs"] = spin.value() if spin is not None else 1
-        return out
-
-    def all_values(self):
-        return [self.row_values(r) for r in range(self.rowCount())]
-
-    def names(self):
-        col = next(i for i, (c, _l) in enumerate(di.TREATMENT_FIELDS)
-                  if c == di.TREATMENT_COL)
-        names = []
-        for r in range(self.rowCount()):
-            item = self.item(r, col)
-            names.append(item.text().strip() if item is not None else "")
-        return names
-
-    def clear_rows(self):
-        self.setRowCount(0)
-
-
-class _AutoProcessThread(QThread):
-    """Auto process all's own per-sensor loop (nadir detect, save the ROI
-    window CSV, update the index, compute the HIG-in-window flag), off
-    the GUI thread. Reading + writing 70+ sensors' CSVs one at a time,
-    over a library that can be OneDrive-synced, used to run synchronously
-    on the GUI thread and simply freeze the app for however long that
-    took - no progress, no way to tell it hadn't hung, and pressing
-    anything (including trying to close the app) did nothing until it
-    finished.
-
-    Self-contained rather than calling back into SimpleModeDialog's own
-    _detect_nadir_idx/_window_bounds/_save_one_validated - those are safe
-    to call cross-thread in principle (no widget access), but duplicating
-    the handful of lines that matter here keeps this thread's contract
-    to plain data in, an updated index DataFrame out, with nothing
-    implicitly depending on dialog state that could change underneath it
-    while it runs."""
-
-    progress = Signal(int, int)          # n done so far, total
-    done = Signal(object, int)           # updated index_df, n_done
-
-    def __init__(self, lib_root, win_sec, validate_files, index_df, parent=None):
-        super().__init__(parent)
-        self._lib_root = lib_root
-        self._win_sec = win_sec
-        self._validate_files = validate_files
-        self._index_df = index_df
-
-    @staticmethod
-    def _detect_nadir_idx(stem, df, time, pres, index_df):
-        if (index_df is not None and "file" in index_df.columns
-                and _NADIR_T_COL in index_df.columns):
-            row = index_df[index_df["file"] == stem]
-            if not row.empty:
-                val = row[_NADIR_T_COL].iloc[0]
-                if pd.notna(val):
-                    return int(np.argmin(np.abs(time - float(val))))
-        if pres is not None and len(pres):
-            return int(np.argmin(pres))
-        return len(df) // 2
-
-    def run(self):
-        index_df = self._index_df
-        validated = set()
-        if _VALIDATED_COL in index_df.columns:
-            validated = set(index_df[index_df[_VALIDATED_COL]
-                            .astype(str).str.upper() == "Y"]["file"])
-
-        fs = sensor_config.active().output_rate_hz or 2000
-        half_n = int(round(self._win_sec / 2 * fs))
-        ms = int(round(self._win_sec * 1000))
-        out_dir = self._lib_root / _WIN_DIR
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        for col in (_VALIDATED_COL, _FLAGGED_COL):
-            if col not in index_df.columns:
-                index_df[col] = ""
-            index_df[col] = index_df[col].astype(object)
-
-        total = len(self._validate_files)
-        n_done = 0
-        for i, f in enumerate(self._validate_files):
-            stem = f["stem"]
-            if stem in validated:
-                self.progress.emit(i + 1, total)
-                continue
-            try:
-                df = pd.read_csv(f["path"], low_memory=False)
-            except Exception:
-                self.progress.emit(i + 1, total)
-                continue
-            time = (df["time_s"].to_numpy(dtype=float) if "time_s" in df.columns
-                    else np.arange(len(df), dtype=float))
-            pres = (df["pressure_kpa"].to_numpy(dtype=float)
-                    if "pressure_kpa" in df.columns else None)
-            hig = (df["higacc_mag_g"].to_numpy(dtype=float)
-                  if "higacc_mag_g" in df.columns else None)
-            nadir_idx = self._detect_nadir_idx(stem, df, time, pres, index_df)
-            start = max(0, nadir_idx - half_n)
-            end = min(len(df) - 1, nadir_idx + half_n)
-            df.iloc[start:end + 1].to_csv(out_dir / f"{stem}_{ms}ms.csv", index=False)
-
-            nadir_t = float(time[nadir_idx])
-            nadir_v = float(pres[nadir_idx]) if pres is not None else float("nan")
-            hig_window_max = (float(np.max(hig[start:end + 1]))
-                              if hig is not None and len(hig) else float("nan"))
-
-            mask = index_df["file"] == stem
-            if not mask.any():
-                new_row = pd.DataFrame([{"file": stem}])
-                index_df = pd.concat([index_df, new_row], ignore_index=True)
-                index_df[_VALIDATED_COL] = index_df[_VALIDATED_COL].astype(object)
-                index_df[_FLAGGED_COL] = index_df[_FLAGGED_COL].astype(object)
-                mask = index_df["file"] == stem
-            index_df.loc[mask, _NADIR_T_COL] = nadir_t
-            index_df.loc[mask, _NADIR_V_COL] = nadir_v
-            index_df.loc[mask, "nadir_window_start"] = time[start]
-            index_df.loc[mask, "nadir_window_end"] = time[end]
-            index_df.loc[mask, _HIG_WINDOW_MAX_COL] = hig_window_max
-            index_df.loc[mask, _VALIDATED_COL] = "Y"
-            is_flagged = (not np.isnan(hig_window_max)
-                         and hig_window_max < _FLAG_HIG_THRESHOLD_G)
-            index_df.loc[mask, _FLAGGED_COL] = "Y" if is_flagged else "N"
-            n_done += 1
-            self.progress.emit(i + 1, total)
-
-        self.done.emit(index_df, n_done)
 
 
 class SimpleModeDialog(QDialog):
@@ -376,19 +150,19 @@ class SimpleModeDialog(QDialog):
         # win_utils.py), just triggered by MainWindow staying hidden as
         # its owner rather than by FramelessWindowHint
         win_utils.ensure_taskbar_button(self)
+        # window-modal, not exec()'s application-modal default: it only
+        # needs to block MainWindow, its owner. Application modality also
+        # input-blocked every other top-level window - which is what left
+        # the dev console (dev_console.py, deliberately parentless)
+        # visible but unclickable behind this wizard.
+        self.setWindowModality(Qt.WindowModality.WindowModal)
 
-        self._lib_root = None
-        self._deployments = []
-        self._process_files = []
-        self._process_treatment_by_stem = {}
-        self._process_batch_done = []
+        self._lib_root = window.session_state.library
         self._validate_files = []       # [{"stem","path"}]
         self._cur_validate_stem = None
-        # the rest of the currently-loaded sensor's data - previously only
-        # ever set inside _load_validate_file() itself, so anything that
-        # read them (this Export button included) before a file had ever
-        # been loaded hit a bare AttributeError instead of behaving like
-        # "nothing loaded yet"
+        # the rest of the currently-loaded sensor's data - None until a
+        # sensor is loaded, so anything reading them first (the Export
+        # button) behaves like "nothing loaded yet"
         self._cur_validate_df = None
         self._cur_validate_time = None
         self._cur_validate_pres = None
@@ -401,8 +175,8 @@ class SimpleModeDialog(QDialog):
         self.went_to_dev_toolkit = False
         self._built_dataset_path = None
         self._win_sec = _WIN_SEC   # ROI window width - user-adjustable via cmb_window
-        self._process_thread = None
-        self._extract_thread = None
+        self._exporter = vc.DatasetExporter(self)
+        self._exporter.finished.connect(self._on_extract_done)
 
         self._build()
         state = self.window.ml_prediction_page.state
@@ -532,9 +306,8 @@ class SimpleModeDialog(QDialog):
         outer.addLayout(nav)
 
     def _show_about(self):
-        QMessageBox.information(
-            self, "About",
-            "Copyright Hull University - contact J.Norman2@hull.ac.uk")
+        from .about_dialog import AboutDialog
+        AboutDialog(self).exec()
 
     @staticmethod
     def _make_logo(filename, width):
@@ -557,12 +330,15 @@ class SimpleModeDialog(QDialog):
         self.went_to_dev_toolkit = False
         self.stack.setCurrentIndex(0)
         self._sync_step_highlight()
-        self._refresh_deployment_step()
+        self._lib_root = self.window.session_state.library
+        # (the Deploy editor refreshes itself whenever it's shown)
 
     # ── navigation ───────────────────────────────────────────────────────────
     def _go_next(self):
         idx = self.stack.currentIndex()
         if idx == 1:
+            if not self.editor.confirm_leave(self):
+                return
             self._refresh_process_inventory()
         elif idx == 2:
             self._refresh_validate_step()
@@ -641,7 +417,20 @@ class SimpleModeDialog(QDialog):
     def _on_step_clicked(self, item):
         page = item.data(Qt.ItemDataRole.UserRole)
         if page is None:
+            self._sync_step_highlight()
             return   # a group heading ("Process"/"Report") - not clickable
+        if (self.stack.currentIndex() == 1 and page != 1
+                and not self.editor.confirm_leave(self)):
+            self._sync_step_highlight()
+            return
+        if page == 2:
+            self._refresh_process_inventory()
+        elif page == 3:
+            self._refresh_validate_step()
+        elif page == 4:
+            self._refresh_predict_step()
+        elif page == 5:
+            self._refresh_report_step()
         self.stack.setCurrentIndex(page)
         self._sync_step_highlight()
 
@@ -737,280 +526,15 @@ class SimpleModeDialog(QDialog):
         title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
         title.setWordWrap(True)
         v.addWidget(title)
-
-        row = QHBoxLayout()
-        row.setSpacing(10)
-
-        left = QWidget()
-        lv = QVBoxLayout(left)
-        lv.setContentsMargins(0, 0, 0, 0)
-
-        grp_lib = Section("Session library")
-        libv = QVBoxLayout(grp_lib)
-        self.cmb_library_deploy = QComboBox()
-        self.cmb_library_deploy.currentIndexChanged.connect(
-            self._on_library_combo_deploy_changed)
-        libv.addWidget(self.cmb_library_deploy)
-        self.lbl_library_path_deploy = QLabel("No library selected.")
-        self.lbl_library_path_deploy.setStyleSheet(f"color:{MUTED};")
-        self.lbl_library_path_deploy.setWordWrap(True)
-        libv.addWidget(self.lbl_library_path_deploy)
-        lib_action_row = QHBoxLayout()
-        btn_new_library = QPushButton("New library")
-        btn_new_library.setFlat(True)
-        btn_new_library.setStyleSheet(f"color:{ACCENT};text-align:left;")
-        btn_new_library.clicked.connect(
-            lambda: self.window.home_page._new_library(parent=self))
-        lib_action_row.addWidget(btn_new_library)
-        lib_action_row.addStretch()
-        btn_new_session = QPushButton("New session")
-        btn_new_session.setFlat(True)
-        btn_new_session.setStyleSheet(f"color:{ACCENT};text-align:right;")
-        btn_new_session.clicked.connect(
-            lambda: self.window.home_page._new_session(parent=self))
-        lib_action_row.addWidget(btn_new_session)
-        libv.addLayout(lib_action_row)
-        lv.addWidget(grp_lib)
-
-        grp_lib_status = Section("Library status")
-        lsv = QVBoxLayout(grp_lib_status)
-        self.card_library_status = MetaCard("Nothing selected yet")
-        lsv.addWidget(self.card_library_status)
-        lv.addWidget(grp_lib_status)
-
-        grp_sensor = Section("Sensors")
-        sv = QVBoxLayout(grp_sensor)
-        self.cmb_sensor = QComboBox()
-        for cfg in sensor_config.all_configs():
-            self.cmb_sensor.addItem(cfg.name, cfg.key)
-        idx = self.cmb_sensor.findData(sensor_config.active().key)
-        self.cmb_sensor.setCurrentIndex(max(idx, 0))
-        self.cmb_sensor.currentIndexChanged.connect(self._on_sensor_config_changed)
-        sv.addWidget(self.cmb_sensor)
-        lv.addWidget(grp_sensor)
-
-        grp_dep = Section("Deployment")
-        dv = QVBoxLayout(grp_dep)
-        self.cmb_deployment = QComboBox()
-        self.cmb_deployment.currentIndexChanged.connect(
-            self._on_deployment_selected)
-        dv.addWidget(self.cmb_deployment)
-
-        form = QGridLayout()
-        form.setColumnStretch(1, 1)
-        self.dep_edits = {}
-        for i, (column, label) in enumerate(di.DEPLOYMENT_FIELDS):
-            form.addWidget(self._muted(label), i, 0)
-            edit = QLineEdit()
-            form.addWidget(edit, i, 1)
-            self.dep_edits[column] = edit
-        dv.addLayout(form)
-        lv.addWidget(grp_dep)
-
-        self.btn_create_folder = QPushButton("Create & open\ndata folder")
-        self.btn_create_folder.setMinimumHeight(40)
-        self.btn_create_folder.setFixedWidth(120)
-        self.btn_create_folder.setToolTip("Create & open data folder")
-        self.btn_create_folder.clicked.connect(self._create_and_open_folder)
-        lv.addWidget(self.btn_create_folder)
-
-        self.lbl_files_found = QLabel("")
-        self.lbl_files_found.setStyleSheet(f"color:{OK};")
-        lv.addWidget(self.lbl_files_found)
-        lv.addStretch()
-
-        # scrolls internally rather than forcing the whole dialog taller -
-        # this column grew to four stacked sections (Session library,
-        # Library status, Sensors, Deployment) and was the actual reason
-        # the window needed to keep growing past a fixed 1340x700 to
-        # avoid squeezing/overlapping its own labels
-        left_scroll = QScrollArea()
-        left_scroll.setWidgetResizable(True)
-        left_scroll.setStyleSheet(
-            "QScrollArea{border:none;background:transparent;}")
-        left_scroll.setWidget(left)
-        row.addWidget(left_scroll, stretch=2)
-
-        right = QWidget()
-        rv = QVBoxLayout(right)
-        rv.setContentsMargins(0, 0, 0, 0)
-        self.treatment_table = _TreatmentTable()
-        self.treatment_table.changed.connect(self._refresh_treatment_summary)
-        rv.addWidget(self.treatment_table, stretch=1)
-        self.btn_add_treatment = QPushButton("+ Add treatment")
-        self.btn_add_treatment.setFixedWidth(120)
-        self.btn_add_treatment.clicked.connect(lambda: self._add_treatment())
-        rv.addWidget(self.btn_add_treatment)
-        self.lbl_treatment_summary = QLabel("")
-        self.lbl_treatment_summary.setStyleSheet(f"color:{MUTED};")
-        rv.addWidget(self.lbl_treatment_summary)
-        rv.addStretch()
-        row.addWidget(right, stretch=3)
-
-        v.addLayout(row, stretch=1)
+        # the same editor Advanced mode's Create and edit deployment hosts -
+        # library, status, sensor, deployment, treatments, Create/Update and
+        # the unsaved-changes prompt all live there (deployment_editor.py)
+        self.editor = DeploymentEditor(self.window, self.window.session_state)
+        v.addWidget(self.editor, stretch=1)
         return page
 
-    # -- deployment step logic -----------------------------------------------
-    def _refresh_deployment_step(self):
-        self._lib_root = self.window.session_state.library
-        self._refresh_library_combo_deploy(select=self._lib_root)
-        self._refresh_library_status_card()
-        self._load_deployments()
-
-    # -- session library (soft-synced to session_state, like every other
-    # page's own picker - see page_home.py's docstring) ---------------------
-    def _refresh_library_combo_deploy(self, select=None):
-        self.cmb_library_deploy.blockSignals(True)
-        self.cmb_library_deploy.clear()
-        for lib in settings.list_libraries():
-            self.cmb_library_deploy.addItem(lib.name, str(lib))
-        want = str(select) if select else None
-        idx = self.cmb_library_deploy.findData(want) if want else -1
-        if idx >= 0:
-            self.cmb_library_deploy.setCurrentIndex(idx)
-        self.cmb_library_deploy.blockSignals(False)
-        self.lbl_library_path_deploy.setText(
-            str(self._lib_root) if self._lib_root else "No library selected.")
-
-    def _refresh_library_status_card(self):
-        title, rows = library_status_rows(
-            self._lib_root, self.window.session_state)
-        self.card_library_status.set_title(title)
-        self.card_library_status.set_rows(rows)
-
-    def _on_library_combo_deploy_changed(self, _idx):
-        path = self.cmb_library_deploy.currentData()
-        self.window.session_state.set_library(path)
-
     def _on_session_library_changed_simple(self, path):
-        """Soft-sync for this page's own library combo - fires whenever
-        the session library changes from anywhere (this combo, the
-        Advanced Home page, New library/New session) so Deploy always
-        reflects the one true session library, same as every other
-        soft-synced page in the app."""
         self._lib_root = path
-        self._refresh_library_combo_deploy(select=path)
-        self._refresh_library_status_card()
-        self._load_deployments()
-
-    def _on_sensor_config_changed(self, *_args):
-        key = self.cmb_sensor.currentData()
-        if key:
-            sensor_config.set_active(key)
-
-    def _load_deployments(self, select=None):
-        self.cmb_deployment.blockSignals(True)
-        self.cmb_deployment.clear()
-        self._deployments = []
-        if self._lib_root is not None:
-            self._deployments = di.deployments(self._lib_root)
-            for dep in self._deployments:
-                self.cmb_deployment.addItem(
-                    di.describe_deployment(dep), dep.get(di.DEPLOYMENT_COL, ""))
-        self.cmb_deployment.addItem("New deployment…", _NEW_DEPLOYMENT)
-        idx = (self.cmb_deployment.findData(select) if select is not None
-               else 0)
-        self.cmb_deployment.setCurrentIndex(max(0, idx))
-        self.cmb_deployment.blockSignals(False)
-        self._show_deployment(self.cmb_deployment.currentData())
-
-    def _on_deployment_selected(self, *_args):
-        self._show_deployment(self.cmb_deployment.currentData())
-
-    def _show_deployment(self, ident):
-        self.treatment_table.clear_rows()
-        is_new = ident is None or ident == _NEW_DEPLOYMENT
-        if is_new:
-            for edit in self.dep_edits.values():
-                edit.setText("")
-            self._add_treatment()
-            self._refresh_files_found()
-            return
-        dep = next((d for d in self._deployments
-                    if d.get(di.DEPLOYMENT_COL, "") == ident), {})
-        for column, edit in self.dep_edits.items():
-            edit.setText(dep.get(column, ""))
-        planned = di.treatments(self._lib_root, ident) if self._lib_root else []
-        for treatment in (planned or [None]):
-            self._add_treatment(treatment)
-        self._refresh_files_found()
-
-    def _add_treatment(self, values=None):
-        if values is None:
-            existing = self.treatment_table.all_values()
-            values = dict(existing[-1]) if existing else {}
-            used = set(self.treatment_table.names())
-            n = self.treatment_table.rowCount() + 1
-            while f"Treatment {n}" in used:
-                n += 1
-            values[di.TREATMENT_COL] = f"Treatment {n}"
-        self.treatment_table.add_row(values)
-
-    def _refresh_treatment_summary(self, *_args):
-        values = self.treatment_table.all_values()
-        n_rows = sum(int(v.get("runs", 1) or 1) for v in values)
-        self.lbl_treatment_summary.setText(
-            f"{len(values)} treatment(s), {n_rows} row(s)" if values else "")
-
-    def _refresh_files_found(self):
-        ident = self.dep_edits[di.DEPLOYMENT_COL].text().strip()
-        if self._lib_root is None or not ident:
-            self.lbl_files_found.setText("")
-            return
-        dep_dir = self._lib_root / _RAW_DIR / ident
-        if not dep_dir.exists():
-            self.lbl_files_found.setText("")
-            return
-        # a RAPID recording is always 2 files (.IMP + .HIG) - counting raw
-        # files directly overstates "how many sensors" 2x (and VIDEO
-        # clips would inflate it further, so those are excluded too)
-        n_exts = max(1, len(sensor_config.active().required_extensions or [".imp"]))
-        n_files = sum(
-            1 for p in dep_dir.rglob("*")
-            if p.is_file() and p.name != "readme.txt"
-            and _VIDEO_FOLDER_NAME not in p.relative_to(dep_dir).parts)
-        n_recordings = n_files // n_exts
-        self.lbl_files_found.setText(
-            f"{n_recordings} sensor recording(s) found in folder "
-            f"({n_files} file(s))")
-
-    def _create_and_open_folder(self):
-        if self._lib_root is None:
-            QMessageBox.warning(
-                self.window, "No library",
-                "Select or create a library on Home first.")
-            return
-        ident = self.dep_edits[di.DEPLOYMENT_COL].text().strip()
-        if not ident:
-            QMessageBox.warning(self.window, "Missing deployment ID",
-                                "The deployment needs an ID.")
-            return
-        names = self.treatment_table.names()
-        if not names or any(not n for n in names):
-            QMessageBox.warning(self.window, "Missing treatment",
-                                "Add at least one named treatment.")
-            return
-
-        deployment = {c: e.text().strip() for c, e in self.dep_edits.items()}
-        treatments = self.treatment_table.all_values()
-        try:
-            di.save_plan(self._lib_root, deployment, treatments)
-            dep_dir = self._lib_root / _RAW_DIR / ident
-            for name in names:
-                (dep_dir / name / _VIDEO_FOLDER_NAME).mkdir(
-                    parents=True, exist_ok=True)
-            (dep_dir / "readme.txt").write_text(_README_TEXT, encoding="utf-8")
-        except Exception as e:
-            QMessageBox.critical(self.window, "Could not build folder", str(e))
-            return
-
-        try:
-            os.startfile(str(dep_dir))
-        except Exception:
-            pass
-        QMessageBox.information(
-            self.window, "Deployment folder ready", _README_TEXT)
-        self._load_deployments(select=ident)
 
     # ── page 2: process (file inventory) ────────────────────────────────────
     def _build_process_inventory_page(self):
@@ -1020,200 +544,21 @@ class SimpleModeDialog(QDialog):
         title = QLabel("Process, validate and segment sensor data…")
         title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
         v.addWidget(title)
-
-        row = QHBoxLayout()
-        row.setSpacing(10)
-
-        left = QWidget()
-        lv = QVBoxLayout(left)
-        lv.setContentsMargins(0, 0, 0, 0)
-        grp = Section("File inventory")
-        gv = QVBoxLayout(grp)
-        self.tbl_inventory = QTableWidget(0, 6)
-        self.tbl_inventory.setHorizontalHeaderLabels(
-            ["Filename", "Sensor", "Date", "Time", "Complete", "Processed"])
-        gv.addWidget(self.tbl_inventory)
-        sel_row = QHBoxLayout()
-        self.chk_select_all_inv = QCheckBox("Select / unselect all")
-        self.chk_select_all_inv.toggled.connect(self._on_select_all_inventory)
-        sel_row.addWidget(self.chk_select_all_inv)
-        sel_row.addStretch()
-        self.btn_process_selected = QPushButton("Process selected")
-        self.btn_process_selected.setStyleSheet(
-            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-            "border-radius:5px;padding:4px 14px;font-weight:bold;}"
-            "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
-        self.btn_process_selected.clicked.connect(self._process_selected)
-        sel_row.addWidget(self.btn_process_selected)
-        gv.addLayout(sel_row)
-        lv.addWidget(grp, stretch=1)
-        row.addWidget(left, stretch=3)
-
-        right = QWidget()
-        rv = QVBoxLayout(right)
-        rv.setContentsMargins(0, 0, 0, 0)
-        self.txt_process_log = QLabel("")
-        self.txt_process_log.setStyleSheet(f"color:{MUTED};")
-        self.txt_process_log.setWordWrap(True)
-        self.txt_process_log.setAlignment(Qt.AlignmentFlag.AlignTop)
-        log_scroll = QScrollArea()
-        log_scroll.setWidgetResizable(True)
-        log_scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        log_scroll.setWidget(self.txt_process_log)
-        rv.addWidget(log_scroll, stretch=1)
-        self.lbl_process_status = QLabel("")
-        self.lbl_process_status.setStyleSheet(f"color:{OK};font-weight:bold;")
-        self.lbl_process_status.setWordWrap(True)
-        rv.addWidget(self.lbl_process_status)
-        row.addWidget(right, stretch=2)
-
-        v.addLayout(row, stretch=1)
+        # shared with Advanced mode's Raw data processing page
+        # (inventory_widgets.py) - each recording carries the deployment,
+        # treatment and run of the folder it sits in, and is labelled with
+        # exactly those once processed
+        self.inventory = FileInventory()
+        v.addWidget(self.inventory, stretch=1)
         return page
 
     def _refresh_process_inventory(self):
-        ident = self.dep_edits[di.DEPLOYMENT_COL].text().strip()
-        self._process_files = []
-        if self._lib_root is not None and ident:
-            dep_dir = self._lib_root / _RAW_DIR / ident
-            self._process_files = self._scan_raw_files(dep_dir)
-        self._refresh_inventory_table()
-
-    def _scan_raw_files(self, folder):
-        """Like page_process.py's own `_scan`, but additionally tags each
-        record with which treatment subfolder it came from (folder/
-        <treatment>/<file>, the same one level `_create_and_open_folder`
-        builds) - Advanced mode gets this from a picked deployment/
-        treatment filter instead, but Simple mode processes a whole
-        deployment (every treatment) in one pass, so it has to read the
-        treatment back out of the path itself. Needed so `_on_process_done`
-        can stamp each batch with `deployment_index.apply_treatment` -
-        without it, every recording's dataset row comes back with no
-        treatment at all."""
-        if not folder.exists():
-            return []
-        cfg = sensor_config.active()
-        exts = cfg.required_extensions or [".imp"]
-        primary, secondary = exts[0], exts[1:]
-
-        def files_by_stem(ext):
-            suffix = ext.lstrip(".")
-            out = {p.stem.upper(): p for p in folder.rglob(f"*.{suffix.upper()}")}
-            for p in folder.rglob(f"*.{suffix.lower()}"):
-                out.setdefault(p.stem.upper(), p)
-            return out
-
-        found = {ext: files_by_stem(ext) for ext in exts}
-        csv_dir = (self._lib_root / _CSV_DIR) if self._lib_root else None
-        processed_names = ({p.stem.upper() for p in csv_dir.glob("*.csv")
-                            if not p.stem.endswith("_min")}
-                           if csv_dir and csv_dir.exists() else set())
-
-        records = []
-        for stem_up, main_path in sorted(found[primary].items()):
-            sensor, date, time = _parse_name(main_path.stem, cfg)
-            paths = {primary: main_path}
-            for ext in secondary:
-                match = found[ext].get(stem_up)
-                if match is not None:
-                    paths[ext] = match
-            try:
-                rel = main_path.relative_to(folder)
-                treatment = rel.parts[0] if len(rel.parts) > 1 else ""
-            except ValueError:
-                treatment = ""
-            records.append(dict(
-                stem=main_path.stem, stem_up=stem_up, sensor=sensor,
-                date=date, time=time, complete=len(paths) == len(exts),
-                processed=stem_up in processed_names, paths=paths,
-                treatment=treatment))
-        return records
-
-    def _refresh_inventory_table(self):
-        t = self.tbl_inventory
-        t.setRowCount(len(self._process_files))
-        for row, f in enumerate(self._process_files):
-            vals = [f["stem"], f["sensor"], f["date"], f["time"],
-                    "Yes" if f["complete"] else "No",
-                    "Yes" if f["processed"] else "No"]
-            for col, val in enumerate(vals):
-                t.setItem(row, col, QTableWidgetItem(str(val)))
-        t.resizeColumnsToContents()
-
-    def _on_select_all_inventory(self, checked):
-        if checked:
-            self.tbl_inventory.selectAll()
-        else:
-            self.tbl_inventory.clearSelection()
-
-    def _process_selected(self):
-        rows = sorted({i.row() for i in self.tbl_inventory.selectedIndexes()})
-        files = [self._process_files[r] for r in rows
-                if r < len(self._process_files)]
-        self._run_process(files)
-
-    def _run_process(self, files):
-        complete = [f for f in files if f["complete"]]
-        if not complete:
-            self.lbl_process_status.setText("No complete recordings to process.")
-            return
-        out_dir = self._lib_root / "processed_sens_data"
-        self.txt_process_log.setText("")
-        self.lbl_process_status.setText("Processing…")
-        self.btn_process_selected.setEnabled(False)
-        # stem -> treatment, so _on_file_processed can group the batch by
-        # treatment once processing finishes (apply_treatment() needs one
-        # call per treatment, not per file)
-        self._process_treatment_by_stem = {f["stem"]: f["treatment"]
-                                           for f in complete}
-        self._process_batch_done = []
-        cfg = sensor_config.active()
-        self._process_thread = _ProcessThread(complete, out_dir, self._lib_root, cfg)
-        self._process_thread.log.connect(self._on_process_log)
-        self._process_thread.processed.connect(self._on_file_processed)
-        self._process_thread.done.connect(self._on_process_done)
-        self._process_thread.start()
-
-    def _on_process_log(self, text):
-        self.txt_process_log.setText(
-            (self.txt_process_log.text() + "\n" + text).strip())
-
-    def _on_file_processed(self, stem):
-        self._process_batch_done.append(stem)
-
-    def _on_process_done(self, code):
-        self.btn_process_selected.setEnabled(True)
-        self.lbl_process_status.setText(
-            "All sensors processed" if code == 0
-            else "Processing finished with errors")
-        self._apply_treatments_to_batch()
-        self._refresh_process_inventory()
-
-    def _apply_treatments_to_batch(self):
-        """Stamps every successfully processed file with the treatment
-        its raw file was found under (deployment_index.apply_treatment) -
-        the same step page_process.py._apply_treatment() does after a
-        processing run, just grouped by treatment here since Simple mode
-        processes a whole deployment (every treatment) in one pass rather
-        than one treatment at a time. Without this, a file's dataset row
-        carries no treatment at all - the prediction worker then has
-        nothing to group by, and its own per-treatment summary output
-        comes back empty ("No columns to parse from file")."""
-        if self._lib_root is None or not self._process_batch_done:
-            return
-        deployment = {c: e.text().strip() for c, e in self.dep_edits.items()}
-        by_treatment = {}
-        for stem in self._process_batch_done:
-            t = self._process_treatment_by_stem.get(stem, "")
-            by_treatment.setdefault(t, []).append(stem)
-        all_treatments = self.treatment_table.all_values()
-        for treatment_name, stems in by_treatment.items():
-            row = next((v for v in all_treatments
-                       if v.get(di.TREATMENT_COL) == treatment_name), None)
-            if row is None:
-                continue
-            treatment_values = dict(deployment)
-            treatment_values.update(row)
-            di.apply_treatment(self._lib_root, stems, treatment_values)
+        """Every recording in the deployment chosen on Deploy - all of its
+        treatments and runs at once."""
+        self._lib_root = self.window.session_state.library
+        self.editor.ensure_loaded()   # e.g. jumped here without visiting Deploy
+        self.inventory.set_source(self._lib_root, self.editor.deployment_dir())
+        self.inventory.refresh()      # in the background, behind a spinner
 
     # ── page 3: process (validate/segment) ──────────────────────────────────
     def _build_process_validate_page(self):
@@ -1351,95 +696,54 @@ class SimpleModeDialog(QDialog):
             "HIG acc mag (g)", self._cur_validate_hig,
             (float(time[0]), float(time[-1])))
 
-    # -- process-validate step logic ------------------------------------------
+    # -- process-validate step logic (validation_core.py - shared with
+    # Advanced mode's Annotate page) -------------------------------------
     def _validate_index(self):
         return di.read_index(self._lib_root) if self._lib_root else None
 
     def _save_validate_index(self, df):
-        path = di.index_path(self._lib_root)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(path, index=False)
+        vc.write_index(self._lib_root, df)
 
     def _refresh_validate_step(self):
-        self._validate_files = []
-        csv_dir = (self._lib_root / _CSV_DIR) if self._lib_root else None
-        if csv_dir and csv_dir.exists():
-            for p in sorted(csv_dir.glob("*.csv")):
-                if p.stem.endswith("_min"):
-                    continue
-                self._validate_files.append({"stem": p.stem, "path": p})
+        self._lib_root = self.window.session_state.library
+        self._validate_files = vc.processed_sensor_files(self._lib_root)
         self._refresh_validate_list()
 
     def _validation_status(self):
         """(auto_validated, user_validated, flagged, bad) stem sets from
-        the current index - the one place every Validate-step method
-        reads these from, so the list, the counts, Jump, and the Next
+        the current index - the one place every Validate-step method reads
+        these from, so the list, the counts, Jump, and the Next
         confirmation can't quietly disagree with each other."""
-        index_df = self._validate_index()
-        auto_validated = set()
-        user_validated = set()
-        flagged = set()
-        bad = set()
-        if index_df is not None:
-            if _VALIDATED_COL in index_df.columns:
-                auto_validated = set(index_df[index_df[_VALIDATED_COL]
-                                     .astype(str).str.upper() == "Y"]["file"])
-            if _USER_VALIDATED_COL in index_df.columns:
-                user_validated = set(index_df[index_df[_USER_VALIDATED_COL]
-                                     .astype(str).str.upper() == "Y"]["file"])
-            if _FLAGGED_COL in index_df.columns:
-                flagged = set(index_df[index_df[_FLAGGED_COL]
-                              .astype(str).str.upper() == "Y"]["file"])
-            if di.BAD_SENS_COL in index_df.columns:
-                bad = set(index_df[index_df[di.BAD_SENS_COL]
-                          .astype(str).str.upper() == "Y"]["file"])
-        return auto_validated, user_validated, flagged, bad
+        return vc.validation_status(self._validate_index())
 
     def _refresh_validate_list(self):
-        auto_validated, user_validated, flagged, bad = self._validation_status()
+        status = self._validation_status()
+        bad = status[3]
         show_bad = self.chk_show_bad.isChecked()
 
         # flagged-and-not-yet-user-validated first (what actually needs
         # attention), then everything else in its normal order - stable
         # sort keeps each group's own relative order unchanged
-        needs_review = lambda f: f["stem"] in flagged and f["stem"] not in user_validated
-        ordered = sorted(self._validate_files, key=lambda f: not needs_review(f))
+        ordered = sorted(self._validate_files,
+                         key=lambda f: not vc.needs_review(f["stem"], status))
 
         self.validate_list.clear()
         for f in ordered:
             stem = f["stem"]
-            is_bad = stem in bad
-            if is_bad and not show_bad:
+            if stem in bad and not show_bad:
                 continue
-            # plain stem, no decoration - WARN colour alone marks
-            # "flagged, needs review" below; a text prefix here used to
-            # break _on_validate_file_clicked/_load_validate_file's own
-            # item.text() == stem lookups for exactly the flagged rows,
-            # so clicking (or Jump to next flagged landing on) one
-            # silently did nothing
+            # plain stem, no decoration - colour alone marks the state
+            # (item.text() == stem lookups rely on it)
             item = QListWidgetItem(stem)
-            if is_bad:
-                item.setForeground(QColor(BAD))
-            elif stem in user_validated:
-                item.setForeground(QColor(OK))
-            elif needs_review(f):
-                item.setForeground(QColor(WARN))
-            elif stem in auto_validated:
-                item.setForeground(QColor(ACCENT))
+            colour = vc.status_colour(stem, status, OK, WARN, BAD, ACCENT)
+            if colour:
+                item.setForeground(QColor(colour))
             self.validate_list.addItem(item)
 
-        total = len(self._validate_files)
-        n_auto = sum(1 for f in self._validate_files if f["stem"] in auto_validated)
-        n_flagged = sum(1 for f in self._validate_files if f["stem"] in flagged)
-        n_user = sum(1 for f in self._validate_files if f["stem"] in user_validated)
-        self.lbl_validated_count.setText(
-            f"Auto-validated: {n_auto}/{total}\n"
-            f"Flagged: {n_flagged}\n"
-            f"User-validated: {n_user}/{total}"
-            + (f"\n({len(bad)} bad)" if bad else ""))
+        stems = [f["stem"] for f in self._validate_files]
+        self.lbl_validated_count.setText(vc.counts_text(stems, status))
         self.lbl_all_validated.setText(
-            "All sensors validated" if total and n_auto == total
-            and (n_flagged == 0 or n_user >= n_flagged) else "")
+            "All sensors validated" if vc.all_validated(stems, status) else "")
 
     def _on_validate_file_clicked(self, item):
         stem = item.text()
@@ -1456,19 +760,14 @@ class SimpleModeDialog(QDialog):
             return
         self._cur_validate_stem = stem
         self._cur_validate_df = df
-        self._cur_validate_time = (df["time_s"].to_numpy(dtype=float)
-                                   if "time_s" in df.columns
-                                   else np.arange(len(df), dtype=float))
-        self._cur_validate_pres = (df["pressure_kpa"].to_numpy(dtype=float)
-                                   if "pressure_kpa" in df.columns else None)
-        self._cur_validate_hig = (df["higacc_mag_g"].to_numpy(dtype=float)
-                                  if "higacc_mag_g" in df.columns else None)
-        self._cur_validate_nadir_idx = self._detect_nadir_idx(stem, df,
-                                                               self._cur_validate_time,
-                                                               self._cur_validate_pres)
+        (self._cur_validate_time, self._cur_validate_pres,
+         self._cur_validate_hig) = vc.signals(df)
+        self._cur_validate_nadir_idx = vc.detect_nadir_idx(
+            stem, df, self._cur_validate_time, self._cur_validate_pres,
+            self._validate_index())
         # the as-loaded nadir, before any dragging - compared against at
         # save time to tell "human re-confirmed this" from "human moved
-        # it" (_USER_ADJUSTED_COL, surfaced in the Report step)
+        # it" (user adjusted, surfaced in the report)
         self._loaded_nadir_idx = self._cur_validate_nadir_idx
         self._draw_validate_plot()
         # select it in the list too, for Jump/Auto-process consistency
@@ -1476,26 +775,6 @@ class SimpleModeDialog(QDialog):
             if self.validate_list.item(i).text() == stem:
                 self.validate_list.setCurrentRow(i)
                 break
-
-    def _detect_nadir_idx(self, stem, df, time, pres):
-        index_df = self._validate_index()
-        if (index_df is not None and "file" in index_df.columns
-                and _NADIR_T_COL in index_df.columns):
-            row = index_df[index_df["file"] == stem]
-            if not row.empty:
-                val = row[_NADIR_T_COL].iloc[0]
-                if pd.notna(val):
-                    return int(np.argmin(np.abs(time - float(val))))
-        if pres is not None and len(pres):
-            return int(np.argmin(pres))
-        return len(df) // 2
-
-    def _window_bounds(self, time, nadir_idx, n):
-        fs = sensor_config.active().output_rate_hz or 2000
-        half_n = int(round(self._win_sec / 2 * fs))
-        start = max(0, nadir_idx - half_n)
-        end = min(n - 1, nadir_idx + half_n)
-        return start, end
 
     def _update_validate_region(self, t: float):
         self._validate_region.setRegion(
@@ -1587,61 +866,9 @@ class SimpleModeDialog(QDialog):
         index_df[di.BAD_SENS_COL] = index_df[di.BAD_SENS_COL].astype(object)
         index_df.loc[mask, di.BAD_SENS_COL] = "Y"
         self._save_validate_index(index_df)
+        self._validate_dirty = True
         self.lbl_all_validated.setText(f"{self._cur_validate_stem} marked Bad.")
         self._refresh_validate_list()
-
-    def _save_one_validated(self, index_df, stem, df, time, pres, hig, nadir_idx,
-                            user_validated=False, nadir_changed=False):
-        """Writes the ROI window CSV and updates `index_df` in place for
-        one sensor - the same operation Validate's own Save+Next performs
-        (page_validate.py._do_save_window/_do_update_index), reused here
-        for both the single-file and Auto process all paths.
-
-        `user_validated=True` means a human reviewed and (re-)saved this
-        sensor via Save+Next, as opposed to Auto process all - see the
-        module-level _VALIDATED_COL/_USER_VALIDATED_COL/_FLAGGED_COL
-        comments for what each column tracks. `nadir_changed` records
-        whether the saved nadir differs from what was loaded (a human
-        actually moved it, not just re-confirmed it) - both flow into the
-        Report step's "Processing review"."""
-        start, end = self._window_bounds(time, nadir_idx, len(df))
-        ms = int(round(self._win_sec * 1000))
-        out_dir = self._lib_root / _WIN_DIR
-        out_dir.mkdir(parents=True, exist_ok=True)
-        df.iloc[start:end + 1].to_csv(out_dir / f"{stem}_{ms}ms.csv", index=False)
-
-        nadir_t = float(time[nadir_idx])
-        nadir_v = float(pres[nadir_idx]) if pres is not None else float("nan")
-        hig_window_max = (float(np.max(hig[start:end + 1]))
-                          if hig is not None and len(hig) else float("nan"))
-        mask = index_df["file"] == stem
-        if not mask.any():
-            new_row = pd.DataFrame([{"file": stem}])
-            index_df = pd.concat([index_df, new_row], ignore_index=True)
-            mask = index_df["file"] == stem
-        index_df.loc[mask, _NADIR_T_COL] = nadir_t
-        index_df.loc[mask, _NADIR_V_COL] = nadir_v
-        index_df.loc[mask, "nadir_window_start"] = time[start]
-        index_df.loc[mask, "nadir_window_end"] = time[end]
-        index_df.loc[mask, _HIG_WINDOW_MAX_COL] = hig_window_max
-
-        # a column read back as float (blank/NaN with no prior string
-        # value) will not take "Y" in place without widening first -
-        # pandas warns (soon errors) otherwise
-        for col in (_VALIDATED_COL, _FLAGGED_COL, _USER_VALIDATED_COL,
-                   _USER_ADJUSTED_COL):
-            if col not in index_df.columns:
-                index_df[col] = ""
-            index_df[col] = index_df[col].astype(object)
-
-        index_df.loc[mask, _VALIDATED_COL] = "Y"
-        is_flagged = not np.isnan(hig_window_max) and hig_window_max < _FLAG_HIG_THRESHOLD_G
-        index_df.loc[mask, _FLAGGED_COL] = "Y" if is_flagged else "N"
-        if user_validated:
-            index_df.loc[mask, _USER_VALIDATED_COL] = "Y"
-            if nadir_changed:
-                index_df.loc[mask, _USER_ADJUSTED_COL] = "Y"
-        return index_df
 
     def _save_and_next_validate(self):
         if not self._cur_validate_stem:
@@ -1652,11 +879,10 @@ class SimpleModeDialog(QDialog):
         stem = self._cur_validate_stem
         nadir_changed = (self._loaded_nadir_idx is not None
                          and self._cur_validate_nadir_idx != self._loaded_nadir_idx)
-        index_df = self._save_one_validated(
-            index_df, stem, self._cur_validate_df,
-            self._cur_validate_time, self._cur_validate_pres, self._cur_validate_hig,
-            self._cur_validate_nadir_idx, user_validated=True,
-            nadir_changed=nadir_changed)
+        index_df = vc.save_window(
+            self._lib_root, index_df, stem, self._cur_validate_df,
+            self._cur_validate_nadir_idx, self._win_sec,
+            user_validated=True, nadir_changed=nadir_changed)
         self._validate_dirty = True
         self._save_validate_index(index_df)
         self._refresh_validate_list()
@@ -1667,54 +893,60 @@ class SimpleModeDialog(QDialog):
             self._load_validate_file(self._cur_validate_stem)
 
     def _jump_next_in_list_validate(self, from_stem):
-        """Advances to the next sensor in on-screen list order (whatever
-        is currently visible, respecting Show bad) - unlike "Jump to next
-        unvalidated" below, this doesn't skip already-validated sensors,
-        so Save + Next keeps stepping through the list even after Auto
-        process all has already validated everything."""
-        index_df = self._validate_index()
-        bad = set()
-        if index_df is not None and di.BAD_SENS_COL in index_df.columns:
-            bad = set(index_df[index_df[di.BAD_SENS_COL]
-                      .astype(str).str.upper() == "Y"]["file"])
-        show_bad = self.chk_show_bad.isChecked()
-        visible = [f["stem"] for f in self._validate_files
-                  if show_bad or f["stem"] not in bad]
-        if from_stem in visible:
-            idx = visible.index(from_stem)
-            if idx + 1 < len(visible):
-                self._load_validate_file(visible[idx + 1])
+        """While flagged sensors are still waiting for review, Save + Next
+        goes to the next of those (the review pass Auto process all sets
+        up); once none are left it steps through every visible sensor in
+        file order - it doesn't skip already-validated ones, so Save + Next
+        keeps working after Auto process all has validated everything."""
+        status = self._validation_status()
+        visible = [self.validate_list.item(i).text()
+                   for i in range(self.validate_list.count())]
+        outstanding = [s for s in visible if vc.needs_review(s, status)]
+        if outstanding:
+            self._load_validate_file(outstanding[0])
+            return
+        in_order = [f["stem"] for f in self._validate_files if f["stem"] in visible]
+        if from_stem in in_order:
+            idx = in_order.index(from_stem)
+            if idx + 1 < len(in_order):
+                self._load_validate_file(in_order[idx + 1])
 
     def _jump_next_unvalidated_validate(self):
         """Flagged-and-unreviewed first (what actually needs a look),
         then anything Auto process all hasn't even auto-validated yet
         (e.g. it was skipped or added after the last Auto process all
-        run) - matches the list's own sort order in _refresh_validate_list."""
-        auto_validated, user_validated, flagged, _bad = self._validation_status()
+        run) - matches the list's own sort order."""
+        status = self._validation_status()
         for f in self._validate_files:
-            if f["stem"] in flagged and f["stem"] not in user_validated:
+            if vc.needs_review(f["stem"], status):
                 self._load_validate_file(f["stem"])
                 return
         for f in self._validate_files:
-            if f["stem"] not in auto_validated:
+            if f["stem"] not in status[0]:
                 self._load_validate_file(f["stem"])
                 return
 
     def _auto_process_all(self):
+        """Starts Auto process all in the background (validation_core.
+        AutoProcessThread) and returns the thread - or None with nothing
+        to do. Callers that need to wait (the demo runner) wait on its
+        `done`."""
         if self._lib_root is None or not self._validate_files:
-            return
-        index_df = self._validate_index()
-        if index_df is None:
-            index_df = pd.DataFrame({"file": []})
+            return None
+        if (self._auto_process_thread is not None
+                and self._auto_process_thread.isRunning()):
+            return self._auto_process_thread
         self.btn_auto_process_all.setEnabled(False)
         self.btn_save_export.setEnabled(False)
         self._auto_spinner.start()
         self.lbl_all_validated.setText("Auto-processing…")
-        self._auto_process_thread = _AutoProcessThread(
-            self._lib_root, self._win_sec, list(self._validate_files), index_df)
+        self._auto_process_thread = vc.AutoProcessThread(
+            self._lib_root, self._win_sec, self._validate_files,
+            self._validate_index())
         self._auto_process_thread.progress.connect(self._on_auto_process_progress)
         self._auto_process_thread.done.connect(self._on_auto_process_done)
         self._auto_process_thread.start()
+        return self._auto_process_thread
 
     def _on_auto_process_progress(self, done, total):
         self.lbl_all_validated.setText(f"Auto-processing… {done}/{total}")
@@ -1726,50 +958,32 @@ class SimpleModeDialog(QDialog):
         self._validate_dirty = True
         self._save_validate_index(index_df)
         self._refresh_validate_list()
-        _auto, _user, flagged, _bad = self._validation_status()
-        n_flagged = sum(1 for f in self._validate_files if f["stem"] in flagged)
+        status = self._validation_status()
+        n_flagged = sum(1 for f in self._validate_files if f["stem"] in status[2])
         self.lbl_all_validated.setText(
             f"Auto-processed {n_done} sensor(s), {n_flagged} flagged for review.")
 
     def _save_and_export(self):
-        if self._lib_root is None:
+        if self._lib_root is None or self._exporter.running:
             return
-        index_df = self._validate_index()
-        cfg = sensor_config.active()
         self.btn_save_export.setEnabled(False)
         self.lbl_all_validated.setText("Building dataset…")
-        self._extract_thread = _ExtractThread(
-            self._lib_root, OPT_SEGMENTED, set(), index_df, cfg)
-        self._extract_thread.done.connect(self._on_extract_done)
-        self._extract_thread.start()
+        self._exporter.start(self._lib_root,
+                             self.editor.deployment_id() or self._lib_root.name)
 
-    def _on_extract_done(self, n_ok, n_skip, n_rows):
+    def _on_extract_done(self, df, path, message):
         self.btn_save_export.setEnabled(True)
-        df = self._extract_thread.result if self._extract_thread else None
-        if df is None or not len(df):
-            self.lbl_all_validated.setText("Dataset build produced no rows.")
+        self.lbl_all_validated.setText(message)
+        if df is None:
             self._advance_after_export = False
             return
-        ident = self.dep_edits[di.DEPLOYMENT_COL].text().strip() or "dataset"
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_dir = settings.get_input_data_dir()
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"{ident}_{stamp}.csv"
-        try:
-            df.to_csv(out_path, index=False)
-        except Exception as e:
-            self.lbl_all_validated.setText(f"Save failed: {e}")
-            self._advance_after_export = False
-            return
-        self._built_dataset_path = out_path
+        self._built_dataset_path = path
         self._validate_dirty = False
-        self.lbl_all_validated.setText(
-            f"Saved and exported {n_rows} row(s) to {out_path.name}")
         # feed straight into the shared PredictionState (window.
         # ml_prediction_page.state) - Advanced mode's Dataset creation
         # wires its own dataset_ready the same way
         self.window.ml_prediction_page.on_dataset_ready(
-            df, f"Simple mode - {ident}")
+            df, f"Simple mode - {path.stem}")
         if self._advance_after_export:
             # "Save and continue" on the unsaved-data prompt (_go_next) -
             # the advance it deferred happens here, now that the export
@@ -2050,36 +1264,10 @@ class SimpleModeDialog(QDialog):
         self.canvas_report_mc.draw()
 
     def _processing_review_rows(self):
-        """How Validate actually went for this library - auto vs. user
-        validation, how many sensors Auto process all's own HIG-in-window
-        check flagged for a second look, and how many of those a human
-        actually moved the nadir on (not just re-confirmed). Not shown in
-        this wizard's own Report step (that page is prediction output,
-        not processing history) - fed into the *downloaded* report
-        instead (_download_report -> ml_report.export_analysis), which is
-        what "added to the report" actually meant."""
-        total = len(self._validate_files)
-        if not total:
-            return []
-        auto_validated, user_validated, flagged, _bad = self._validation_status()
-        index_df = self._validate_index()
-        n_adjusted = 0
-        if index_df is not None and _USER_ADJUSTED_COL in index_df.columns:
-            n_adjusted = int((index_df[_USER_ADJUSTED_COL]
-                             .astype(str).str.upper() == "Y").sum())
-        n_flagged = sum(1 for f in self._validate_files if f["stem"] in flagged)
-        n_flagged_reviewed = sum(1 for f in self._validate_files
-                                 if f["stem"] in flagged and f["stem"] in user_validated)
-        return [
-            ("Auto-validated",
-             f"{sum(1 for f in self._validate_files if f['stem'] in auto_validated)}/{total}"),
-            ("Flagged for review (HIG < "
-             f"{_FLAG_HIG_THRESHOLD_G:.0f}g)", n_flagged),
-            ("Flagged sensors reviewed", f"{n_flagged_reviewed}/{n_flagged}"),
-            ("User-validated (any sensor)",
-             f"{sum(1 for f in self._validate_files if f['stem'] in user_validated)}/{total}"),
-            ("Nadir moved by user", n_adjusted),
-        ]
+        """How Validate went for this library (validation_core) - fed
+        into the *downloaded* report, not this wizard's Report step."""
+        return vc.processing_review_rows(
+            [f["stem"] for f in self._validate_files], self._validate_index())
 
     # ── page 6: finished ─────────────────────────────────────────────────────
     def _build_finished_page(self):

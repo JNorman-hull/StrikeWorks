@@ -4,7 +4,7 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Shared Library / Deployment / Treatment selector.
+"""Shared Library / Deployment / Treatment / Run selector.
 
 Before this module existed, Annotate and Export animations each carried
 their own copy of this logic (library combo, deployment scan, treatment
@@ -25,24 +25,46 @@ opt into the sensor-list panel (`sensor_list=True`) - one "Show bad
 sensors" checkbox, one progress counter, one coloured table, with the same
 show/hide-when-unticked filtering and white/green/red/amber colouring
 everywhere it appears, driven by `populate_sensor_list()`.
+
+Where a recording sits under raw_sens_data - deployment / treatment / run -
+is `raw_layout.py`'s one definition; the Run filter is the third level of
+it (a file with no run folder above it is Run 1).
 """
+import os
 from pathlib import Path
 
-from PySide6.QtCore import QSortFilterProxyModel, Qt, Signal
+from PySide6.QtCore import QSortFilterProxyModel, Qt, QThread, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QHBoxLayout,
     QLabel, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from . import settings
-from .ml_widgets import BAD, MUTED, OK, WARN, Section, style_table
+from . import raw_layout, settings
+from .ml_widgets import (
+    BAD, MUTED, OK, WARN, Section, Spinner, style_table, when_visible,
+)
+from .raw_layout import RAW_DIR, UNGROUPED, VIDEO_FOLDER_NAME  # noqa: F401 (re-exported)
 
-RAW_DIR = Path("raw_sens_data")
 CSV_DIR = Path("processed_sens_data") / "csv"
-VIDEO_FOLDER_NAME = "VIDEO"
-UNGROUPED = "(ungrouped)"
-ALL_DEPLOYMENTS = None   # combo data sentinel for "All deployments"/"All treatments"
+ALL_DEPLOYMENTS = None   # combo data sentinel for "All deployments"/"All treatments"/"All runs"
+
+
+def _same_path(a, b) -> bool:
+    """Path equality that survives case/separator differences (a session
+    library remembered as C:\\users\\... vs the folder scan's C:\\Users\\...)."""
+    if not a or not b:
+        return False
+    return (os.path.normcase(os.path.normpath(str(a)))
+            == os.path.normcase(os.path.normpath(str(b))))
+
+
+def _run_sort_key(run):
+    """Numeric runs in numeric order, anything else after them by name."""
+    try:
+        return (0, int(float(run)), "")
+    except (TypeError, ValueError):
+        return (1, 0, str(run))
 
 # canonical rules for what counts as a "sensor" CSV versus a derived/scratch
 # output - the single definition every page (Validate, this widget, and
@@ -58,6 +80,25 @@ class _DirsOnlyProxy(QSortFilterProxyModel):
     def filterAcceptsRow(self, row, parent):
         idx = self.sourceModel().index(row, 0, parent)
         return self.sourceModel().isDir(idx)
+
+
+class _RawScanThread(QThread):
+    """raw_layout.scan_tree off the GUI thread. `done(generation, tree)` -
+    the selector ignores a generation a newer scan has superseded."""
+
+    done = Signal(int, object)
+
+    def __init__(self, gen, raw_dir):
+        super().__init__()
+        self._gen = gen
+        self._raw_dir = raw_dir
+
+    def run(self):
+        try:
+            tree = raw_layout.scan_tree(self._raw_dir)
+        except Exception:
+            tree = raw_layout.RawTree()
+        self.done.emit(self._gen, tree)
 
 
 class LibrarySelector(QWidget):
@@ -90,7 +131,12 @@ class LibrarySelector(QWidget):
         super().__init__(parent)
         self._lib_dir = settings.get_libraries_dir()
         self._lib_root = None
-        self._deployment_map = {}   # stem (upper) -> (deployment, treatment)
+        # stem (upper) -> (deployment, treatment, run, raw file path)
+        self._locations = {}
+        self._tree = None            # raw_layout.RawTree of the last finished scan
+        self._scan_gen = 0           # newer scans supersede older ones
+        self._scan_threads = []
+        self._scan_from_sync = False
         self._list_columns = list(list_columns)
         self._cache = None           # last populate_sensor_list() call, for re-filtering
         self._session_state = session_state
@@ -168,10 +214,23 @@ class LibrarySelector(QWidget):
             self.lbl_current_library.setWordWrap(True)
             fv.addWidget(self.lbl_current_library)
 
+        # shown while the library's raw folder is being scanned (in the
+        # background - a big OneDrive library can take a while)
+        loading_row = QHBoxLayout()
+        self._spinner = Spinner(size=16)
+        self._spinner.setVisible(False)
+        loading_row.addWidget(self._spinner)
+        self.lbl_loading = QLabel("")
+        self.lbl_loading.setStyleSheet(f"color:{MUTED};")
+        loading_row.addWidget(self.lbl_loading, stretch=1)
+        fv.addLayout(loading_row)
+
         self.cmb_deployment = QComboBox()
         fv.addLayout(self._row(self._muted("Deployment"), self.cmb_deployment))
         self.cmb_treatment = QComboBox()
         fv.addLayout(self._row(self._muted("Treatment"), self.cmb_treatment))
+        self.cmb_run = QComboBox()
+        fv.addLayout(self._row(self._muted("Run"), self.cmb_run))
         v.addWidget(self.section)
 
         if sensor_list:
@@ -185,6 +244,8 @@ class LibrarySelector(QWidget):
 
         self.lbl_progress = QLabel("")
         self.lbl_progress.setStyleSheet(f"color:{MUTED};")
+        # wraps, so a long counter line can't set the whole column's width
+        self.lbl_progress.setWordWrap(True)
         v.addWidget(self.lbl_progress)
 
         self.tbl_sensors = QTableWidget(0, 1 + len(self._list_columns))
@@ -219,7 +280,10 @@ class LibrarySelector(QWidget):
         self.cmb_deployment.currentIndexChanged.connect(self._rebuild_treatment_combo)
         self.cmb_deployment.currentIndexChanged.connect(
             lambda _i: self.filters_changed.emit())
+        self.cmb_treatment.currentIndexChanged.connect(self._rebuild_run_combo)
         self.cmb_treatment.currentIndexChanged.connect(
+            lambda _i: self.filters_changed.emit())
+        self.cmb_run.currentIndexChanged.connect(
             lambda _i: self.filters_changed.emit())
 
     # ── libraries ────────────────────────────────────────────────────────────
@@ -233,13 +297,23 @@ class LibrarySelector(QWidget):
 
     @property
     def deployment_map(self):
-        return self._deployment_map
+        """stem (upper) -> (deployment, treatment) - the two-level view
+        callers used before runs existed."""
+        return {s: (d, t) for s, (d, t, _r, _p) in self._locations.items()}
+
+    @property
+    def locations(self):
+        """stem (upper) -> (deployment, treatment, run, raw file path)."""
+        return self._locations
 
     def wanted_deployment(self):
         return self.cmb_deployment.currentData()
 
     def wanted_treatment(self):
         return self.cmb_treatment.currentData()
+
+    def wanted_run(self):
+        return self.cmb_run.currentData()
 
     def _populate_libraries(self, select=None):
         # signals stay blocked through setCurrentIndex too - _on_library_
@@ -248,21 +322,32 @@ class LibrarySelector(QWidget):
         # time via currentIndexChanged, doubling every status message and
         # re-scan this triggers (very visible once several pages soft-
         # sync to the same session library change at once)
+        #
+        # The libraries folder is re-read every time, not cached from
+        # construction: a cached copy is what left Raw data processing,
+        # Annotate and Export animations stuck on a library from the *old*
+        # folder after it was changed in Adjustments. And a session library
+        # this list can't find is never silently swapped for "the first
+        # library in the list" any more (that fallback is exactly what
+        # showed up as these pages not following Home) - it's added as its
+        # own entry instead, or with no session library, nothing is picked.
+        self._lib_dir = settings.get_libraries_dir()
         self.cmb_library.blockSignals(True)
         self.cmb_library.clear()
-        try:
-            libs = sorted(p for p in self._lib_dir.iterdir() if p.is_dir())
-        except Exception:
-            libs = []
+        libs = settings.list_libraries()
         for lib in libs:
             self.cmb_library.addItem(lib.name, str(lib))
         self.btn_change_libs.setToolTip(str(self._lib_dir))
-        if not libs:
-            self._lib_root = None
-            self.cmb_library.blockSignals(False)
-            return
-        idx = self.cmb_library.findData(str(select)) if select else 0
-        self.cmb_library.setCurrentIndex(max(0, idx))
+        idx = -1
+        if select:
+            idx = next((i for i in range(self.cmb_library.count())
+                        if _same_path(self.cmb_library.itemData(i), select)), -1)
+            if idx < 0 and Path(select).is_dir():
+                self.cmb_library.addItem(Path(select).name, str(select))
+                idx = self.cmb_library.count() - 1
+        elif self._session_state is None and libs:
+            idx = 0   # standalone picker with no session to follow
+        self.cmb_library.setCurrentIndex(idx)
         self.cmb_library.blockSignals(False)
         self._on_library_changed()
 
@@ -281,55 +366,93 @@ class LibrarySelector(QWidget):
             self.lbl_current_library.setText(
                 f"Library: {self._lib_root.name}" if self._lib_root
                 else "No library selected.")
+        # the library itself is known straight away; scanning its raw
+        # folder (and the host re-listing its sensors) waits until this
+        # page is actually on screen - a library switch costs a page that
+        # isn't being looked at nothing, however big the library
+        self._scan_from_sync = self._syncing
+        self._scan_gen += 1
+        self._tree = None
+        when_visible(self, self._start_scan, key="scan")
+
+    # ── deployments / treatments / runs (raw_layout.py) ──────────────────────
+    @property
+    def scanning(self):
+        return any(t.isRunning() for t in self._scan_threads)
+
+    @property
+    def raw_tree(self):
+        """The last finished scan (raw_layout.RawTree), or None while the
+        library hasn't been scanned yet."""
+        return self._tree
+
+    def rescan(self, wait=False):
+        """Re-read the raw folder tree (files added or moved since the
+        library was opened) and tell the host to re-list. `wait=True`
+        scans right here instead of in the background (demo runner)."""
+        self._scan_from_sync = False
+        self._start_scan(wait=wait)
+
+    def _start_scan(self, wait=False):
+        """Scan the raw folder in the background with a loading spinner -
+        one os.walk (raw_layout.scan_tree) - then rebuild the filters and
+        tell the host (`library_changed`, then `filters_changed`)."""
+        self._scan_gen += 1
+        gen = self._scan_gen
+        raw_dir = self._lib_root / RAW_DIR if self._lib_root else None
+        if raw_dir is None or not raw_dir.exists():
+            self._apply_tree(gen, raw_layout.RawTree())
+            return
+        if wait:
+            self._apply_tree(gen, raw_layout.scan_tree(raw_dir))
+            return
+        self._set_loading(True)
+        thread = _RawScanThread(gen, raw_dir)
+        thread.done.connect(self._apply_tree)
+        thread.finished.connect(lambda t=thread: self._scan_threads.remove(t)
+                                if t in self._scan_threads else None)
+        self._scan_threads.append(thread)
+        thread.start()
+
+    def _set_loading(self, on):
+        if on:
+            self._spinner.start()
+            self.lbl_loading.setText(
+                f"Loading {self._lib_root.name}…" if self._lib_root else "Loading…")
+        else:
+            self._spinner.stop()
+            self.lbl_loading.setText("")
+        for cmb in (self.cmb_deployment, self.cmb_treatment, self.cmb_run):
+            cmb.setEnabled(not on)
+
+    def _apply_tree(self, gen, tree):
+        if gen != self._scan_gen:
+            return   # a newer scan (another library switch) supersedes this one
+        self._set_loading(False)
+        self._tree = tree
         self._scan_deployments()
-        self.library_changed.emit()
-        self.filters_changed.emit()
+        self._syncing = self._scan_from_sync
+        try:
+            self.library_changed.emit()
+            self.filters_changed.emit()
+        finally:
+            self._syncing = False
 
-    # ── deployments (raw_sens_data subfolders, one level) ─────────────────────
     def _scan_deployments(self):
-        """Map each raw sensor stem to (deployment, treatment).
-
-        `raw_sens_data/<deployment>/<treatment>/` is the normal shape; a
-        deployment with no treatment subfolders (files directly inside
-        it), or a library with no deployment subfolders at all, still
-        work - they just bucket under UNGROUPED at whichever level is
-        missing, rather than being dropped.
+        """Rebuild the Deployment/Treatment/Run filters from the last scan
+        (raw_layout.scan_tree): `raw_sens_data/<deployment>/<treatment>/
+        Run <n>/` is the normal shape; a missing run level is Run 1, and a
+        missing deployment/treatment level buckets as UNGROUPED rather than
+        being dropped. Anything inside a VIDEO folder is a clip, not a
+        recording.
         """
-        self._deployment_map = {}
+        self._locations = dict(self._tree.locations) if self._tree else {}
         current_dep = self.cmb_deployment.currentData()
         self.cmb_deployment.blockSignals(True)
         self.cmb_deployment.clear()
         self.cmb_deployment.addItem("All deployments", ALL_DEPLOYMENTS)
 
-        raw_dir = self._lib_root / RAW_DIR if self._lib_root else None
-        if raw_dir is None or not raw_dir.exists():
-            self.cmb_deployment.blockSignals(False)
-            self._rebuild_treatment_combo()
-            return
-
-        deployments = set()
-        for entry in sorted(raw_dir.iterdir()):
-            if entry.is_file():
-                self._deployment_map.setdefault(
-                    entry.stem.upper(), (UNGROUPED, UNGROUPED))
-                deployments.add(UNGROUPED)
-                continue
-            if not entry.is_dir():
-                continue
-            deployments.add(entry.name)
-            for child in sorted(entry.iterdir()):
-                if child.is_dir():
-                    if child.name.upper() == VIDEO_FOLDER_NAME:
-                        continue   # VIDEO with no treatment level in between
-                    for f in child.rglob("*"):
-                        if f.is_file():
-                            self._deployment_map.setdefault(
-                                f.stem.upper(), (entry.name, child.name))
-                elif child.is_file():
-                    self._deployment_map.setdefault(
-                        child.stem.upper(), (entry.name, UNGROUPED))
-
-        for name in sorted(deployments):
+        for name in sorted({d for d, _t, _r, _p in self._locations.values()}):
             self.cmb_deployment.addItem(name, name)
         idx = self.cmb_deployment.findData(current_dep)
         self.cmb_deployment.setCurrentIndex(idx if idx >= 0 else 0)
@@ -343,38 +466,52 @@ class LibrarySelector(QWidget):
         self.cmb_treatment.clear()
         self.cmb_treatment.addItem("All treatments", ALL_DEPLOYMENTS)
         treatments = sorted({
-            treatment for (deployment, treatment) in self._deployment_map.values()
+            treatment for (deployment, treatment, _r, _p) in self._locations.values()
             if wanted_deployment is None or deployment == wanted_deployment})
         for name in treatments:
             self.cmb_treatment.addItem(name, name)
         idx = self.cmb_treatment.findData(current)
         self.cmb_treatment.setCurrentIndex(idx if idx >= 0 else 0)
         self.cmb_treatment.blockSignals(False)
+        self._rebuild_run_combo()
+
+    def _rebuild_run_combo(self):
+        wanted_deployment = self.cmb_deployment.currentData()
+        wanted_treatment = self.cmb_treatment.currentData()
+        current = self.cmb_run.currentData()
+        self.cmb_run.blockSignals(True)
+        self.cmb_run.clear()
+        self.cmb_run.addItem("All runs", ALL_DEPLOYMENTS)
+        runs = {
+            run for (deployment, treatment, run, _p) in self._locations.values()
+            if (wanted_deployment is None or deployment == wanted_deployment)
+            and (wanted_treatment is None or treatment == wanted_treatment)}
+        for run in sorted(runs, key=_run_sort_key):
+            self.cmb_run.addItem(f"Run {run}", run)
+        idx = self.cmb_run.findData(current)
+        self.cmb_run.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_run.blockSignals(False)
+
+    def _matches_filters(self, deployment, treatment, run):
+        want_d, want_t, want_r = (self.wanted_deployment(),
+                                  self.wanted_treatment(), self.wanted_run())
+        return ((want_d is None or deployment == want_d)
+                and (want_t is None or treatment == want_t)
+                and (want_r is None or run == want_r))
 
     # ── video lookup ─────────────────────────────────────────────────────────
-    def video_dir_for(self, stem):
-        info = self._deployment_map.get(stem.upper())
-        if not info or self._lib_root is None:
-            return None
-        deployment, treatment = info
-        base = self._lib_root / RAW_DIR
-        if deployment != UNGROUPED:
-            base = base / deployment
-        if treatment != UNGROUPED:
-            base = base / treatment
-        if not base.exists():
-            return None
-        for entry in base.iterdir():
-            # case-insensitive: "video"/"Video"/"VIDEO" all match
-            if entry.is_dir() and entry.name.upper() == VIDEO_FOLDER_NAME:
-                return entry
-        return None
-
+    # From the scan's own video index (every `<stem>_vid_*.mp4` in any VIDEO
+    # folder, collected during the one walk) - a dict lookup per sensor, not
+    # a directory listing per sensor, which on OneDrive was most of the time
+    # a big library took to open.
     def video_matches_for(self, stem):
-        video_dir = self.video_dir_for(stem)
-        if video_dir is None:
+        if self._tree is None:
             return []
-        return sorted(video_dir.glob(f"{stem}_vid_*.mp4"))
+        return sorted(self._tree.videos.get(stem.upper(), []))
+
+    def video_dir_for(self, stem):
+        matches = self.video_matches_for(stem)
+        return matches[0].parent if matches else None
 
     # ── sensor listing ───────────────────────────────────────────────────────
     def list_sensor_csvs(self, apply_filters=True):
@@ -393,40 +530,52 @@ class LibrarySelector(QWidget):
         csv_dir = self._lib_root / CSV_DIR
         if not csv_dir.exists():
             return []
-        wanted_deployment = self.wanted_deployment() if apply_filters else None
-        wanted_treatment = self.wanted_treatment() if apply_filters else None
         rows = []
         for p in sorted(csv_dir.rglob("*.csv")):
             if p.name in _EXCL_NAMES or any(
                     p.stem.endswith(s) for s in _EXCL_SUFFIXES):
                 continue
-            deployment, treatment = self._deployment_map.get(
-                p.stem.upper(), (UNGROUPED, UNGROUPED))
-            if wanted_deployment is not None and deployment != wanted_deployment:
+            deployment, treatment, run, _raw = self._locations.get(
+                p.stem.upper(), (UNGROUPED, UNGROUPED, raw_layout.DEFAULT_RUN, None))
+            if apply_filters and not self._matches_filters(deployment, treatment, run):
                 continue
-            if wanted_treatment is not None and treatment != wanted_treatment:
-                continue
-            rows.append({"path": p, "stem": p.stem,
-                        "deployment": deployment, "treatment": treatment})
+            rows.append({"path": p, "stem": p.stem, "deployment": deployment,
+                        "treatment": treatment, "run": run})
         return rows
 
     def raw_stems(self, apply_filters=True):
         """Every raw sensor stem known from the deployment scan, tagged and
-        filtered the same way as `list_sensor_csvs` - for callers (Process)
-        that work from raw files rather than processed CSVs. Stems come
-        back upper-cased (as scanned); callers matching against real
-        on-disk filenames should compare case-insensitively."""
-        wanted_deployment = self.wanted_deployment() if apply_filters else None
-        wanted_treatment = self.wanted_treatment() if apply_filters else None
+        filtered the same way as `list_sensor_csvs` - for callers that work
+        from raw files rather than processed CSVs. Stems come back
+        upper-cased (as scanned); callers matching against real on-disk
+        filenames should compare case-insensitively."""
         rows = []
-        for stem, (deployment, treatment) in sorted(self._deployment_map.items()):
-            if wanted_deployment is not None and deployment != wanted_deployment:
-                continue
-            if wanted_treatment is not None and treatment != wanted_treatment:
+        for stem, (deployment, treatment, run, path) in sorted(self._locations.items()):
+            if apply_filters and not self._matches_filters(deployment, treatment, run):
                 continue
             rows.append({"stem": stem, "deployment": deployment,
-                        "treatment": treatment})
+                        "treatment": treatment, "run": run, "path": path})
         return rows
+
+    def scan_folder(self):
+        """The raw folder the current Deployment/Treatment filters narrow
+        to (the whole raw_sens_data folder for "All"), for callers that
+        scan raw files themselves - the Run filter is applied per file by
+        `_matches_filters`, since a legacy treatment folder with no run
+        subfolders is still Run 1."""
+        if self._lib_root is None:
+            return None
+        folder = self._lib_root / RAW_DIR
+        dep = self.wanted_deployment()
+        if dep and dep != UNGROUPED:
+            folder = folder / dep
+            treat = self.wanted_treatment()
+            if treat and treat != UNGROUPED:
+                folder = folder / treat
+        return folder
+
+    def matches_filters(self, deployment, treatment, run):
+        return self._matches_filters(deployment, treatment, run)
 
     # ── sensor list panel (opt-in via sensor_list=True) ─────────────────────────
     def selected_path(self):
@@ -441,12 +590,12 @@ class LibrarySelector(QWidget):
         # re-render from the cached call rather than making the host rescan
         # the filesystem just to react to this checkbox
         if self._cache is not None:
-            rows, is_bad, is_done, done_label, extra = self._cache
-            self.populate_sensor_list(rows, is_bad=is_bad, is_done=is_done,
-                                      done_label=done_label, extra=extra)
+            rows, kwargs = self._cache
+            self.populate_sensor_list(rows, **kwargs)
 
     def populate_sensor_list(self, rows, is_bad=None, is_done=None,
-                             done_label="In dataset", extra=None):
+                             done_label="In dataset", extra=None,
+                             colour=None, order_key=None, progress=None):
         """Render `rows` (each a dict with at least "stem", usually also
         "path") into the sensor table - the one behaviour every list of
         sensors in the app should share:
@@ -469,14 +618,25 @@ class LibrarySelector(QWidget):
         the values for any extra columns configured via `list_columns`, in
         order. `done_label` is the counter's prefix, e.g. "In dataset" or
         "Synced" - whatever "done" means for this page.
+
+        A host with its own status model (Annotate's auto/flagged/user-
+        validated states) can override the defaults: `colour(stem)` returns
+        the row's colour (or None for plain), `order_key(row)` sorts the
+        rows (a stable sort - e.g. "needs review" first), and
+        `progress(rows)` returns the counter text.
         """
-        self._cache = (rows, is_bad, is_done, done_label, extra)
+        self._cache = (rows, dict(is_bad=is_bad, is_done=is_done,
+                                  done_label=done_label, extra=extra,
+                                  colour=colour, order_key=order_key,
+                                  progress=progress))
         is_bad = is_bad or (lambda _s: False)
         is_done = is_done or (lambda _s: False)
         extra = extra or (lambda _r: [])
         show_flags = self.chk_show_flags.isChecked()
 
         visible = [r for r in rows if show_flags or not is_bad(r["stem"])]
+        if order_key is not None:
+            visible = sorted(visible, key=order_key)
 
         self.tbl_sensors.setRowCount(len(visible))
         n_done = n_done_bad = 0
@@ -489,9 +649,12 @@ class LibrarySelector(QWidget):
                 n_done += 1
                 if bad:
                     n_done_bad += 1
-                    item.setForeground(QColor(WARN))
-                else:
-                    item.setForeground(QColor(OK))
+            if colour is not None:
+                c = colour(stem)
+                if c:
+                    item.setForeground(QColor(c))
+            elif done:
+                item.setForeground(QColor(WARN if bad else OK))
             elif bad:
                 item.setForeground(QColor(BAD))
             self.tbl_sensors.setItem(i, 0, item)
@@ -499,5 +662,8 @@ class LibrarySelector(QWidget):
                 self.tbl_sensors.setItem(i, c, QTableWidgetItem(str(val)))
         self.tbl_sensors.resizeColumnsToContents()
 
+        if progress is not None:
+            self.lbl_progress.setText(progress(rows))
+            return
         suffix = f" ({n_done_bad} bad)" if n_done_bad and show_flags else ""
         self.lbl_progress.setText(f"{done_label}: {n_done} / {len(rows)}{suffix}")

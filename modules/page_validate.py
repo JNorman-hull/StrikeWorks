@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 from . import deployment_index as di
 from . import sensor_config
 from .library_widgets import _EXCL_NAMES, _EXCL_SUFFIXES
-from .ml_widgets import MUTED
+from .ml_widgets import MUTED, when_visible
 from .plot_style import (
     add_export_button, build_export_data, reserve_top_margin,
     set_right_axis_active,
@@ -338,6 +338,11 @@ class ValidatePage(QObject):
         self._index_df = None
         self._csv_files = []
         self.ui.tree_val_files.clear()
+        # the index read + file tree only once this page is actually opened
+        # - a library switch shouldn't pay for pages nobody is looking at
+        when_visible(self.ui.tree_val_files, self._load_library, key="library")
+
+    def _load_library(self):
         self._load_index()
         self._populate_file_tree()
         self._update_progress()

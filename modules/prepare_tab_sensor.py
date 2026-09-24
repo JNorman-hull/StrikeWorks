@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
 from . import sensor_config
 from .ml_widgets import (
     ACCENT, BAD, MUTED, OK, TEXT, WARN, MetaCard, Section,
-    apply_section_defaults,
+    apply_section_defaults, discard_widget,
 )
 
 
@@ -406,8 +406,7 @@ class SensorTab:
             w = item.widget()
             self.sources_layout.takeAt(i)
             if w is not None:
-                w.setParent(None)
-                w.deleteLater()
+                discard_widget(w)
         self._source_rows = []
 
         for i, src in enumerate(sources, start=1):

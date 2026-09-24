@@ -342,9 +342,9 @@ def study_design_section(window, formats=("png",), dpi=300):
         h.append(f"<h2 style='color:{dark};'>Folder structure</h2>")
         h.append(kv([
             ("Raw sensor data", f"{root.name}/raw_sens_data/<deployment id>/"
-                                "<treatment>/"),
+                                "<treatment>/Run <n>/"),
             ("Raw video",       f"{root.name}/raw_sens_data/<deployment id>/"
-                                "VIDEO/"),
+                                "<treatment>/Run <n>/VIDEO/"),
             ("Sensor index",    f"{root.name}/processed_sens_data/index/"
                                 "global_sensor_index.csv"),
             ("Processed CSV",   f"{root.name}/processed_sens_data/csv/"),
@@ -569,11 +569,13 @@ def misclassification_section(window, get_entry):
         entry_ = get_entry()
         if entry_ is None or mis is None:
             return None
-        from .page_misclassification import _misclassified_rows
+        from .page_misclassification import _misclassified_rows, build_video_index
         rows = _misclassified_rows(entry_)
         if not rows:
             return None
-        video_index = mis._video_index()
+        # the page's cached index if it has built one, else build it here
+        video_index = (mis._video_index if mis._video_index is not None
+                       else build_video_index(settings.get_libraries_dir()))
         for r in rows:
             r["video_matches"] = video_index.get(str(r["file"]), [])
 

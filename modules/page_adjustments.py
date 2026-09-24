@@ -45,12 +45,10 @@ Changing the libraries folder here needs Home's own combo re-read
 afterwards, since library discovery lives there - `main.py` calls
 `window.home_page._refresh_library_combo()` after this dialog closes.
 """
-from pathlib import Path
-
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
-    QMessageBox, QPushButton, QVBoxLayout,
+    QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QVBoxLayout,
 )
 
 from . import settings
@@ -64,7 +62,6 @@ class AdjustmentsDialog(QDialog):
     def __init__(self, window):
         super().__init__(window)
         self.window = window
-        self._runner = None
         self.setWindowTitle("Adjustments")
         self.setMinimumWidth(520)
         # window-modal, not the exec()-default application-modal - this
@@ -244,35 +241,12 @@ class AdjustmentsDialog(QDialog):
         row.addWidget(btn_show)
         row.addStretch()
         gv.addLayout(row)
-
-        runner_row = QHBoxLayout()
-        self.cmb_demo_mode = QComboBox()
-        self.cmb_demo_mode.addItem("Advanced", "advanced")
-        self.cmb_demo_mode.addItem("Simple (no training)", "simple")
-        self.cmb_demo_mode.setToolTip(
-            "Advanced drives the Advanced-mode pages directly (Calculator, "
-            "study design, processing, validation, dataset export, trains "
-            "+ deploys a fresh model, predict, compare, report). Simple "
-            "drives Simple mode's own real wizard exactly as clicking "
-            "through it would (deployment, process, validate all, save "
-            "dataset, predict, download report) - no training, much "
-            "faster.")
-        runner_row.addWidget(self.cmb_demo_mode)
-        self.btn_run_demo = QPushButton("Run demo pipeline")
-        self.btn_run_demo.setToolTip(
-            "Unattended smoke test in its own 'DevTest' library, copying "
-            "source recordings in from Testbed. Watch it in the dev "
-            "console; Stop cancels at the next safe point.")
-        self.btn_run_demo.clicked.connect(self._run_demo_pipeline)
-        runner_row.addWidget(self.btn_run_demo)
-        self.btn_stop_demo = QPushButton("Stop")
-        self.btn_stop_demo.setEnabled(False)
-        self.btn_stop_demo.setToolTip(
-            "Cancel the running demo at the next safe point.")
-        self.btn_stop_demo.clicked.connect(self._stop_demo_pipeline)
-        runner_row.addWidget(self.btn_stop_demo)
-        runner_row.addStretch()
-        gv.addLayout(runner_row)
+        note = QLabel("The demos (Simple / Advanced) run from the dev "
+                      "console itself - open it, close this window, and "
+                      "watch the app being driven.")
+        note.setStyleSheet(f"color:{MUTED};font-size:11px;")
+        note.setWordWrap(True)
+        gv.addWidget(note)
 
         v.addWidget(grp)
 
@@ -296,67 +270,4 @@ class AdjustmentsDialog(QDialog):
             self.btn_dev_mode.setChecked(True)
         else:
             console.set_enabled(True)   # no-op if already installed
-        console.show()
-        console.raise_()
-        console.activateWindow()
-
-    def _run_demo_pipeline(self):
-        mode = self.cmb_demo_mode.currentData()
-        if mode == "advanced":
-            detail = ("This drives the Advanced-mode pages directly: "
-                      "Calculator, sensor config, a study design "
-                      "deployment, processing, validation, dataset "
-                      "export + annotation import, trains and deploys a "
-                      "new model version, predicts, compares and exports "
-                      "a report. It can take several minutes (model "
-                      "training).")
-        else:
-            detail = ("This drives Simple mode's own real wizard "
-                      "(window.simple_mode_dialog) exactly as if you'd "
-                      "clicked through it: new deployment, copy files "
-                      "in, process, validate all, save the dataset, "
-                      "predict (with whatever model is already deployed "
-                      "- see Adjustments' default binary/multiclass "
-                      "model), download the report. No training - "
-                      "should be quick.")
-        reply = QMessageBox.question(
-            self, "Run demo pipeline",
-            f"This builds (or reuses) its own 'DevTest' library. "
-            f"{detail} Continue?",
-            QMessageBox.Yes | QMessageBox.No)
-        if reply != QMessageBox.Yes:
-            return
-
-        if self.btn_dev_mode.isChecked():
-            self._show_dev_console()
-        else:
-            self.btn_dev_mode.setChecked(True)   # installs the tee + shows it
-
-        if mode == "advanced":
-            from .dev_runner import DevRunner
-            self._runner = DevRunner(self.window)
-        else:
-            from .simple_dev_runner import SimpleDevRunner
-            self._runner = SimpleDevRunner(self.window)
-        self._runner.finished.connect(self._on_demo_finished)
-        self.btn_run_demo.setEnabled(False)
-        self.btn_run_demo.setText("Running...")
-        self.btn_stop_demo.setEnabled(True)
-        self.cmb_demo_mode.setEnabled(False)
-        self._runner.run()
-
-    def _stop_demo_pipeline(self):
-        if self._runner is not None:
-            self.btn_stop_demo.setEnabled(False)
-            self._runner.request_stop()
-
-    def _on_demo_finished(self, ok, message):
-        self.btn_run_demo.setEnabled(True)
-        self.btn_run_demo.setText("Run demo pipeline")
-        self.btn_stop_demo.setEnabled(False)
-        self.cmb_demo_mode.setEnabled(True)
-        if message == "Stopped.":
-            title = "Demo pipeline stopped"
-        else:
-            title = "Demo pipeline finished" if ok else "Demo pipeline failed"
-        QMessageBox.information(self, title, message)
+        console.bring_up()

@@ -22,8 +22,6 @@ been visited this session.
 """
 from pathlib import Path
 
-import pandas as pd
-
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
@@ -33,7 +31,9 @@ from PySide6.QtWidgets import (
 
 from . import deployment_index as di
 from . import settings
-from .ml_widgets import ACCENT, MUTED, MetaCard, Section, apply_section_defaults
+from .ml_widgets import (
+    ACCENT, MUTED, MetaCard, Section, apply_section_defaults, on_show,
+)
 from .session_state import OUTPUT_DIR_NAME
 
 _LOGO_RESOURCE = ":/images/images/images/PyDracula_vertical.png"
@@ -54,7 +54,10 @@ class HomePage(QObject):
         self._build(ui.home)
         self._connect()
         self._refresh_library_combo()
-        self._refresh_summary()
+        # the Library status card is refreshed whenever Home is shown, not
+        # only when the library changes - its contents change under it
+        # (processing, Simple mode, the demos) while Home isn't on screen
+        on_show(ui.home, self._refresh_summary)
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
@@ -198,7 +201,12 @@ class HomePage(QObject):
             self.cmb_library.setCurrentIndex(idx)
             self.cmb_library.blockSignals(False)
         self.lbl_library_path.setText(str(path) if path else "No library selected.")
-        self._refresh_summary()
+        if self.ui.home.isVisible():
+            self._refresh_summary()
+        else:
+            # not on screen: on_show refreshes it next time Home opens
+            self.card_status.set_title(path.name if path else "Nothing selected yet")
+            self.card_status.set_rows([])
         # the one unified "Library: X" status message for a session-wide
         # library change - every soft-synced page's own LibrarySelector
         # suppresses its own copy of this message while syncing (see
@@ -257,12 +265,13 @@ def library_status_rows(root, session_state):
         return "Nothing selected yet", []
     rows = []
 
-    deployments = di.deployments(root)
-    treatments = di.treatments(root)
+    # the index read once, not once per question asked of it
+    index_df = di.read_index(root)
+    deployments = di.deployments(root, df=index_df)
+    treatments = di.treatments(root, df=index_df)
     rows.append(("Deployments", len(deployments) or "None recorded"))
     rows.append(("Treatments", len(treatments) or "None recorded"))
 
-    index_df = di.read_index(root)
     if index_df is not None:
         sensors = di.sensor_rows(index_df)
         n = len(sensors)
@@ -278,8 +287,13 @@ def library_status_rows(root, session_state):
     dataset_path = root / "processed_sens_data" / "model_features.csv"
     if dataset_path.exists():
         try:
-            n_rows = len(pd.read_csv(dataset_path, usecols=[0]))
-            rows.append(("Dataset built", f"Yes ({n_rows} rows)"))
+            # a line count, not a pandas parse - this file can be hundreds
+            # of MB, and this summary is shown every time Home/Deploy opens
+            n_lines = 0
+            with open(dataset_path, "rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    n_lines += chunk.count(b"\n")
+            rows.append(("Dataset built", f"Yes ({max(0, n_lines - 1)} rows)"))
         except Exception:
             rows.append(("Dataset built", "Yes"))
     else:

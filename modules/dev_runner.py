@@ -4,233 +4,327 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Dev runner - a one-click, no-UI-clicking "demo pipeline" that exercises
-Advanced mode end-to-end in its own dedicated "DevTest" library: create
-library > Calculator > sensor config > study design (deployment, folder
-opened in Explorer) > copy source recordings in from Testbed > raw data
-processing > validate (simulated) > save and export > annotation import >
-model training > deploy > predict > model comparison > export report.
+"""Demo runners - one-click, unattended walkthroughs of the real app,
+started from the Dev console (dev_console.py). Both drive the app's own
+pages and widgets exactly as a person clicking through would, so a demo is
+an honest test of the workflow rather than a separate copy of it:
 
-This is the Advanced-mode demo only - `DevRunner`. Simple mode's demo
-(`simple_dev_runner.SimpleDevRunner`) is a deliberately separate,
-parallel implementation: rather than a hand-rolled reimplementation of
-what Simple mode does, it drives page_simple_mode.SimpleModeDialog's own
-widget-bound methods directly on the app's one real
-window.simple_mode_dialog instance, so it stays honest to whatever Simple
-mode's real behaviour actually is. The two share only genuinely common
-infrastructure - the DevTest library/fixture setup and the Qt-event-loop
-waiting helpers - via `_RunnerBase` below.
+  Simple demo    - Simple mode's wizard (window.simple_mode_dialog):
+                   library > deployment (DeploymentEditor) > copy the demo
+                   recordings in > process (FileInventory) > Auto process
+                   all > Save and export > predict (the deployed default
+                   model) > download the report.
+  Advanced demo  - the full app's pages: library > BSM Calculator > Study
+                   design (strike rate from the Calculator, sample size) >
+                   Create and edit deployment (the same DeploymentEditor) >
+                   copy in > Raw data processing (the same FileInventory) >
+                   Annotate (Auto process all, Import annotations CSV, Save
+                   and export) > Train > Deploy > Predict > Model comparison
+                   > report.
 
-Every async step (a QThread or a subprocess-backed state signal) is
-turned into a plain, sequential method call via `_wait_for`/`_race`: they
-push a nested `QEventLoop` that only the awaited signal (or a timeout)
-can quit. The GUI stays responsive while a step runs - it just means
-`run()` itself doesn't return until the whole pipeline (or a failure, or
-a stop) does, which is exactly what a "click Run and watch it go" demo
-button wants.
+Where the demo's data comes from - the demo pack
+------------------------------------------------
+A folder shaped like a library, shipped to users separately and dropped
+into their libraries folder:
 
-Stopping: `request_stop()` is safe to call from anywhere (a button click
-during a run) - it doesn't kill anything by force, just makes the next
-opportunity (between steps, or the periodic poll inside `_wait_for`/
-`_race`) raise `_StoppedByUser` and unwind cleanly. A training/prediction
-subprocess already in flight when stopped keeps running in the
-background to completion (the app has no subprocess-kill mechanism to
-call here) - the demo just stops waiting for and using its result.
+    demo_data/
+      raw_sens_data/<deployment>/<treatment>/[Run <n>/]<recordings>
+                                            [VIDEO/<stem>_vid_*.mp4]
+      *annotations*.csv        per-sensor annotations (Advanced demo)
+      demo.json                optional - see DemoSource
+
+Found (first match) at `<libraries folder>/demo_data`, then the app's own
+`libraries/demo_data`, then the older `Testbed` name (the app's own copy
+first) (`settings.DEMO_DATA_NAME`; `demo_data` is never listed as a library). The
+deployment, treatment and run names come from its folders; each
+recording is *copied* (never moved) into the demo library, which is
+created inside the user's configured libraries folder - so the demo's
+output sits wherever their libraries do (a OneDrive folder stays on
+OneDrive).
+
+Waiting: every async step (a QThread or a subprocess-backed state signal)
+becomes a sequential call via `_wait_for`/`_race`/`_wait_until`, which run
+a nested QEventLoop until the step signals, times out, or `request_stop()`
+is called - the GUI keeps painting throughout. Stop takes effect at the
+next safe point; a training/prediction subprocess already running finishes
+in the background, the demo just stops waiting for it.
 """
-import os
+import json
+import re
 import shutil
-from datetime import datetime
+from contextlib import contextmanager
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
-
 from PySide6.QtCore import QEventLoop, QObject, QTimer, Signal
+from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from . import deployment_index as di
-from . import report_center
-from . import sensor_config
-from . import settings
-from .page_dataset import OPT_SEGMENTED, _ExtractThread
-from .page_initiate_deployment import _README_TEXT
-from .page_process import _ProcessThread
+from . import raw_layout, report_center, sensor_config, settings
 
-# a bundled dev-fixture file, always at the real app install's own
-# input_data/ - deliberately NOT settings.get_input_data_dir() (a *user*
-# default output location that can point anywhere the user likes; this
-# demo fixture only ever lives in one place, the source tree/install)
-_ANNOTATIONS_CSV = (settings.app_root() / "input_data"
-                    / "Pumpflow_2024_datatset1_only_annotations.csv")
-# the source CSV's own columns (verified against it directly):
-# file, concentric_pump_region, passage_type, leading_type, other_type -
-# human-readable values ("No contact", "Leading edge strike", ...). The
-# app's *native* annotation store (annotation_schema.py DEFAULT_VARIABLES,
-# what Annotate writes onto the index via deployment_index.set_row_values,
-# and what report_center.py's Annotation Report reads back) uses different
-# names and enum-style values: overall_passage_type/leading_edge_type/
-# other_type/concentric_pump_region, with overall_passage_type restricted
-# to no_contact/leading_edge/other. Mapping onto the native names (rather
-# than passing the source names straight through, an earlier version's
-# mistake) means one merge feeds both the training dataset *and* the real
-# per-sensor annotation record - ml_train_state.py's target-column
-# detection (_TARGET_PREFERENCE) already accepts overall_passage_type as
-# an alternative to passage_type, so nothing downstream loses out.
-_ANNOTATION_JOIN_COL = "file"
-_ANNOTATION_SOURCE_COLS = [
-    "passage_type", "leading_type", "other_type", "concentric_pump_region",
-]
-_ANNOTATION_NATIVE_COLS = [
-    "overall_passage_type", "leading_edge_type", "other_type",
-    "concentric_pump_region",
-]
-_PASSAGE_TYPE_MAP = {
-    "no contact": "no_contact",
-    "leading edge strike": "leading_edge",
-    "other impeller collision": "other",
-}
+DEMO_LIBRARY_NAME = "StrikeWorks_demo"
+_FALLBACK_ANNOTATIONS = (settings.app_root() / "input_data"
+                         / "Pumpflow_2024_datatset1_only_annotations.csv")
 
-_NADIR_T_COL = "pres_min.time."
-_NADIR_V_COL = "pres_min.kPa."
-_VALIDATED_COL = "hstrike_processed"
-_WIN_SEC = 0.2
+# defaults for a demo pack without a demo.json - the Pumpflow 2024 test
+# rig the shipped demo recordings come from
+_DEFAULT_DEPLOYMENT = {"site": "PF TEST RIG", "pump_turbine": "FS-700",
+                       "type": "Axial"}
+_DEFAULT_CONDITIONS = {"head": "3", "flow": "1.32", "point_bep": "100"}
+_DEFAULT_BSM_CONFIG = "pumpflow_configuration"
+_STUDY_TARGET_PRECISION_PP = 10.0
 
-# every long-running step (processing, export, training x2, predict) uses
-# this one generous ceiling - it's a "something is actually stuck, not
-# just slow" backstop, not a tuned-per-step budget. 180s used to be
-# process/export's own separate limit, which a real run on a
-# OneDrive-synced library blew straight through (76 files took ~210s+) -
-# raising it here is one number to keep sane instead of several, and the
-# Stop button is the real way to bail out of a run that's merely slow.
-_LONG_TIMEOUT_MS = 1_200_000
+# one generous ceiling for every long step - a "something is actually
+# stuck" backstop, not a per-step budget (76 files over OneDrive took
+# 13 min in September's runs); Stop is the way out of a merely slow run
+_LONG_TIMEOUT_MS = 1_800_000
 
 
 class _RunnerError(Exception):
-    """A demo-pipeline step failed in a way that should stop the run and
-    be reported back to the user, rather than an unexpected bug."""
+    """A demo step failed in a way that should stop the run and be reported."""
 
 
 class _StoppedByUser(Exception):
     """`request_stop()` was called - not a failure, just an early exit."""
 
 
+# ── the demo pack ────────────────────────────────────────────────────────────
+class DemoSource:
+    """The demo pack's contents: one deployment (the first under its
+    raw_sens_data), its treatments and runs, their recording folders, the
+    annotations CSV, and the details a deployment needs.
+
+    demo.json (all optional):
+        {"deployment": {"site": ..., "pump_turbine": ..., "type": ...},
+         "treatments": {"500 RPM": {"head": "3", "flow": "1.32",
+                                    "point_bep": "100", "rpm": "500"}},
+         "sensor": "rapid", "bsm_config": "pumpflow_configuration"}
+    """
+
+    def __init__(self, root):
+        self.root = Path(root)
+        raw = self.root / raw_layout.RAW_DIR
+        deps = [p for p in sorted(raw.iterdir())
+                if p.is_dir() and not raw_layout.is_video_dir(p.name)]
+        if not deps:
+            raise _RunnerError(f"Demo pack has no deployment folder: {raw}")
+        self.deployment_dir = deps[0]
+        self.extra_deployments = [p.name for p in deps[1:]]
+        manifest = {}
+        if (self.root / "demo.json").exists():
+            try:
+                manifest = json.loads((self.root / "demo.json").read_text(
+                    encoding="utf-8"))
+            except Exception as e:
+                raise _RunnerError(f"demo.json could not be read: {e}")
+        self.sensor = manifest.get("sensor") or sensor_config.DEFAULT_KEY
+        self.bsm_config = manifest.get("bsm_config") or _DEFAULT_BSM_CONFIG
+        self.deployment = {**_DEFAULT_DEPLOYMENT,
+                           **manifest.get("deployment", {}),
+                           di.DEPLOYMENT_COL: self.deployment_dir.name}
+        conditions = manifest.get("treatments", {})
+
+        cfg = sensor_config.get(self.sensor) or sensor_config.active()
+        primary = (cfg.required_extensions or [".imp"])[0].lstrip(".").lower()
+        self.treatments = []          # [{treatment, head, ..., runs}]
+        self.treatment_dirs = {}      # name -> source folder
+        self.n_recordings = 0
+        for tdir in sorted(self.deployment_dir.iterdir()):
+            if not tdir.is_dir() or raw_layout.is_video_dir(tdir.name):
+                continue
+            runs = [int(raw_layout.run_label(p.name)) for p in tdir.iterdir()
+                    if p.is_dir() and raw_layout.run_label(p.name)]
+            n = sum(1 for p in tdir.rglob("*")
+                    if p.is_file() and p.suffix.lstrip(".").lower() == primary
+                    and not raw_layout.in_video_dir(p, raw))
+            if not n:
+                continue
+            rpm = re.search(r"(\d+(?:\.\d+)?)\s*rpm", tdir.name, re.IGNORECASE)
+            values = {di.TREATMENT_COL: tdir.name, **_DEFAULT_CONDITIONS,
+                      "rpm": rpm.group(1) if rpm else "",
+                      **conditions.get(tdir.name, {}),
+                      "runs": max(runs) if runs else 1}
+            self.treatments.append(values)
+            self.treatment_dirs[tdir.name] = tdir
+            self.n_recordings += n
+        if not self.treatments:
+            raise _RunnerError(
+                f"Demo pack has no recordings under {self.deployment_dir}")
+        found = sorted(self.root.glob("*annotation*.csv"))
+        self.annotations_csv = (found[0] if found else
+                                _FALLBACK_ANNOTATIONS
+                                if _FALLBACK_ANNOTATIONS.exists() else None)
+
+    @property
+    def deployment_id(self):
+        return self.deployment[di.DEPLOYMENT_COL]
+
+    @staticmethod
+    def find():
+        """The demo pack folder, or None: `demo_data` in the libraries
+        folder, then in the app's own libraries/; failing that the older
+        `Testbed` name - the app's own copy first, since a libraries folder
+        can hold a real working library that happens to be called Testbed."""
+        libs, app_libs = settings.get_libraries_dir(), settings.app_root() / "libraries"
+        candidates = [libs / settings.DEMO_DATA_NAME, app_libs / settings.DEMO_DATA_NAME,
+                      app_libs / "Testbed", libs / "Testbed"]
+        for folder in candidates:
+            if (Path(folder) / raw_layout.RAW_DIR).is_dir():
+                return Path(folder)
+        return None
+
+
+# ── shared runner machinery ─────────────────────────────────────────────────
 class _RunnerBase(QObject):
-    """Shared infrastructure for both demo runners (Advanced's `DevRunner`
-    below, Simple's `simple_dev_runner.SimpleDevRunner`): the DevTest
-    library/fixture setup, and the Qt-event-loop waiting/stopping
-    machinery. Subclasses implement `_run()` and may override `_label()`
-    for clearer log/finish messages; everything else here is ready to use
-    as-is. Owned transiently by whatever triggered it (Adjustments' "Run
-    demo pipeline" button) - construct, connect `finished`, call `run()`;
-    `request_stop()` cancels a run in progress."""
+    """Construct, connect `finished`, call `run()`; `request_stop()` cancels."""
 
     finished = Signal(bool, str)   # ok, message
-
-    LIBRARY_NAME = "DevTest"
-    SOURCE_LIBRARY_NAME = "Testbed"
-    SOURCE_DEPLOYMENT_NAME = "Pumpflow_2024_training"
-    SOURCE_TREATMENT_NAME = "500 rpm (100%)"
 
     def __init__(self, window):
         super().__init__(window)
         self.window = window
         self._stop_requested = False
+        self.source = None
+        self.lib_root = None
 
     def _label(self):
-        return "Demo pipeline"
+        return "Demo"
 
     # ── stopping ─────────────────────────────────────────────────────────────
     def request_stop(self):
-        """Safe to call any time, including mid-run from a button click -
-        see the module docstring's "Stopping" section for exactly what
-        this does and doesn't guarantee."""
         if not self._stop_requested:
             self._stop_requested = True
-            self._log("Stop requested - stopping at the next safe point "
-                       "(a training/prediction subprocess already running "
-                       "will keep going in the background, but the demo "
-                       "won't wait for or use its result).")
+            self._log("Stop requested - stopping at the next safe point (a "
+                      "training/prediction subprocess already running will "
+                      "finish in the background, but the demo won't wait "
+                      "for or use its result).")
 
     def _check_stop(self):
+        QApplication.processEvents()
         if self._stop_requested:
             raise _StoppedByUser()
 
-    # ── logging / waiting helpers ───────────────────────────────────────────
+    # ── logging / waiting ────────────────────────────────────────────────────
     def _log(self, msg):
-        print(f"[dev-runner] {msg}")
+        print(f"[demo] {msg}")
 
-    def _wait_for(self, signal, timeout_ms, label, trigger):
-        """Runs `trigger()` (which must eventually cause `signal` to fire)
-        and blocks this call - via a nested Qt event loop, so the GUI
-        keeps painting/responding - until it does, `timeout_ms` passes, or
-        `request_stop()` is called. Returns the signal's emitted args."""
+    def _loop(self, timeout_ms, box, quit_when=None):
         loop = QEventLoop()
-        box = {}
-
-        def _capture(*args):
-            box["args"] = args
-            loop.quit()
-
-        signal.connect(_capture)
         timer = QTimer()
         timer.setSingleShot(True)
         timer.timeout.connect(loop.quit)
         timer.start(timeout_ms)
         poll = QTimer()
-        poll.setInterval(300)
-        poll.timeout.connect(lambda: loop.quit() if self._stop_requested else None)
+        poll.setInterval(200)
+        poll.timeout.connect(
+            lambda: loop.quit() if self._stop_requested
+            or (quit_when is not None and quit_when()) else None)
         poll.start()
-        self._log(f"Waiting for {label}...")
-        trigger()
+        box["loop"] = loop
         loop.exec()
         timer.stop()
         poll.stop()
-        signal.disconnect(_capture)
+
+    def _wait_for(self, signal, timeout_ms, label, trigger):
+        """Connects to `signal`, runs `trigger()` (which must eventually
+        make it fire), and waits. Returns the signal's args."""
+        box = {}
+
+        def _capture(*args):
+            box["args"] = args
+            if "loop" in box:
+                box["loop"].quit()
+
+        signal.connect(_capture)
+        self._log(f"Waiting for {label}...")
+        try:
+            trigger()
+            if "args" not in box:
+                self._loop(timeout_ms, box)
+        finally:
+            try:
+                signal.disconnect(_capture)
+            except (RuntimeError, TypeError):
+                pass
         self._check_stop()
         if "args" not in box:
             raise _RunnerError(f"{label} timed out after {timeout_ms // 1000}s")
         return box["args"]
 
     def _race(self, ok_signal, fail_signal, timeout_ms, label, trigger):
-        """Like `_wait_for`, but for the app's paired success/failure
-        signal convention (cv_finished/cv_failed, run_finished/
-        run_failed, ...) - whichever fires first wins."""
-        loop = QEventLoop()
+        """`_wait_for` for the app's paired success/failure signals
+        (cv_finished/cv_failed, run_finished/run_failed, ...)."""
         box = {}
 
         def _ok(*args):
-            box["ok"] = True
-            box["args"] = args
-            loop.quit()
+            box.update(ok=True, args=args)
+            if "loop" in box:
+                box["loop"].quit()
 
         def _fail(*args):
-            box["ok"] = False
-            box["args"] = args
-            loop.quit()
+            box.update(ok=False, args=args)
+            if "loop" in box:
+                box["loop"].quit()
 
         ok_signal.connect(_ok)
         fail_signal.connect(_fail)
-        timer = QTimer()
-        timer.setSingleShot(True)
-        timer.timeout.connect(loop.quit)
-        timer.start(timeout_ms)
-        poll = QTimer()
-        poll.setInterval(300)
-        poll.timeout.connect(lambda: loop.quit() if self._stop_requested else None)
-        poll.start()
         self._log(f"Waiting for {label}...")
-        trigger()
-        loop.exec()
-        timer.stop()
-        poll.stop()
-        ok_signal.disconnect(_ok)
-        fail_signal.disconnect(_fail)
+        try:
+            trigger()
+            if "ok" not in box:
+                self._loop(timeout_ms, box)
+        finally:
+            for sig, slot in ((ok_signal, _ok), (fail_signal, _fail)):
+                try:
+                    sig.disconnect(slot)
+                except (RuntimeError, TypeError):
+                    pass
         self._check_stop()
         if "ok" not in box:
             raise _RunnerError(f"{label} timed out after {timeout_ms // 1000}s")
         if not box["ok"]:
             msg = box["args"][0] if box["args"] else "failed"
-            raise _RunnerError(f"{label} failed: {msg}")
+            raise _RunnerError(f"{label} failed: {str(msg).splitlines()[-1]}")
         return box["args"]
+
+    def _wait_thread(self, thread, label):
+        """Waits for a QThread a page started itself (Auto process all) to
+        finish *and* for its queued `done` to reach the page - polling,
+        since the thread may already be done by the time we get it back."""
+        self._log(f"Waiting for {label}...")
+        box = {}
+        if thread.isRunning():
+            self._loop(_LONG_TIMEOUT_MS, box, quit_when=thread.isFinished)
+        for _ in range(5):
+            QApplication.processEvents()
+        self._check_stop()
+        if not thread.isFinished():
+            raise _RunnerError(f"{label} timed out")
+
+    @staticmethod
+    @contextmanager
+    def _headless_dialogs(existing_directory=None):
+        """The app's own OK-only info/warning/critical pop-ups and the one
+        folder picker (download report) - fine for a person, a hang for an
+        unattended demo - suppressed around just the call that can raise
+        one, then restored."""
+        orig = (QMessageBox.information, QMessageBox.warning,
+                QMessageBox.critical, QMessageBox.question,
+                QFileDialog.getExistingDirectory)
+        noop = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
+        QMessageBox.information = noop
+        QMessageBox.warning = noop
+        QMessageBox.critical = noop
+        QMessageBox.question = staticmethod(
+            lambda *a, **k: QMessageBox.StandardButton.Yes)
+        if existing_directory is not None:
+            QFileDialog.getExistingDirectory = staticmethod(
+                lambda *a, **k: existing_directory)
+        try:
+            yield
+        finally:
+            (QMessageBox.information, QMessageBox.warning,
+             QMessageBox.critical, QMessageBox.question,
+             QFileDialog.getExistingDirectory) = orig
 
     # ── entry point ──────────────────────────────────────────────────────────
     def run(self):
@@ -247,501 +341,372 @@ class _RunnerBase(QObject):
             self.finished.emit(False, str(e))
             return
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             self._log(f"FAILED (unexpected): {e}")
             self.finished.emit(False, f"Unexpected error: {e}")
             return
         self._log(f"{label} finished.")
-        self.finished.emit(True, f"{label} finished - see the dev console for the full log.")
+        self.finished.emit(True, f"{label} finished - see the console log above.")
 
     def _run(self):
         raise NotImplementedError
 
-    # ── 0: create/select the dedicated DevTest library (shared) ─────────────
-    def _step_library(self, w):
-        libraries_dir = settings.get_libraries_dir()
-        lib_root = libraries_dir / self.LIBRARY_NAME
+    # ── steps both demos share ──────────────────────────────────────────────
+    def _step_source(self):
+        folder = DemoSource.find()
+        if folder is None:
+            raise _RunnerError(
+                "No demo pack found - put the 'demo_data' folder into the "
+                f"libraries folder ({settings.get_libraries_dir()}).")
+        self.source = DemoSource(folder)
+        s = self.source
+        self._log(f"Demo pack: {folder} - deployment '{s.deployment_id}', "
+                  f"{len(s.treatments)} treatment(s) "
+                  f"({', '.join(t[di.TREATMENT_COL] for t in s.treatments)}), "
+                  f"{s.n_recordings} recording(s); annotations: "
+                  f"{s.annotations_csv.name if s.annotations_csv else 'none'}.")
+        if s.extra_deployments:
+            self._log("Only the first deployment is used - also found: "
+                      + ", ".join(s.extra_deployments))
+
+    def _step_library(self):
+        lib_root = settings.get_libraries_dir() / DEMO_LIBRARY_NAME
         was_new = not lib_root.exists()
         lib_root.mkdir(parents=True, exist_ok=True)
-        # reuses Home's own "New library" logic (page_home.py._new_library) -
-        # rescans libraries_dir, adds DevTest to the combo if it just
-        # appeared, and syncs session_state.library to it either way, the
-        # same as picking it there by hand
-        w.home_page._refresh_library_combo(select=str(lib_root))
-        self._log(f"Library: '{self.LIBRARY_NAME}' "
-                   f"{'created' if was_new else 'reused'} at {lib_root} "
-                   "- session switched to it.")
-        return lib_root
+        # Home's own library logic - rescans, selects it, and switches the
+        # session library to it, same as picking it there by hand
+        self.window.home_page._refresh_library_combo(select=str(lib_root))
+        self.lib_root = lib_root
+        self._log(f"Library: '{DEMO_LIBRARY_NAME}' "
+                  f"{'created' if was_new else 'reused'} at {lib_root} - "
+                  "session switched to it.")
 
-    # ── source-recording copy-in (shared) ────────────────────────────────────
-    def _find_source_treatment_dir(self):
-        """The folder to copy every demo recording from - confirmed with
-        the user directly: Testbed's own Pumpflow_2024_training deployment,
-        '500 rpm (100%)' treatment. An exact path, not a fuzzy search -
-        copying from the wrong folder (e.g. some other treatment) would be
-        a much harder-to-notice mistake than a clear error here."""
-        libraries_dir = settings.get_libraries_dir()
-        source_dir = (libraries_dir / self.SOURCE_LIBRARY_NAME / "raw_sens_data"
-                      / self.SOURCE_DEPLOYMENT_NAME / self.SOURCE_TREATMENT_NAME)
-        if not source_dir.is_dir() or not any(source_dir.iterdir()):
-            raise _RunnerError(
-                f"Raw files: source folder not found (or empty): {source_dir}")
-        return source_dir
+    def _step_deployment(self, editor):
+        """The deployment editor, as a person would use it: pick the demo
+        deployment if it's already there (else New deployment…), fill in
+        its details, sensor and treatments, then Create (a new one) or
+        Update (an existing one that changed)."""
+        from .deployment_editor import NEW_DEPLOYMENT
+        s = self.source
+        editor.refresh()
+        exists = editor.cmb_deployment.findData(s.deployment_id) >= 0
+        editor.select_deployment(s.deployment_id if exists else NEW_DEPLOYMENT)
+        for column, edit in editor.dep_edits.items():
+            if column in s.deployment:
+                edit.setText(s.deployment[column])
+        editor.set_sensor(s.sensor)
+        for t in s.treatments:
+            editor.upsert_treatment(dict(t))
+        folder_missing = not editor.deployment_dir().exists()
+        if editor.has_unsaved() or folder_missing:
+            with self._headless_dialogs():
+                ok = editor.apply(open_folder=False)
+            if not ok:
+                raise _RunnerError("Deployment: could not be saved.")
+            self._log(f"Deployment: '{s.deployment_id}' "
+                      f"{'updated' if exists else 'created'} - one folder per "
+                      "treatment, Run 1..N inside each.")
+        else:
+            self._log(f"Deployment: '{s.deployment_id}' already set up - "
+                      "nothing to change.")
 
-    def _copy_source_files(self, treatment_dir):
-        cfg = sensor_config.active()
-        exts = cfg.required_extensions or [".imp"]
-        primary = exts[0]
+    def _step_copy_in(self):
+        """Stands in for the user dragging their field files into each run
+        folder: copies (never moves) every file from the demo pack into
+        the matching run folder; files already there are skipped."""
+        s = self.source
+        n_copied = n_present = 0
+        for name, src_dir in s.treatment_dirs.items():
+            for f in sorted(src_dir.rglob("*")):
+                if not f.is_file() or f.name == raw_layout.README_NAME:
+                    continue
+                rel = f.relative_to(src_dir)
+                run = raw_layout.run_label(rel.parts[0]) if len(rel.parts) > 1 else None
+                if run is not None:
+                    rel = Path(*rel.parts[1:])
+                target = raw_layout.run_dir(self.lib_root, s.deployment_id,
+                                            name, run or 1) / rel
+                if target.exists():
+                    n_present += 1
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(f), str(target))
+                n_copied += 1
+            self._check_stop()
+        self._log(f"Raw files: copied {n_copied} file(s) into the run folders"
+                  + (f" ({n_present} already there)" if n_present else "")
+                  + ".")
 
-        existing = {p.stem.upper() for p in treatment_dir.glob(f"*{primary.upper()}")}
-        if existing:
-            self._log(f"Raw files: {len(existing)} already present in "
-                       f"{treatment_dir.name} - reusing (nothing left to copy).")
-            return
-
-        source_dir = self._find_source_treatment_dir()
-        candidates = sorted(
-            p for p in source_dir.glob(f"*{primary.upper()}") if p.is_file())
-        if not candidates:
-            candidates = sorted(
-                p for p in source_dir.glob(f"*{primary.lower()}") if p.is_file())
-        if not candidates:
-            raise _RunnerError(
-                f"Raw files: no recordings found in {source_dir} to copy.")
-
-        # copy, not move: this whole library tree lives inside a
-        # live-syncing OneDrive folder, where a delete (the second half of
-        # a move) can be silently undone by OneDrive's own cloud
-        # reconciliation (observed directly: files vanished from the
-        # destination while reappearing at the source, unmodified) - a
-        # copy only ever adds a file, so there's nothing for OneDrive to
-        # contest, and it has the side benefit of leaving Testbed's pool
-        # untouched for reuse
-        copied = 0
-        for src in candidates:
-            for ext_path in list(src.parent.glob(f"{src.stem}.*")):
-                shutil.copy2(str(ext_path), str(treatment_dir / ext_path.name))
-            copied += 1
-        self._log(f"Raw files: copied {copied} recording(s) from {source_dir} "
-                   f"into {treatment_dir}.")
-
-    def _scan_treatment_files(self, folder, cfg):
-        exts = cfg.required_extensions or [".imp"]
-        primary, secondary = exts[0], exts[1:]
-
-        def files_by_stem(ext):
-            suffix = ext.lstrip(".")
-            out = {p.stem.upper(): p for p in folder.glob(f"*.{suffix.upper()}")}
-            for p in folder.glob(f"*.{suffix.lower()}"):
-                out.setdefault(p.stem.upper(), p)
-            return out
-
-        found = {ext: files_by_stem(ext) for ext in exts}
-        records = []
-        for stem_up, main_path in sorted(found[primary].items()):
-            paths = {primary: main_path}
-            for ext in secondary:
-                match = found[ext].get(stem_up)
-                if match is not None:
-                    paths[ext] = match
-            records.append(dict(stem=main_path.stem, paths=paths,
-                                 complete=len(paths) == len(exts)))
-        return records
+    def _step_process(self, inventory):
+        inventory.refresh(block=True)
+        files = [f for f in inventory.files if f["complete"]]
+        if not files:
+            raise _RunnerError("Process: no complete recordings found.")
+        inventory.select_all()
+        box = self._wait_for(inventory.processing_done, _LONG_TIMEOUT_MS,
+                             f"processing {len(files)} recording(s)",
+                             inventory.process_selected)
+        code, stems = box
+        self._log(f"Process: {len(stems)}/{len(files)} processed"
+                  f"{'' if code == 0 else ' (with errors)'} and labelled "
+                  "from their folders.")
+        if not stems:
+            raise _RunnerError("Process: nothing was processed.")
 
 
-class DevRunner(_RunnerBase):
-    """Advanced-mode demo pipeline - see module docstring."""
-
-    DEPLOYMENT = {
-        "site": "PF TEST RIG",
-        "deployment_id": "DevTest_PF",
-        "pump_turbine": "FS-700",
-        "type": "Axial",
-    }
-    TREATMENT = {
-        "treatment": "500 RPM",
-        "head": "3",
-        "flow": "1.32",
-        "point_bep": "100",
-        "rpm": "500",
-        "runs": 1,
-    }
-    BSM_CONFIG_NAME = "pumpflow_configuration"
-    SENSOR_CONFIG_KEY = "rapid"
+# ═════════════════════════════════════════════════════════════════════════════
+class SimpleDemoRunner(_RunnerBase):
+    """Simple mode's wizard, end to end - no training."""
 
     def _label(self):
-        return "Advanced demo pipeline"
+        return "Simple demo"
+
+    def _page(self, dlg, index):
+        dlg.stack.setCurrentIndex(index)
+        dlg._sync_step_highlight()
+        QApplication.processEvents()
 
     def _run(self):
         w = self.window
-        lib_root = self._step_library(w)
+        dlg = w.simple_mode_dialog
+        self._step_source()
+        self._check_stop()
+        if not dlg.isVisible():
+            dlg.show()
+        dlg.raise_()
+        self._step_library()
         self._check_stop()
 
-        self._step_calculator(w)
+        self._page(dlg, 1)
+        self._step_deployment(dlg.editor)
         self._check_stop()
-        self._step_sensor_config()
-        treatment_dir = self._step_deployment(lib_root)
-        self._check_stop()
-        stems = self._step_process(lib_root, treatment_dir)
-        self._check_stop()
-        self._step_validate(lib_root, stems)
-        self._check_stop()
-        df = self._step_export(lib_root)
-        self._check_stop()
-        df = self._step_annotations(df)
-        self._step_populate_annotation_records(lib_root, df, stems)
+        self._step_copy_in()
+
+        self._page(dlg, 2)
+        dlg._refresh_process_inventory()
+        self._step_process(dlg.inventory)
         self._check_stop()
 
-        csv_path = self._write_dataset_csv(df)
-        self._step_train(w, csv_path)
-        self._check_stop()
-        bin_path, mc_path = self._step_deploy(w)
+        self._page(dlg, 3)
+        dlg._refresh_validate_step()
+        thread = dlg._auto_process_all()
+        if thread is None:
+            raise _RunnerError("Validate: no processed sensors to validate.")
+        self._wait_thread(thread, "Auto process all")
+        self._log(f"Validate: {dlg.lbl_all_validated.text()}")
+
+        df, path, msg = self._wait_for(dlg._exporter.finished, _LONG_TIMEOUT_MS,
+                                       "Save and export", dlg._save_and_export)
+        if df is None:
+            raise _RunnerError(f"Save and export: {msg}")
+        self._log(f"Save and export: {msg}")
         self._check_stop()
 
-        self._step_predict(w, df, bin_path, mc_path)
+        self._page(dlg, 4)
+        state = w.ml_prediction_page.state
+        dlg._refresh_predict_step()
+        if state.bin_model_path is None:
+            raise _RunnerError("Predict: no deployed model found (models "
+                               "folder / Adjustments' default model).")
+        model = state.bin_model_path.name + (
+            f" + {state.mc_model_path.name}" if state.mc_model_path else "")
+        self._log(f"Predict: model {model} (Simple mode's own default).")
+        self._race(state.run_finished, state.run_failed, _LONG_TIMEOUT_MS,
+                   "prediction run", dlg._run_predict)
+        n_rows = len(state.summary) if state.summary is not None else 0
+        self._log(f"Predict: complete - {n_rows} treatment row(s).")
         self._check_stop()
-        self._step_compare(w)
-        self._check_stop()
-        self._step_report(w)
 
-    # ── 1: BSM Calculator ───────────────────────────────────────────────────
-    def _step_calculator(self, w):
-        page = w.bsm_calculator_page
-        idx = page.cmb_config.findText(self.BSM_CONFIG_NAME)
+        self._page(dlg, 5)
+        dlg._refresh_report_step()
+        self._page(dlg, 6)
+        out_dir = w.session_state.output_dir(create=True)
+        expected = out_dir / f"BladeStrike_Analysis_{state.run_id}" / "report.html"
+        with self._headless_dialogs(existing_directory=str(out_dir)):
+            dlg._download_report()
+        if not expected.exists():
+            raise _RunnerError(f"Report: expected output not found at {expected}.")
+        self._log(f"Report: downloaded to {expected.parent}.")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+class AdvancedDemoRunner(_RunnerBase):
+    """The full app's pages, end to end - including training a new model."""
+
+    def _label(self):
+        return "Advanced demo"
+
+    def _go(self, btn_name):
+        self.window.navigate_to(btn_name)
+        QApplication.processEvents()
+
+    def _run(self):
+        w = self.window
+        self._step_source()
+        self._check_stop()
+        dlg = w.simple_mode_dialog
+        if dlg.isVisible():
+            # the full app's own door from Simple mode
+            dlg._go_development_toolkit()
+        elif not w.isVisible():
+            w.show()
+        w.home_page._go_advanced()
+        self._step_library()
+        self._check_stop()
+
+        self._step_calculator()
+        self._check_stop()
+        self._step_study_design()
+
+        self._go("btn_initiate_deployment")
+        self._step_deployment(w.initiate_deployment_page.editor)
+        self._check_stop()
+        self._step_copy_in()
+
+        self._go("btn_process")
+        page = w.process_page
+        page.lib_selector.rescan(wait=True)
+        # every deployment/treatment/run - the filters' "All" entries
+        for cmb in (page.lib_selector.cmb_deployment,
+                    page.lib_selector.cmb_treatment, page.lib_selector.cmb_run):
+            cmb.setCurrentIndex(0)
+        self._step_process(page.inventory)
+        self._check_stop()
+
+        df, csv_path = self._step_annotate()
+        self._check_stop()
+        self._step_train(csv_path)
+        self._check_stop()
+        bin_path, mc_path = self._step_deploy()
+        self._check_stop()
+        self._step_predict(df, bin_path, mc_path)
+        self._check_stop()
+        self._step_compare()
+        self._step_report()
+
+    # ── BSM Calculator → Study design ────────────────────────────────────────
+    def _step_calculator(self):
+        self._go("btn_bsm_calculator")
+        page = self.window.bsm_calculator_page
+        name = self.source.bsm_config
+        idx = page.cmb_config.findText(name)
         if idx < 0:
-            raise _RunnerError(
-                f"Calculator: BSM config '{self.BSM_CONFIG_NAME}' not found "
-                f"in input_data/BSM_config/.")
+            raise _RunnerError(f"Calculator: BSM config '{name}' not found in "
+                               "input_data/BSM_config/.")
         page.cmb_config.setCurrentIndex(idx)
         page._load_selected_config()
-        page.calculate()
-        self._log("Calculator: pumpflow configuration loaded and calculated "
-                   "(scaly + eel).")
+        with self._headless_dialogs():
+            page.calculate()
+        self._log(f"Calculator: '{name}' loaded and calculated (scaly + eel).")
 
-        # Study design's "Load from Blade Strike Modelling" button reads
-        # calculate()'s own latest-result file and populates the
-        # precision table + figure as a side effect of the spinbox value
-        # changing - it's a real button click, not something calculate()
-        # triggers on its own, so the report's Study design section would
-        # otherwise show the tab's untouched 10% default forever
-        precision = getattr(getattr(w, "prepare_page", None),
-                            "tab_precision", None)
-        if precision is not None and hasattr(precision, "_load_from_bsm"):
-            precision._load_from_bsm()
-            self._log("Study design: loaded expected strike rate from "
-                       "Blade Strike Modelling.")
+    def _step_study_design(self):
+        """The blade strike estimate sets the expected strike rate; the
+        sample-size helper then says how many sensors a ±10 pp estimate
+        needs, and the planned N is what this demo actually deploys."""
+        self._go("btn_study_design")
+        precision = getattr(self.window.prepare_page, "tab_precision", None)
+        if precision is None:
+            self._log("Study design: page not available - skipped.")
+            return
+        precision._load_from_bsm()
+        precision.spin_target.setValue(_STUDY_TARGET_PRECISION_PP)
+        needed = getattr(precision, "_required_n", None)
+        precision.spin_n.setValue(self.source.n_recordings)
+        self._log(f"Study design: expected strike rate "
+                  f"{precision.spin_rate.value():.1f}% (from the Calculator); "
+                  f"±{_STUDY_TARGET_PRECISION_PP:.0f} pp needs N = {needed}; "
+                  f"planned N = {self.source.n_recordings} → "
+                  f"{precision.lbl_result.text()}")
 
-    # ── 2: sensor config ─────────────────────────────────────────────────────
-    def _step_sensor_config(self):
-        sensor_config.set_active(self.SENSOR_CONFIG_KEY)
-        self._log(f"Sensor config: '{self.SENSOR_CONFIG_KEY}' set active and saved.")
+    # ── Annotate: validate, annotate, export ─────────────────────────────────
+    def _step_annotate(self):
+        self._go("btn_annotate")
+        page = self.window.annotation_page
+        sel = page.lib_selector
+        sel.rescan(wait=True)
+        for cmb in (sel.cmb_deployment, sel.cmb_treatment, sel.cmb_run):
+            cmb.setCurrentIndex(0)
+        page._populate_sensor_table()
 
-    # ── 3: study design / deployment ────────────────────────────────────────
-    def _step_deployment(self, lib_root):
-        ident = self.DEPLOYMENT["deployment_id"]
-        treatment_name = self.TREATMENT["treatment"]
-        dep_dir = lib_root / "raw_sens_data" / ident
-        treatment_dir = dep_dir / treatment_name
+        thread = page._auto_process_all()
+        if thread is None:
+            raise _RunnerError("Annotate: no processed sensors listed.")
+        self._wait_thread(thread, "Auto process all")
+        self._log(f"Annotate: {page.lbl_validate_status.text()}")
 
-        index_df = di.read_index(lib_root)
-        exists = (index_df is not None and di.DEPLOYMENT_COL in index_df.columns
-                  and (index_df[di.DEPLOYMENT_COL] == ident).any())
-        if exists:
-            self._log(f"Study design: deployment '{ident}' already exists - reusing it.")
+        if self.source.annotations_csv is not None:
+            with self._headless_dialogs():
+                n = page._import_annotations(str(self.source.annotations_csv))
+            self._log(f"Annotate: {page.lbl_validate_status.text()}"
+                      if n else "Annotate: annotation import failed.")
         else:
-            path, n = di.save_plan(lib_root, dict(self.DEPLOYMENT), [dict(self.TREATMENT)])
-            self._log(f"Study design: created deployment '{ident}' "
-                       f"({n} row(s) written to {path.name}).")
+            self._log("Annotate: no annotations CSV in the demo pack - "
+                      "training needs one, so it will likely fail.")
 
-        (treatment_dir / "VIDEO").mkdir(parents=True, exist_ok=True)
-        readme = dep_dir / "readme.txt"
-        if not readme.exists():
-            readme.write_text(_README_TEXT, encoding="utf-8")
+        with self._headless_dialogs():
+            df, path, msg = self._wait_for(
+                page._exporter.finished, _LONG_TIMEOUT_MS, "Save and export",
+                page._save_and_export)
+        if df is None:
+            raise _RunnerError(f"Save and export: {msg}")
+        self._log(f"Save and export: {msg} - passed to Model prediction.")
+        return df, path
 
-        self._copy_source_files(treatment_dir)
-
-        try:
-            os.startfile(dep_dir)
-            self._log(f"Study design: opened {dep_dir} in Explorer.")
-        except OSError as e:
-            self._log(f"Study design: could not open {dep_dir} in Explorer ({e}).")
-        return treatment_dir
-
-    # ── 4: raw data processing ──────────────────────────────────────────────
-    def _step_process(self, lib_root, treatment_dir):
-        cfg = sensor_config.active()
-        files = self._scan_treatment_files(treatment_dir, cfg)
-        complete = [f for f in files if f["complete"]]
-        if not complete:
-            raise _RunnerError(
-                f"Raw data processing: no complete recordings found in {treatment_dir}.")
-
-        out_dir = lib_root / "processed_sens_data"
-        thread = _ProcessThread(complete, out_dir, lib_root, cfg)
-        done_stems = []
-        log_cb = lambda text: self._log(f"process: {text.strip()}")
-        processed_cb = done_stems.append
-        thread.log.connect(log_cb)
-        thread.processed.connect(processed_cb)
-        try:
-            args = self._wait_for(thread.done, _LONG_TIMEOUT_MS,
-                                  "raw data processing", thread.start)
-        finally:
-            # `_wait_for` only ever owned/disconnects `thread.done` - these
-            # two are ours, and MUST be dropped here regardless of outcome.
-            # A timeout (or a stop) doesn't kill the underlying QThread -
-            # it just keeps running in the background to completion (seen
-            # directly: 180s was too tight for this step, and the thread's
-            # own "-- Processing: ..." log lines kept arriving for another
-            # ~15 files *after* this method had already raised and
-            # unwound). Left connected, each of those late signals calls
-            # back into this already-abandoned run - print()ing through
-            # the dev console's cross-thread stdout tee while the app is
-            # mid-teardown from the "failed" path - which is exactly the
-            # kind of reentrancy a native crash (exit 0xC0000409) comes
-            # from. Disconnecting makes any further signal a no-op.
-            try:
-                thread.log.disconnect(log_cb)
-            except (RuntimeError, TypeError):
-                pass
-            try:
-                thread.processed.disconnect(processed_cb)
-            except (RuntimeError, TypeError):
-                pass
-        code = args[0]
-        self._log(f"Raw data processing: {len(done_stems)}/{len(complete)} sensor(s) "
-                   f"processed{'' if code == 0 else ' (with errors)'}.")
-
-        if done_stems:
-            treatment_values = dict(self.DEPLOYMENT)
-            treatment_values.update(self.TREATMENT)
-            di.apply_treatment(lib_root, done_stems, treatment_values)
-            self._log(f"Raw data processing: stamped {len(done_stems)} file(s) "
-                       f"with treatment '{self.TREATMENT['treatment']}'.")
-        return done_stems
-
-    # ── 5: validate (simulated Save+Next on every sensor) ───────────────────
-    def _step_validate(self, lib_root, stems):
-        if not stems:
-            self._log("Validate: nothing to validate (no processed files).")
-            return
-        csv_dir = lib_root / "processed_sens_data" / "csv"
-        win_dir = lib_root / "processed_sens_data" / "nadir_window"
-        win_dir.mkdir(parents=True, exist_ok=True)
-        cfg = sensor_config.active()
-        fs = cfg.output_rate_hz or 2000
-        half_n = int(round(_WIN_SEC / 2 * fs))
-        ms = int(round(_WIN_SEC * 1000))
-
-        index_df = di.read_index(lib_root)
-        if index_df is None:
-            index_df = pd.DataFrame({"file": []})
-        if _VALIDATED_COL not in index_df.columns:
-            index_df[_VALIDATED_COL] = ""
-        index_df[_VALIDATED_COL] = index_df[_VALIDATED_COL].astype(object)
-
-        n_done = 0
-        for stem in stems:
-            csv_path = csv_dir / f"{stem}.csv"
-            if not csv_path.exists():
-                continue
-            try:
-                df = pd.read_csv(csv_path, low_memory=False)
-            except Exception:
-                continue
-            time = (df["time_s"].to_numpy(dtype=float) if "time_s" in df.columns
-                    else np.arange(len(df), dtype=float))
-            pres = (df["pressure_kpa"].to_numpy(dtype=float)
-                    if "pressure_kpa" in df.columns else None)
-            nadir_idx = (int(np.argmin(pres)) if pres is not None and len(pres)
-                         else len(df) // 2)
-            start = max(0, nadir_idx - half_n)
-            end = min(len(df) - 1, nadir_idx + half_n)
-            df.iloc[start:end + 1].to_csv(win_dir / f"{stem}_{ms}ms.csv", index=False)
-
-            mask = index_df["file"] == stem
-            if not mask.any():
-                index_df = pd.concat([index_df, pd.DataFrame([{"file": stem}])],
-                                      ignore_index=True)
-                index_df[_VALIDATED_COL] = index_df[_VALIDATED_COL].astype(object)
-                mask = index_df["file"] == stem
-            index_df.loc[mask, _NADIR_T_COL] = float(time[nadir_idx])
-            index_df.loc[mask, _NADIR_V_COL] = (
-                float(pres[nadir_idx]) if pres is not None else float("nan"))
-            index_df.loc[mask, "nadir_window_start"] = time[start]
-            index_df.loc[mask, "nadir_window_end"] = time[end]
-            index_df.loc[mask, _VALIDATED_COL] = "Y"
-            n_done += 1
-
-        index_path = di.index_path(lib_root)
-        index_path.parent.mkdir(parents=True, exist_ok=True)
-        index_df.to_csv(index_path, index=False)
-        self._log(f"Validate: auto-validated {n_done}/{len(stems)} sensor(s) "
-                   "(simulated Save+Next).")
-
-    # ── 6: save and export ───────────────────────────────────────────────────
-    def _step_export(self, lib_root):
-        index_df = di.read_index(lib_root)
-        cfg = sensor_config.active()
-        thread = _ExtractThread(lib_root, OPT_SEGMENTED, set(), index_df, cfg)
-        self._wait_for(thread.done, _LONG_TIMEOUT_MS, "dataset export", thread.start)
-        df = thread.result
-        if df is None or not len(df):
-            raise _RunnerError("Save and export: produced no rows.")
-        self._log(f"Save and export: {len(df)} row(s) extracted.")
-        return df
-
-    # ── 7: annotation import ────────────────────────────────────────────────
-    def _step_annotations(self, df):
-        if not _ANNOTATIONS_CSV.exists():
-            self._log(f"Annotations: {_ANNOTATIONS_CSV.name} not found - skipping.")
-            return df
-        ann = pd.read_csv(_ANNOTATIONS_CSV, low_memory=False)
-        needed = [_ANNOTATION_JOIN_COL, *_ANNOTATION_SOURCE_COLS]
-        missing = [c for c in needed if c not in ann.columns]
-        if missing:
-            self._log(f"Annotations: {_ANNOTATIONS_CSV.name} missing columns "
-                       f"{missing} - skipping.")
-            return df
-
-        native = pd.DataFrame({_ANNOTATION_JOIN_COL: ann[_ANNOTATION_JOIN_COL]})
-        native["overall_passage_type"] = (
-            ann["passage_type"].astype(str).str.strip().str.lower()
-            .map(_PASSAGE_TYPE_MAP))
-        native["leading_edge_type"] = ann["leading_type"]
-        native["other_type"] = ann["other_type"]
-        native["concentric_pump_region"] = (
-            pd.to_numeric(ann["concentric_pump_region"], errors="coerce")
-            .astype("Int64").astype(str).replace("<NA>", pd.NA))
-
-        merged = df.merge(native, on=_ANNOTATION_JOIN_COL, how="left")
-        n_matched = int(merged["overall_passage_type"].notna().sum())
-        self._log(f"Annotations: imported from {_ANNOTATIONS_CSV.name} - "
-                   f"{n_matched}/{len(merged)} row(s) matched to an "
-                   f"overall_passage_type (the binary target).")
-        return merged
-
-    # ── 7b: populate the app's own per-sensor annotation records ────────────
-    def _step_populate_annotation_records(self, lib_root, df, stems):
-        """report_center.py's Annotation Report reads two things that
-        `_step_annotations` alone doesn't touch: global_sensor_index.csv's
-        own annotation columns (for the per-variable value-count tables)
-        and processed_sens_data/model_features.csv's "file" column (for
-        the "in dataset (annotated + saved)" count - page_annotate.py's
-        own _dataset_path/_load_dataset_stems). Without this, the report
-        showed "0 in dataset" / "no annotation values recorded" even
-        though the training dataset itself carried the values fine."""
-        if not stems or not any(c in df.columns for c in _ANNOTATION_NATIVE_COLS):
-            self._log("Annotations: no native annotation columns to record.")
-            return
-
-        per_file = (df[df["file"].isin(stems)]
-                    .groupby("file", as_index=True).first())
-
-        index_df = di.read_index(lib_root)
-        if index_df is not None and "file" in index_df.columns:
-            for col in _ANNOTATION_NATIVE_COLS:
-                if col not in per_file.columns:
-                    continue
-                if col not in index_df.columns:
-                    index_df[col] = ""
-                index_df[col] = index_df[col].astype(object)
-                for stem, value in per_file[col].items():
-                    if pd.isna(value) or str(value).strip() == "":
-                        continue
-                    index_df.loc[index_df["file"] == stem, col] = str(value)
-            index_path = di.index_path(lib_root)
-            index_path.parent.mkdir(parents=True, exist_ok=True)
-            index_df.to_csv(index_path, index=False)
-            self._log(f"Annotations: stamped annotation values onto "
-                       f"{len(per_file)} index row(s).")
-
-        dataset_path = lib_root / "processed_sens_data" / "model_features.csv"
-        dataset_path.parent.mkdir(parents=True, exist_ok=True)
-        block = df[df["file"].isin(stems)]
-        if dataset_path.exists():
-            try:
-                existing = pd.read_csv(dataset_path, low_memory=False)
-                existing = existing[~existing["file"].isin(stems)]
-                block = pd.concat([existing, block], ignore_index=True)
-            except Exception:
-                pass
-        block.to_csv(dataset_path, index=False)
-        self._log(f"Annotations: {len(stems)} sensor(s) now in "
-                   f"{dataset_path.name} (Annotate's own dataset).")
-
-    def _write_dataset_csv(self, df):
-        out_dir = settings.get_input_data_dir()
-        out_dir.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = out_dir / f"{self.DEPLOYMENT['deployment_id']}_devrun_{ts}.csv"
-        df.to_csv(path, index=False)
-        self._log(f"Dataset written to {path.name} ({len(df)} rows) - this session's data.")
-        return path
-
-    # ── 8: model training ────────────────────────────────────────────────────
-    def _step_train(self, w, csv_path):
-        state = w.ml_training_page.state
+    # ── Model training ───────────────────────────────────────────────────────
+    def _step_train(self, csv_path):
+        self._go("btn_ml_training")
+        state = self.window.ml_training_page.state
         ok, msg = state.load_dataset_csv(csv_path)
         if not ok:
             raise _RunnerError(f"Model training: {msg}")
-        self._log(f"Model training: {msg} (default settings, auto-detected).")
+        self._log(f"Model training: {msg} (default settings).")
         self._ensure_train_ready(state)
-
         self._race(state.cv_finished, state.cv_failed, _LONG_TIMEOUT_MS,
                    "cross-validation training", state.run_cv)
-        self._log("Model training: cross-validation complete (Train model).")
-
+        self._log("Model training: cross-validation complete.")
         self._race(state.final_finished, state.final_failed, _LONG_TIMEOUT_MS,
                    "final model training", state.run_final)
-        self._log("Model training: final model trained (Train final model).")
+        self._log("Model training: final model trained.")
 
     def _ensure_train_ready(self, state):
-        """`state.ready` after `load_dataset_csv` reflects default settings
-        applied to whatever dataset just loaded - for a single-treatment
-        demo dataset, the two-stage (binary + region) pipeline can
-        genuinely fail its own default n-fold CV check on the region
-        stage alone (too few recordings in some region class) even though
-        the binary stage is fine. That's a real data-size limit, not a bug
-        - so if region/multiclass checks are the *only* thing blocking
-        readiness, disable that stage for this run (matches what
-        "Region model" already does when off: a warning, not a failure)
-        rather than aborting the whole demo. Any other failing check is
-        reported in full, not guessed at or silently worked around."""
+        """A single-treatment demo dataset can genuinely fail the region
+        (multiclass) stage's default n-fold check - too few recordings in
+        some region - while the binary stage is fine. If that's the *only*
+        thing blocking, drop the region stage for this run (what "Region
+        model" off already does); anything else is reported in full."""
         if state.ready:
             return
-        fail_labels = [label for s, label, _ in state.checks if s == "fail"]
-        if fail_labels and state.train_multiclass and \
-                all(label.startswith("Region") for label in fail_labels):
-            self._log(
-                "Model training: the region/multiclass stage can't meet "
-                f"default {state.n_folds}-fold cross-validation on this "
-                f"dataset ({'; '.join(fail_labels)}) - disabling it for "
-                "this run (binary stage only).")
+        fails = [label for s, label, _ in state.checks if s == "fail"]
+        if fails and state.train_multiclass and all(
+                label.startswith("Region") for label in fails):
+            self._log("Model training: the region stage can't meet default "
+                      f"{state.n_folds}-fold CV on this dataset "
+                      f"({'; '.join(fails)}) - binary stage only.")
             state.train_multiclass = False
             state.validate()
         if not state.ready:
-            fails = [f"{label}: {detail}" for s, label, detail in state.checks
-                     if s == "fail"]
-            raise _RunnerError(
-                "Model training: configuration not ready - " + "; ".join(fails))
+            detail = [f"{label}: {d}" for s, label, d in state.checks if s == "fail"]
+            raise _RunnerError("Model training: not ready - " + "; ".join(detail))
 
-    # ── 9: deploy ─────────────────────────────────────────────────────────────
-    def _step_deploy(self, w):
-        state = w.ml_training_page.state
-        session_state = getattr(w, "session_state", None)
-        out = session_state.output_dir() if session_state is not None else None
+    def _step_deploy(self):
+        self._go("btn_deploy_train")
+        state = self.window.ml_training_page.state
+        out = self.window.session_state.output_dir()
         models_dir = (out / "models") if out is not None else settings.get_models_dir()
         version = state.suggest_version(models_dir)
-        pkg, deployed = state.deploy(models_dir, version)
-        self._log(f"Model training: deployed v{version} to {models_dir} "
-                   f"({len(deployed)} model file(s)).")
+        _pkg, deployed = state.deploy(models_dir, version)
+        self._log(f"Deploy: v{version} to {models_dir} "
+                  f"({len(deployed)} model file(s)).")
         bin_path = next((p for p in deployed if p.name.startswith("binary")), None)
         mc_path = next((p for p in deployed if p.name.startswith("multiclass")), None)
         return bin_path, mc_path
 
-    # ── 10: predict ───────────────────────────────────────────────────────────
-    def _step_predict(self, w, df, bin_path, mc_path):
-        state = w.ml_prediction_page.state
+    # ── Model prediction ─────────────────────────────────────────────────────
+    def _step_predict(self, df, bin_path, mc_path):
+        self._go("btn_ml_prediction")
+        page = self.window.ml_prediction_page
+        state = page.state
         if bin_path is not None:
             ok, msg = state.select_bin_model(bin_path)
             if not ok:
@@ -749,30 +714,29 @@ class DevRunner(_RunnerBase):
         ok, msg = state.select_mc_model(mc_path)
         if mc_path is not None and not ok:
             self._log(f"Predict: multiclass model not applied - {msg}")
-
-        w.ml_prediction_page.on_dataset_ready(
-            df, f"Dev runner - {self.DEPLOYMENT['deployment_id']}")
-        self._log("Predict: this session's model and dataset selected.")
-
+        if state.dataset_df is None:
+            page.on_dataset_ready(df, "Demo - Annotate export")
+        self._log("Predict: the model just deployed + the dataset just exported.")
         self._race(state.run_finished, state.run_failed, _LONG_TIMEOUT_MS,
                    "prediction run", state.run_prediction)
         n_rows = len(state.summary) if state.summary is not None else 0
-        self._log(f"Predict: complete - {n_rows} treatment row(s) in summary.")
+        self._log(f"Predict: complete - {n_rows} treatment row(s).")
 
-    # ── 11: compare models ───────────────────────────────────────────────────
-    def _step_compare(self, w):
-        w.biological_page._refresh_comparison()
-        self._log("Model comparison: refreshed against this run's BSM + prediction results.")
+    def _step_compare(self):
+        self._go("btn_biological")
+        self.window.biological_page._refresh_comparison()
+        self._log("Model comparison: refreshed against the BSM estimate.")
 
-    # ── 12: export report of all ─────────────────────────────────────────────
-    def _step_report(self, w):
-        sections = report_center.all_sections(w)
+    def _step_report(self):
+        sections = report_center.all_sections(self.window)
         checked = {s.key for s in sections if s.available}
         if not checked:
-            raise _RunnerError("Export report: no sections available to export.")
-        out_dir = report_center.default_output_dir(w)
+            raise _RunnerError("Report: no sections available.")
+        out_dir = report_center.default_output_dir(self.window)
         doc_path, warnings = report_center.assemble(sections, out_dir, checked)
         for warn in warnings:
-            self._log(f"Export report: warning - {warn}")
-        self._log(f"Export report: {len(checked)} section(s) written to {doc_path}")
-        return doc_path
+            self._log(f"Report: warning - {warn}")
+        self._log(f"Report: {len(checked)} section(s) written to {doc_path}")
+
+
+RUNNERS = {"simple": SimpleDemoRunner, "advanced": AdvancedDemoRunner}

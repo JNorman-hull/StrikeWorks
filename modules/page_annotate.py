@@ -42,6 +42,17 @@ file back to know which sensors are already done, so review can resume
 where it left off. Annotation values are optional per sensor - a "No
 annotations for this sensor" tick lets a sensor through with none, so a
 dataset collected without annotations still works.
+
+Validation (validation_core.py - the same code as Simple mode's Validate
+step): "Auto process all" saves every sensor's detected window and flags
+the ones whose window shows a weak HIG peak for review; the list puts
+flagged-and-unreviewed sensors first (amber), user-validated green,
+auto-validated purple, bad red. Save + next records a human review (and
+whether the nadir was moved) and, while flagged sensors are still waiting,
+jumps to the next of them. "Save and export" binds every listed sensor's
+saved window, with its annotations, into one dataset (input data folder +
+the running dataset above) and hands it to Model prediction; "Import
+annotations CSV…" stamps a spreadsheet of annotations onto the index.
 """
 import subprocess
 from datetime import datetime
@@ -53,7 +64,7 @@ import pyqtgraph as pg
 
 from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QGridLayout,
+    QCheckBox, QComboBox, QFileDialog, QGridLayout,
     QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMessageBox,
     QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QSplitter,
     QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
@@ -61,12 +72,14 @@ from PySide6.QtWidgets import (
 
 from . import annotation_schema as asch
 from . import deployment_index as di
-from . import sensor_config
+from . import sensor_config, settings
+from . import validation_core as vc
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
+from .inventory_widgets import notifier as inventory_notifier
 from .library_widgets import LibrarySelector
 from .ml_widgets import (
-    ACCENT, MUTED, OK, MetaCard, Section,
-    apply_section_defaults,
+    ACCENT, BAD, MUTED, OK, WARN, MetaCard, Section, Spinner,
+    apply_section_defaults, discard_widget, when_visible,
 )
 from .page_dataset import _META_COLS, _standardise
 from .plot_style import (
@@ -126,6 +139,10 @@ class AnnotationPage(QObject):
         self._loaders = []
         self._pending_path = None
         self._editors = {}
+        self._loaded_nadir_idx = None
+        self._auto_thread = None
+        self._status = (set(), set(), set(), set())   # validation_core.validation_status
+        self._exporter = vc.DatasetExporter(self)
 
         self._build(ui.content_annotate)
         self._connect()
@@ -177,7 +194,13 @@ class AnnotationPage(QObject):
 
         split.addWidget(self._build_browser())
 
+        # laid out like Misclassification analysis: no page-level scroll -
+        # the Annotations/Notes boxes keep their natural height, the signal
+        # plot takes all the rest (with a minimum so it can't be squeezed
+        # away), and this side has a minimum width so the browser can't
+        # take the page over
         detail = QWidget()
+        detail.setMinimumWidth(560)
         dv = QVBoxLayout(detail)
         dv.setContentsMargins(5, 0, 0, 0)
         dv.setSpacing(8)
@@ -187,19 +210,15 @@ class AnnotationPage(QObject):
         lower.setChildrenCollapsible(False)
         lower.addWidget(self._build_annotation_side())
         lower.addWidget(self._build_notes_side())
-        lower.setSizes([1, 1])
-        dv.addWidget(lower, stretch=1)
+        lower.setSizes([1000, 1000])
+        dv.addWidget(lower, stretch=0)
 
-        # scrollable rather than squeezed into whatever height the plot
-        # and the annotation/notes splitter leave each other - the browser
-        # side doesn't need this, its own sensor table already scrolls
-        detail_scroll = QScrollArea()
-        detail_scroll.setWidgetResizable(True)
-        detail_scroll.setStyleSheet(
-            "QScrollArea{border:none;background:transparent;}")
-        detail_scroll.setWidget(detail)
-        split.addWidget(detail_scroll)
-        split.setSizes([1, 3])
+        split.addWidget(detail)
+        # stretch factors, not just initial sizes - the browser keeps its
+        # share, and any spare width goes to the signal plot
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 3)
+        split.setSizes([1000, 3000])
 
     def _build_reporting_tab(self, frame):
         outer = QVBoxLayout(frame)
@@ -258,7 +277,7 @@ class AnnotationPage(QObject):
         lv.setSpacing(8)
 
         self.lib_selector = LibrarySelector(sensor_list=True,
-                                            list_columns=["Video"],
+                                            list_columns=["Video", "In dataset"],
                                             session_state=self.session_state,
                                             show_picker=False)
         lv.addWidget(self.lib_selector, stretch=1)
@@ -271,6 +290,53 @@ class AnnotationPage(QObject):
         self.lbl_loading = QLabel("")
         self.lbl_loading.setStyleSheet(f"color:{MUTED};")
         lv.addWidget(self.lbl_loading)
+
+        grp_val = Section("Validate")
+        gv = QVBoxLayout(grp_val)
+        gv.setSpacing(4)
+        auto_row = QHBoxLayout()
+        self.btn_auto_process = QPushButton("Auto process all")
+        self.btn_auto_process.setStyleSheet(f"color:{OK};font-weight:bold;")
+        self.btn_auto_process.setToolTip(
+            "Accept every listed sensor's detected nadir and save its window "
+            "- sensors whose window shows a weak HIG peak are flagged for "
+            "you to review. Sensors already validated are left alone.")
+        self.btn_auto_process.clicked.connect(self._auto_process_all)
+        auto_row.addWidget(self.btn_auto_process)
+        self._auto_spinner = Spinner(size=18)
+        self._auto_spinner.setVisible(False)
+        auto_row.addWidget(self._auto_spinner)
+        self.btn_jump_flagged = QPushButton("Jump to next flagged")
+        self.btn_jump_flagged.clicked.connect(self._jump_next_flagged)
+        auto_row.addWidget(self.btn_jump_flagged)
+        auto_row.addStretch()
+        gv.addLayout(auto_row)
+        tip = self._muted("Tip: press Auto process all first, then review "
+                          "the sensors it flagged (amber) with Save + next.")
+        tip.setWordWrap(True)
+        gv.addWidget(tip)
+        self.lbl_validate_status = QLabel("")
+        self.lbl_validate_status.setStyleSheet(f"color:{MUTED};")
+        self.lbl_validate_status.setWordWrap(True)
+        gv.addWidget(self.lbl_validate_status)
+        ds_row = QHBoxLayout()
+        self.btn_save_export = QPushButton("Save and export")
+        self.btn_save_export.setStyleSheet(f"color:{BAD};font-weight:bold;")
+        self.btn_save_export.setToolTip(
+            "Bind every listed sensor's saved window, with its annotations, "
+            "into one dataset - written to the input data folder and the "
+            "library's running dataset, and passed to Model prediction.")
+        self.btn_save_export.clicked.connect(self._save_and_export)
+        ds_row.addWidget(self.btn_save_export)
+        self.btn_import_annotations = QPushButton("Import annotations CSV…")
+        self.btn_import_annotations.setToolTip(
+            "Stamp a spreadsheet of per-sensor annotations (a 'file' column "
+            "plus annotation columns) onto this library's sensors.")
+        self.btn_import_annotations.clicked.connect(self._import_annotations)
+        ds_row.addWidget(self.btn_import_annotations)
+        ds_row.addStretch()
+        gv.addLayout(ds_row)
+        lv.addWidget(grp_val)
         return left
 
     def _build_plot_side(self, v):
@@ -311,6 +377,7 @@ class AnnotationPage(QObject):
         ph = QVBoxLayout(plot_holder)
         ph.setContentsMargins(0, 0, 0, 0)
         self._pw = pg.PlotWidget(viewBox=_NavViewBox())
+        self._pw.setMinimumHeight(260)
         pi = self._pw.plotItem
         pi.getViewBox().setMouseMode(pg.ViewBox.RectMode)
         pi.setLabel("bottom", "Time (s)")
@@ -367,7 +434,7 @@ class AnnotationPage(QObject):
             "sensor to reload this file without saving.")
         lbl_save_help.setWordWrap(True)
         sv.addWidget(lbl_save_help)
-        v.addWidget(grp_sig)
+        v.addWidget(grp_sig, stretch=1)
 
     def _build_annotation_side(self):
         grp = Section("Annotations")
@@ -439,6 +506,8 @@ class AnnotationPage(QObject):
         self.cmb_window.currentIndexChanged.connect(self._on_win_size_changed)
         sensor_config.notifier.changed.connect(self._on_sensor_changed)
         asch.notifier.changed.connect(self._rebuild_annotation_panel)
+        self._exporter.finished.connect(self._on_export_done)
+        inventory_notifier.processed.connect(self._on_library_processed)
         self._fill_window_combo()
 
     def _set_loaded_enabled(self, enabled):
@@ -451,9 +520,12 @@ class AnnotationPage(QObject):
     # ── index ────────────────────────────────────────────────────────────────
     def _load_index(self):
         self._index_df = di.read_index(self._lib_root) if self._lib_root else None
+        self._status = vc.validation_status(self._index_df)
 
     def _is_bad(self, stem: str) -> bool:
-        return di.is_bad(self._index_df, stem)
+        # the precomputed bad set, not a dataframe filter per sensor
+        # (thousands of those for a big library, on every re-list)
+        return stem in self._status[3]
 
     # ── the running dataset (resume support) ─────────────────────────────────
     def _dataset_path(self):
@@ -506,11 +578,25 @@ class AnnotationPage(QObject):
                 "video": "; ".join(m.name for m in matches) if matches else "-",
             })
         self._sensor_rows = rows
+        self._status = vc.validation_status(self._index_df)
+        status = self._status
 
+        def progress(all_rows):
+            stems = [r["stem"] for r in all_rows]
+            n_ds = sum(1 for s in stems if s in self._dataset_stems)
+            return (vc.counts_text(stems, status).replace("\n", "   ")
+                    + f"   In dataset: {n_ds}/{len(stems)}")
+
+        # flagged-and-unreviewed first, coloured by validation state -
+        # validation_core's one convention, the same as Simple mode's list
         self.lib_selector.populate_sensor_list(
             rows, is_bad=self._is_bad,
             is_done=lambda stem: stem in self._dataset_stems,
-            done_label="In dataset", extra=lambda r: [r["video"]])
+            extra=lambda r: [r["video"],
+                             "Yes" if r["stem"] in self._dataset_stems else "-"],
+            colour=lambda stem: vc.status_colour(stem, status, OK, WARN, BAD, ACCENT),
+            order_key=lambda r: not vc.needs_review(r["stem"], status),
+            progress=progress)
         self._refresh_report()
 
     # ── reporting tab ────────────────────────────────────────────────────────
@@ -565,7 +651,7 @@ class AnnotationPage(QObject):
             ("In dataset (annotated + saved)", in_dataset or None),
             ("Not yet in dataset", (total - in_dataset) or None),
             ("Flagged bad", bad or None),
-        ])
+        ] + self._review_rows(df))
 
         rows = self._variable_value_counts(df)
         self.tbl_report_vars.setRowCount(len(rows))
@@ -605,6 +691,14 @@ class AnnotationPage(QObject):
             f"- In dataset (annotated + saved): {in_dataset}",
             f"- Not yet in dataset: {total - in_dataset}",
             f"- Flagged bad: {bad}",
+            "",
+            "## Validation",
+            "",
+        ]
+        review = self._review_rows(df)
+        lines += ([f"- {label}: {value}" for label, value in review]
+                  or ["No sensors validated yet."])
+        lines += [
             "",
             "## By annotation variable",
             "",
@@ -704,6 +798,9 @@ class AnnotationPage(QObject):
             self._nadir_idx = int(np.argmin(self._pres))
         else:
             self._nadir_idx = len(df) // 2
+        # the as-loaded nadir - Save + next compares against it to record
+        # whether a person actually moved it (validation_core user adjusted)
+        self._loaded_nadir_idx = self._nadir_idx
 
         self._draw_plot()
         self._load_flag_state()
@@ -938,8 +1035,7 @@ class AnnotationPage(QObject):
             item = self.annotation_grid.takeAt(0)
             w = item.widget()
             if w is not None:
-                w.setParent(None)
-                w.deleteLater()
+                discard_widget(w)
         self._editors = {}
         for row, var in enumerate(asch.all_variables()):
             lab = self._muted(var.label)
@@ -1043,28 +1139,31 @@ class AnnotationPage(QObject):
             start, end = self._window_bounds()
             sliced = self._df.iloc[start:end + 1].copy()
 
-            ms = int(round(self._win_sec * 1000))
-            out_dir = self._lib_root / _WIN_DIR
-            out_dir.mkdir(parents=True, exist_ok=True)
-            sliced.to_csv(out_dir / f"{self._cur_stem}_{ms}ms.csv", index=False)
-
-            nadir_t = float(self._time[self._nadir_idx])
-            nadir_v = (float(self._pres[self._nadir_idx])
-                      if self._pres is not None else float("nan"))
+            # window + nadir + validation state through validation_core
+            # (the same save Simple mode's Save + Next does - a human review:
+            # user validated, and user adjusted if the nadir was moved)
+            index_df = di.read_index(self._lib_root)
+            index_df = vc.save_window(
+                self._lib_root, index_df, self._cur_stem, self._df,
+                self._nadir_idx, self._win_sec, user_validated=True,
+                nadir_changed=(self._loaded_nadir_idx is not None
+                               and self._nadir_idx != self._loaded_nadir_idx))
             flag_value = "Y" if self.chk_bad.isChecked() else "N"
             index_values = {
-                _NADIR_T_COL: nadir_t,
-                _NADIR_V_COL: nadir_v,
-                "nadir_window_start": self._time[start],
-                "nadir_window_end": self._time[end],
-                _VALIDATED_COL: "Y",
                 _BAD_SENS_COL: flag_value,
                 _NOTES_COL: self.txt_notes.toPlainText().strip(),
             }
             for name, value in values.items():
                 if value:
                     index_values[name] = value
-            n = di.set_row_values(self._lib_root, self._cur_stem, index_values)
+            mask = index_df["file"].astype(str) == self._cur_stem
+            for col, value in index_values.items():
+                if col not in index_df.columns:
+                    index_df[col] = ""
+                index_df[col] = index_df[col].astype(object)
+                index_df.loc[mask, col] = value
+            vc.write_index(self._lib_root, index_df)
+            self._index_df = index_df
 
             target_rows = sensor_config.active().window_samples(self._win_sec)
             block = _standardise(sliced, target_rows)
@@ -1101,15 +1200,136 @@ class AnnotationPage(QObject):
         self._jump_next()
 
     def _jump_next(self):
+        """Flagged sensors still waiting for review first (the pass Auto
+        process all sets up), then anything not yet in the dataset."""
         pending = [r for r in self._sensor_rows
-                  if r["stem"] not in self._dataset_stems]
+                   if vc.needs_review(r["stem"], self._status)]
+        if not pending:
+            pending = [r for r in self._sensor_rows
+                       if r["stem"] not in self._dataset_stems]
         if not pending:
             self.status.emit("Every sensor here is in the dataset.", 5000)
             return
-        next_row = pending[0]
+        self._select_row(pending[0])
+
+    def _select_row(self, row):
         for r in range(self.tbl_sensors.rowCount()):
-            if self.tbl_sensors.item(r, 0).text() == next_row["stem"]:
+            if self.tbl_sensors.item(r, 0).text() == row["stem"]:
                 self.tbl_sensors.setCurrentCell(r, 0)
                 break
         else:
-            self._load_sensor(next_row["path"])
+            self._load_sensor(row["path"])
+
+    def _jump_next_flagged(self):
+        pending = [r for r in self._sensor_rows
+                   if vc.needs_review(r["stem"], self._status)]
+        if not pending:
+            self.status.emit("No flagged sensors left to review.", 4000)
+            return
+        self._select_row(pending[0])
+
+    # ── validation (validation_core.py) ──────────────────────────────────────
+    def _review_rows(self, df):
+        stems = [str(s) for s in df["file"]] if df is not None and "file" in df.columns else []
+        return vc.processing_review_rows(stems, self._index_df)
+
+    def _auto_process_all(self):
+        """Auto process all over the listed sensors (the filters apply) -
+        returns the thread, or None with nothing to do."""
+        if self._lib_root is None or not self._sensor_rows:
+            return None
+        if self._auto_thread is not None and self._auto_thread.isRunning():
+            return self._auto_thread
+        self.btn_auto_process.setEnabled(False)
+        self.btn_save_export.setEnabled(False)
+        self._auto_spinner.start()
+        self.lbl_validate_status.setText("Auto-processing…")
+        files = [{"stem": r["stem"], "path": r["path"]} for r in self._sensor_rows]
+        self._auto_thread = vc.AutoProcessThread(
+            self._lib_root, self._win_sec, files, di.read_index(self._lib_root))
+        self._auto_thread.progress.connect(
+            lambda d, t: self.lbl_validate_status.setText(f"Auto-processing… {d}/{t}"))
+        self._auto_thread.done.connect(self._on_auto_done)
+        self._auto_thread.start()
+        return self._auto_thread
+
+    def _on_auto_done(self, index_df, n_done):
+        self._auto_spinner.stop()
+        self.btn_auto_process.setEnabled(True)
+        self.btn_save_export.setEnabled(True)
+        if self._lib_root is not None:
+            vc.write_index(self._lib_root, index_df)
+        self._load_index()
+        self._populate_sensor_table()
+        stems = [r["stem"] for r in self._sensor_rows]
+        n_flagged = vc.status_counts(stems, self._status)["flagged"]
+        msg = f"Auto-processed {n_done} sensor(s), {n_flagged} flagged for review."
+        self.lbl_validate_status.setText(msg)
+        self.status.emit(msg, 5000)
+
+    def _save_and_export(self):
+        if self._lib_root is None or self._exporter.running or not self._sensor_rows:
+            return
+        stems = [r["stem"] for r in self._sensor_rows]
+        outstanding = vc.outstanding_flagged(stems, self._status)
+        if outstanding and self.window.isVisible():
+            n_flagged = vc.status_counts(stems, self._status)["flagged"]
+            reply = QMessageBox.question(
+                self.window, "Sensors flagged for review",
+                f"Caution, {len(outstanding)}/{n_flagged} flagged sensors "
+                "still need user-validation. Export anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        dep = self.lib_selector.wanted_deployment()
+        name = self._lib_root.name + (f"_{dep}" if dep else "")
+        self.btn_save_export.setEnabled(False)
+        self.lbl_validate_status.setText("Building dataset…")
+        self._exporter.start(self._lib_root, name, selected=set(stems))
+
+    def _on_export_done(self, df, path, message):
+        self.btn_save_export.setEnabled(True)
+        self.lbl_validate_status.setText(message)
+        if df is None:
+            self.status.emit(message, 6000)
+            return
+        settings.add_recent_training_dataset(path)
+        self.window.ml_prediction_page.on_dataset_ready(
+            df, f"Annotate - {path.stem}")
+        self._load_dataset_stems()
+        self._populate_sensor_table()
+        self.status.emit(message, 6000)
+
+    def _import_annotations(self, path=None):
+        """`path` skips the file picker (demo runner)."""
+        if self._lib_root is None:
+            return 0
+        if not path:
+            path, _ = QFileDialog.getOpenFileName(
+                self.window, "Import annotations CSV", str(self._lib_root),
+                "CSV files (*.csv)")
+            if not path:
+                return 0
+        try:
+            n, names = vc.import_annotations_csv(self._lib_root, path)
+        except Exception as e:
+            QMessageBox.warning(self.window, "Import failed", str(e))
+            return 0
+        self._load_index()
+        self._populate_sensor_table()
+        if self._cur_stem:
+            self._load_annotations_for_current()
+        msg = (f"Imported {', '.join(names)} for {n} sensor(s) from "
+               f"{Path(path).name}.")
+        self.lbl_validate_status.setText(msg)
+        self.status.emit(msg, 6000)
+        return n
+
+    def _on_library_processed(self, root):
+        """A processing batch just finished somewhere (Raw data processing
+        or Simple mode) - pick up its new sensors if it was this library."""
+        if self._lib_root is not None and Path(root) == Path(self._lib_root):
+            # a rescan re-emits library_changed, which reloads the index and
+            # dataset stems too - deferred until this page is looked at
+            when_visible(self.lib_selector, self.lib_selector.rescan, key="scan")

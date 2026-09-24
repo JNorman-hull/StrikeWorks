@@ -1,12 +1,80 @@
 # StrikeWorks
 StrikeWorks is a data extraction, validation, processing and model development tool for underwater passive sensor devices used in fish passage science.
 
-Credit: 
-
-Dr. Josh Norman (University of Hull)
-Prof. Jeffrey Tuhtan (University of Talinn)
-
 Copyright University of Hull (2026)
+
+* Development: Josh Norman, University of Hull - J.Norman2@hull.ac.uk
+* Sensor implementation: Jeffrey Tuhtan, Tallinn University of Technology
+  (TalTech) - jeffrey.tuhtan@taltech.ee
+
+Built in Python 3.13; package citations and the PyDracula theme credit are
+in the app under **About** (`modules/about_dialog.py`, shared by Simple mode
+and the full app).
+
+## Workflow
+
+The app opens in **Simple mode** (`modules/page_simple_mode.py`), a guided
+wizard: Deploy > Process > Validate > Predict > Report. **Development
+toolkit** opens the full app, where the same steps are spread over pages
+(Setup and deploy > Create and edit deployment, Sensor processing > Raw data
+processing, Validate and annotate > Annotate, Model training, Model
+prediction) alongside blade strike modelling, study design, training and the
+rest. The first three steps are literally the same code in both modes:
+
+* **Deployment editor** (`modules/deployment_editor.py`) - session library,
+  library status, sensor, deployment and treatment table. *Create & open data
+  folder* builds a new deployment's folders; *Update* saves changes and makes
+  the folders match (renames carry folders and already-processed sensors
+  with them; removing a treatment/run removes its folder after a "Remove
+  folder and content" confirmation). Leaving with unsaved changes asks Save
+  and continue / Continue / Cancel. The sensor configuration is saved with
+  the deployment.
+* **File inventory** (`modules/inventory_widgets.py`) - every raw recording
+  with its Deployment, Treatment and Run read from its folder; processing
+  labels each recording from its own folder, so one batch can span several
+  treatments and runs.
+* **Validation** (`modules/validation_core.py`) - *Auto process all* saves
+  every sensor's detected nadir window and flags the ones whose window shows
+  a weak HIG peak (< 95 g) for review; the list puts flagged-and-unreviewed
+  sensors first; Save + next records a human review. *Save and export*
+  binds the saved windows (with any annotations) into one dataset in the
+  input data folder and hands it to Model prediction.
+
+### Raw folder layout
+
+```
+<library>/raw_sens_data/<deployment>/<treatment>/Run <n>/<sensor files>
+                                                        VIDEO/<stem>_vid_*.mp4
+```
+
+Every treatment has at least Run 1. Older libraries with files directly in
+the treatment folder still work (read as Run 1). `modules/raw_layout.py` is
+the one definition of this.
+
+### Demo mode
+
+Adjustments > Dev mode opens the **Dev console**, which mirrors all app
+output and runs the demos:
+
+* **Simple** - drives Simple mode's wizard end to end (no training).
+* **Advanced** - drives the full app: BSM Calculator > Study design >
+  deployment > processing > Annotate (Auto process all, Import annotations
+  CSV, Save and export) > Train > Deploy > Predict > Model comparison >
+  report.
+
+Both use a **demo pack**: a folder called `demo_data`, placed in the
+libraries folder (or the app's own `libraries/`), shaped like a library:
+
+```
+demo_data/raw_sens_data/<deployment>/<treatment>/[Run <n>/]<recordings>
+demo_data/*annotations*.csv     (Advanced demo's annotations)
+demo_data/demo.json             (optional: site/machine, treatment conditions,
+                                 sensor, BSM config)
+```
+
+Recordings are copied (never moved) into a `StrikeWorks_demo` library
+created in the user's libraries folder, so output stays wherever their
+libraries live. `demo_data` is never listed as a library.
 
 ## Pages
 
@@ -29,20 +97,17 @@ Copyright University of Hull (2026)
     anticipated); a third is a New or Duplicate plus a Save, stored in
     `~/.strikeworks_sensors.json`. Only a new device's reader is code: write
     it and register it under `sensor_config.PARSERS`;
-  * **Study design** - plans a deployment before any sensor is wetted: site,
-    deployment ID, machine and type, then one treatment per row (head,
-    flow, BEP, RPM) with a run count, each `+` copying the row above.
+  * **Study design** - a sampling-precision calculator: an expected strike
+    rate (typed, or loaded from Blade Strike Modelling) and a planned N give
+    the Wilson interval that N would achieve; a target precision gives the
+    N needed for it.
+  * **Create and edit deployment** - the deployment editor (see Workflow).
     Saving writes one row per treatment per run into the library's
     `global_sensor_index.csv` marked `file = label_pad`
-    (`modules/deployment_index.py`). A library can hold several
-    deployments; one filled in before this existed has its deployments read
-    back from its processed sensors. Process then offers those treatments
-    and runs: select a batch of sensors, pick what they were recorded
-    under, and processing labels every one of them and sets
-    `deployment_info` to Y - a deployment is worked treatment by treatment
-    instead of typing metadata per file. Plan rows are filtered out of
-    every sensor listing, and the Metadata tab still edits individual
-    sensors.
+    (`modules/deployment_index.py`), plus the sensor configuration used.
+    A library can hold several deployments; one filled in before this
+    existed has its deployments read back from its processed sensors.
+    Plan rows are filtered out of every sensor listing.
 
   The index's columns are the app's, in `modules/index_schema.py`, so a
   library needs no `config/index_config.txt` to be processed.
@@ -63,8 +128,9 @@ Copyright University of Hull (2026)
   the old `model_labels.csv` workflow used and are user add/remove/rename;
   values are written straight onto the sensor's row in
   `global_sensor_index.csv` (`deployment_index.set_row_values`), no
-  separate CSV. The video button globs `<library>/video/<stem>_vid_*.mp4`
-  and launches `exteneral_software/LosslessCut.exe`.
+  separate CSV. The video column/button finds `<stem>_vid_*.mp4` in the
+  recording's run (or, for older libraries, treatment) `VIDEO` folder and
+  launches `exteneral_software/LosslessCut.exe`.
 
   **Dataset creation** is unchanged - relocated here from Sensor Processing
   since it belongs with the rest of the annotation/curation workflow.

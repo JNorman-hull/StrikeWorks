@@ -76,12 +76,19 @@ def set_libraries_dir(path) -> Path:
     return p
 
 
+#: the demo pack folder (dev_runner.py) is shipped to users to drop into
+#: their libraries folder, next to their real libraries - it is a source of
+#: raw files for the demo, not a library to work in, so it is never listed
+DEMO_DATA_NAME = "demo_data"
+
+
 def list_libraries() -> list:
     """Every library folder under the configured libraries directory,
     sorted by name - the one scan every library combo (Home, Simple
-    mode's Deploy page) populates itself from."""
+    mode's Deploy page, LibrarySelector) populates itself from."""
     try:
-        return sorted(p for p in get_libraries_dir().iterdir() if p.is_dir())
+        return sorted(p for p in get_libraries_dir().iterdir()
+                      if p.is_dir() and p.name.lower() != DEMO_DATA_NAME)
     except Exception:
         return []
 

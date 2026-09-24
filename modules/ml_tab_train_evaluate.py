@@ -107,14 +107,15 @@ class EvaluateTab:
         grp_perf = Section("Performance (out-of-fold)")
         pv = QHBoxLayout(grp_perf)
         pv.setSpacing(8)
+        # the rings share the row's width with the Details card (no cap), so
+        # the row scales with the page instead of leaving dead space
         self.rings = []
         for _ in range(5):
             ring = RingCard("", w=CARD_W2 + 30, h=CARD_H2)
-            ring.setMaximumWidth(CARD_W2 + 90)
             self.rings.append(ring)
-            pv.addWidget(ring)
+            pv.addWidget(ring, stretch=1)
         self.card_detail = MetaCard("Details")
-        pv.addWidget(self.card_detail, stretch=1)
+        pv.addWidget(self.card_detail, stretch=3)
         v.addWidget(grp_perf)
 
         # ── CV summary + error analysis ─────────────────────────────────────
@@ -140,6 +141,7 @@ class EvaluateTab:
         split2.addWidget(grp_err)
         split2.setStretchFactor(0, 1)
         split2.setStretchFactor(1, 2)
+        split2.setSizes([1000, 2000])
         v.addWidget(split2)
 
         # ── figures ─────────────────────────────────────────────────────────
@@ -149,12 +151,12 @@ class EvaluateTab:
         row1.setChildrenCollapsible(False)
         for key in ("fig1", "fig2", "fig3"):
             row1.addWidget(self.canvases[key])
-        row1.setSizes([1, 1, 1])
+        row1.setSizes([1000, 1000, 1000])
         row2 = QSplitter(Qt.Orientation.Horizontal)
         row2.setChildrenCollapsible(False)
         row2.addWidget(self.canvases["fig4"])
         row2.addWidget(self.canvases["fig5"])
-        row2.setSizes([1, 2])
+        row2.setSizes([1000, 2000])
         figs_split = QSplitter(Qt.Orientation.Vertical)
         figs_split.setChildrenCollapsible(False)
         figs_split.addWidget(row1)
@@ -192,6 +194,7 @@ class EvaluateTab:
         split3.setStretchFactor(0, 1)
         split3.setStretchFactor(1, 1)
         split3.setStretchFactor(2, 1)
+        split3.setSizes([1000, 1000, 1000])
         v.addWidget(split3)
         v.addStretch()
 

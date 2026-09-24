@@ -23,7 +23,10 @@ from PySide6.QtWidgets import (
 )
 
 from . import settings
-from .ml_widgets import ACCENT, BAD, MUTED, OK, MetaCard, Spinner, Section, apply_section_defaults
+from .ml_widgets import (
+    ACCENT, BAD, MUTED, OK, MetaCard, Spinner, Section, apply_section_defaults,
+    centred,
+)
 
 
 class DeployTab:
@@ -59,9 +62,17 @@ class DeployTab:
         body = QWidget()
         body.setStyleSheet("background:transparent;")
         scroll.setWidget(body)
-        v = QVBoxLayout(body)
-        v.setContentsMargins(4, 6, 4, 6)
+        page_v = QVBoxLayout(body)
+        page_v.setContentsMargins(4, 6, 4, 6)
+        page_v.setSpacing(10)
+        # the boxes sit in one centred column (ml_widgets.centred) rather
+        # than stretching across the full width of a wide page
+        column = QWidget()
+        v = QVBoxLayout(column)
+        v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(10)
+        page_v.addWidget(centred(column, max_width=960))
+        page_v.addStretch()
 
         # ── Model deployment: final model + deploy, merged ──────────────────
         grp_deploy = Section("Model deployment")

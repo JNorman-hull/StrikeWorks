@@ -33,7 +33,7 @@ from . import settings
 from .ml_train_state import GROUPING_PRESETS
 from .ml_widgets import (
     ACCENT, BAD, BORDER, CARD_BG, EMPTY, MUTED, OK, PALETTE, TEXT,
-    LevelGrouper, MetaCard, Spinner, Section, apply_section_defaults,
+    LevelGrouper, MetaCard, Spinner, Section, apply_section_defaults, hsplit,
 )
 
 _PREVIEW_ROWS = 200
@@ -126,9 +126,6 @@ class TrainTab:
         v.setSpacing(10)
 
         # ── row 1: dataset + preview ────────────────────────────────────────
-        row1 = QHBoxLayout()
-        row1.setSpacing(10)
-
         grp_ds = Section("Training dataset")
         dv = QVBoxLayout(grp_ds)
         dv.setSpacing(8)
@@ -146,7 +143,6 @@ class TrainTab:
         self.lbl_compat = QLabel("")
         self.lbl_compat.setStyleSheet(f"color:{OK};")
         dv.addWidget(self.lbl_compat)
-        row1.addWidget(grp_ds, stretch=2)
 
         self.grp_preview = Section("Dataset preview (file-level metadata)")
         pv = QVBoxLayout(self.grp_preview)
@@ -175,7 +171,6 @@ class TrainTab:
             f"color:{TEXT};font-weight:bold;")
         fv.addWidget(self.lbl_population)
         fv.addStretch()
-        row1.addWidget(grp_filter, stretch=1)
 
         grp_target = Section("Labelling")
         tv = QVBoxLayout(grp_target)
@@ -249,14 +244,12 @@ class TrainTab:
         self.class_dist_mc = _ClassDist()
         tv.addWidget(self.class_dist_mc)
         tv.addStretch()
-        row1.addWidget(grp_target, stretch=3)
-        v.addLayout(row1)
+        # side-by-side boxes fill the width and can be resized by
+        # dragging - hsplit (ml_widgets), not a fixed-proportion row
+        v.addWidget(hsplit((grp_ds, 2), (grp_filter, 1), (grp_target, 3)))
         v.addWidget(self.grp_preview)
 
         # ── row 3: channels + sequence ──────────────────────────────────────
-        row3 = QHBoxLayout()
-        row3.setSpacing(10)
-
         grp_chan = Section("Model input channels")
         cv = QVBoxLayout(grp_chan)
         cv.setSpacing(4)
@@ -269,7 +262,6 @@ class TrainTab:
             f"color:{TEXT};font-weight:bold;")
         cv.addWidget(self.lbl_chan_count)
         cv.addStretch()
-        row3.addWidget(grp_chan, stretch=1)
 
         grp_seq = Section("Sequence configuration")
         sv = QGridLayout(grp_seq)
@@ -298,13 +290,9 @@ class TrainTab:
         self.lbl_tensor.setStyleSheet(
             f"color:{TEXT};font-weight:bold;")
         sv.addWidget(self.lbl_tensor, 4, 0, 1, 2)
-        row3.addWidget(grp_seq, stretch=1)
-        v.addLayout(row3)
+        v.addWidget(hsplit(grp_chan, grp_seq))
 
         # ── row 4: validation + balancing + model ───────────────────────────
-        row4 = QHBoxLayout()
-        row4.setSpacing(10)
-
         grp_val = Section("Validation")
         vv = QGridLayout(grp_val)
         vv.setVerticalSpacing(6)
@@ -345,7 +333,6 @@ class TrainTab:
         self.spin_seed.valueChanged.connect(self._val_changed)
         seed_row.addWidget(self.spin_seed)
         vv.addLayout(seed_row, 5, 1)
-        row4.addWidget(grp_val, stretch=1)
 
         grp_bal = Section("Class balancing")
         bv = QVBoxLayout(grp_bal)
@@ -365,7 +352,6 @@ class TrainTab:
         lab.setWordWrap(True)
         bv.addWidget(lab)
         bv.addStretch()
-        row4.addWidget(grp_bal, stretch=1)
 
         grp_model = Section("Model")
         mv = QGridLayout(grp_model)
@@ -404,13 +390,9 @@ class TrainTab:
         self.spin_n_alpha.setValue(100)
         self.spin_n_alpha.valueChanged.connect(self._model_changed)
         mv.addWidget(self.spin_n_alpha, 3, 1)
-        row4.addWidget(grp_model, stretch=1)
-        v.addLayout(row4)
+        v.addWidget(hsplit(grp_val, grp_bal, grp_model))
 
         # ── row 5: train + console + out-of-fold performance ────────────────
-        row5 = QHBoxLayout()
-        row5.setSpacing(10)
-
         grp_run = Section("Train")
         gv = QVBoxLayout(grp_run)
         gv.setSpacing(8)
@@ -451,7 +433,6 @@ class TrainTab:
             lambda: self._goto_evaluate() if self._goto_evaluate else None)
         gv.addWidget(self.btn_evaluate)
         gv.addStretch()
-        row5.addWidget(grp_run, stretch=2)
 
         grp_console = Section("Training console")
         cv = QVBoxLayout(grp_console)
@@ -472,8 +453,7 @@ class TrainTab:
             "border:1px solid #2c313a;border-radius:4px;"
             "font-family:Consolas,monospace;font-size:9pt;}")
         cv.addWidget(self.console, stretch=1)
-        row5.addWidget(grp_console, stretch=3)
-        v.addLayout(row5)
+        v.addWidget(hsplit((grp_run, 2), (grp_console, 3)))
         v.addStretch()
 
         apply_section_defaults(frame)

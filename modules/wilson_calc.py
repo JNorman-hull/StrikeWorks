@@ -34,3 +34,23 @@ def wilson_interval(p, n, confidence=95):
     half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
     lo, hi = max(0.0, centre - half), min(1.0, centre + half)
     return lo, hi, (hi - lo) / 2
+
+
+def required_n(p, target_half, confidence=95, n_max=100000):
+    """Smallest sample size whose Wilson interval half-width is at most
+    `target_half` (0-1) for proportion `p` - the inverse question to
+    `wilson_interval`: "how many sensors for ±5 percentage points?".
+    None if even `n_max` can't get there. The half-width shrinks as n
+    grows, so a binary search finds it."""
+    if target_half <= 0:
+        return None
+    if wilson_interval(p, n_max, confidence)[2] > target_half:
+        return None
+    lo, hi = 1, n_max
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if wilson_interval(p, mid, confidence)[2] <= target_half:
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo

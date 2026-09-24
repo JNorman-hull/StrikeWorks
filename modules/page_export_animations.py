@@ -39,6 +39,7 @@ its config alongside it, so the two never drift apart; "Save" persists an
 in-progress edit without paying for a render.
 """
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -59,7 +60,9 @@ from . import deployment_index as di
 from . import sensor_config, video_sync
 from .library_widgets import LibrarySelector
 from .session_state import OUTPUT_DIR_NAME
-from .ml_widgets import ACCENT, MUTED, TEXT, Section, apply_section_defaults
+from .ml_widgets import (
+    ACCENT, MUTED, TEXT, Section, apply_section_defaults, when_visible,
+)
 from .page_annotate import LOSSLESSCUT_EXE
 from .page_validate import (
     _CsvLoadThread, _NavViewBox, _find_col,
@@ -639,8 +642,16 @@ class ExportAnimationsPage(QObject):
         return lab
 
     def _connect(self):
+        from .inventory_widgets import notifier as inventory_notifier
         self.lib_selector.library_changed.connect(self._on_lib_changed)
         self.lib_selector.filters_changed.connect(self._populate_sensor_table)
+        # a processing batch that just finished in this library - list its
+        # new sensors without waiting for a filter change
+        inventory_notifier.processed.connect(
+            lambda root: when_visible(self.lib_selector, self.lib_selector.rescan,
+                                      key="scan")
+            if self._lib_root is not None and Path(root) == Path(self._lib_root)
+            else None)
         self.tbl_sensors.itemSelectionChanged.connect(self._on_row_selected)
         self.tbl_sensors.itemDoubleClicked.connect(self._on_video_double_clicked)
         self.btn_process.clicked.connect(self._process)
@@ -671,19 +682,31 @@ class ExportAnimationsPage(QObject):
             self.tbl_sensors.setRowCount(0)
             return
 
+        # one listing of the synced-video folder and one bad-flag set, not a
+        # file check and a dataframe filter per sensor (slow for a big
+        # library on OneDrive)
+        try:
+            synced_names = {n.lower() for n in os.listdir(self._video_output_dir())}
+        except OSError:
+            synced_names = set()
+        bad = set()
+        df = self._index_df
+        if df is not None and "file" in df.columns and di.BAD_SENS_COL in df.columns:
+            bad = set(df[df[di.BAD_SENS_COL].astype(str).str.strip().str.upper()
+                         == "Y"]["file"].astype(str))
         rows = []
         for row in self.lib_selector.list_sensor_csvs():
             matches = self.lib_selector.video_matches_for(row["stem"])
             rows.append({
                 **row,
                 "video": "; ".join(m.name for m in matches) if matches else "-",
-                "synced": self._synced_path_for(row["stem"]).exists(),
+                "synced": f"{row['stem']}_synced.mp4".lower() in synced_names,
             })
         self._sensor_rows = rows
         synced_by_stem = {r["stem"]: r["synced"] for r in rows}
 
         self.lib_selector.populate_sensor_list(
-            rows, is_bad=lambda stem: di.is_bad(self._index_df, stem),
+            rows, is_bad=lambda stem: stem in bad,
             is_done=lambda stem: synced_by_stem.get(stem, False),
             done_label="Synced",
             extra=lambda r: [r["video"], "Yes" if r["synced"] else "-"])

@@ -14,6 +14,8 @@ dark=True (the default here - these only ever appear on in-app canvases,
 unlike ml_figures' report-vs-canvas split) gives the themed presentation;
 dark=False is available for anything exported to a light-background report.
 """
+import textwrap
+
 from .ml_figures import _PALETTE, _awaiting, fg_colour, style_axes, style_legend, _grid
 
 CEN_COLOR = _PALETTE[3]   # green - "the model's own estimate"
@@ -232,7 +234,14 @@ def draw_comparison_bars(fig, cen_values, comparisons, dark=True,
     heights = [v for _, v in cen_items] + [c[1] for c in comparisons]
     colors = ([SPECIES_COLORS.get(sp, CEN_COLOR) for sp, _ in cen_items]
               + [OBS_COLOR] * len(comparisons))
-    bars = ax.bar(labels, heights, width=0.55, color=colors, edgecolor=fg)
+    # long labels ("Cen (Blade strike model - scaly)") wrapped onto a few
+    # lines so neighbouring bars' labels don't run into each other when the
+    # figure isn't wide; positions are numeric so duplicate labels still
+    # get their own bar
+    x = list(range(len(labels)))
+    bars = ax.bar(x, heights, width=0.55, color=colors, edgecolor=fg)
+    ax.set_xticks(x)
+    ax.set_xticklabels([textwrap.fill(str(lab), 18) for lab in labels])
     for i, (_label, value, lo, hi) in enumerate(comparisons, start=len(cen_items)):
         if lo is not None and hi is not None:
             ax.errorbar(i, value, yerr=[[max(0.0, value - lo)],
@@ -240,6 +249,6 @@ def draw_comparison_bars(fig, cen_values, comparisons, dark=True,
                        fmt="none", ecolor=fg, capsize=4, linewidth=1.0)
     _label_bars(ax, bars, heights, dark)
     ax.tick_params(axis="x", labelsize=8,
-                   rotation=30 if len(labels) > 3 else 0)
+                   rotation=30 if len(labels) > 4 else 0)
     _bar_style(ax, dark, ylabel)
     fig.tight_layout()

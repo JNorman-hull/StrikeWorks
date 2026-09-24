@@ -21,7 +21,7 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox, QDoubleSpinBox, QHBoxLayout, QHeaderView, QLabel,
-    QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSplitter, QTableWidget,
+    QLineEdit, QPushButton, QSizePolicy, QSplitter, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -144,17 +144,13 @@ class InspectTab:
         split.addWidget(left)
 
         # ── right: detail ───────────────────────────────────────────────────
-        # scrollable so the stacked sections below don't clip on a short
-        # window, and inside the splitter (not root) so it's resizable
-        # against the browser like the header comment always claimed
-        right_scroll = QScrollArea()
-        right_scroll.setWidgetResizable(True)
-        right_scroll.setStyleSheet(
-            "QScrollArea{border:none;background:transparent;}")
-        right_scroll.setMinimumWidth(420)
+        # laid out like Misclassification analysis: no page-level scroll -
+        # the selected-prediction/probabilities row keeps its natural
+        # height, the signal plot takes all the rest (with a minimum, so it
+        # can't be squeezed away), and this side has a minimum width so the
+        # browser can't take the page over
         right = QWidget()
-        right.setStyleSheet("background:transparent;")
-        right_scroll.setWidget(right)
+        right.setMinimumWidth(520)
         rv = QVBoxLayout(right)
         rv.setContentsMargins(5, 0, 0, 0)
         rv.setSpacing(8)
@@ -193,7 +189,7 @@ class InspectTab:
         pv.addWidget(self.prob_bars)
         pv.addStretch()
         top.addWidget(grp_probs, stretch=1)
-        rv.addLayout(top)
+        rv.addLayout(top, stretch=0)
 
         grp_sig = Section("Model input signal")
         gv = QVBoxLayout(grp_sig)
@@ -229,7 +225,7 @@ class InspectTab:
         gv.addLayout(ctl)
 
         self._pw = pg.PlotWidget(viewBox=_NavViewBox())
-        self._pw.setMinimumHeight(220)
+        self._pw.setMinimumHeight(260)
         self._pw.setSizePolicy(QSizePolicy.Policy.Expanding,
                                QSizePolicy.Policy.Expanding)
         pi = self._pw.plotItem
@@ -254,8 +250,10 @@ class InspectTab:
         gv.addWidget(self.lbl_sig_note)
         rv.addWidget(grp_sig, stretch=1)
 
-        split.addWidget(right_scroll)
-        split.setSizes([1, 1])
+        split.addWidget(right)
+        split.setStretchFactor(0, 2)
+        split.setStretchFactor(1, 3)
+        split.setSizes([2000, 3000])
 
         apply_section_defaults(frame)
 

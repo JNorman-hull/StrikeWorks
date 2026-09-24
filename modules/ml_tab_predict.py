@@ -32,6 +32,7 @@ from .bsm_model import (
 from .ml_widgets import (
     ACCENT, BAD, MUTED, OK, PALETTE, PINK, TEXT, WARN,
     CARD_W2, CARD_H2, MetaCard, RingCard, Spinner, Section, apply_section_defaults,
+    hsplit,
 )
 
 FIG_MIN_W, FIG_MIN_H = 320, 300
@@ -140,10 +141,8 @@ class PredictTab:
         v.setContentsMargins(4, 6, 4, 6)
         v.setSpacing(10)
 
-        # ── row 1: model + dataset cards ────────────────────────────────────
-        row1 = QHBoxLayout()
-        row1.setSpacing(10)
-
+        # ── row 1: model + dataset cards (hsplit: fills the width, the
+        # boundary can be dragged) ───────────────────────────────────────
         grp_model = Section("Model")
         mv = QVBoxLayout(grp_model)
         mv.setSpacing(8)
@@ -157,8 +156,7 @@ class PredictTab:
         self.ring_spec = RingCard("Specificity", w=CARD_W2, h=CARD_H2)
         self.ring_auc  = RingCard("ROC AUC",     w=CARD_W2, h=CARD_H2)
         for r in (self.ring_acc, self.ring_sens, self.ring_spec, self.ring_auc):
-            perf_row.addWidget(r)
-        perf_row.addStretch()
+            perf_row.addWidget(r, stretch=1)
         mv.addLayout(perf_row)
 
         sel_row = QHBoxLayout()
@@ -185,7 +183,6 @@ class PredictTab:
         mdl_btn_row.addWidget(self.btn_models)
         mdl_btn_row.addWidget(self.lbl_models_dir, stretch=1)
         mv.addLayout(mdl_btn_row)
-        row1.addWidget(grp_model, stretch=1)
 
         grp_data = Section("Dataset")
         dv = QVBoxLayout(grp_data)
@@ -199,13 +196,9 @@ class PredictTab:
         ds_btn_row.addWidget(self.btn_load_csv)
         ds_btn_row.addStretch()
         dv.addLayout(ds_btn_row)
-        row1.addWidget(grp_data, stretch=1)
-        v.addLayout(row1)
+        v.addWidget(hsplit(grp_model, grp_data))
 
         # ── row 2: configuration + run ──────────────────────────────────────
-        row2 = QHBoxLayout()
-        row2.setSpacing(10)
-
         grp_cfg = Section("Prediction configuration")
         gv = QVBoxLayout(grp_cfg)
         gv.setSpacing(8)
@@ -276,7 +269,6 @@ class PredictTab:
         gv.addWidget(self.lbl_mortality)
 
         gv.addStretch()
-        row2.addWidget(grp_cfg, stretch=1)
 
         grp_run = Section("Run")
         rv = QVBoxLayout(grp_run)
@@ -304,8 +296,7 @@ class PredictTab:
         self.btn_low_conf.clicked.connect(self._inspect_low_conf)
         rv.addWidget(self.btn_low_conf)
         rv.addStretch()
-        row2.addWidget(grp_run, stretch=1)
-        v.addLayout(row2)
+        v.addWidget(hsplit(grp_cfg, grp_run))
 
         v.addStretch()
 
@@ -337,8 +328,7 @@ class PredictTab:
         self.card_regions    = RingCard("Strike classes")
         for c in (self.card_recordings, self.card_strikes, self.card_rate,
                   self.card_conf, self.card_regions):
-            sv.addWidget(c)
-        sv.addStretch()
+            sv.addWidget(c, stretch=1)
         v.addWidget(grp_sum)
 
         # ── row 4: results table ────────────────────────────────────────────
@@ -366,7 +356,7 @@ class PredictTab:
         figs_split.addWidget(self.canvas_bin)
         figs_split.addWidget(self.canvas_mc)
         figs_split.addWidget(self.canvas_vcrit)
-        figs_split.setSizes([1, 1, 1])
+        figs_split.setSizes([1000, 1000, 1000])
         fv.addWidget(figs_split)
         v.addWidget(grp_figs)
 

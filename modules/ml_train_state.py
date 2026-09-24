@@ -153,6 +153,9 @@ class _StreamThread(QThread):
                 ln = raw.rstrip("\n")
                 tail.append(ln)
                 self.line.emit(ln)
+                if ln.strip():
+                    # mirrored into the dev console (dev_console.py tees print)
+                    print(f"[train-worker] {ln}")
             proc.wait()
             self.done.emit(proc.returncode, "\n".join(tail))
         except Exception as e:

@@ -4,77 +4,58 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Behaviour for the Process page.
+"""Raw data processing (Sensor processing).
 
-Tab 1 (Raw data processing) is a port of the MVP's ``bsm/pages/data_prep.py``.
-The "processed" definition is unchanged from the MVP; the file extensions,
-how many files make a recording, the filename pattern and which parser runs
-come from the sensor configuration selected on the Prepare page
-(``sensor_config.active()``), which for RAPID reproduces the MVP exactly.
+Rebuilt around the pieces Simple mode's Process step uses:
 
-Tab 2 (Metadata) reads the library's ``global_sensor_index.csv`` and writes
-deployment information back into it.
+  Filters        - the shared LibrarySelector (library_widgets.py) with
+                   the session library, narrowed by Deployment / Treatment
+                   / Run - the same filter box Annotate and Export
+                   animations show.
+  Summary cards  - recordings found, processed, validated, flagged bad,
+                   for whatever the filters select.
+  File inventory - inventory_widgets.FileInventory: every recording with
+                   the deployment, treatment and run of the folder it sits
+                   in, Process selected, and the console log. Each
+                   processed recording is labelled from its own folder, so
+                   one batch can span several treatments and runs.
 
-The widgets themselves live in ``main.ui`` (edit them in Qt Designer); this
-module only binds behaviour to them.
+The old per-batch treatment/run pickers and the Metadata tab are gone: a
+recording's labels come from its folder, and a deployment's details are
+edited in one place - Create and edit deployment, whose Update relabels
+already-processed sensors.
+
+The ported MVP reader (`_ProcessThread`, below) is unchanged; the file
+extensions, filename pattern and parser come from the active sensor
+configuration (``sensor_config.active()``).
 """
-import shutil
-from collections import Counter
-from datetime import datetime
 from pathlib import Path
 
-import pandas as pd
-
-from PySide6.QtCore import Qt, QDir, QObject, QThread, Signal
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QAbstractItemView, QFileSystemModel, QFrame, QHBoxLayout, QHeaderView,
-    QLabel, QListWidgetItem, QMessageBox, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
 from . import deployment_index as di
 from . import sensor_config
-from .library_widgets import (
-    LibrarySelector, UNGROUPED as _LIB_UNGROUPED, _DirsOnlyProxy,
-)
-from .ml_widgets import fill_table_width
+from . import validation_core as vc
+from .inventory_widgets import FileInventory
+from .library_widgets import LibrarySelector
+from .ml_widgets import BAD, INFO, MUTED, OK, PINK, WARN, Section, when_visible
 
-# ── paths inside a library root (unchanged from the MVP) ─────────────────────
-_INDEX_REL = di.INDEX_REL
-_RAW_REL = Path("raw_sens_data")
-_CSV_DIR = Path("processed_sens_data") / "csv"
-
-# theme colours (match the PyDracula palette used by the app)
-_ACCENT = "#ff79c6"
-_OK = "#22c55e"
-_WARN = "#f59e0b"
-_BAD = "#ef4444"
-_INFO = "#568af2"
-_MUTED = "#8a95aa"
-
-# deployment fields: widget attribute -> column in global_sensor_index.csv
-DEPLOYMENT_FIELDS = [
-    ("ed_deployment_config_label", "deployment_config"),
-    ("ed_site", "site"),
-    ("ed_deployment_id", "deployment_id"),
-    ("ed_pump_turbine", "pump_turbine"),
-    ("ed_type", "type"),
-    ("ed_rpm", "rpm"),
-    ("ed_head", "head"),
-    ("ed_flow", "flow"),
-    ("ed_point_bep", "point_bep"),
-    ("ed_treatment", "treatment"),
-    ("ed_run", "run"),
-]
+# theme colours kept under their old names (StatCard is imported elsewhere)
+_ACCENT = PINK
+_OK = OK
+_WARN = WARN
+_BAD = BAD
+_INFO = INFO
+_MUTED = MUTED
 
 
 def _parse_name(stem: str, config=None):
-    """Split a sensor filename stem into (sensor, DD/MM, HH:MM:SS).
-
-    The pattern belongs to the sensor configuration, so a device that names
-    its files differently needs only its pattern edited on Prepare.
-    """
+    """Split a sensor filename stem into (sensor, DD/MM, HH:MM:SS) with the
+    sensor configuration's own pattern."""
     return (config or sensor_config.active()).parse_stem(stem)
 
 
@@ -105,9 +86,6 @@ class _ProcessThread(QThread):
                 self.log.emit(f"   Done.  bad_sens={bad}  {msg}")
                 self.processed.emit(f["stem"])
                 n_ok += 1
-            except NotImplementedError as e:
-                self.log.emit(f"   FAILED: {e}")
-                n_fail += 1
             except Exception as e:
                 self.log.emit(f"   FAILED: {e}")
                 n_fail += 1
@@ -117,31 +95,30 @@ class _ProcessThread(QThread):
 
 
 class StatCard(QFrame):
-    """Small themed summary tile used in 'Selection information'."""
+    """Small themed summary tile."""
 
     def __init__(self, title, parent=None):
         super().__init__(parent)
         self.setObjectName("statCard")
         self.setStyleSheet(
-            "#statCard{background-color:rgb(33,37,43);border-radius:5px;}"
-        )
+            "#statCard{background-color:rgb(33,37,43);border-radius:5px;}")
         v = QVBoxLayout(self)
         v.setContentsMargins(12, 8, 12, 8)
         v.setSpacing(2)
-
+        # title and detail at the app's standard text size (they used to be
+        # scaled down to 10px); the value is the standard font, bolder and
+        # a few points larger
         self._title = QLabel(title)
-        self._title.setStyleSheet(f"color:{_MUTED};font-size:10px;")
-
+        self._title.setStyleSheet(f"color:{_MUTED};")
         self._value = QLabel("-")
-        f = QFont("Segoe UI", 18)
+        f = QFont(self._title.font())
+        f.setPointSize(max(f.pointSize(), 9) + 5)
         f.setBold(True)
         self._value.setFont(f)
         self._value.setStyleSheet("color:rgb(221,221,221);")
-
         self._detail = QLabel("")
-        self._detail.setStyleSheet(f"color:{_MUTED};font-size:10px;")
+        self._detail.setStyleSheet(f"color:{_MUTED};")
         self._detail.setWordWrap(True)
-
         v.addWidget(self._title)
         v.addWidget(self._value)
         v.addWidget(self._detail)
@@ -157,7 +134,8 @@ class StatCard(QFrame):
 
 # ═════════════════════════════════════════════════════════════════════════════
 class ProcessPage(QObject):
-    """Binds behaviour to the Process page widgets defined in main.ui."""
+    """Builds Raw data processing into `ui.content_process` (the Designer
+    tab widget that used to live there is hidden - see module docstring)."""
 
     status = Signal(str, int)
 
@@ -167,714 +145,127 @@ class ProcessPage(QObject):
         self.window = window
         self.session_state = session_state
 
-        self._root = None        # selected library root
-        self._raw_dir = None
-        self._index_df = None
-        self._files = []
-        self._scan_dir = None
-        self._thread = None
-        self._session_processed = []
-        self._batch_processed = []
-        self._treatments = []
-
-        # a different sensor means different extensions and filename rules,
-        # so the inventory is re-scanned when the Prepare page changes it
-        sensor_config.notifier.changed.connect(self._on_sensor_changed)
-
-        # a plan saved on Prepare > Study design becomes selectable here
-        di.notifier.plan_saved.connect(self._on_plan_saved)
-
-        self._idx_model = QFileSystemModel()
-        self._idx_model.setFilter(QDir.Filter.Dirs | QDir.Filter.NoDotAndDotDot)
-        self._idx_proxy = _DirsOnlyProxy()
-        self._idx_proxy.setSourceModel(self._idx_model)
-
-        self._build_cards()
-        self._build_library_selector()
-        self._configure_widgets()
+        ui.tabs_process.hide()
+        self._build(ui.layout_content_process)
         self._connect()
-        # LibrarySelector auto-selects its first library during its own
-        # construction, before _connect() wired these signals up - catch up
-        # on whatever it landed on rather than starting on an empty Tab 1
         self._on_lib_changed()
         self._on_filters_changed()
-        self._refresh_treatments()
 
-    # ── setup ────────────────────────────────────────────────────────────────
-    def _build_cards(self):
-        holder = QVBoxLayout(self.ui.frame_cards)
-        holder.setContentsMargins(0, 0, 0, 0)
-        holder.setSpacing(6)
-        self.card_deployments = StatCard("Deployments")
-        self.card_files = StatCard("Sensor files")
-        self.card_paired = StatCard("Complete recordings")
-        self.card_processed = StatCard("Processed")
-        for c in (self.card_deployments, self.card_files,
-                  self.card_paired, self.card_processed):
-            holder.addWidget(c)
-        holder.addStretch()
+    # ── report_center.py's Raw data processing section reads these ──────────
+    @property
+    def _files(self):
+        return self.inventory.files
 
-    def _build_library_selector(self):
-        lv = QVBoxLayout(self.ui.frame_process_library)
+    @property
+    def _scan_dir(self):
+        return self.inventory.scan_dir
+
+    @property
+    def _root(self):
+        return self.lib_selector.lib_root
+
+    # ── layout ───────────────────────────────────────────────────────────────
+    def _build(self, layout):
+        page = QWidget()
+        row = QHBoxLayout(page)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+
+        left = QWidget()
+        left.setFixedWidth(300)
+        lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 0, 0)
         self.lib_selector = LibrarySelector(session_state=self.session_state,
                                             show_picker=False)
+        btn_rescan = QPushButton("Rescan folders")
+        btn_rescan.setToolTip("Pick up files added to the library's raw "
+                              "folders since it was opened.")
+        btn_rescan.clicked.connect(self.lib_selector.rescan)
+        self.lib_selector.section_layout.addWidget(btn_rescan)
         lv.addWidget(self.lib_selector)
 
-    def _configure_widgets(self):
-        u = self.ui
+        grp_cards = Section("Summary")
+        cv = QVBoxLayout(grp_cards)
+        cv.setSpacing(6)
+        self.card_recordings = StatCard("Recordings")
+        self.card_processed = StatCard("Processed")
+        self.card_validated = StatCard("Validated")
+        self.card_bad = StatCard("Flagged bad")
+        for c in (self.card_recordings, self.card_processed,
+                  self.card_validated, self.card_bad):
+            cv.addWidget(c)
+        lv.addWidget(grp_cards)
+        lv.addStretch()
+        row.addWidget(left)
 
-        u.tree_index.setModel(self._idx_proxy)
-        u.tree_index.setHeaderHidden(True)
-        for col in range(1, 4):
-            u.tree_index.hideColumn(col)
-
-        for tbl in (u.table_inventory, u.table_meta):
-            tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-            tbl.verticalHeader().setVisible(False)
-            tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-            tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-
-        # Always start on "Raw data processing".
-        # Qt Designer writes tabs_process/currentIndex to whichever tab happened
-        # to be showing on its canvas when the file was saved, so the .ui value
-        # cannot be relied on. Set it here instead.
-        u.tabs_process.setCurrentIndex(0)
-
-        u.btn_process_selected.setEnabled(False)
-        u.console_output.setFont(QFont("Consolas", 9))
-        u.console_output.setStyleSheet(
-            "QPlainTextEdit{background:#1b1e23;color:#d4d4d4;"
-            "border:1px solid #2c313a;border-radius:4px;}")
-
-        # theming for widgets the base stylesheet doesn't cover
-        u.tabs_process.setStyleSheet(f"""
-            QTabWidget::pane {{
-                border: 1px solid #2c313a;
-                border-radius: 5px;
-                background-color: rgb(40, 44, 52);
-                top: -1px;
-            }}
-            QTabBar::tab {{
-                background-color: rgb(33, 37, 43);
-                color: {_MUTED};
-                padding: 7px 18px;
-                margin-right: 2px;
-                border-top-left-radius: 5px;
-                border-top-right-radius: 5px;
-            }}
-            QTabBar::tab:selected {{
-                background-color: rgb(40, 44, 52);
-                color: rgb(221, 221, 221);
-                border-bottom: 2px solid {_ACCENT};
-            }}
-            QTabBar::tab:hover:!selected {{ color: rgb(221, 221, 221); }}
-        """)
-
-        group_style = f"""
-            QGroupBox {{
-                color: {_MUTED};
-                font: 700 9pt "Segoe UI";
-                border: 1px solid #2c313a;
-                border-radius: 5px;
-                margin-top: 10px;
-                padding-top: 6px;
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                left: 10px;
-                padding: 0 4px;
-            }}
-        """
-        for box in self.window.findChildren(type(u.grp_index)):
-            box.setStyleSheet(group_style)
-
-        # metadata tab needs its own feedback line - the Tab 1 console is not
-        # visible from here
-        self._meta_status = QLabel("Select sensors, fill the fields, then apply.")
-        self._meta_status.setWordWrap(True)
-        self._meta_status.setStyleSheet(f"color:{_MUTED};font-size:11px;")
-        u.grp_deployment.layout().addWidget(self._meta_status)
+        self.inventory = FileInventory(orientation=Qt.Orientation.Vertical)
+        row.addWidget(self.inventory, stretch=1)
+        layout.addWidget(page)
 
     def _connect(self):
-        u = self.ui
         self.lib_selector.library_changed.connect(self._on_lib_changed)
         self.lib_selector.filters_changed.connect(self._on_filters_changed)
-        u.tree_index.selectionModel().selectionChanged.connect(self._on_index_select)
-        u.table_inventory.itemSelectionChanged.connect(self._on_table_select)
-        u.chk_select_all.toggled.connect(self._on_select_all)
-        u.btn_process_selected.clicked.connect(self._process)
-        # the runs on offer belong to the selected treatment
-        u.cmb_treatment.currentIndexChanged.connect(
-            lambda _i: self._refresh_runs())
-        u.btn_save_deployment.clicked.connect(self._save_deployment)
-        u.btn_apply_deployment.clicked.connect(self._load_deployment)
-        u.chk_meta_select_all.toggled.connect(self._on_meta_select_all)
+        self.inventory.files_changed.connect(self._refresh_cards)
+        self.inventory.processing_done.connect(self._on_processing_done)
+        sensor_config.notifier.changed.connect(
+            lambda _k: when_visible(self.inventory, self._on_filters_changed,
+                                    key="sensor"))
+        di.notifier.plan_saved.connect(self._on_plan_saved)
 
-    # ── library selector (shared widget - see library_widgets.py) ────────────
+    # ── filters ──────────────────────────────────────────────────────────────
     def _on_lib_changed(self):
         root = self.lib_selector.lib_root
-        if root is not None:
-            self._set_root(root)
+        if root is not None and not self.lib_selector.syncing:
+            self.status.emit(f"Library: {root.name}", 4000)
 
     def _on_filters_changed(self):
-        folder = self._scan_target_dir()
-        if folder is not None:
-            self._scan_and_refresh(folder)
-
-    def _scan_target_dir(self):
-        """The raw folder the deployment/treatment combos currently select.
-
-        A specific deployment (or treatment within it) narrows the scan to
-        that subfolder; "All deployments"/"All treatments" - and the
-        `_LIB_UNGROUPED` bucket for files sitting directly in raw_sens_data
-        with no deployment subfolder - all resolve to the raw root itself,
-        since `_scan()` already recurses (`rglob`) from wherever it's
-        pointed."""
-        if self._raw_dir is None:
-            return None
-        folder = self._raw_dir
-        dep = self.lib_selector.wanted_deployment()
-        if dep and dep != _LIB_UNGROUPED:
-            folder = folder / dep
-            treat = self.lib_selector.wanted_treatment()
-            if treat and treat != _LIB_UNGROUPED:
-                folder = folder / treat
-        return folder
-
-    def _set_root(self, root: Path):
-        self._root = root
-        self._raw_dir = root / _RAW_REL
-        self._load_index()
-
-        # re-root the deployment (Index) tree at raw_sens_data
-        if self._raw_dir.exists():
-            idx_root = self._idx_model.setRootPath(str(self._raw_dir))
-            self.ui.tree_index.setRootIndex(self._idx_proxy.mapFromSource(idx_root))
-
-        self._refresh_meta_tab()
-        if not self.lib_selector.syncing:
-            self.status.emit(f"Library: {root.name}", 4000)
-        self._log(f"\nLibrary: {root}")
-
-    def _on_index_select(self, selected, _deselected):
-        idxs = selected.indexes()
-        if not idxs:
-            return
-        folder = Path(self._idx_model.filePath(self._idx_proxy.mapToSource(idxs[0])))
-        self._scan_and_refresh(folder)
-
-    def _load_index(self):
-        """Read the index, minus the deployment plan's treatment rows.
-
-        The plan lives in the same file - Prepare > Study design writes one
-        row per treatment - so every sensor listing drops those first.
-        """
-        if self._root is None:
-            self._index_df = None
-            self._refresh_treatments()
-            return
-        try:
-            full = di.read_index(self._root)
-        except Exception as e:
-            full = None
-            self._log(f"   Could not read global index: {e}")
-        self._index_df = None if full is None else di.sensor_rows(full)
-        self._refresh_treatments()
+        # lists from the filter box's own scan of the library (one walk,
+        # done in the background when the library opens) - until that has
+        # finished there's nothing to list yet, rather than a second walk
+        tree = self.lib_selector.raw_tree
+        self.inventory.set_source(self.lib_selector.lib_root,
+                                  self.lib_selector.scan_folder(),
+                                  row_filter=self.lib_selector.matches_filters,
+                                  tree=tree)
+        if tree is None:
+            self.inventory.set_source(None, None)
+        self.inventory.refresh()
 
     def _on_plan_saved(self, root):
-        if self._root is not None and Path(root) == self._root:
-            self._refresh_treatments()
+        # a deployment created/renamed on Create and edit deployment changes
+        # the folder tree this page filters over
+        if self._root is not None and Path(root) == Path(self._root):
+            when_visible(self.lib_selector, self.lib_selector.rescan, key="scan")
 
-    def _refresh_treatments(self):
-        """Offer the treatments planned for this library, if any."""
-        cmb = self.ui.cmb_treatment
-        current = cmb.currentData()
-        self._treatments = di.treatments(self._root) if self._root else []
-        cmb.blockSignals(True)
-        cmb.clear()
-        cmb.addItem("No treatment", None)
-        for t in self._treatments:
-            cmb.addItem(di.describe(t), t.get(di.TREATMENT_COL))
-        idx = cmb.findData(current) if current else 0
-        cmb.setCurrentIndex(max(0, idx))
-        cmb.blockSignals(False)
-        cmb.setEnabled(bool(self._treatments))
-        self._refresh_runs()
-
-    def _refresh_runs(self):
-        """Offer the runs planned for the selected treatment.
-
-        A treatment planned with 8 runs has 8 rows in the index, so the
-        picker offers 1-8 and the batch is labelled with the one it came
-        from - the level of detail the Metadata tab used to be typed at.
-        """
-        cmb = self.ui.cmb_run
-        current = cmb.currentData()
-        treatment = self._selected_treatment()
-        runs = []
-        if treatment is not None and self._root is not None:
-            runs = di.runs_for(self._root,
-                               treatment.get(di.DEPLOYMENT_COL) or None,
-                               treatment.get(di.TREATMENT_COL))
-        cmb.blockSignals(True)
-        cmb.clear()
-        cmb.addItem("No run", None)
-        for run in runs:
-            cmb.addItem(f"Run {run}", run)
-        idx = cmb.findData(current) if current else 0
-        cmb.setCurrentIndex(max(0, idx))
-        cmb.blockSignals(False)
-        cmb.setEnabled(bool(runs))
-
-    def _selected_treatment(self):
-        name = self.ui.cmb_treatment.currentData()
-        if not name:
-            return None
-        return next((t for t in self._treatments
-                     if t.get(di.TREATMENT_COL) == name), None)
-
-    def _selected_run(self):
-        return self.ui.cmb_run.currentData()
-
-    # ── scanning (unchanged rules) ───────────────────────────────────────────
-    def _on_sensor_changed(self, _key):
-        if self._scan_dir is not None:
-            self._scan_and_refresh(self._scan_dir)
-
-    def _scan_and_refresh(self, folder: Path):
-        self._scan_dir = folder
-        self._files = self._scan(folder)
-        self._refresh_cards()
-        self._refresh_table()
-
-    def _scan(self, folder: Path):
-        cfg = sensor_config.active()
-        exts = cfg.required_extensions or [".imp"]
-        primary, secondary = exts[0], exts[1:]
-
-        # one map per extension, keyed by upper-case stem so a recording's
-        # files pair however the device cased them
-        found = {ext: self._files_by_stem(folder, ext) for ext in exts}
-
-        index_names = set()
-        if self._index_df is not None and "file" in self._index_df.columns:
-            index_names = set(self._index_df["file"].astype(str).str.upper())
-        csv_dir = (self._root / _CSV_DIR) if self._root else None
-        csv_names = set()
-        if csv_dir and csv_dir.exists():
-            csv_names = {p.stem.upper() for p in csv_dir.glob("*.csv")
-                         if not p.stem.endswith("_min")}
-        processed_names = index_names & csv_names
-
-        records = []
-        for stem_up, main_path in sorted(found[primary].items()):
-            sensor, date, time = _parse_name(main_path.stem, cfg)
-            paths = {primary: main_path}
-            for ext in secondary:
-                match = found[ext].get(stem_up)
-                if match is not None:
-                    paths[ext] = match
-            records.append(dict(
-                stem=main_path.stem,
-                stem_up=stem_up,
-                sensor=sensor,
-                date=date,
-                time=time,
-                complete=len(paths) == len(exts),
-                processed=stem_up in processed_names,
-                paths=paths,
-            ))
-        return records
-
-    @staticmethod
-    def _files_by_stem(folder: Path, ext: str):
-        """Every file with `ext` under `folder`, keyed by upper-case stem."""
-        suffix = ext.lstrip(".")
-        out = {p.stem.upper(): p for p in folder.rglob(f"*.{suffix.upper()}")}
-        for p in folder.rglob(f"*.{suffix.lower()}"):
-            out.setdefault(p.stem.upper(), p)
-        return out
+    def _on_processing_done(self, code, stems):
+        msg = ("Processing complete." if code == 0
+               else "Processing finished with errors.")
+        self.status.emit(f"{msg} {len(stems)} sensor(s) processed.", 5000)
 
     # ── cards ────────────────────────────────────────────────────────────────
     def _refresh_cards(self):
-        files = self._files
+        files = self.inventory.files
         n = len(files)
         if not n:
-            for c in (self.card_deployments, self.card_files,
-                      self.card_paired, self.card_processed):
+            for c in (self.card_recordings, self.card_processed,
+                      self.card_validated, self.card_bad):
                 c.clear()
             return
-
-        cfg = sensor_config.active()
-        sensors = Counter(f["sensor"] for f in files)
-        top = ", ".join(f"{s} ({c})" for s, c in sensors.most_common(3))
-        self.card_deployments.set(len(sensors), top, _INFO)
-
-        primary = cfg.primary_extension.lstrip(".").upper()
-        self.card_files.set(n, f"{n} {primary} file(s) found", _ACCENT)
-
         n_complete = sum(1 for f in files if f["complete"])
-        n_needed = len(cfg.required_extensions)
-        self.card_paired.set(
-            f"{n_complete}/{n}",
-            (f"{n - n_complete} incomplete" if n_needed > 1
-             else f"{n_needed} file per recording"),
-            _OK if n_complete == n else _WARN)
+        self.card_recordings.set(
+            n, f"{n_complete}/{n} complete", _OK if n_complete == n else _WARN)
+        processed = [f["stem"] for f in files if f["processed"]]
+        n_proc = len(processed)
+        self.card_processed.set(f"{n_proc}/{n}", f"{n - n_proc} unprocessed",
+                                _OK if n_proc == n else _INFO)
 
-        n_proc = sum(1 for f in files if f["processed"])
-        self.card_processed.set(
-            f"{n_proc}/{n}", f"{n - n_proc} unprocessed",
-            _OK if n_proc == n else _INFO)
-
-    # ── inventory table ──────────────────────────────────────────────────────
-    def _refresh_table(self):
-        t = self.ui.table_inventory
-        t.setRowCount(len(self._files))
-        for row, f in enumerate(self._files):
-            vals = [str(row + 1), f["stem"], f["sensor"], f["date"], f["time"],
-                    "Yes" if f["complete"] else "No",
-                    "Processed" if f["processed"] else "Unprocessed"]
-            for col, v in enumerate(vals):
-                it = QTableWidgetItem(v)
-                it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if col == 5:
-                    it.setForeground(QColor(_OK if f["complete"] else _BAD))
-                if col == 6:
-                    it.setForeground(QColor(_OK if f["processed"] else _WARN))
-                t.setItem(row, col, it)
-        fill_table_width(t)
-        self.ui.btn_process_selected.setEnabled(False)
-
-    def _on_table_select(self):
-        self.ui.btn_process_selected.setEnabled(
-            bool(self.ui.table_inventory.selectedItems()) and self._root is not None)
-
-    def _on_select_all(self, checked):
-        if checked:
-            self.ui.table_inventory.selectAll()
-        else:
-            self.ui.table_inventory.clearSelection()
-
-    # ── processing ───────────────────────────────────────────────────────────
-    def _process(self):
-        rows = sorted({i.row() for i in self.ui.table_inventory.selectedIndexes()})
-        files = [self._files[r] for r in rows if r < len(self._files)]
-        if not files:
-            return
-
-        cfg = sensor_config.active()
-        complete = [f for f in files if f["complete"]]
-        skipped = len(files) - len(complete)
-        if not complete:
-            self.status.emit("No complete recordings selected.", 4000)
-            self._log("No complete recordings selected.")
-            return
-
-        out_dir = self._root / "processed_sens_data"
-        self.ui.console_output.clear()
-        if skipped:
-            self._log(f"Note: {skipped} incomplete recording(s) skipped.")
-        self._log(f"Sensor: {cfg.name}  ({cfg.output_rate_hz:g} Hz, "
-                  f"parser '{cfg.parser}')")
-        treatment = self._selected_treatment()
-        if treatment:
-            run = self._selected_run()
-            self._log(f"Treatment: {di.describe(treatment)}"
-                      + (f"  |  run {run}" if run else ""))
-        else:
-            self._log("Treatment: none - this batch is processed unlabelled.")
-        self._batch_processed = []
-        self._log(f"Output → {out_dir}\n")
-        self.ui.btn_process_selected.setEnabled(False)
-
-        self._thread = _ProcessThread(complete, out_dir, self._root, cfg)
-        self._thread.log.connect(self._log)
-        self._thread.processed.connect(self._on_file_processed)
-        self._thread.done.connect(self._on_process_done)
-        self._thread.start()
-
-    def _on_file_processed(self, stem):
-        self._session_processed.append(stem)
-        self._batch_processed.append(stem)
-        stamp = datetime.now().strftime("%H:%M:%S")
-        self.ui.list_processed.addItem(QListWidgetItem(f"{stamp}  {stem}"))
-
-    def _on_process_done(self, code):
-        self.ui.btn_process_selected.setEnabled(True)
-        msg = "Processing complete." if code == 0 else "Processing finished with errors."
-        self._log(f"\n{msg}")
-        self.status.emit(msg, 5000)
-
-        self._apply_treatment()
-        self._load_index()
-        self._refresh_meta_tab()
-
-        idxs = self.ui.tree_index.selectionModel().selectedIndexes()
-        if idxs:
-            folder = Path(self._idx_model.filePath(self._idx_proxy.mapToSource(idxs[0])))
-        else:
-            folder = self._raw_dir or self._root
-        if folder:
-            self._scan_and_refresh(folder)
-
-    def _apply_treatment(self):
-        """Label this batch with the treatment it was run under.
-
-        The deployment fields come from the plan rather than being typed per
-        file, which is the point of processing treatment by treatment. The
-        Metadata tab still edits individual sensors afterwards.
-        """
-        treatment = self._selected_treatment()
-        if not treatment or not self._batch_processed or self._root is None:
-            return
-        run = self._selected_run()
-        try:
-            n = di.apply_treatment(
-                self._root, self._batch_processed, treatment, run=run)
-        except Exception as e:
-            self._log(f"   Could not label the batch: {e}")
-            return
-        if n:
-            where = treatment.get(di.TREATMENT_COL)
-            if run:
-                where += f", run {run}"
-            self._log(f"Labelled {n} sensor(s) as '{where}' "
-                      f"({di.DEPLOYMENT_FLAG_COL} = Y).")
-
-    def _log(self, text):
-        self.ui.console_output.appendPlainText(text)
-        sb = self.ui.console_output.verticalScrollBar()
-        sb.setValue(sb.maximum())
-
-    # ═════════════════════════════════════════════════════════════════════════
-    # TAB 2 - METADATA
-    # ═════════════════════════════════════════════════════════════════════════
-    def _refresh_meta_tab(self):
-        self._refresh_meta_table()
-        self._refresh_dashboard()
-
-    def _refresh_meta_table(self):
-        t = self.ui.table_meta
-        df = self._index_df
-        if df is None or df.empty:
-            t.setRowCount(0)
-            return
-
-        cols = {c: c for c in df.columns}
-        t.setRowCount(len(df))
-        for row in range(len(df)):
-            r = df.iloc[row]
-            complete = str(r.get("deployment_info", "N")).strip().upper() == "Y"
-            vals = [str(row + 1),
-                    str(r.get("file", "")),
-                    str(r.get("sensor", "")),
-                    str(r.get("date_deploy", "")),
-                    "Complete" if complete else "Required"]
-            for col, v in enumerate(vals):
-                it = QTableWidgetItem(v)
-                it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                it.setForeground(QColor(_OK if complete else _WARN))
-                t.setItem(row, col, it)
-
-    def _refresh_dashboard(self):
-        u = self.ui
-        df = self._index_df
-
-        def put(prefix, value, caption, detail):
-            getattr(u, f"lbl_dash_{prefix}_value").setText(str(value))
-            getattr(u, f"lbl_dash_{prefix}_caption").setText(caption)
-            getattr(u, f"lbl_dash_{prefix}_detail").setText(detail)
-
-        if df is None or df.empty:
-            for p, cap in (("library", "Sensors in global index"),
-                           ("coverage", "Complete deployment info"),
-                           ("quality", "Flagged bad_sens"),
-                           ("sites", "Distinct sites"),
-                           ("delineated", "Delineated signals"),
-                           ("treatments", "Distinct treatments")):
-                put(p, "-", cap, "No library selected")
-            return
-
-        n = len(df)
-        put("library", n, "Sensors in global index",
-            f"Library: {self._root.name if self._root else '-'}")
-
-        if "deployment_info" in df.columns:
-            done = int((df["deployment_info"].astype(str).str.upper() == "Y").sum())
-            pct = (done / n * 100) if n else 0
-            put("coverage", f"{done}/{n}", "Complete deployment info",
-                f"{pct:.0f}% complete, {n - done} outstanding")
-        else:
-            put("coverage", "-", "Complete deployment info", "column not present")
-
-        if "bad_sens" in df.columns:
-            bad = int((df["bad_sens"].astype(str).str.upper() == "Y").sum())
-            put("quality", bad, "Flagged bad_sens",
-                f"{n - bad} sensor(s) clean")
-        else:
-            put("quality", "-", "Flagged bad_sens", "column not present")
-
-        if "site" in df.columns:
-            sites = [s for s in df["site"].astype(str).unique()
-                     if s and s.upper() not in ("NA", "NAN", "")]
-            put("sites", len(sites), "Distinct sites",
-                ", ".join(sites[:3]) if sites else "none recorded")
-        else:
-            put("sites", "-", "Distinct sites", "column not present")
-
-        if "delineated" in df.columns:
-            deline = int((df["delineated"].astype(str).str.upper() == "Y").sum())
-            trimmed = (int((df["trimmed"].astype(str).str.upper() == "Y").sum())
-                       if "trimmed" in df.columns else 0)
-            put("delineated", f"{deline}/{n}", "Delineated signals",
-                f"{trimmed} trimmed, {n - deline} awaiting delineation")
-        else:
-            put("delineated", "-", "Delineated signals", "column not present")
-
-        if "treatment" in df.columns:
-            treatments = [t for t in df["treatment"].astype(str).unique()
-                          if t and t.upper() not in ("NA", "NAN", "")]
-            runs = (len([r for r in df["run"].astype(str).unique()
-                         if r and r.upper() not in ("NA", "NAN", "")])
-                    if "run" in df.columns else 0)
-            put("treatments", len(treatments), "Distinct treatments",
-                f"{runs} distinct run(s): "
-                + (", ".join(treatments[:3]) if treatments else "none recorded"))
-        else:
-            put("treatments", "-", "Distinct treatments", "column not present")
-
-    def _on_meta_select_all(self, checked):
-        if checked:
-            self.ui.table_meta.selectAll()
-        else:
-            self.ui.table_meta.clearSelection()
-
-    def _selected_meta_files(self):
-        rows = sorted({i.row() for i in self.ui.table_meta.selectedIndexes()})
-        out = []
-        for r in rows:
-            it = self.ui.table_meta.item(r, 1)
-            if it:
-                out.append(it.text())
-        return out
-
-    def _set_meta_status(self, text, colour=_MUTED):
-        self._meta_status.setText(text)
-        self._meta_status.setStyleSheet(f"color:{colour};font-size:11px;")
-
-    def _load_deployment(self):
-        """Populate the form from the first selected sensor's index row.
-
-        This OVERWRITES whatever is currently typed in the form, so it warns
-        first if any field has content.
-        """
-        files = self._selected_meta_files()
-        if not files or self._index_df is None:
-            self._set_meta_status("Select a sensor in the index first.", _WARN)
-            return
-
-        typed = [w for w, _ in DEPLOYMENT_FIELDS if getattr(self.ui, w).text().strip()]
-        if typed:
-            answer = QMessageBox.question(
-                self.window, "Replace typed values?",
-                f"Loading will overwrite {len(typed)} field(s) you have typed.\n\n"
-                "Continue?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if answer != QMessageBox.StandardButton.Yes:
-                return
-
-        match = self._index_df[self._index_df["file"].astype(str) == files[0]]
-        if match.empty:
-            self._set_meta_status(f"{files[0]} is not in the index.", _WARN)
-            return
-        row = match.iloc[0]
-        for widget_name, column in DEPLOYMENT_FIELDS:
-            val = row.get(column, "")
-            val = "" if pd.isna(val) or str(val).upper() == "NA" else str(val)
-            getattr(self.ui, widget_name).setText(val)
-        self._set_meta_status(f"Loaded values from {files[0]}.", _INFO)
-        self.status.emit(f"Loaded deployment info from {files[0]}", 4000)
-
-    def _save_deployment(self):
-        """Write the form values into global_sensor_index.csv for selected rows."""
-        if self._root is None or self._index_df is None:
-            self._set_meta_status("No library selected.", _WARN)
-            return
-
-        files = self._selected_meta_files()
-        if not files:
-            self._set_meta_status(
-                "Nothing applied - no sensors selected in the index.", _WARN)
-            QMessageBox.information(
-                self.window, "No sensors selected",
-                "Select one or more sensors in the processed sensor index first.")
-            return
-
-        values = {col: getattr(self.ui, w).text().strip()
-                  for w, col in DEPLOYMENT_FIELDS}
-        filled = {c: v for c, v in values.items() if v}
-        if not filled:
-            self._set_meta_status(
-                "Nothing applied - all deployment fields are empty.", _WARN)
-            QMessageBox.information(
-                self.window, "Nothing to save",
-                "Enter at least one deployment field before applying.")
-            return
-
-        answer = QMessageBox.question(
-            self.window, "Save deployment information",
-            f"Write {len(filled)} field(s) to {len(files)} sensor(s) in\n"
-            f"{self._root / _INDEX_REL}?\n\nA timestamped backup is taken first.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No)
-        if answer != QMessageBox.StandardButton.Yes:
-            self._set_meta_status("Cancelled - nothing was written.", _WARN)
-            return
-
-        idx_path = self._root / _INDEX_REL
-        try:
-            backup = idx_path.with_name(
-                f"global_sensor_index.backup-{datetime.now():%Y%m%d-%H%M%S}.csv")
-            shutil.copy2(idx_path, backup)
-
-            df = pd.read_csv(idx_path, low_memory=False)
-            mask = df["file"].astype(str).isin(files)
-            for col, val in filled.items():
-                if col not in df.columns:
-                    df[col] = pd.NA
-                # Index columns such as rpm/head/flow/run are read as numeric.
-                # Keep them numeric when the entered value is a number, and widen
-                # the column to object when it isn't, rather than letting pandas
-                # coerce silently.
-                if pd.api.types.is_numeric_dtype(df[col]):
-                    try:
-                        val = pd.to_numeric(val)
-                    except (ValueError, TypeError):
-                        df[col] = df[col].astype(object)
-                df.loc[mask, col] = val
-            if "deployment_info" not in df.columns:
-                df["deployment_info"] = "N"
-            df.loc[mask, "deployment_info"] = "Y"
-            df.to_csv(idx_path, index=False)
-        except Exception as e:
-            QMessageBox.critical(self.window, "Save failed", str(e))
-            self._set_meta_status(f"Save FAILED: {e}", _BAD)
-            self._log(f"Deployment save FAILED: {e}")
-            return
-
-        self._load_index()
-        self._refresh_meta_tab()
-        summary = ", ".join(f"{c}={v}" for c, v in filled.items())
-        self._set_meta_status(
-            f"Applied {len(filled)} field(s) to {len(files)} sensor(s). "
-            f"Backup: {backup.name}", _OK)
-        self._log(f"Deployment info written for {len(files)} sensor(s). "
-                  f"Backup: {backup.name}")
-        QMessageBox.information(
-            self.window, "Deployment information applied",
-            f"Wrote to {len(files)} sensor(s) in {idx_path.name}.\n\n"
-            f"{summary}\n\nBackup saved as {backup.name}")
-        self.status.emit(f"Saved deployment info for {len(files)} sensor(s).", 5000)
+        index_df = di.read_index(self._root) if self._root else None
+        status = vc.validation_status(index_df)
+        c = vc.status_counts(processed, status)
+        self.card_validated.set(
+            f"{c['auto']}/{n_proc}" if n_proc else "-",
+            f"{c['flagged']} flagged, {c['flagged_reviewed']} reviewed, "
+            f"{c['user']} user-validated",
+            _OK if n_proc and c["auto"] == n_proc else _INFO)
+        self.card_bad.set(c["bad"], "bad_sens = Y",
+                          _BAD if c["bad"] else _OK)

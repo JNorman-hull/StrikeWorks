@@ -72,10 +72,6 @@ os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
 # ///////////////////////////////////////////////////////////////
 widgets = None
 
-# UI TEMPLATE CREDIT (shown under Settings > About)
-# ///////////////////////////////////////////////////////////////
-TEMPLATE_URL = "https://github.com/Wanderson-Magalhaes/Modern_GUI_PyDracula_PySide6_or_PyQt6"
-
 # matches UIFunctions.toggleMenu's own hardcoded "standard" icon-strip
 # width - the sidebar's starting, deactivated state (Simple/Advanced mode)
 _LEFT_MENU_COLLAPSED_WIDTH = 60
@@ -133,9 +129,11 @@ class MainWindow(QMainWindow):
         # every page below, but deliberately never auto-shown here even if
         # settings.get_dev_mode() was left on from a previous session -
         # it should only ever appear because the user opened it, from
-        # Adjustments' Dev mode toggle or "Show console" button.
+        # Adjustments' Dev mode toggle or "Show console" button. `self` is
+        # only a reference for its demo runners, never its Qt parent (see
+        # dev_console.py for why it must stay parentless).
         # ///////////////////////////////////////////////////////////////
-        self.dev_console = DevConsole()
+        self.dev_console = DevConsole(self)
 
         # SESSION STATE + HOME (library selection) - constructed before
         # every page below, and in that order: Home's own construction is
@@ -607,11 +605,13 @@ class MainWindow(QMainWindow):
         print(f'Button "{btn.objectName()}" pressed!')
 
 
-    # ABOUT - UI TEMPLATE CREDIT
+    # ABOUT - the same dialog Simple mode's About button shows
+    # (modules/about_dialog.py: description, credits, package citations,
+    # PyDracula template credit)
     # ///////////////////////////////////////////////////////////////
     def openAbout(self):
-        QDesktopServices.openUrl(QUrl(TEMPLATE_URL))
-        print(f"Opened UI template credit: {TEMPLATE_URL}")
+        from modules.about_dialog import AboutDialog
+        AboutDialog(self).exec()
 
     # ADJUSTMENTS - folder settings (modules/page_adjustments.py)
     # ///////////////////////////////////////////////////////////////

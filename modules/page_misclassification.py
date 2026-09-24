@@ -35,6 +35,7 @@ Model training > Train with the corrected dataset loaded, after a
 notice that the model should be retrained before its next deployment -
 `notify_and_load_into_training()` is main.py's hook for this.
 """
+import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -42,7 +43,7 @@ from pathlib import Path
 import pandas as pd
 import pyqtgraph as pg
 
-from PySide6.QtCore import Qt, QObject, Signal
+from PySide6.QtCore import Qt, QObject, QThread, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QGridLayout, QHBoxLayout, QHeaderView,
     QInputDialog, QLabel, QMessageBox, QPushButton, QSizePolicy, QSplitter,
@@ -53,7 +54,10 @@ from . import annotation_schema as asch
 from . import ml_model_library
 from . import settings
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
-from .ml_widgets import BAD, MUTED, OK, Section, apply_section_defaults
+from .ml_widgets import (
+    BAD, MUTED, OK, Section, apply_section_defaults, discard_widget,
+    when_visible,
+)
 from .page_annotate import LOSSLESSCUT_EXE
 from .library_widgets import RAW_DIR as _RAW_DIR
 from .page_validate import _NavViewBox
@@ -80,6 +84,59 @@ _LEGACY_ALIASES = {
 _VIEW_MODEL = "model"
 _VIEW_FULL = "full"
 _NON_CHANNEL_COLS = {"file", "time_s", "treatment", "deployment"}
+
+
+def build_video_index(lib_dir):
+    """{stem: [video paths]} across every library in `lib_dir` - one
+    os.walk per library's raw folder, only looking at `*_vid_*.mp4` names.
+
+    Deduplicated by resolved path: a library folder can be reachable under
+    more than one entry in the libraries directory (a case-variant name, a
+    shortcut/junction, a synced duplicate), which would otherwise list the
+    same physical video twice against one recording."""
+    index, seen_by_stem = {}, {}
+    try:
+        libs = [p for p in Path(lib_dir).iterdir() if p.is_dir()]
+    except OSError:
+        libs = []
+    for lib in libs:
+        raw_dir = lib / _RAW_DIR
+        if not raw_dir.is_dir():
+            continue
+        for dirpath, _dirnames, filenames in os.walk(raw_dir):
+            for name in filenames:
+                if "_vid_" not in name or not name.lower().endswith(".mp4"):
+                    continue
+                video = Path(dirpath) / name
+                stem = name.split("_vid_")[0]
+                try:
+                    key = str(video.resolve()).lower()
+                except OSError:
+                    key = str(video).lower()
+                seen = seen_by_stem.setdefault(stem, set())
+                if key in seen:
+                    continue
+                seen.add(key)
+                index.setdefault(stem, []).append(video)
+    return index
+
+
+class _VideoIndexThread(QThread):
+    """build_video_index off the GUI thread - it walks every library's raw
+    folder, which on OneDrive used to add a second or more to app startup
+    and grows with every library added."""
+    done = Signal(object)
+
+    def __init__(self, lib_dir):
+        super().__init__()
+        self._lib_dir = lib_dir
+
+    def run(self):
+        try:
+            index = build_video_index(self._lib_dir)
+        except Exception:
+            index = {}
+        self.done.emit(index)
 
 
 def _resolve_column(df, var_name):
@@ -144,10 +201,15 @@ class MisclassificationPage(QObject):
         self._has_changes = False
         self._corrected_path = None
         self._corrections = []       # [{file, variable, old, new, when}, ...]
+        self._video_index = None     # built in the background, then cached
+        self._video_thread = None
 
         self._build(ui.content_misclassification)
         self._connect()
-        self._reload_models()
+        # nothing loaded at startup - the model list (and the video index
+        # behind its Video column) the first time the page is opened
+        when_visible(ui.content_misclassification, self._reload_models,
+                     key="models")
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
@@ -294,7 +356,7 @@ class MisclassificationPage(QObject):
 
     def _connect(self):
         self.cmb_model.currentIndexChanged.connect(self._on_model_changed)
-        self.btn_refresh.clicked.connect(self._reload_models)
+        self.btn_refresh.clicked.connect(self._refresh)
         self.tbl_misclass.itemSelectionChanged.connect(self._on_row_selected)
         self.tbl_misclass.itemDoubleClicked.connect(
             self._on_misclass_double_clicked)
@@ -306,6 +368,11 @@ class MisclassificationPage(QObject):
         self._rebuild_labels()
 
     # ── models ───────────────────────────────────────────────────────────────
+    def _refresh(self):
+        """Refresh button: re-discover models and re-index videos."""
+        self._video_index = None
+        self._reload_models()
+
     def _reload_models(self):
         keep = self.cmb_model.currentText()
         self._entries = []
@@ -346,7 +413,6 @@ class MisclassificationPage(QObject):
             f"{self._entry.label} - {len(self._rows)} misclassified "
             f"recording(s).")
 
-        video_index = self._video_index()
         self._matches_by_file = {}
         self.tbl_misclass.setRowCount(len(self._rows))
         for r, row in enumerate(self._rows):
@@ -360,49 +426,47 @@ class MisclassificationPage(QObject):
             self.tbl_misclass.setItem(r, 3, conf_item)
             self.tbl_misclass.setItem(
                 r, 4, QTableWidgetItem(str(row["treatment"])))
-            matches = video_index.get(str(row["file"]), [])
-            row["video_matches"] = matches
-            self._matches_by_file[str(row["file"])] = matches
-            names = list(dict.fromkeys(p.name for p in matches))
-            video_item = QTableWidgetItem("; ".join(names) if names else "-")
+            video_item = QTableWidgetItem("…")
             video_item.setData(Qt.ItemDataRole.UserRole, row["file"])
             self.tbl_misclass.setItem(r, 5, video_item)
         self.tbl_misclass.resizeColumnsToContents()
         self.tbl_misclass.setSortingEnabled(True)
+        if self._video_index is None:
+            self._start_video_index()
+        else:
+            self._fill_video_column()
 
-    def _video_index(self):
-        """{stem: [video paths]} across every configured library - built
-        once per model switch (one recursive walk) rather than once per
-        misclassified file, since a file's library isn't known up front.
+    # ── video index (background, cached - see build_video_index) ────────────
+    def _start_video_index(self):
+        if self._video_thread is not None and self._video_thread.isRunning():
+            return
+        self._video_thread = _VideoIndexThread(settings.get_libraries_dir())
+        self._video_thread.done.connect(self._on_video_index)
+        self._video_thread.start()
 
-        Deduplicated by resolved path: a library folder can be reachable
-        under more than one entry in the libraries directory (a
-        case-variant name, a shortcut/junction, a synced duplicate), which
-        would otherwise walk the same physical video twice and list its
-        name twice against one recording."""
-        index = {}
-        seen_by_stem = {}
-        lib_dir = settings.get_libraries_dir()
-        try:
-            libs = [p for p in lib_dir.iterdir() if p.is_dir()]
-        except OSError:
-            libs = []
-        for lib in libs:
-            raw_dir = lib / _RAW_DIR
-            if not raw_dir.exists():
+    def _on_video_index(self, index):
+        self._video_index = index
+        self._fill_video_column()
+
+    def _fill_video_column(self):
+        """Video column + the double-click lookup, from the cached index -
+        each row found by its own file (the table is sortable)."""
+        index = self._video_index or {}
+        self._matches_by_file = {}
+        self.tbl_misclass.setSortingEnabled(False)
+        for r in range(self.tbl_misclass.rowCount()):
+            item = self.tbl_misclass.item(r, 5)
+            if item is None:
                 continue
-            for video in raw_dir.rglob("*_vid_*.mp4"):
-                stem = video.name.split("_vid_")[0]
-                try:
-                    key = str(video.resolve()).lower()
-                except OSError:
-                    key = str(video).lower()
-                seen = seen_by_stem.setdefault(stem, set())
-                if key in seen:
-                    continue
-                seen.add(key)
-                index.setdefault(stem, []).append(video)
-        return index
+            file = str(item.data(Qt.ItemDataRole.UserRole))
+            matches = index.get(file, [])
+            self._matches_by_file[file] = matches
+            names = list(dict.fromkeys(p.name for p in matches))
+            item.setText("; ".join(names) if names else "-")
+        for row in self._rows:
+            row["video_matches"] = self._matches_by_file.get(str(row["file"]), [])
+        self.tbl_misclass.resizeColumnToContents(5)
+        self.tbl_misclass.setSortingEnabled(True)
 
     def _on_misclass_double_clicked(self, item):
         if item.column() != 5:
@@ -625,8 +689,7 @@ class MisclassificationPage(QObject):
             item = self.annotation_grid.takeAt(0)
             w = item.widget()
             if w is not None:
-                w.setParent(None)
-                w.deleteLater()
+                discard_widget(w)
         self._editors = {}
         for row, var in enumerate(asch.all_variables()):
             lab = self._muted(var.label)

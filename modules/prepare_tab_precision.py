@@ -42,7 +42,7 @@ from PySide6.QtWidgets import (
 from .bsm_state import LATEST_RESULT_PATH
 from .ml_figures import fg_colour, style_axes, style_legend, _grid
 from .ml_widgets import MUTED, TEXT, Section, apply_section_defaults
-from .wilson_calc import wilson_interval
+from .wilson_calc import required_n, wilson_interval
 
 _N_MULTIPLIERS = (0.5, 1, 2, 4)
 _N_CURVE_POINTS = 60
@@ -108,6 +108,28 @@ class PrecisionCalcTab:
         self.cmb_confidence.setCurrentIndex(1)
         self.cmb_confidence.currentIndexChanged.connect(self._recalculate)
         form.addWidget(self.cmb_confidence, 2, 1)
+
+        # the inverse question: how many sensors for a wanted precision
+        form.addWidget(self._muted("Target precision (± pp)"), 3, 0)
+        target_row = QHBoxLayout()
+        self.spin_target = QDoubleSpinBox()
+        self.spin_target.setRange(0.1, 50.0)
+        self.spin_target.setDecimals(1)
+        self.spin_target.setSingleStep(0.5)
+        self.spin_target.setValue(5.0)
+        self.spin_target.setToolTip(
+            "How close (± percentage points) the observed strike rate should "
+            "be expected to land - the sample size needed for it is shown "
+            "alongside.")
+        self.spin_target.valueChanged.connect(self._recalculate)
+        target_row.addWidget(self.spin_target)
+        self.lbl_required = QLabel("")
+        self.lbl_required.setStyleSheet(f"color:{TEXT};")
+        target_row.addWidget(self.lbl_required, stretch=1)
+        self.btn_use_required = QPushButton("Use as planned N")
+        self.btn_use_required.clicked.connect(self._use_required_n)
+        target_row.addWidget(self.btn_use_required)
+        form.addLayout(target_row, 3, 1)
         form.setColumnStretch(1, 1)
         gv.addLayout(form)
 
@@ -185,6 +207,14 @@ class PrecisionCalcTab:
             f"{confidence}% CI [{lo * 100:.1f}%, {hi * 100:.1f}%], "
             f"precision ±{half * 100:.1f} percentage points.")
 
+        target = self.spin_target.value()
+        self._required_n = required_n(p, target / 100.0, confidence)
+        self.lbl_required.setText(
+            f"→ N = {self._required_n} sensor(s) needed"
+            if self._required_n else "→ not reachable")
+        self.btn_use_required.setEnabled(bool(self._required_n)
+                                         and self._required_n != n)
+
         rows = []
         for mult in _N_MULTIPLIERS:
             n_i = max(1, round(n * mult))
@@ -202,6 +232,10 @@ class PrecisionCalcTab:
         self.tbl_sweep.resizeColumnsToContents()
 
         self._draw_precision_curve(p, n, confidence, half)
+
+    def _use_required_n(self):
+        if getattr(self, "_required_n", None):
+            self.spin_n.setValue(self._required_n)
 
     def _draw_precision_curve(self, p, n, confidence, planned_half):
         n_max = max(n * 4, 20)

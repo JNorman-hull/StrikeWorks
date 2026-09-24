@@ -1,13 +1,15 @@
 # StrikeWorks roadmap
 
-Outstanding work, in the order agreed. Chunks 1 to 3 are done. Chunk 4's
-sidebar section and its Annotate page are done; Delineation is shelved and
-the Misclassification tool is not started. Each chunk is independent enough
-to be picked up cold from this file plus the code.
+Outstanding work, in the order agreed. Chunks 1 to 4 are done, Chunk 5
+tasks 1-5 and follow-ups 8-19 are done (latest: item 19, 2026-09-24).
+Still open: task 6 (Delineation / Segmentation), task 7 (Data analysis),
+and the items logged under task 8 that aren't marked done. Each chunk is
+independent enough to be picked up cold from this file plus the code.
 
-A dummy library, "Testbed" (single treatment), exists in the libraries
-folder for exercising the whole pipeline end to end during development -
-see "Future - end-to-end pipeline test bed" below.
+The whole pipeline is exercised end to end by the two demos (Dev console,
+`modules/dev_runner.py`) from a demo pack (`demo_data`, a library-shaped
+folder of recordings + annotations) - see item 19 and "Future - end-to-end
+pipeline test bed" below.
 
 ## Done
 
@@ -2088,6 +2090,79 @@ per-page tweaks.
     construction after every batch, not only at the end; settings file
     and git status checked clean throughout.
 
+18. Follow-ups 2026-09-01 to 2026-09-24, recorded here after the fact
+    (commits cc759d6..7ae9af5; not logged item by item at the time):
+    Simple mode built end to end (`page_simple_mode.py`, spec images in
+    `simple_spec/`) and made the app's default landing screen - main.py
+    opens it ahead of the full app, "Development toolkit" opens the
+    rest; Adjustments folder settings (libraries/models/output/input
+    data) plus pinned default binary/multiclass models for Simple mode's
+    Predict; the Dev console (`dev_console.py`) and the first two demo
+    runners; the PyInstaller build (`StrikeWorks.spec`, `build.py`, the
+    `--worker` dispatch in main.py so the frozen exe can be its own
+    prediction/training subprocess); Windows taskbar/icon fixes
+    (`win_utils.py`); Auto process all moved onto a thread, with the
+    HIG-in-window flag (< 95 g), user-validated/user-adjusted tracking
+    and a "processing review" in the downloaded report; the EEL tag
+    binary format spec (`format-specification.md`) as groundwork for the
+    still-unconfigured `micro_eel` parser.
+
+19. Follow-up (2026-09-24): demo mode fixed and unified, one shared
+    deployment editor / file inventory / validation core across Simple
+    and Advanced mode, Raw data processing rebuilt, Annotate gains Simple
+    Validate's features, shared About page.
+
+    Demo mode was broken three ways, all confirmed: (1) Simple mode's
+    launch-time `exec()` was application-modal, input-blocking the
+    parentless Dev console (it now sets WindowModal - proven with a
+    window-system-level click probe); (2) a windowed build has
+    `sys.stdout = None`, so the console's stdout tee raised on every
+    print (now None-safe); (3) the Simple demo didn't wait for the newly
+    threaded Auto process all, exporting a half-validated dataset.
+    Demo controls moved into the console itself; the Advanced demo now
+    drives the real pages instead of calling their backends (deployment
+    editor, file inventory, Annotate's Auto process/import/export, the
+    sample-size helper). Both read a `demo_data` pack from the libraries
+    folder (or the app's own `libraries/`; `Testbed` accepted as the old
+    name) and copy into a `StrikeWorks_demo` library in the user's
+    libraries folder. Verified headless end to end: Simple on 12
+    recordings (40 s), Advanced on all 76 (4 min, both model stages).
+
+    Raw folder layout gained a Run level - `<deployment>/<treatment>/
+    Run <n>/`, VIDEO per run, always at least Run 1 (`raw_layout.py`;
+    legacy flat treatment folders read as Run 1). `deployment_editor.py`
+    (Simple Deploy + Create and edit deployment): Create & open data
+    folder (new deployments only), Update (renames folders and relabels
+    processed sensors in the index and running dataset, re-stamps
+    changed conditions, removes dropped treatments/runs after a "Remove
+    folder and content" confirmation; two-phase renames so swaps work),
+    unsaved-changes prompt on Next/deployment switch. The deployment's
+    sensor configuration is saved on its plan rows
+    (`deployment_index.SENSOR_CONFIG_COL`) and stamped onto its sensors -
+    closes the open question from task 1. `inventory_widgets.py` (Simple
+    Process + Raw data processing): Deployment/Treatment/Run columns from
+    the folder, per-file labelling on processing
+    (`deployment_index.stamp_by_location`). Raw data processing is now
+    Filters (Deployment/Treatment/Run, the shared LibrarySelector) +
+    summary cards + inventory + console; the Metadata tab and per-batch
+    treatment/run pickers are gone. `_min.csv` is no longer written
+    (never read anywhere). `validation_core.py` holds Auto process all,
+    flagging, status, Save and export (now joining annotation columns)
+    and annotation-CSV import for both Simple Validate and Annotate;
+    Annotate gained Auto process all, flagged-first list/colours/
+    counters, Jump to next flagged, Save and export, Import annotations
+    CSV…, validation stats on Reporting.
+
+    Bug fixed: Raw data processing, Annotate and Export animations
+    didn't follow the Home library after the libraries folder changed
+    in Adjustments - LibrarySelector cached the folder at startup and
+    silently fell back to the first library in its stale list.
+
+    Also: shared `about_dialog.py` (credits, UoH logo, package versions +
+    citations, PyDracula credit); Study design's target-precision →
+    required N helper (`wilson_calc.required_n`); prediction/training
+    worker output mirrored to the Dev console.
+
 ## Deferred - multiple collision detection
 
 Assessed, not implemented. The models are whole-window classifiers and
@@ -2113,7 +2188,11 @@ known multiple collisions.
 
 ## Future - end-to-end pipeline test bed
 
-Not started. A repeatable full run through every stage, against the
+Largely covered by the demos (item 19): the Advanced demo runs deployment
+> processing > validation + annotation > training > deployment > prediction
+> report through the real pages from a demo pack. Not yet: misclassification
+analysis/retraining in the run, assertions beyond "each step produced its
+output", or a fresh-library-each-run option. Original note: A repeatable full run through every stage, against the
 "Testbed" dummy library (single treatment, small enough to reprocess from
 raw on every run):
 

@@ -14,8 +14,8 @@ from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
-    QHeaderView, QLabel, QLineEdit, QPushButton, QSizePolicy, QTableWidget,
-    QVBoxLayout, QWidget,
+    QHeaderView, QLabel, QLineEdit, QPushButton, QSizePolicy, QSplitter,
+    QTableWidget, QVBoxLayout, QWidget,
 )
 
 # theme colours (match the PyDracula palette used by the app)
@@ -38,6 +38,117 @@ PALETTE = [INFO, PINK, WARN, OK, ACCENT, "#00bcd4"]
 # never forces a horizontal scrollbar at a sensible window size.
 CARD_W, CARD_H   = 205, 124
 CARD_W2, CARD_H2 = 112, 112
+
+
+def discard_widget(w):
+    """Throw away a child widget that has just been taken out of a layout.
+
+    Deliberately NOT `w.setParent(None)`: a widget added to a layout inside
+    a visible window gets a *queued* "show if not hidden" from Qt. If it is
+    discarded again before the event loop runs (a card refreshed twice in a
+    row - e.g. a library switch followed straight away by another refresh)
+    and orphaned with setParent(None), that queued show then pops it up as
+    its own tiny top-level window (titled "python"), which stays on screen
+    until deleteLater gets its turn - and inside a nested event loop (the
+    demo runners' waits) that can be a long time. Hiding it explicitly
+    cancels the queued show, and keeping its parent means it can never
+    become a window at all."""
+    w.hide()
+    w.deleteLater()
+
+
+def hsplit(*items):
+    """A row of boxes that fills the page's width and can be resized by
+    dragging the boundaries between them - the app's standard for boxes
+    that sit side by side (a plain QHBoxLayout row can't be resized, and
+    anything with a fixed/maximum width leaves dead space on a wide
+    screen). Each item is a widget, or (widget, weight): the weights set
+    the starting proportions and how extra width is shared."""
+    split = QSplitter(Qt.Orientation.Horizontal)
+    split.setChildrenCollapsible(False)
+    weights = []
+    for i, item in enumerate(items):
+        widget, weight = item if isinstance(item, tuple) else (item, 1)
+        split.addWidget(widget)
+        split.setStretchFactor(i, weight)
+        weights.append(weight)
+    split.setSizes([w * 1000 for w in weights])
+    return split
+
+
+def centred(widget, max_width=None, share=None):
+    """`widget` centred horizontally in a holder, rather than stretched
+    across the full width of a wide page: capped at `max_width` pixels, or
+    - with `share` (0-1) - taking that fraction of the available width."""
+    holder = QWidget()
+    h = QHBoxLayout(holder)
+    h.setContentsMargins(0, 0, 0, 0)
+    h.setSpacing(0)
+    if share is not None:
+        side = max(1, round((1 - share) * 50))
+        mid = max(1, round(share * 100))
+        h.addStretch(side)
+        h.addWidget(widget, stretch=mid)
+        h.addStretch(side)
+    else:
+        if max_width:
+            widget.setMaximumWidth(max_width)
+        h.addStretch(0)
+        h.addWidget(widget, stretch=1)
+        h.addStretch(0)
+    return holder
+
+
+class _ShowWatcher(QObject):
+    """Holds one pending callback per widget and runs it the next time that
+    widget is shown (see `when_visible`)."""
+
+    def __init__(self, widget):
+        super().__init__(widget)
+        self.pending = {}
+        widget.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.Show and self.pending:
+            calls, self.pending = list(self.pending.values()), {}
+            # after the show has painted - the page appears first, then
+            # its (possibly slow) refresh runs
+            for fn in calls:
+                QTimer.singleShot(0, fn)
+        return False
+
+
+class _OnShow(QObject):
+    def __init__(self, widget, fn):
+        super().__init__(widget)
+        self._fn = fn
+        widget.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.Show:
+            QTimer.singleShot(0, self._fn)
+        return False
+
+
+def on_show(widget, fn):
+    """Run `fn` every time `widget` is shown (just after it has painted) -
+    for summaries that go stale while their page isn't being looked at."""
+    _OnShow(widget, fn)
+
+
+def when_visible(widget, fn, key="default"):
+    """Run `fn` now if `widget` is on screen, else the next time it is shown.
+    Only the latest pending call per `key` is kept - so a page that isn't
+    being looked at does no work at all for a library switch (or three),
+    just once when it's next opened."""
+    if widget.isVisible():
+        fn()
+        return
+    watcher = next((c for c in widget.children() if isinstance(c, _ShowWatcher)),
+                   None)
+    if watcher is None:
+        watcher = _ShowWatcher(widget)
+    watcher.pending[key] = fn
 
 
 def style_table(tbl: QTableWidget, row_numbers=True, columns=True):
@@ -327,8 +438,7 @@ class MetaCard(QFrame):
             item = self._grid.takeAt(0)
             w = item.widget()
             if w is not None:
-                w.setParent(None)
-                w.deleteLater()
+                discard_widget(w)
         self._rows = {}
 
         for i, (label, value) in enumerate(rows):
@@ -387,8 +497,8 @@ class CheckList(QFrame):
         ready_text/blocked_text are supplied; pages that show the outcome
         elsewhere (e.g. via a gated Run button) omit it."""
         for w in self._items:
-            w.setParent(None)
-            w.deleteLater()
+            self._v.removeWidget(w)
+            discard_widget(w)
         self._items = []
         self._v.removeWidget(self._verdict)
 
@@ -656,8 +766,7 @@ class LevelGrouper(QWidget):
             item = layout.takeAt(0)
             w = item.widget()
             if w is not None:
-                w.setParent(None)
-                w.deleteLater()
+                discard_widget(w)
             elif item.layout() is not None:
                 self._clear(item.layout())
 

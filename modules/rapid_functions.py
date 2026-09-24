@@ -345,9 +345,9 @@ def process_imp_hig_direct(imp_filename, hig_filename, output_dir, config=None):
     all_info = {**file_info, **summary_info, 'file': base_filename}
     append_to_sensor_index(all_info, output_dir)
 
-    # Create and save minimal CSV
-    minimal_data = create_minimal_csv(combined_data, base_filename, output_path)
-    
+    # no more <stem>_min.csv alongside it - nothing ever read it back (every
+    # sensor listing only ever filtered it out); the "_min" exclusions in
+    # library_widgets/page_simple_mode stay, for libraries processed before
     return combined_data, {**file_info, **summary_info}
 
 def append_to_sensor_index(sensor_info, output_dir):
@@ -505,18 +505,3 @@ def post_process_combined(data, fs=FS, magnitudes=None, nadir_method=None):
     }
     
     return data, summary_info
-
-def create_minimal_csv(data, filename, output_dir):
-    """Create a minimal CSV with only selected columns."""
-    minimal_cols = [c for c in ["time_s", "pressure_kpa",
-                                "higacc_mag_g", "inacc_mag_ms",
-                                "rot_mag_degs"] if c in data.columns]
-    minimal_data = data[minimal_cols].copy()
-    
-    output_path = Path(output_dir) / "csv"
-    output_path.mkdir(parents=True, exist_ok=True)
-    
-    output_file = output_path / f"{filename}_min.csv"
-    minimal_data.to_csv(output_file, index=False)
-    
-    return minimal_data
