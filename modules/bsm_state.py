@@ -14,12 +14,13 @@ reporting re-sweeps and exports whenever a new result comes in
 is fast (one 200-point NumPy loop), so it runs straight on the GUI thread.
 """
 from datetime import datetime, timezone
-from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
-_APP_ROOT = Path(__file__).parent.parent
-LATEST_RESULT_PATH = _APP_ROOT / "bsm_results" / "latest_result.json"
+from . import settings
+
+# next to the exe once packaged, the repo root from source
+LATEST_RESULT_PATH = settings.app_root() / "bsm_results" / "latest_result.json"
 
 
 def build_latest_payload(res):

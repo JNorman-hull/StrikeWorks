@@ -37,9 +37,8 @@ from PySide6.QtCore import QObject, QThread, Signal
 from . import sensor_config, settings
 from .worker_launch import worker_command
 
-_APP_ROOT = Path(__file__).parent.parent
-_RUNS_DIR = _APP_ROOT / "training_runs"
-DEFAULT_MODELS_DIR = _APP_ROOT / "models"
+# next to the exe once packaged, the repo root from source
+_RUNS_DIR = settings.app_root() / "training_runs"
 
 MODEL_KINDS = ("binary", "multiclass")
 
@@ -808,12 +807,13 @@ class TrainingState(QObject):
             self.results[kind] = entry
 
     # ── deployment ───────────────────────────────────────────────────────────
-    def suggest_version(self, models_dir=DEFAULT_MODELS_DIR):
+    def suggest_version(self, models_dir=None):
         """Next free <major>_<minor> shared by both pipeline models."""
+        models_dir = Path(models_dir or settings.get_models_dir())
         best = (1, 0)
         try:
             for prefix in MODEL_KINDS:
-                for p in Path(models_dir).glob(f"{prefix}*.joblib"):
+                for p in models_dir.glob(f"{prefix}*.joblib"):
                     m = re.match(rf"{prefix}(\d+)_(\d+)$", p.stem)
                     if m:
                         v = (int(m.group(1)), int(m.group(2)))

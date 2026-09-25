@@ -5,24 +5,18 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Builds the packaged StrikeWorks executable end to end:
+"""Builds the packaged app into dist/StrikeWorks without touching its data.
 
-  1. Runs PyInstaller against StrikeWorks.spec.
-  2. Copies the resources that need to live *next to* StrikeWorks.exe -
-     not PyInstaller's own _internal/ folder, which is where `datas`
-     entries in the spec land and which nothing in the app actually
-     looks in for these: models/ (the shipped binary1/multiclass1 pair)
-     and input_data/BSM_config/ (the bundled BSM presets). Both are
-     looked up via settings.app_root() (modules/settings.py), which
-     resolves to Path(sys.executable).parent once frozen - i.e. right
-     alongside the .exe, where a real user would expect to find (and
-     could replace) them.
-  3. Creates libraries/ and output_data/ next to the .exe too, empty
-     apart from the same short readme.txt already sitting in the source
-     tree's own placeholder folders. (input_data/ itself already exists
-     once step 2 copies BSM_config/ into it.) main.py's own
-     _ensure_default_folders() does this same creation on every launch
-     regardless, so this step only matters for never-yet-run installs.
+PyInstaller empties its output folder before every build, and the packaged
+app keeps its data folders (libraries, input_data, output_data, models)
+next to StrikeWorks.exe - so building straight into dist/StrikeWorks
+deletes whatever was made with the built app. Instead:
+
+  1. PyInstaller builds into build/staging/StrikeWorks.
+  2. Only the program - StrikeWorks.exe and _internal/ - is swapped into
+     dist/StrikeWorks. Nothing else there is deleted.
+  3. The shipped models and BSM presets are copied in (overwriting only
+     files of the same name), and any missing data folder is created.
 
 Usage:
     python build.py
@@ -34,33 +28,78 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent
 DIST = ROOT / "dist" / "StrikeWorks"
+STAGING = ROOT / "build" / "staging"
+EXE = "StrikeWorks.exe"
+BUNDLE = "_internal"
+
+# folders builds before the app_root() fix wrote at run time inside
+# _internal - moved next to the exe (where the app now looks) rather than
+# deleted with the old bundle
+RUNTIME_FOLDERS = ("training_runs", "bsm_results")
+
+
+def _merge_move(src, dst):
+    """Move `src` to `dst`, keeping anything already at `dst`."""
+    if not dst.exists():
+        shutil.move(str(src), str(dst))
+        return
+    for child in src.iterdir():
+        _merge_move(child, dst / child.name)
+    src.rmdir()
+
+
+def _swap_in_program(built):
+    """Replace the exe and the bundle. Fails before deleting anything if
+    the app is running (its files are locked)."""
+    DIST.mkdir(parents=True, exist_ok=True)
+    old_bundle = DIST / BUNDLE
+    if old_bundle.exists():
+        for name in RUNTIME_FOLDERS:
+            if (old_bundle / name).exists():
+                _merge_move(old_bundle / name, DIST / name)
+                print(f"  kept {name}/ (moved out of {BUNDLE}/)")
+        retired = DIST / (BUNDLE + ".old")
+        if retired.exists():
+            shutil.rmtree(retired)
+        try:
+            old_bundle.rename(retired)
+        except OSError as e:
+            sys.exit(f"Can't replace {old_bundle} - is StrikeWorks running? ({e})")
+    else:
+        retired = None
+    try:
+        (built / EXE).replace(DIST / EXE)
+    except OSError as e:
+        if retired is not None:
+            retired.rename(old_bundle)
+        sys.exit(f"Can't replace {DIST / EXE} - is StrikeWorks running? ({e})")
+    shutil.move(str(built / BUNDLE), str(DIST / BUNDLE))
+    if retired is not None:
+        shutil.rmtree(retired)
+
+
+def _place_shipped_data():
+    """Shipped models and BSM presets, copied over files of the same name
+    only - models deployed with the built app stay."""
+    shutil.copytree(ROOT / "models", DIST / "models", dirs_exist_ok=True)
+    shutil.copytree(ROOT / "input_data" / "BSM_config",
+                    DIST / "input_data" / "BSM_config", dirs_exist_ok=True)
+    for name in ("libraries", "output_data"):
+        (DIST / name).mkdir(parents=True, exist_ok=True)
+        readme = ROOT / name / "readme.txt"
+        if readme.exists() and not (DIST / name / "readme.txt").exists():
+            shutil.copy2(readme, DIST / name / "readme.txt")
 
 
 def main():
     subprocess.run(
-        [sys.executable, "-m", "PyInstaller", "StrikeWorks.spec", "--noconfirm"],
+        [sys.executable, "-m", "PyInstaller", "StrikeWorks.spec",
+         "--noconfirm", "--distpath", str(STAGING)],
         cwd=ROOT, check=True)
-
-    print("\nPlacing default data folders next to StrikeWorks.exe...")
-
-    models_dst = DIST / "models"
-    if models_dst.exists():
-        shutil.rmtree(models_dst)
-    shutil.copytree(ROOT / "models", models_dst)
-
-    bsm_dst = DIST / "input_data" / "BSM_config"
-    bsm_dst.mkdir(parents=True, exist_ok=True)
-    for f in (ROOT / "input_data" / "BSM_config").glob("*"):
-        if f.is_file():
-            shutil.copy2(f, bsm_dst / f.name)
-
-    for name in ("libraries", "output_data"):
-        dst = DIST / name
-        dst.mkdir(parents=True, exist_ok=True)
-        for f in (ROOT / name).glob("*"):
-            if f.is_file():
-                shutil.copy2(f, dst / f.name)
-
+    print(f"\nUpdating {DIST} (data folders are left as they are)...")
+    _swap_in_program(STAGING / "StrikeWorks")
+    _place_shipped_data()
+    shutil.rmtree(STAGING / "StrikeWorks", ignore_errors=True)
     print(f"Build complete: {DIST}")
 
 
