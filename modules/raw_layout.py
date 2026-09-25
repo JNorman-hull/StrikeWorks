@@ -88,25 +88,6 @@ def in_video_dir(path, raw_dir) -> bool:
     return any(is_video_dir(p) for p in rel.parts[:-1])
 
 
-def locate(path, raw_dir):
-    """(deployment, treatment, run) for a raw file under `raw_dir`.
-
-    The first folder level is the deployment, the second the treatment,
-    the third the run ("Run 2" -> "2"; any other name is kept as-is). No
-    run level means Run 1 - there is always at least one run."""
-    try:
-        dirs = [d for d in Path(path).relative_to(raw_dir).parts[:-1]
-                if not is_video_dir(d)]
-    except ValueError:
-        return UNGROUPED, UNGROUPED, DEFAULT_RUN
-    deployment = dirs[0] if len(dirs) >= 1 else UNGROUPED
-    treatment = dirs[1] if len(dirs) >= 2 else UNGROUPED
-    run = DEFAULT_RUN
-    if len(dirs) >= 3:
-        run = run_label(dirs[2]) or dirs[2]
-    return deployment, treatment, run
-
-
 class RawTree:
     """One walk of a library's raw folder, everything the pages need from it:
 
@@ -159,25 +140,6 @@ def scan_tree(raw_dir, folder=None):
             tree.files.setdefault(stem, []).append(path)
             tree.locations.setdefault(stem, (deployment, treatment, run, path))
     return tree
-
-
-def video_dirs_for(raw_file, raw_dir):
-    """Every VIDEO folder a recording's clips could be in: its own folder's
-    first, then each parent's up to (and including) its deployment folder -
-    the current per-run layout and the older per-treatment one both work."""
-    out = []
-    folder = Path(raw_file).parent
-    try:
-        depth = len(folder.relative_to(raw_dir).parts)
-    except ValueError:
-        return out
-    for _ in range(max(depth, 0)):
-        if folder.exists():
-            for entry in folder.iterdir():
-                if entry.is_dir() and is_video_dir(entry.name):
-                    out.append(entry)
-        folder = folder.parent
-    return out
 
 
 def has_files(folder) -> bool:

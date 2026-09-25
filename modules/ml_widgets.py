@@ -7,15 +7,15 @@
 """Reusable widgets for the Machine Learning Analysis pages.
 
 The RingCard and Spinner are ports of the MVP prediction page's widgets,
-recoloured for the StrikeWorks dark theme. MetaCard, CheckList and ProbBars
+recoloured for the StrikeWorks dark theme. MetaCard and ProbBars
 are new but follow the same card language as page_process.StatCard.
 """
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
-    QAbstractItemView, QComboBox, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
-    QHeaderView, QLabel, QLineEdit, QPushButton, QSizePolicy, QSplitter,
-    QTableWidget, QVBoxLayout, QWidget,
+    QComboBox, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView,
+    QLabel, QLineEdit, QPushButton, QSizePolicy, QSplitter, QTableWidget,
+    QVBoxLayout, QWidget,
 )
 
 # theme colours (match the PyDracula palette used by the app)
@@ -468,69 +468,6 @@ class MetaCard(QFrame):
 
 
 # ── validation checklist ─────────────────────────────────────────────────────
-class CheckList(QFrame):
-    """Renders (state, label, detail) validation rows plus a verdict banner."""
-
-    _ICON = {"ok": ("✓", OK), "warn": ("⚠", WARN),
-             "fail": ("✗", BAD), "off": ("–", MUTED)}
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("checkList")
-        self.setStyleSheet(
-            f"#checkList{{background-color:{CARD_BG};border-radius:6px;"
-            f"border:1px solid {BORDER};}}")
-        self._v = QVBoxLayout(self)
-        self._v.setContentsMargins(12, 10, 12, 10)
-        self._v.setSpacing(4)
-
-        self._verdict = QLabel("")
-        vf = QFont("Segoe UI", 10)
-        vf.setBold(True)
-        self._verdict.setFont(vf)
-        self._verdict.setStyleSheet("border:none;")
-        self._items = []
-
-    def set_checks(self, checks, ready, ready_text=None,
-                   blocked_text=None):
-        """Render the checks. A verdict banner is drawn only when
-        ready_text/blocked_text are supplied; pages that show the outcome
-        elsewhere (e.g. via a gated Run button) omit it."""
-        for w in self._items:
-            self._v.removeWidget(w)
-            discard_widget(w)
-        self._items = []
-        self._v.removeWidget(self._verdict)
-
-        for state, label, detail in checks:
-            icon, colour = self._ICON.get(state, self._ICON["off"])
-            row = QLabel(f"<span style='color:{colour};'>{icon}</span>&nbsp; "
-                         f"<span style='color:{TEXT};'>{label}</span>"
-                         + (f"<br/><span style='color:{MUTED};'>"
-                            f"&nbsp;&nbsp;&nbsp;{detail}</span>"
-                            if detail else ""))
-            row.setStyleSheet("border:none;")
-            row.setWordWrap(True)
-            self._v.addWidget(row)
-            self._items.append(row)
-
-        if ready_text is None and blocked_text is None:
-            self._verdict.setVisible(False)
-            return
-        self._verdict.setVisible(True)
-        if ready:
-            self._verdict.setText(ready_text or "")
-            self._verdict.setStyleSheet(f"color:{OK};border:none;")
-        else:
-            self._verdict.setText(blocked_text or "")
-            self._verdict.setStyleSheet(f"color:{BAD};border:none;")
-        self._v.addWidget(self._verdict)
-
-    def set_running(self):
-        self._verdict.setText("PREDICTION RUNNING…")
-        self._verdict.setStyleSheet(f"color:{ACCENT};border:none;")
-
-
 # ── horizontal probability bars ──────────────────────────────────────────────
 class ProbBars(QWidget):
     """Compact horizontal bar chart for class probabilities.

@@ -38,8 +38,8 @@ from pathlib import Path
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QScrollArea, QSizePolicy, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QPushButton, QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
 from . import bsm_config

@@ -52,12 +52,6 @@ class UIFunctions(MainWindow):
     def returStatus(self):
         return GLOBAL_STATE
 
-    # SET STATUS
-    # ///////////////////////////////////////////////////////////////
-    def setStatus(self, status):
-        global GLOBAL_STATE
-        GLOBAL_STATE = status
-
     # TOGGLE MENU
     # ///////////////////////////////////////////////////////////////
     def toggleMenu(self, enable):
@@ -212,26 +206,11 @@ class UIFunctions(MainWindow):
         deselect = getStyle.replace(Settings.MENU_SELECTED_STYLESHEET, "")
         return deselect
 
-    # START SELECTION
-    def selectStandardMenu(self, widget):
-        for w in self.ui.topMenu.findChildren(QPushButton):
-            if w.objectName() == widget:
-                w.setStyleSheet(UIFunctions.selectMenu(w.styleSheet()))
-
     # RESET SELECTION
     def resetStyle(self, widget):
         for w in self.ui.topMenu.findChildren(QPushButton):
             if w.objectName() != widget:
                 w.setStyleSheet(UIFunctions.deselectMenu(w.styleSheet()))
-
-    # SELECT/DESELECT SENSOR PROCESSING SUB-MENU
-    # These act on the slide-out panel, not the main left menu.
-    # ///////////////////////////////////////////////////////////////
-    # START SELECTION
-    def selectPanelMenu(self, widget):
-        for w in self.ui.extraTopMenu.findChildren(QPushButton):
-            if w.objectName() == widget:
-                w.setStyleSheet(UIFunctions.selectMenu(w.styleSheet()))
 
     # RESET SELECTION
     def resetPanelStyle(self, widget):

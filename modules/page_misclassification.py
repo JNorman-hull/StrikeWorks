@@ -55,8 +55,7 @@ from . import ml_model_library
 from . import settings
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
 from .ml_widgets import (
-    BAD, MUTED, OK, Section, apply_section_defaults, discard_widget,
-    when_visible,
+    MUTED, OK, Section, apply_section_defaults, discard_widget, when_visible,
 )
 from .page_annotate import LOSSLESSCUT_EXE
 from .library_widgets import RAW_DIR as _RAW_DIR

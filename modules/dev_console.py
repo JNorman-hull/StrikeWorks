@@ -95,9 +95,6 @@ class DevConsole(QDialog):
         self._err_tee = None
         self._build()
 
-    def set_app_window(self, window):
-        self._app_window = window
-
     def _build(self):
         v = QVBoxLayout(self)
         v.setContentsMargins(12, 12, 12, 12)

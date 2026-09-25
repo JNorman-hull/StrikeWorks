@@ -156,10 +156,6 @@ class SensorSource:
         self.packet_size = int(self.packet_size or 0)
         self.native_rate_hz = float(self.native_rate_hz or 0.0)
 
-    @property
-    def interpolated(self) -> bool:
-        return self.method in ("linear", "cubic")
-
     def describe(self, output_rate) -> str:
         rate = (f"{self.native_rate_hz:g} Hz" if self.native_rate_hz
                 else "unknown rate")
@@ -213,11 +209,6 @@ class SensorConfig:
         """Extensions that must all be present for a complete recording."""
         return self.file_extensions
 
-    @property
-    def primary_extension(self) -> str:
-        """The extension that defines a recording; others pair to it."""
-        return self.sources[0].extension if self.sources else ""
-
     def source(self, ext: str):
         ext = str(ext).lower()
         return next((s for s in self.sources if s.extension == ext), None)
@@ -238,10 +229,6 @@ class SensorConfig:
         property of the sensor, which is why it is answered here.
         """
         return int(round(float(seconds) * self.output_rate_hz))
-
-    @property
-    def nadir_search_samples(self) -> int:
-        return int(round(NADIR_SEARCH_SEC * self.output_rate_hz))
 
     def compiled_pattern(self):
         """The filename pattern, or None when it does not compile."""
@@ -466,39 +453,6 @@ def get_parser(name):
 # ── resampling ───────────────────────────────────────────────────────────────
 _INTERP_KIND = {"linear": "linear", "cubic": "cubic",
                 "nearest": "nearest", "previous": "previous"}
-
-
-def resample_frame(df, out_rate, time_col="time_s", method="linear"):
-    """Put `df` on a uniform grid at `out_rate` Hz.
-
-    The generic form of what the RAPID parser does inline: lift a lower-rate
-    block of channels onto the output grid. Available to any parser that
-    does not build its own grid. Returns a new frame.
-    """
-    import numpy as np
-    import pandas as pd
-    from scipy.interpolate import interp1d
-
-    if out_rate <= 0 or time_col not in df.columns or len(df) < 2:
-        return df
-
-    t = df[time_col].to_numpy(dtype=float)
-    step = 1.0 / float(out_rate)
-    grid = np.arange(t.min(), t.max() + step, step)
-
-    out = pd.DataFrame({time_col: grid})
-    kind = _INTERP_KIND.get(method, "linear")
-    for col in df.columns:
-        if col == time_col:
-            continue
-        try:
-            f = interp1d(t, df[col].to_numpy(dtype=float), kind=kind,
-                         bounds_error=False, fill_value="extrapolate")
-            out[col] = f(grid)
-        except (ValueError, TypeError):
-            # non-numeric or too few points for the chosen kind
-            out[col] = df[col].iloc[0] if len(df) else None
-    return out
 
 
 # ── change notification ──────────────────────────────────────────────────────

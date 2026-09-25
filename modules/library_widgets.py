@@ -18,7 +18,7 @@ appearing in its sensor list where Annotate correctly filtered them out.
 `LibrarySelector` is the fix: one `QWidget`, one copy of the scan/filter
 logic, used identically by every page that needs to pick a library and
 list its sensors - Annotate, Export animations, and (raw data) Process.
-Process works from raw stems (`raw_stems()`) rather than processed CSVs and
+Process works from the raw folders rather than processed CSVs and
 has no per-sensor bad/done status, so it uses the picker alone
 (`sensor_list=False`, the default). Annotate and Export animations both
 opt into the sensor-list panel (`sensor_list=True`) - one "Show bad
@@ -33,7 +33,7 @@ it (a file with no run folder above it is Run 1).
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QSortFilterProxyModel, Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QHBoxLayout,
@@ -44,7 +44,7 @@ from . import raw_layout, settings
 from .ml_widgets import (
     BAD, MUTED, OK, WARN, Section, Spinner, style_table, when_visible,
 )
-from .raw_layout import RAW_DIR, UNGROUPED, VIDEO_FOLDER_NAME  # noqa: F401 (re-exported)
+from .raw_layout import RAW_DIR, UNGROUPED
 
 CSV_DIR = Path("processed_sens_data") / "csv"
 ALL_DEPLOYMENTS = None   # combo data sentinel for "All deployments"/"All treatments"/"All runs"
@@ -71,15 +71,6 @@ def _run_sort_key(run):
 # hence Annotate/Export/Process) agrees on
 _EXCL_SUFFIXES = {"_min", "_delineated"}
 _EXCL_NAMES = {"global_sensor_index.csv"}
-
-
-class _DirsOnlyProxy(QSortFilterProxyModel):
-    """Show directories only. Shared by every folder-tree browser in the
-    app (Validate's file tree, Process's deployment/metadata trees)."""
-
-    def filterAcceptsRow(self, row, parent):
-        idx = self.sourceModel().index(row, 0, parent)
-        return self.sourceModel().isDir(idx)
 
 
 class _RawScanThread(QThread):
@@ -377,10 +368,6 @@ class LibrarySelector(QWidget):
 
     # ── deployments / treatments / runs (raw_layout.py) ──────────────────────
     @property
-    def scanning(self):
-        return any(t.isRunning() for t in self._scan_threads)
-
-    @property
     def raw_tree(self):
         """The last finished scan (raw_layout.RawTree), or None while the
         library hasn't been scanned yet."""
@@ -509,10 +496,6 @@ class LibrarySelector(QWidget):
             return []
         return sorted(self._tree.videos.get(stem.upper(), []))
 
-    def video_dir_for(self, stem):
-        matches = self.video_matches_for(stem)
-        return matches[0].parent if matches else None
-
     # ── sensor listing ───────────────────────────────────────────────────────
     def list_sensor_csvs(self, apply_filters=True):
         """Every processed sensor CSV in the current library, tagged with
@@ -543,20 +526,6 @@ class LibrarySelector(QWidget):
                         "treatment": treatment, "run": run})
         return rows
 
-    def raw_stems(self, apply_filters=True):
-        """Every raw sensor stem known from the deployment scan, tagged and
-        filtered the same way as `list_sensor_csvs` - for callers that work
-        from raw files rather than processed CSVs. Stems come back
-        upper-cased (as scanned); callers matching against real on-disk
-        filenames should compare case-insensitively."""
-        rows = []
-        for stem, (deployment, treatment, run, path) in sorted(self._locations.items()):
-            if apply_filters and not self._matches_filters(deployment, treatment, run):
-                continue
-            rows.append({"stem": stem, "deployment": deployment,
-                        "treatment": treatment, "run": run, "path": path})
-        return rows
-
     def scan_folder(self):
         """The raw folder the current Deployment/Treatment filters narrow
         to (the whole raw_sens_data folder for "All"), for callers that
@@ -578,14 +547,6 @@ class LibrarySelector(QWidget):
         return self._matches_filters(deployment, treatment, run)
 
     # ── sensor list panel (opt-in via sensor_list=True) ─────────────────────────
-    def selected_path(self):
-        """The `path` of the currently-selected sensor row, or None."""
-        items = self.tbl_sensors.selectedItems()
-        if not items:
-            return None
-        return self.tbl_sensors.item(items[0].row(), 0).data(
-            Qt.ItemDataRole.UserRole)
-
     def _on_show_flags_toggled(self, _checked):
         # re-render from the cached call rather than making the host rescan
         # the filesystem just to react to this checkbox

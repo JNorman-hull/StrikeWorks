@@ -40,29 +40,6 @@ def _slug(text):
     return re.sub(r"[^A-Za-z0-9_-]+", "_", str(text)).strip("_") or "model"
 
 
-def save_figure(fig, base_path, formats=("png",), dpi=300):
-    """Saves `fig` under `base_path` once per requested format (a bare
-    extension, e.g. "png"/"svg") at `dpi` - the Export and report dialog's
-    own figure-output settings, threaded down to every section that
-    renders its own matplotlib figure rather than going through
-    `ml_figures`/`ml_train_figures` (which already take `formats`/`dpi`
-    themselves). Returns the .png path if one was produced (HTML embedding
-    needs a raster image), else whichever format was produced first."""
-    formats = formats or ("png",)
-    png_path = None
-    first_path = None
-    for fmt in formats:
-        p = Path(base_path).with_suffix(f".{fmt}")
-        try:
-            fig.savefig(p, dpi=dpi, bbox_inches="tight")
-        except Exception:
-            continue
-        first_path = first_path or p
-        if fmt == "png":
-            png_path = p
-    return png_path or first_path
-
-
 def _nested_deployment_table(deployments, root, di):
     """One table - deployment identity columns (rowspan across each
     deployment's own treatment rows) followed by that treatment's own
@@ -616,8 +593,8 @@ def misclassification_section(window, get_entry):
         for r in rows:
             r["video_matches"] = video_index.get(str(r["file"]), [])
 
-        kv, table, esc, dark = (ml_report._kv_table, ml_report._data_table,
-                                ml_report._esc, ml_report._DARK)
+        table, esc, dark = (ml_report._data_table, ml_report._esc,
+                            ml_report._DARK)
         h = ["<div style='font-family:Segoe UI, Arial, sans-serif;"
              "color:#1e293b;font-size:13px;'>"]
         h.append(f"<h1 style='color:{dark};'>Misclassification Report</h1>")

@@ -363,25 +363,3 @@ def export_analysis(state, parent_dir, processing_review=None):
 
     return out
 
-
-def export_tables(state, target_dir):
-    """Export the prediction tables to a chosen folder. Returns file names."""
-    target = Path(target_dir)
-    written = []
-    if state.summary is not None:
-        state.summary.to_csv(target / "prediction_summary.csv", index=False)
-        written.append("prediction_summary.csv")
-    if state.predictions is not None:
-        state.predictions.to_csv(target / "predictions_per_file.csv",
-                                 index=False)
-        written.append("predictions_per_file.csv")
-    if state.region_summary is not None:
-        state.region_summary.to_csv(target / "region_summary.csv", index=False)
-        written.append("region_summary.csv")
-    return written
-
-
-def export_figures(state, target_dir, formats=("png", "svg")):
-    """Export the prediction figures. Returns file names."""
-    figs = ml_figures.render_figures(state, Path(target_dir), formats=formats)
-    return [p.name for paths in figs.values() for p in paths]

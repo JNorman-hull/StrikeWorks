@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 from . import ml_model_library, ml_train_figures, settings
 from .ml_tab_predict import _NumItem
 from .ml_widgets import (
-    BAD, MUTED, OK, WARN, CARD_W2, CARD_H2, MetaCard, RingCard, Section,
+    MUTED, CARD_W2, CARD_H2, MetaCard, RingCard, Section,
     apply_section_defaults, hsplit,
 )
 

@@ -53,12 +53,6 @@ _INFO = INFO
 _MUTED = MUTED
 
 
-def _parse_name(stem: str, config=None):
-    """Split a sensor filename stem into (sensor, DD/MM, HH:MM:SS) with the
-    sensor configuration's own pattern."""
-    return (config or sensor_config.active()).parse_stem(stem)
-
-
 # ── processing thread (ported from the MVP; reader chosen by config) ─────────
 class _ProcessThread(QThread):
     log = Signal(str)

@@ -75,9 +75,6 @@ class MLPredictionPage(QObject):
         if preset:
             self.tab_inspect.apply_filter_preset(preset)
 
-    def goto_report(self):
-        self.open_report()
-
     def open_report(self):
         """Export and report - a pop-up dialog (see ml_tab_report.py)
         rather than a page/tab, opened from the pinned sidebar button."""

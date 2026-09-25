@@ -22,7 +22,7 @@ model stack is never imported into the GUI process.
 """
 import json
 import subprocess
-import sys
+
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -417,11 +417,6 @@ class PredictionState(QObject):
         meta["annotation_column"] = ann
         meta["annotated"] = ann is not None
         return meta
-
-    def has_ground_truth(self):
-        return bool(self.dataset_meta.get("annotated")) or (
-            self.predictions is not None
-            and annotation_column(self.predictions) is not None)
 
     # ── validation ───────────────────────────────────────────────────────────
     def validate(self):

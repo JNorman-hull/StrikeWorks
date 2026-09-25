@@ -24,12 +24,12 @@ import json
 import re
 import shutil
 import subprocess
-import sys
+
 from collections import deque
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
+
 import pandas as pd
 
 from PySide6.QtCore import QObject, QThread, Signal
@@ -244,9 +244,6 @@ class TrainingState(QObject):
     def model_results(self, kind):
         """{"metrics", "cv_predictions", "curves"} for one stage, or None."""
         return self.results.get(kind)
-
-    def trained_kinds(self):
-        return [k for k in MODEL_KINDS if k in self.results]
 
     # ── dataset ──────────────────────────────────────────────────────────────
     def load_dataset_csv(self, path):

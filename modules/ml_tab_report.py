@@ -33,15 +33,14 @@ HTML format. Four actions:
                               specifically, not the multi-page hub above.
 
 Figure output settings (file formats, DPI) sit underneath and thread
-through to every section that renders its own figure - `report_center.py`'s
-`save_figure()` and the `formats=`/`dpi=` kwargs on `ml_figures.
-render_figures`/`ml_train_figures.render_model_figures`.
+through to every section that renders its own figure (the `formats=`/
+`dpi=` arguments of the report_center sections).
 """
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QHBoxLayout,
-    QLabel, QMessageBox, QPushButton, QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
+    QMessageBox, QPushButton, QSpinBox, QVBoxLayout,
 )
 
 from . import ml_report, report_center

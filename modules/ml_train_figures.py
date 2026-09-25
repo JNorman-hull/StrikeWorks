@@ -19,7 +19,7 @@ exported figures and reports.
 import numpy as np
 
 from .ml_figures import (
-    _MUTED, _PALETTE, _awaiting, _grid, fg_colour, style_axes, style_legend,
+    _PALETTE, _awaiting, fg_colour, style_axes, style_legend,
 )
 
 

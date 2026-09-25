@@ -33,8 +33,8 @@ from . import settings
 from .bind_datasets import BindTrainingData
 from .ml_train_state import GROUPING_PRESETS
 from .ml_widgets import (
-    ACCENT, BAD, BORDER, CARD_BG, EMPTY, MUTED, OK, PALETTE, TEXT,
-    LevelGrouper, MetaCard, Spinner, Section, apply_section_defaults, hsplit,
+    ACCENT, BAD, EMPTY, MUTED, OK, PALETTE, TEXT, LevelGrouper, MetaCard,
+    Spinner, Section, apply_section_defaults, hsplit,
 )
 
 _PREVIEW_ROWS = 200
@@ -957,8 +957,7 @@ class TrainTab:
         s = self.state
         secs = self._elapsed.elapsed() / 1000
         self.lbl_status.setStyleSheet(f"color:{OK};")
-        self.lbl_status.setText(
-            f"")
+        self.lbl_status.setText(f"Cross-validation complete ({secs:.0f} s).")
         self._fill_performance()
         self.btn_evaluate.setVisible(True)
         s.status.emit("Cross-validation complete.", 5000)

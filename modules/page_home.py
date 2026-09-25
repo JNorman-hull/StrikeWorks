@@ -20,7 +20,7 @@ The resume summary reads straight from the library's own files
 in-memory state - decoupled, and correct even before those pages have
 been visited this session.
 """
-from pathlib import Path
+
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QPixmap
@@ -223,11 +223,6 @@ class HomePage(QObject):
         the one place that actually activates them. No section's panel is
         opened for the user - they pick where to start from the sidebar."""
         self.window.expand_sidebar()
-
-    def _go_simple(self):
-        """Simple mode - one pop-up window (page_simple_mode.py) instead
-        of the sidebar; deliberately does not expand_sidebar()."""
-        self.window.openSimpleMode()
 
     # ── new session ──────────────────────────────────────────────────────────
     def _new_session(self, parent=None):

@@ -100,18 +100,6 @@ def _pm_bars(ax, res, dark, value_fs=8, ylabel_fs=9):
     _bar_style(ax, dark, "Mortality probability (%)", fontsize=ylabel_fs)
 
 
-def draw_pco(fig, res, dark=True):
-    fig.clear()
-    _pco_bars(fig.add_subplot(111), res, dark)
-    fig.tight_layout()
-
-
-def draw_pm(fig, res, dark=True):
-    fig.clear()
-    _pm_bars(fig.add_subplot(111), res, dark)
-    fig.tight_layout()
-
-
 def _panel_letter(ax, letter, dark):
     """(a)/(b)/... top-left, above the axes - the multi-panel figures'
     own panel labels."""
@@ -286,76 +274,6 @@ def sweep_panels_title(species, params):
             f"Lf = {params['lf'] * 1000:g} mm, Bf = {params['bf'] * 1000:g} mm, "
             f"design Q = {params['Q']:g} m\u00b3/s, N = {params['N']:g} rpm, "
             f"wf = {params['wf']:g} m/s")
-
-
-def draw_sens_wf(fig, x, y, x_fit, y_fit, span=4.0, dark=True,
-                 x_label="Relative fish velocity wf (m/s)",
-                 y_label="Collision probability (%)"):
-    fig.clear()
-    ax = fig.add_subplot(111)
-    fg = fg_colour(dark)
-    _grid(ax, dark)
-    ax.axvline(0, color=fg, linewidth=0.8, linestyle="--", alpha=0.6)
-    ax.plot(x_fit, y_fit, color=CEN_COLOR, linewidth=1.5, zorder=2)
-    ax.scatter(x, y, s=14, color=CEN_COLOR, edgecolor=fg,
-               linewidth=0.4, zorder=3)
-    ax.set_xlim(-span, span)
-    ax.tick_params(axis="x", labelsize=8)
-    ax.set_xlabel(x_label, fontsize=9)
-    ax.set_ylabel(y_label, fontsize=9)
-    style_axes(fig, ax, dark)
-    fig.tight_layout()
-
-
-def draw_sweep_lines(fig, x_label, y_label, curves, design_label=None,
-                     annotation=None, dark=True, y_max=100.0):
-    """Multiple sweeps on one axis, one line per key in `curves` (an
-    ordered dict: label -> (x_arr, y_arr)) - the Q_LEVELS fan-out from the
-    standalone Mathematical BSM scripts (`cen_2025_..._CUSTOM.py`):
-    viridis-coloured lines, `design_label`'s curve drawn heavier, each
-    curve labelled directly on the line (cascaded across x so labels don't
-    stack), an optional corner annotation box for the fixed parameters the
-    sweep held constant.
-    """
-    import matplotlib
-    import numpy as np
-
-    fig.clear()
-    ax = fig.add_subplot(111)
-    fg = fg_colour(dark)
-    _grid(ax, dark)
-
-    labels = list(curves.keys())
-    cmap = matplotlib.colormaps["viridis"]
-    n = max(len(labels) - 1, 1)
-    all_x = np.concatenate([x for x, _ in curves.values()]) if curves else [0]
-    x_min, x_max = float(np.min(all_x)), float(np.max(all_x))
-    label_x = np.linspace(x_max * 0.95, x_min * 0.95, len(labels))
-
-    for i, (label, (x_arr, y_arr)) in enumerate(curves.items()):
-        color = cmap(i / n)
-        lw = 2.0 if label == design_label else 1.2
-        ax.plot(x_arr, y_arr, color=color, linewidth=lw, zorder=2)
-        lx = label_x[i]
-        ly = float(np.interp(lx, x_arr, y_arr))
-        ax.text(lx, ly, str(label), color=color, fontsize=9, fontweight="bold",
-               ha="center", va="center", zorder=4,
-               bbox=dict(facecolor=("#1b1e24" if dark else "white"),
-                        edgecolor="none", pad=1.2, alpha=0.85))
-
-    if annotation:
-        ax.text(0.02, 0.03, annotation, transform=ax.transAxes,
-               ha="left", va="bottom", fontsize=7.5, color=fg, zorder=4,
-               bbox=dict(facecolor=("#1b1e24" if dark else "white"),
-                        edgecolor="none", alpha=0.75, pad=1.5))
-
-    ax.set_xlabel(x_label, fontsize=9)
-    ax.set_ylabel(y_label, fontsize=9)
-    if y_max is not None:
-        ax.set_ylim(0, y_max)
-    ax.tick_params(labelsize=8)
-    style_axes(fig, ax, dark)
-    fig.tight_layout()
 
 
 def draw_vcrit_sweep(fig, series, dark=True, title=None):

@@ -245,10 +245,6 @@ class FileInventory(QWidget):
         self._row_filter = row_filter
         self._tree = tree
 
-    @property
-    def scanning(self):
-        return any(t.isRunning() for t in self._scan_threads)
-
     def refresh(self, block=False):
         """Re-list. With a pre-built tree that's instant; otherwise the
         folder is walked in the background behind a spinner (a big

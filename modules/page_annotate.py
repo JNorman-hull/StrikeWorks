@@ -64,10 +64,10 @@ import pyqtgraph as pg
 
 from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFileDialog, QGridLayout,
-    QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMessageBox,
-    QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QSplitter,
-    QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QInputDialog,
+    QLabel, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
+    QSizePolicy, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget,
+    QVBoxLayout, QWidget,
 )
 
 from . import annotation_schema as asch
@@ -160,10 +160,6 @@ class AnnotationPage(QObject):
     @property
     def _lib_root(self):
         return self.lib_selector.lib_root
-
-    @property
-    def _deployment_map(self):
-        return self.lib_selector.deployment_map
 
     def _on_lib_changed(self):
         self._load_index()

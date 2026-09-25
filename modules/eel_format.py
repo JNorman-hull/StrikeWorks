@@ -42,7 +42,7 @@ rather than published; gen-2 gyros are real and written as measured.
 Every rule applied is reported in the sensor's index messages.
 """
 import csv
-import re
+
 from pathlib import Path
 
 import numpy as np
@@ -68,10 +68,6 @@ PRESSURE_SCALE_KPA = 0.01  # 0.01 kPa per LSB
 TEMP_SCALE_C = 0.01
 BATTERY_SCALE_V = 0.01
 VALID_SAMPLERATES = (2000, 2500, 5000)
-
-# the device name is everything before the last ten digits (MMDDhhmmss) -
-# "EEL-0010829034703" is device "EEL-001" on 29/08 at 03:47:03
-FILENAME_PATTERN = r"^(.+?)-?(\d{4})(\d{6})$"
 
 
 class EelFormatError(ValueError):
@@ -334,8 +330,3 @@ def process_eel(paths, out_dir, config):
     rf.append_to_sensor_index({**file_info, **summary, "file": stem}, out_dir)
     return combined, {**file_info, **summary}
 
-
-def device_and_time(stem):
-    """(device name, MMDD, hhmmss) per the spec's parsing rule, or None."""
-    m = re.match(FILENAME_PATTERN, stem)
-    return m.groups() if m else None

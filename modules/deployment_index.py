@@ -272,26 +272,6 @@ def _run_count(runs):
     return len(runs) or 1
 
 
-def runs_for(root, deployment_id, treatment_name):
-    """The run labels planned for one treatment, in order."""
-    rows = _plan_or_sensor_rows(root)
-    if rows is None or rows.empty:
-        return []
-
-    seen = []
-    for _, row in rows.iterrows():
-        if _clean(row.get(TREATMENT_COL, "")) != str(treatment_name).strip():
-            continue
-        if (deployment_id is not None
-                and _clean(row.get(DEPLOYMENT_COL, ""))
-                != str(deployment_id).strip()):
-            continue
-        run = _clean(row.get(RUN_COL, ""))
-        if run and run not in seen:
-            seen.append(run)
-    return sorted(seen, key=_run_sort_key)
-
-
 def _run_sort_key(run):
     """Numeric runs in numeric order, anything else after them by name."""
     try:
