@@ -41,8 +41,16 @@ if len(sys.argv) > 2 and sys.argv[1] == "--worker":
 
 # IMPORT / GUI AND MODULES AND WIDGETS
 # ///////////////////////////////////////////////////////////////
-from modules import *
-from widgets import *
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtWidgets import (
+    QApplication, QFrame, QMainWindow, QPushButton, QSplashScreen,
+    QTableWidget, QVBoxLayout,
+)
+
+from modules.ui_main import Ui_MainWindow
+from modules.ui_config import UIConfig
+from modules.ui_functions import UIFunctions
 from modules.page_prepare import PreparePage
 from modules.page_process import ProcessPage
 from modules.page_validate import ValidatePage
@@ -103,7 +111,7 @@ class MainWindow(QMainWindow):
 
         # USE CUSTOM TITLE BAR | USE AS "False" FOR MAC OR LINUX
         # ///////////////////////////////////////////////////////////////
-        Settings.ENABLE_CUSTOM_TITLE_BAR = True
+        UIConfig.ENABLE_CUSTOM_TITLE_BAR = True
 
         # APP NAME
         # ///////////////////////////////////////////////////////////////
@@ -367,19 +375,6 @@ class MainWindow(QMainWindow):
         for tbl in self.findChildren(QTableWidget):
             style_table(tbl)
 
-        # SET CUSTOM THEME
-        # ///////////////////////////////////////////////////////////////
-        useCustomTheme = False
-        themeFile = os.path.join("themes", "strikeworks_light.qss")
-
-        # SET THEME AND HACKS
-        if useCustomTheme:
-            # LOAD AND APPLY STYLE
-            UIFunctions.theme(self, themeFile, True)
-
-            # SET HACKS
-            AppFunctions.setThemeHack(self)
-
         # SET HOME PAGE AND SELECT MENU
         # ///////////////////////////////////////////////////////////////
         widgets.stackedWidget.setCurrentWidget(widgets.home)
@@ -524,7 +519,7 @@ class MainWindow(QMainWindow):
         the new one, in place - no close/reopen. Distinct from the
         MENU_SELECTED_STYLESHEET highlight setSelected()/resetStyle() apply,
         which marks the active top-level page rather than the open panel."""
-        color = Settings.BTN_LEFT_BOX_COLOR
+        color = UIConfig.BTN_LEFT_BOX_COLOR
         old_btn = self._panel_btn
         old_btn.setStyleSheet(old_btn.styleSheet().replace(color, ''))
         self._configure_panel(mode)
@@ -675,8 +670,8 @@ class MainWindow(QMainWindow):
             getattr(widgets, name).setEnabled(active)
 
     def expand_sidebar(self):
-        widgets.leftMenuBg.setMinimumWidth(Settings.MENU_WIDTH)
-        widgets.leftMenuBg.setMaximumWidth(Settings.MENU_WIDTH)
+        widgets.leftMenuBg.setMinimumWidth(UIConfig.MENU_WIDTH)
+        widgets.leftMenuBg.setMaximumWidth(UIConfig.MENU_WIDTH)
         self.set_sidebar_active(True)
 
     # SIMPLE MODE - pop-up walkthrough (modules/page_simple_mode.py)

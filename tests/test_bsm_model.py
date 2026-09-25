@@ -4,7 +4,6 @@ import unittest
 
 from support import BSM_CONFIG  # noqa: F401  (sets sys.path)
 
-import modules  # noqa: F401
 from modules.bsm_config import load_config
 from modules.bsm_model import (compute, mortality_from_strike_rate,
                                sensitivity_sweeps)

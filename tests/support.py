@@ -5,7 +5,6 @@ Nothing a test does touches the real settings files, libraries or the
 repo's own output folders - every path the app writes to at run time is
 pointed into a temporary folder first.
 """
-import importlib
 import json
 import os
 import sys
@@ -41,7 +40,6 @@ def isolate(env_dir=None):
             "output_dir": str(env / "output"),
         }))
 
-    import modules  # noqa: F401  (the PyDracula import order - see main_window)
     from modules import (annotation_schema, bsm_state, ml_train_state,
                          page_bsm_calculator, prepare_tab_precision,
                          sensor_config, settings)
@@ -67,13 +65,9 @@ def qt_app():
 
 
 def main_window():
-    """The main window, built as main.py builds it. ui_functions.py does
-    `from main import *`, which only resolves once `modules` has been
-    imported and `main` re-executed against it."""
+    """(the `main` module, a new main window), built as main.py builds it."""
     qt_app()
-    import modules  # noqa: F401
     import main
-    main = importlib.reload(main)
     return main, main.MainWindow()
 
 

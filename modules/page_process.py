@@ -103,7 +103,6 @@ class ProcessPage(QObject):
         self.window = window
         self.session_state = session_state
 
-        ui.tabs_process.hide()
         self._build(ui.layout_content_process)
         self._connect()
         self._on_lib_changed()

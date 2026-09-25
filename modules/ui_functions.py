@@ -7,264 +7,171 @@
 # available under Settings > About. See LICENSE.
 #
 # ///////////////////////////////////////////////////////////////
+"""The window frame's behaviour: custom title bar (move, maximise,
+resize grips), the sliding sidebar and side panels, and the selected-menu
+highlight. Every function takes the main window as its first argument."""
+from PySide6.QtCore import (
+    QEasingCurve, QEvent, QParallelAnimationGroup, QPropertyAnimation, Qt,
+    QTimer,
+)
+from PySide6.QtGui import QColor, QIcon
+from PySide6.QtWidgets import QGraphicsDropShadowEffect, QPushButton, QSizeGrip
 
-# MAIN FILE
-# ///////////////////////////////////////////////////////////////
-from main import *
+from widgets import CustomGrip
 
-# GLOBALS
-# ///////////////////////////////////////////////////////////////
-GLOBAL_STATE = False
-GLOBAL_TITLE_BAR = True
+from .ui_config import UIConfig
 
-class UIFunctions(MainWindow):
-    # MAXIMIZE/RESTORE
-    # ///////////////////////////////////////////////////////////////
+_COLLAPSED_MENU_WIDTH = 60
+
+
+class UIFunctions:
+    # ── maximise / restore ──────────────────────────────────────────────────
     def maximize_restore(self):
-        global GLOBAL_STATE
-        status = GLOBAL_STATE
-        if status == False:
+        grips = (self.left_grip, self.right_grip, self.top_grip, self.bottom_grip)
+        if not getattr(self, "_maximized", False):
             self.showMaximized()
-            GLOBAL_STATE = True
+            self._maximized = True
             self.ui.appMargins.setContentsMargins(0, 0, 0, 0)
             self.ui.maximizeRestoreAppBtn.setToolTip("Restore")
-            self.ui.maximizeRestoreAppBtn.setIcon(QIcon(u":/icons/images/icons/icon_restore.png"))
+            self.ui.maximizeRestoreAppBtn.setIcon(
+                QIcon(":/icons/images/icons/icon_restore.png"))
             self.ui.frame_size_grip.hide()
-            self.left_grip.hide()
-            self.right_grip.hide()
-            self.top_grip.hide()
-            self.bottom_grip.hide()
+            for grip in grips:
+                grip.hide()
         else:
-            GLOBAL_STATE = False
+            self._maximized = False
             self.showNormal()
-            self.resize(self.width()+1, self.height()+1)
+            self.resize(self.width() + 1, self.height() + 1)
             self.ui.appMargins.setContentsMargins(10, 10, 10, 10)
             self.ui.maximizeRestoreAppBtn.setToolTip("Maximize")
-            self.ui.maximizeRestoreAppBtn.setIcon(QIcon(u":/icons/images/icons/icon_maximize.png"))
+            self.ui.maximizeRestoreAppBtn.setIcon(
+                QIcon(":/icons/images/icons/icon_maximize.png"))
             self.ui.frame_size_grip.show()
-            self.left_grip.show()
-            self.right_grip.show()
-            self.top_grip.show()
-            self.bottom_grip.show()
+            for grip in grips:
+                grip.show()
 
-    # RETURN STATUS
-    # ///////////////////////////////////////////////////////////////
-    def returStatus(self):
-        return GLOBAL_STATE
-
-    # TOGGLE MENU
-    # ///////////////////////////////////////////////////////////////
+    # ── sidebar ─────────────────────────────────────────────────────────────
     def toggleMenu(self, enable):
-        """Expand/collapse the left menu.
-
-        Both minimumWidth and maximumWidth are animated so the menu is pinned to
-        an exact width in either state. Animating only the minimum leaves the
-        width free between min and max, which lets the frame settle on its own
-        size hint and lets a sibling panel squeeze the menu when it opens.
-        """
+        """Expand/collapse the sidebar. Both its minimum and maximum width
+        are animated so it is pinned to an exact width either way - with
+        only the minimum animated, an opening side panel could squeeze it."""
         if enable:
-            # GET WIDTH
             width = self.ui.leftMenuBg.width()
-            maxExtend = Settings.MENU_WIDTH
-            standard = 60
+            target = (UIConfig.MENU_WIDTH if width == _COLLAPSED_MENU_WIDTH
+                      else _COLLAPSED_MENU_WIDTH)
+            UIFunctions.animate_menu_width(self, width, target)
 
-            # SET MAX WIDTH
-            if width == standard:
-                widthExtended = maxExtend
-            else:
-                widthExtended = standard
-
-            UIFunctions.animate_menu_width(self, width, widthExtended)
-
-    # ANIMATE THE LEFT MENU TO AN EXACT WIDTH
-    # ///////////////////////////////////////////////////////////////
     def animate_menu_width(self, start, end):
-        self.menu_min = QPropertyAnimation(self.ui.leftMenuBg, b"minimumWidth")
-        self.menu_min.setDuration(Settings.TIME_ANIMATION)
-        self.menu_min.setStartValue(start)
-        self.menu_min.setEndValue(end)
-        self.menu_min.setEasingCurve(QEasingCurve.InOutQuart)
-
-        self.menu_max = QPropertyAnimation(self.ui.leftMenuBg, b"maximumWidth")
-        self.menu_max.setDuration(Settings.TIME_ANIMATION)
-        self.menu_max.setStartValue(start)
-        self.menu_max.setEndValue(end)
-        self.menu_max.setEasingCurve(QEasingCurve.InOutQuart)
-
         self.menu_group = QParallelAnimationGroup()
-        self.menu_group.addAnimation(self.menu_min)
-        self.menu_group.addAnimation(self.menu_max)
+        for prop in (b"minimumWidth", b"maximumWidth"):
+            anim = QPropertyAnimation(self.ui.leftMenuBg, prop)
+            anim.setDuration(UIConfig.TIME_ANIMATION)
+            anim.setStartValue(start)
+            anim.setEndValue(end)
+            anim.setEasingCurve(QEasingCurve.InOutQuart)
+            self.menu_group.addAnimation(anim)
         self.menu_group.start()
 
-    # TOGGLE LEFT BOX
-    # The slide-out panel is shared by the Sensor processing and Machine
-    # learning analysis sections; MainWindow tracks which top-level button
-    # owns it in self._panel_btn so the highlight follows the active section.
-    # ///////////////////////////////////////////////////////////////
+    # ── side panels ─────────────────────────────────────────────────────────
     def toggleLeftBox(self, enable):
-        if enable:
-            # GET WIDTH
-            width = self.ui.extraLeftBox.width()
-            widthRightBox = self.ui.extraRightBox.width()
-            maxExtend = Settings.LEFT_BOX_WIDTH
-            color = Settings.BTN_LEFT_BOX_COLOR
-            standard = 0
+        """Open/close the section panel; the section's top button
+        (`self._panel_btn`) carries the "owns the panel" highlight."""
+        if not enable:
+            return
+        width = self.ui.extraLeftBox.width()
+        width_right = self.ui.extraRightBox.width()
+        color = UIConfig.BTN_LEFT_BOX_COLOR
+        btn = getattr(self, "_panel_btn", None) or self.ui.btn_sensor
+        style = btn.styleSheet()
+        if width == 0:
+            btn.setStyleSheet(style + color)
+            if width_right != 0:
+                right = self.ui.settingsTopBtn.styleSheet()
+                self.ui.settingsTopBtn.setStyleSheet(
+                    right.replace(UIConfig.BTN_RIGHT_BOX_COLOR, ""))
+        else:
+            btn.setStyleSheet(style.replace(color, ""))
+        UIFunctions.start_box_animation(self, width, width_right, "left")
 
-            # GET BTN STYLE
-            btn = getattr(self, "_panel_btn", None) or self.ui.btn_sensor
-            style = btn.styleSheet()
-
-            # SET MAX WIDTH
-            if width == 0:
-                widthExtended = maxExtend
-                # SELECT BTN
-                btn.setStyleSheet(style + color)
-                if widthRightBox != 0:
-                    style = self.ui.settingsTopBtn.styleSheet()
-                    self.ui.settingsTopBtn.setStyleSheet(style.replace(Settings.BTN_RIGHT_BOX_COLOR, ''))
-            else:
-                widthExtended = standard
-                # RESET BTN
-                btn.setStyleSheet(style.replace(color, ''))
-
-        UIFunctions.start_box_animation(self, width, widthRightBox, "left")
-
-    # TOGGLE RIGHT BOX
-    # ///////////////////////////////////////////////////////////////
     def toggleRightBox(self, enable):
-        if enable:
-            # GET WIDTH
-            width = self.ui.extraRightBox.width()
-            widthLeftBox = self.ui.extraLeftBox.width()
-            maxExtend = Settings.RIGHT_BOX_WIDTH
-            color = Settings.BTN_RIGHT_BOX_COLOR
-            standard = 0
-
-            # GET BTN STYLE
-            style = self.ui.settingsTopBtn.styleSheet()
-
-            # SET MAX WIDTH
-            if width == 0:
-                widthExtended = maxExtend
-                # SELECT BTN
-                self.ui.settingsTopBtn.setStyleSheet(style + color)
-                if widthLeftBox != 0:
-                    panel_btn = getattr(self, "_panel_btn", None) or self.ui.btn_sensor
-                    style = panel_btn.styleSheet()
-                    panel_btn.setStyleSheet(style.replace(Settings.BTN_LEFT_BOX_COLOR, ''))
-            else:
-                widthExtended = standard
-                # RESET BTN
-                self.ui.settingsTopBtn.setStyleSheet(style.replace(color, ''))
-
-            UIFunctions.start_box_animation(self, widthLeftBox, width, "right")
+        if not enable:
+            return
+        width = self.ui.extraRightBox.width()
+        width_left = self.ui.extraLeftBox.width()
+        color = UIConfig.BTN_RIGHT_BOX_COLOR
+        style = self.ui.settingsTopBtn.styleSheet()
+        if width == 0:
+            self.ui.settingsTopBtn.setStyleSheet(style + color)
+            if width_left != 0:
+                panel_btn = getattr(self, "_panel_btn", None) or self.ui.btn_sensor
+                panel_btn.setStyleSheet(
+                    panel_btn.styleSheet().replace(UIConfig.BTN_LEFT_BOX_COLOR, ""))
+        else:
+            self.ui.settingsTopBtn.setStyleSheet(style.replace(color, ""))
+        UIFunctions.start_box_animation(self, width_left, width, "right")
 
     def start_box_animation(self, left_box_width, right_box_width, direction):
-        right_width = 0
-        left_width = 0 
-
-        # Check values
-        if left_box_width == 0 and direction == "left":
-            left_width = 240
-        else:
-            left_width = 0
-        # Check values
-        if right_box_width == 0 and direction == "right":
-            right_width = 240
-        else:
-            right_width = 0       
-
-        # ANIMATION LEFT BOX        
-        self.left_box = QPropertyAnimation(self.ui.extraLeftBox, b"minimumWidth")
-        self.left_box.setDuration(Settings.TIME_ANIMATION)
-        self.left_box.setStartValue(left_box_width)
-        self.left_box.setEndValue(left_width)
-        self.left_box.setEasingCurve(QEasingCurve.InOutQuart)
-
-        # ANIMATION RIGHT BOX        
-        self.right_box = QPropertyAnimation(self.ui.extraRightBox, b"minimumWidth")
-        self.right_box.setDuration(Settings.TIME_ANIMATION)
-        self.right_box.setStartValue(right_box_width)
-        self.right_box.setEndValue(right_width)
-        self.right_box.setEasingCurve(QEasingCurve.InOutQuart)
-
-        # GROUP ANIMATION
+        left_width = (UIConfig.LEFT_BOX_WIDTH
+                      if left_box_width == 0 and direction == "left" else 0)
+        right_width = (UIConfig.RIGHT_BOX_WIDTH
+                       if right_box_width == 0 and direction == "right" else 0)
         self.group = QParallelAnimationGroup()
-        self.group.addAnimation(self.left_box)
-        self.group.addAnimation(self.right_box)
+        for box, start, end in ((self.ui.extraLeftBox, left_box_width, left_width),
+                                (self.ui.extraRightBox, right_box_width, right_width)):
+            anim = QPropertyAnimation(box, b"minimumWidth")
+            anim.setDuration(UIConfig.TIME_ANIMATION)
+            anim.setStartValue(start)
+            anim.setEndValue(end)
+            anim.setEasingCurve(QEasingCurve.InOutQuart)
+            self.group.addAnimation(anim)
         self.group.start()
 
-    # SELECT/DESELECT MENU
-    # ///////////////////////////////////////////////////////////////
-    # SELECT
-    def selectMenu(getStyle):
-        select = getStyle + Settings.MENU_SELECTED_STYLESHEET
-        return select
+    # ── selected-menu highlight ─────────────────────────────────────────────
+    def selectMenu(style):
+        return style + UIConfig.MENU_SELECTED_STYLESHEET
 
-    # DESELECT
-    def deselectMenu(getStyle):
-        deselect = getStyle.replace(Settings.MENU_SELECTED_STYLESHEET, "")
-        return deselect
+    def deselectMenu(style):
+        return style.replace(UIConfig.MENU_SELECTED_STYLESHEET, "")
 
-    # RESET SELECTION
-    def resetStyle(self, widget):
+    def resetStyle(self, keep):
+        """Clear the highlight from every sidebar button but `keep`."""
         for w in self.ui.topMenu.findChildren(QPushButton):
-            if w.objectName() != widget:
+            if w.objectName() != keep:
                 w.setStyleSheet(UIFunctions.deselectMenu(w.styleSheet()))
 
-    # RESET SELECTION
-    def resetPanelStyle(self, widget):
+    def resetPanelStyle(self, keep):
+        """Clear the highlight from every section-panel button but `keep`."""
         for w in self.ui.extraTopMenu.findChildren(QPushButton):
-            if w.objectName() != widget:
+            if w.objectName() != keep:
                 w.setStyleSheet(UIFunctions.deselectMenu(w.styleSheet()))
 
-    # IMPORT THEMES FILES QSS/CSS
-    # ///////////////////////////////////////////////////////////////
-    def theme(self, file, useCustomTheme):
-        if useCustomTheme:
-            str = open(file, 'r').read()
-            self.ui.styleSheet.setStyleSheet(str)
-
-    # START - GUI DEFINITIONS
-    # ///////////////////////////////////////////////////////////////
+    # ── window frame set-up ─────────────────────────────────────────────────
     def uiDefinitions(self):
-        def dobleClickMaximizeRestore(event):
-            # IF DOUBLE CLICK CHANGE STATUS
+        def double_click_maximize(event):
             if event.type() == QEvent.MouseButtonDblClick:
                 QTimer.singleShot(250, lambda: UIFunctions.maximize_restore(self))
-        self.ui.titleRightInfo.mouseDoubleClickEvent = dobleClickMaximizeRestore
+        self.ui.titleRightInfo.mouseDoubleClickEvent = double_click_maximize
 
-        if Settings.ENABLE_CUSTOM_TITLE_BAR:
-            #STANDARD TITLE BAR
-            # OR onto the existing flags rather than replacing them
-            # outright - setWindowFlags(Qt.FramelessWindowHint) alone
-            # silently drops the implicit Qt.Window type QMainWindow
-            # starts with, which is what tells Windows this is a normal
-            # top-level app window; without it, Windows treats it as a
-            # plain popup and never gives it a taskbar button at all
-            # (confirmed via GetWindowLong: no WS_EX_APPWINDOW without
-            # this fix, even though the window itself displays fine).
+        if UIConfig.ENABLE_CUSTOM_TITLE_BAR:
+            # OR'd onto the existing flags: FramelessWindowHint alone drops
+            # the Qt.Window type, and Windows then gives the window no
+            # taskbar button
             self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
             self.setAttribute(Qt.WA_TranslucentBackground)
 
-            # MOVE WINDOW / MAXIMIZE / RESTORE
-            def moveWindow(event):
-                # IF MAXIMIZED CHANGE TO NORMAL
-                if UIFunctions.returStatus(self):
+            def move_window(event):
+                if getattr(self, "_maximized", False):
                     UIFunctions.maximize_restore(self)
-                # MOVE WINDOW
                 if event.buttons() == Qt.LeftButton:
                     self.move(self.pos() + event.globalPos() - self.dragPos)
                     self.dragPos = event.globalPos()
                     event.accept()
-            self.ui.titleRightInfo.mouseMoveEvent = moveWindow
+            self.ui.titleRightInfo.mouseMoveEvent = move_window
 
-            # CUSTOM GRIPS
             self.left_grip = CustomGrip(self, Qt.LeftEdge, True)
             self.right_grip = CustomGrip(self, Qt.RightEdge, True)
             self.top_grip = CustomGrip(self, Qt.TopEdge, True)
             self.bottom_grip = CustomGrip(self, Qt.BottomEdge, True)
-
         else:
             self.ui.appMargins.setContentsMargins(0, 0, 0, 0)
             self.ui.minimizeAppBtn.hide()
@@ -272,7 +179,6 @@ class UIFunctions(MainWindow):
             self.ui.closeAppBtn.hide()
             self.ui.frame_size_grip.hide()
 
-        # DROP SHADOW
         self.shadow = QGraphicsDropShadowEffect(self)
         self.shadow.setBlurRadius(17)
         self.shadow.setXOffset(0)
@@ -280,25 +186,17 @@ class UIFunctions(MainWindow):
         self.shadow.setColor(QColor(0, 0, 0, 150))
         self.ui.bgApp.setGraphicsEffect(self.shadow)
 
-        # RESIZE WINDOW
         self.sizegrip = QSizeGrip(self.ui.frame_size_grip)
         self.sizegrip.setStyleSheet("width: 20px; height: 20px; margin 0px; padding: 0px;")
 
-        # MINIMIZE
         self.ui.minimizeAppBtn.clicked.connect(lambda: self.showMinimized())
-
-        # MAXIMIZE/RESTORE
-        self.ui.maximizeRestoreAppBtn.clicked.connect(lambda: UIFunctions.maximize_restore(self))
-
-        # CLOSE APPLICATION
+        self.ui.maximizeRestoreAppBtn.clicked.connect(
+            lambda: UIFunctions.maximize_restore(self))
         self.ui.closeAppBtn.clicked.connect(lambda: self.close())
 
     def resize_grips(self):
-        if Settings.ENABLE_CUSTOM_TITLE_BAR:
+        if UIConfig.ENABLE_CUSTOM_TITLE_BAR:
             self.left_grip.setGeometry(0, 10, 10, self.height())
             self.right_grip.setGeometry(self.width() - 10, 10, 10, self.height())
             self.top_grip.setGeometry(0, 0, self.width(), 10)
             self.bottom_grip.setGeometry(0, self.height() - 10, self.width(), 10)
-
-    # ///////////////////////////////////////////////////////////////
-    # END - GUI DEFINITIONS

@@ -7,7 +7,6 @@ import numpy as np
 
 from support import temp_dir
 
-import modules  # noqa: F401
 from modules import eel_format as ef, sensor_config as sc
 
 RATE = 2500

@@ -4,7 +4,6 @@ import unittest
 
 from support import temp_dir
 
-import modules  # noqa: F401
 from modules import raw_layout as rl
 from modules import validation_core as vc
 
