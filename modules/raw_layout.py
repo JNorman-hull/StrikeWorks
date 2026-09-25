@@ -31,6 +31,13 @@ import re
 from pathlib import Path
 
 RAW_DIR = Path("raw_sens_data")
+PROCESSED_DIR = Path("processed_sens_data")
+CSV_DIR = PROCESSED_DIR / "csv"
+WINDOW_DIR = PROCESSED_DIR / "nadir_window"
+INDEX_REL = PROCESSED_DIR / "index" / "global_sensor_index.csv"
+DATASET_REL = PROCESSED_DIR / "model_features.csv"
+# processed CSVs that aren't sensors: side files older versions wrote
+_NOT_SENSOR_SUFFIXES = ("_min", "_delineated")
 VIDEO_FOLDER_NAME = "VIDEO"
 UNGROUPED = "(ungrouped)"
 README_NAME = "readme.txt"
@@ -182,3 +189,50 @@ def extra_run_folders(lib_root, deployment, treatment, runs):
         if label is not None and int(label) > int(runs or 1):
             out.append(entry)
     return out
+
+
+def processed_csvs(lib_root):
+    """Every processed sensor CSV in a library, sorted by name."""
+    csv_dir = Path(lib_root) / CSV_DIR
+    try:
+        entries = list(os.scandir(csv_dir))
+    except OSError:
+        return []
+    return sorted(Path(e.path) for e in entries
+                  if e.is_file() and e.name.lower().endswith(".csv")
+                  and not Path(e.name).stem.endswith(_NOT_SENSOR_SUFFIXES))
+
+
+def video_index(lib_dir):
+    """{stem: [video paths]} across every library in `lib_dir` - one
+    os.walk per library's raw folder, only looking at `*_vid_*.mp4` names.
+
+    Deduplicated by resolved path: a library folder can be reachable under
+    more than one entry in the libraries directory (a case-variant name, a
+    shortcut/junction, a synced duplicate), which would otherwise list the
+    same physical video twice against one recording."""
+    index, seen_by_stem = {}, {}
+    try:
+        libs = [p for p in Path(lib_dir).iterdir() if p.is_dir()]
+    except OSError:
+        libs = []
+    for lib in libs:
+        raw_dir = lib / RAW_DIR
+        if not raw_dir.is_dir():
+            continue
+        for dirpath, _dirnames, filenames in os.walk(raw_dir):
+            for name in filenames:
+                if "_vid_" not in name or not name.lower().endswith(".mp4"):
+                    continue
+                video = Path(dirpath) / name
+                stem = name.split("_vid_")[0]
+                try:
+                    key = str(video.resolve()).lower()
+                except OSError:
+                    key = str(video).lower()
+                seen = seen_by_stem.setdefault(stem, set())
+                if key in seen:
+                    continue
+                seen.add(key)
+                index.setdefault(stem, []).append(video)
+    return index

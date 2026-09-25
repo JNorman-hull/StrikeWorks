@@ -64,6 +64,7 @@ from modules.page_bsm_calculator import CalculatorPage
 from modules.page_bsm_sensitivity import SensitivityPage
 from modules.page_bsm_biological import BiologicalPage
 from modules.ml_widgets import style_table, when_visible
+from modules.plot_widgets import configure_pyqtgraph
 from modules import settings
 from modules import table_copy
 from modules import win_utils
@@ -134,6 +135,7 @@ class MainWindow(QMainWindow):
         # only a reference for its demo runners, never its Qt parent (see
         # dev_console.py for why it must stay parentless).
         # ///////////////////////////////////////////////////////////////
+        configure_pyqtgraph()
         self.dev_console = DevConsole(self)
 
         # SESSION STATE + HOME (library selection) - constructed before

@@ -303,11 +303,12 @@ def _threshold_text(state):
     return f"{thr:.4f} (deployed optimal threshold)"
 
 
-def wrap_html_document(body_html):
-    """Standalone HTML file around the report body, sized for an A4 page
-    with narrow margins both on screen and when printed/exported to PDF."""
+def wrap_html_document(body_html, title="Blade Strike Analysis Report"):
+    """Standalone HTML file around a report body - every StrikeWorks
+    report - sized for an A4 page with narrow margins, on screen and when
+    printed or saved as PDF."""
     return ("<!DOCTYPE html><html><head><meta charset='utf-8'/>"
-            "<title>Blade Strike Analysis Report</title>"
+            f"<title>{title}</title>"
             f"<style>{A4_REPORT_CSS}</style>"
             f"</head><body>{body_html}</body></html>")
 

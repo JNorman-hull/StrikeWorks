@@ -64,17 +64,12 @@ from .ml_widgets import (
     ACCENT, MUTED, TEXT, Section, apply_section_defaults, when_visible,
 )
 from .page_annotate import LOSSLESSCUT_EXE
-from .page_validate import (
-    _CsvLoadThread, _NavViewBox, _find_col,
-)
+from .plot_widgets import CsvLoadThread, NavViewBox, find_col
 from .plot_style import reserve_top_margin, set_right_axis_active
 
 import pyqtgraph as pg
 
 _MAX_WINDOW_S = 30.0
-
-pg.setConfigOptions(antialias=True, background="#21252b",
-                    foreground="#c8cdd6")
 
 _PROCESSED_VIDEO_DIR = Path(__file__).parent.parent / "processed_video"
 _NADIR_T_COL = "pres_min.time."
@@ -271,7 +266,7 @@ class ExportAnimationsPage(QObject):
         self.lbl_video_info.setStyleSheet(f"color:{TEXT};font-weight:bold;")
         sv.addWidget(self.lbl_video_info)
 
-        self._pw = pg.PlotWidget(viewBox=_NavViewBox())
+        self._pw = pg.PlotWidget(viewBox=NavViewBox())
         pi = self._pw.plotItem
         pi.getViewBox().setMouseMode(pg.ViewBox.RectMode)
         pi.setLabel("bottom", "Time (s)")
@@ -767,7 +762,7 @@ class ExportAnimationsPage(QObject):
         self.lbl_loading.setText(f"Loading {path.name} …")
         self._set_loaded_enabled(False)
 
-        loader = _CsvLoadThread(path)
+        loader = CsvLoadThread(path)
         loader.loaded.connect(self._on_csv_loaded)
         loader.failed.connect(self._on_csv_failed)
         loader.finished.connect(lambda lt=loader: self._drop_loader(lt))
@@ -794,7 +789,7 @@ class ExportAnimationsPage(QObject):
         self._apply_loaded_df(path, df)
 
     def _apply_loaded_df(self, path, df):
-        time_col = _find_col(df, ["time_s", "time"], keyword="time")
+        time_col = find_col(df, ["time_s", "time"], keyword="time")
         self._df = df
         self._time = (df[time_col].to_numpy(dtype=float) if time_col
                       else None)

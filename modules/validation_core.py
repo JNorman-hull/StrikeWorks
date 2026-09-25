@@ -41,7 +41,7 @@ from PySide6.QtGui import QKeySequence, QShortcut
 
 from . import annotation_schema as asch
 from . import deployment_index as di
-from . import sensor_config, settings
+from . import raw_layout, sensor_config, settings
 
 NADIR_T_COL = "pres_min.time."
 NADIR_V_COL = "pres_min.kPa."
@@ -53,9 +53,7 @@ HIG_WINDOW_MAX_COL = "hstrike_hig_window_max_g"
 FLAG_HIG_THRESHOLD_G = 95.0
 
 WIN_SEC = 0.2
-WIN_DIR = Path("processed_sens_data") / "nadir_window"
-CSV_DIR = Path("processed_sens_data") / "csv"
-_EXCL_SUFFIXES = ("_min", "_delineated")
+WIN_DIR = raw_layout.WINDOW_DIR
 
 
 def sample_rate():
@@ -64,11 +62,9 @@ def sample_rate():
 
 def processed_sensor_files(lib_root):
     """[{"stem", "path"}] for every processed sensor CSV in a library."""
-    csv_dir = Path(lib_root) / CSV_DIR if lib_root else None
-    if csv_dir is None or not csv_dir.exists():
+    if not lib_root:
         return []
-    return [{"stem": p.stem, "path": p} for p in sorted(csv_dir.glob("*.csv"))
-            if not p.stem.endswith(_EXCL_SUFFIXES)]
+    return [{"stem": p.stem, "path": p} for p in raw_layout.processed_csvs(lib_root)]
 
 
 def detect_nadir_idx(stem, df, time, pres, index_df):
@@ -505,11 +501,11 @@ class DatasetExporter(QObject):
         return self._thread
 
     def start(self, lib_root, name, selected=None):
-        from .page_dataset import OPT_SEGMENTED, _ExtractThread
+        from .dataset_build import OPT_SEGMENTED, ExtractThread
         self._name = name or "dataset"
         self._lib_root = lib_root
         self._index_df = di.read_index(lib_root)
-        self._thread = _ExtractThread(lib_root, OPT_SEGMENTED,
+        self._thread = ExtractThread(lib_root, OPT_SEGMENTED,
                                       set(selected or ()), self._index_df,
                                       sensor_config.active())
         self._thread.done.connect(self._on_done)

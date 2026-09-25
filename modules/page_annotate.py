@@ -28,14 +28,14 @@ current) is ported from `page_validate.py` rather than imported wholesale:
 `page_validate.py` stays under Sensor Processing untouched, since it is the
 page slated to grow into the Delineation tool later, and the two pages
 temporarily overlap in what they do. The already-standalone
-`_CsvLoadThread`/`_NavViewBox`/`_Spinner`/`_decimate` are reused directly
+`CsvLoadThread`/`NavViewBox`/`Spinner`/`decimate` are reused directly
 (the same reuse `ml_tab_inspect.py` already makes), the rest is rebuilt
 here because Annotate's save action does more than Validate's: it also
 appends the sensor to a running dataset.
 
 Dataset auto-build: the first sensor saved in a library starts
 `processed_sens_data/model_features.csv` (the same shape Dataset creation
-already produces - `page_dataset.py`'s `_standardise`/`_META_COLS`, reused
+already produces - `dataset_build.py`'s `standardise`/`META_COLS`, reused
 directly); each further "Save + next" appends (or replaces, if re-saving a
 sensor already in it) that sensor's block. Opening a library reads this
 file back to know which sensors are already done, so review can resume
@@ -73,6 +73,7 @@ from PySide6.QtWidgets import (
 from . import annotation_schema as asch
 from . import deployment_index as di
 from . import sensor_config, settings
+from . import raw_layout
 from . import validation_core as vc
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
 from .inventory_widgets import notifier as inventory_notifier
@@ -81,25 +82,17 @@ from .ml_widgets import (
     ACCENT, BAD, MUTED, OK, TEXT, WARN, MetaCard, Section, Spinner,
     apply_section_defaults, discard_widget, when_visible,
 )
-from .page_dataset import _META_COLS, _standardise
+from .dataset_build import META_COLS, standardise
 from .plot_style import (
     add_export_button, build_export_data, reserve_top_margin,
     set_right_axis_active,
 )
-from .page_validate import (
-    _CHANNEL_ORDER, _CHANNELS, _MAX_RIGHT_PTS, _CsvLoadThread,
-    _NavViewBox, _Spinner, _decimate, _find_col,
+from .plot_widgets import (
+    CHANNEL_ORDER, CHANNELS, MAX_RIGHT_PTS, CsvLoadThread, NavViewBox,
+    decimate, find_col,
 )
 
-pg.setConfigOptions(antialias=True, background="#21252b",
-                    foreground="#c8cdd6")
 
-_WIN_DIR = Path("processed_sens_data") / "nadir_window"
-_DATASET_REL = Path("processed_sens_data") / "model_features.csv"
-
-_NADIR_T_COL = "pres_min.time."
-_NADIR_V_COL = "pres_min.kPa."
-_VALIDATED_COL = "hstrike_processed"
 _BAD_SENS_COL = di.BAD_SENS_COL
 _NOTES_COL = "notes"
 
@@ -389,13 +382,13 @@ class AnnotationPage(QObject):
 
         axis_row = QHBoxLayout()
         self.cmb_left = QComboBox()
-        for key in _CHANNEL_ORDER:
-            self.cmb_left.addItem(_CHANNELS[key][1], key)
-        self.cmb_left.setCurrentIndex(_CHANNEL_ORDER.index(self._left_key))
+        for key in CHANNEL_ORDER:
+            self.cmb_left.addItem(CHANNELS[key][1], key)
+        self.cmb_left.setCurrentIndex(CHANNEL_ORDER.index(self._left_key))
         self.cmb_right = QComboBox()
         self.cmb_right.addItem("None", None)
-        for key in _CHANNEL_ORDER:
-            self.cmb_right.addItem(_CHANNELS[key][1], key)
+        for key in CHANNEL_ORDER:
+            self.cmb_right.addItem(CHANNELS[key][1], key)
         axis_row.addWidget(self._muted("Left"))
         axis_row.addWidget(self.cmb_left, stretch=1)
         axis_row.addWidget(self._muted("Right"))
@@ -406,7 +399,7 @@ class AnnotationPage(QObject):
         win_row.addWidget(self._muted("ROI window"))
         self.cmb_window = QComboBox()
         win_row.addWidget(self.cmb_window)
-        self._spinner = _Spinner(size=18)
+        self._spinner = Spinner(size=18)
         self._spinner.setVisible(False)
         win_row.addWidget(self._spinner)
         win_row.addStretch()
@@ -419,7 +412,7 @@ class AnnotationPage(QObject):
                                   QSizePolicy.Policy.Expanding)
         ph = QVBoxLayout(plot_holder)
         ph.setContentsMargins(0, 0, 0, 0)
-        self._pw = pg.PlotWidget(viewBox=_NavViewBox())
+        self._pw = pg.PlotWidget(viewBox=NavViewBox())
         self._pw.setMinimumHeight(260)
         pi = self._pw.plotItem
         pi.getViewBox().setMouseMode(pg.ViewBox.RectMode)
@@ -542,7 +535,7 @@ class AnnotationPage(QObject):
 
     # ── the running dataset (resume support) ─────────────────────────────────
     def _dataset_path(self):
-        return self._lib_root / _DATASET_REL
+        return self._lib_root / raw_layout.DATASET_REL
 
     def _load_dataset_stems(self):
         self._dataset_stems = set()
@@ -736,7 +729,7 @@ class AnnotationPage(QObject):
         else:
             lines.append("No annotation values recorded yet.")
 
-        out_path = self._lib_root / "processed_sens_data" / "annotation_report.md"
+        out_path = self._lib_root / raw_layout.PROCESSED_DIR / "annotation_report.md"
         try:
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_text("\n".join(lines))
@@ -768,7 +761,7 @@ class AnnotationPage(QObject):
         self.status.emit(f"Loading {path.name} …", 0)
         self._set_loaded_enabled(False)
 
-        loader = _CsvLoadThread(path)
+        loader = CsvLoadThread(path)
         loader.loaded.connect(self._on_csv_loaded)
         loader.failed.connect(self._on_csv_failed)
         loader.finished.connect(lambda lt=loader: self._drop_loader(lt))
@@ -799,8 +792,8 @@ class AnnotationPage(QObject):
         self._apply_loaded_df(path, df)
 
     def _apply_loaded_df(self, path: Path, df):
-        time_col = _find_col(df, ["time_s", "time"], keyword="time")
-        pres_col = _find_col(df, ["pressure_kpa", _NADIR_V_COL], keyword="pressure")
+        time_col = find_col(df, ["time_s", "time"], keyword="time")
+        pres_col = find_col(df, ["pressure_kpa", vc.NADIR_V_COL], keyword="pressure")
 
         time = (df[time_col].to_numpy(dtype=float) if time_col
                 else np.arange(len(df), dtype=float) / self._fs())
@@ -811,13 +804,8 @@ class AnnotationPage(QObject):
         self._cur_file = path
         self._cur_stem = path.stem
 
-        nadir_t = self._index_nadir_time()
-        if nadir_t is not None:
-            self._nadir_idx = int(np.argmin(np.abs(time - float(nadir_t))))
-        elif self._pres is not None:
-            self._nadir_idx = int(np.argmin(self._pres))
-        else:
-            self._nadir_idx = len(df) // 2
+        self._nadir_idx = vc.detect_nadir_idx(self._cur_stem, df, time,
+                                              self._pres, self._index_df)
         # the as-loaded nadir - Save + next compares against it to record
         # whether a person actually moved it (validation_core user adjusted)
         self._loaded_nadir_idx = self._nadir_idx
@@ -828,21 +816,11 @@ class AnnotationPage(QObject):
         self._set_loaded_enabled(True)
         self.status.emit(f"Loaded: {path.name}", 3000)
 
-    def _index_nadir_time(self):
-        if (self._index_df is None or "file" not in self._index_df.columns
-                or _NADIR_T_COL not in self._index_df.columns):
-            return None
-        row = self._index_df[self._index_df["file"] == self._cur_stem]
-        if row.empty:
-            return None
-        val = row[_NADIR_T_COL].iloc[0]
-        return None if pd.isna(val) else val
-
     # ── plot (left/right axis, ported from page_validate.py) ────────────────
     def _channel(self, key):
         if key is None or self._df is None:
             return None
-        col = _CHANNELS.get(key, (None,))[0]
+        col = CHANNELS.get(key, (None,))[0]
         if col and col in self._df.columns:
             return self._df[col].to_numpy(dtype=float)
         return None
@@ -878,7 +856,7 @@ class AnnotationPage(QObject):
                 self._time, y, pen=pg.mkPen("#dddddd", width=1))
             self._curve.setDownsampling(auto=True, method="peak")
             self._curve.setClipToView(True)
-        pi.setLabel("left", _CHANNELS[self._left_key][1])
+        pi.setLabel("left", CHANNELS[self._left_key][1])
         self._refresh_right_curve()
 
     def _refresh_right_curve(self):
@@ -890,7 +868,7 @@ class AnnotationPage(QObject):
             set_right_axis_active(pi, False)
             return
         set_right_axis_active(pi, True)
-        pi.setLabel("right", _CHANNELS[self._right_key][1])
+        pi.setLabel("right", CHANNELS[self._right_key][1])
         self._right_curve = pg.PlotCurveItem(pen=pg.mkPen("#ff5555", width=1))
         self._vb2.addItem(self._right_curve)
         self._update_right_data()
@@ -908,7 +886,7 @@ class AnnotationPage(QObject):
         hi = min(len(t), int(np.searchsorted(t, x1, "right")) + 1)
         if hi - lo < 2:
             return
-        xd, yd = _decimate(t[lo:hi], y[lo:hi], _MAX_RIGHT_PTS)
+        xd, yd = decimate(t[lo:hi], y[lo:hi], MAX_RIGHT_PTS)
         self._right_curve.setData(xd, yd)
         self._vb2.enableAutoRange("y", True)
 
@@ -928,8 +906,8 @@ class AnnotationPage(QObject):
 
     def _export_data(self):
         (x0, x1), _ = self._pw.plotItem.vb.viewRange()
-        left_label = _CHANNELS[self._left_key][1] if self._left_key else ""
-        right_label = _CHANNELS[self._right_key][1] if self._right_key else ""
+        left_label = CHANNELS[self._left_key][1] if self._left_key else ""
+        right_label = CHANNELS[self._right_key][1] if self._right_key else ""
         return build_export_data(
             self._time, left_label, self._channel(self._left_key),
             right_label, self._channel(self._right_key), (x0, x1))
@@ -1093,11 +1071,8 @@ class AnnotationPage(QObject):
         return sensor_config.active().output_rate_hz or _FS
 
     def _window_bounds(self):
-        n = len(self._df)
-        half_n = int(round(self._win_sec / 2 * self._fs()))
-        start = max(0, self._nadir_idx - half_n)
-        end = min(n - 1, self._nadir_idx + half_n)
-        return start, end
+        return vc.window_bounds(self._nadir_idx, len(self._df), self._win_sec,
+                                self._fs())
 
     def _annotation_values(self):
         return {name: editor.current() for name, editor in self._editors.items()}
@@ -1203,7 +1178,7 @@ class AnnotationPage(QObject):
                 raise _ReviewedOnly()
 
             target_rows = sensor_config.active().window_samples(self._win_sec)
-            block = _standardise(sliced, target_rows)
+            block = standardise(sliced, target_rows)
             if block is None:
                 raise ValueError(
                     f"Only {len(sliced)} rows in the window (expected "
@@ -1217,7 +1192,7 @@ class AnnotationPage(QObject):
                 match = self._index_df[self._index_df["file"] == self._cur_stem]
                 if not match.empty:
                     meta_row = match.iloc[0]
-            for col in _META_COLS:
+            for col in META_COLS:
                 if col in meta_cols:
                     val = meta_row.get(col, "") if meta_row is not None else ""
                     block.insert(insert_at, col, val)

@@ -25,13 +25,12 @@ recording's labels come from its folder, and a deployment's details are
 edited in one place - Create and edit deployment, whose Update relabels
 already-processed sensors.
 
-The ported MVP reader (`_ProcessThread`, below) is unchanged; the file
-extensions, filename pattern and parser come from the active sensor
-configuration (``sensor_config.active()``).
+Processing itself is processing.py; the file extensions, filename pattern
+and parser come from the active sensor configuration.
 """
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QPushButton, QSplitter, QVBoxLayout, QWidget,
@@ -51,41 +50,6 @@ _WARN = WARN
 _BAD = BAD
 _INFO = INFO
 _MUTED = MUTED
-
-
-# ── processing thread (ported from the MVP; reader chosen by config) ─────────
-class _ProcessThread(QThread):
-    log = Signal(str)
-    done = Signal(int)          # 0 = all ok, 1 = some failed
-    processed = Signal(str)     # stem of each successfully processed file
-
-    def __init__(self, files, out_dir, root, config):
-        super().__init__()
-        self._files = files
-        self._out_dir = out_dir
-        self._root = root
-        self._config = config
-
-    def run(self):
-        # the reader is whichever one the sensor configuration names
-        parse = sensor_config.get_parser(self._config.parser)
-
-        n_ok = n_fail = 0
-        for f in self._files:
-            self.log.emit(f"\n-- Processing: {f['stem']}")
-            try:
-                _, summary = parse(f["paths"], self._out_dir, self._config)
-                msg = summary.get("messages", "")
-                bad = summary.get("bad_sens", "N")
-                self.log.emit(f"   Done.  bad_sens={bad}  {msg}")
-                self.processed.emit(f["stem"])
-                n_ok += 1
-            except Exception as e:
-                self.log.emit(f"   FAILED: {e}")
-                n_fail += 1
-
-        self.log.emit(f"\n-- Complete: {n_ok} succeeded, {n_fail} failed.")
-        self.done.emit(0 if n_fail == 0 else 1)
 
 
 class StatCard(QFrame):

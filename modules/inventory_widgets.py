@@ -17,11 +17,10 @@ runs is processed in one go and each recording is stamped with the right
 conditions afterwards (deployment_index.stamp_by_location), instead of the
 whole batch getting whatever one treatment/run picker said.
 
-Processing itself is page_process's `_ProcessThread` (the ported MVP
+Processing itself is processing.py's `ProcessThread` (the ported MVP
 reader, chosen by the sensor configuration) - unchanged. Its log lines
 stream into the console pane underneath the table.
 """
-import os
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -41,7 +40,6 @@ from .ml_widgets import (
     style_table,
 )
 
-_CSV_DIR = Path("processed_sens_data") / "csv"
 
 COLUMNS = ["Filename", "Sensor", "Date", "Time", "Deployment", "Treatment",
            "Run", "Complete", "Processed"]
@@ -75,14 +73,7 @@ def scan_raw(lib_root, folder, config=None, tree=None):
             return []
         tree = raw_layout.scan_tree(raw_dir, folder)
 
-    csv_dir = Path(lib_root) / _CSV_DIR
-    try:
-        processed_names = {os.path.splitext(n)[0].upper()
-                           for n in os.listdir(csv_dir)
-                           if n.lower().endswith(".csv")
-                           and not os.path.splitext(n)[0].endswith("_min")}
-    except OSError:
-        processed_names = set()
+    processed_names = {p.stem.upper() for p in raw_layout.processed_csvs(lib_root)}
 
     records = []
     for stem_up in sorted(tree.files):
@@ -337,7 +328,7 @@ class FileInventory(QWidget):
     def process(self, files):
         """Process `files` (records from `files`); returns the thread, or
         None when there was nothing complete to process."""
-        from .page_process import _ProcessThread
+        from .processing import ProcessThread
         if self.running or self._lib_root is None:
             return None
         complete = [f for f in files if f["complete"]]
@@ -347,7 +338,7 @@ class FileInventory(QWidget):
             self.lbl_status.setText("No complete recordings selected.")
             return None
         cfg = sensor_config.active()
-        out_dir = self._lib_root / "processed_sens_data"
+        out_dir = self._lib_root / raw_layout.PROCESSED_DIR
         self.clear_log()
         self.log(f"Sensor: {cfg.name}  ({cfg.output_rate_hz:g} Hz, "
                  f"parser '{cfg.parser}')")
@@ -365,7 +356,7 @@ class FileInventory(QWidget):
         self.lbl_status.setStyleSheet(f"color:{ACCENT};font-weight:bold;")
         self.lbl_status.setText("Processing…")
         self.btn_process.setEnabled(False)
-        self._thread = _ProcessThread(complete, out_dir, self._lib_root, cfg)
+        self._thread = ProcessThread(complete, out_dir, self._lib_root, cfg)
         self._thread.log.connect(self.log)
         self._thread.processed.connect(self._batch_done.append)
         self._thread.done.connect(self._on_done)

@@ -24,29 +24,27 @@ import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 
-from PySide6.QtCore import Qt, QObject, QThread, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtCore import Qt, QObject, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QMessageBox, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QMessageBox, QTreeWidgetItem, QVBoxLayout,
 )
 
 from . import deployment_index as di
 from . import sensor_config
-from .library_widgets import _EXCL_NAMES, _EXCL_SUFFIXES
-from .ml_widgets import MUTED, when_visible
+from . import raw_layout
+from .ml_widgets import MUTED, Spinner, when_visible
+from .plot_widgets import (
+    CHANNEL_ORDER, CHANNELS, MAX_RIGHT_PTS, CsvLoadThread, NavViewBox,
+    decimate, find_col,
+)
 from .plot_style import (
     add_export_button, build_export_data, reserve_top_margin,
     set_right_axis_active,
 )
 
-# Global pyqtgraph config - set once, before any PlotWidget is created.
-# Dark theme + antialiasing so signal plots match the application styling.
-pg.setConfigOptions(antialias=True, background="#21252b",
-                    foreground="#c8cdd6")
-
 _INDEX_REL = di.INDEX_REL
-_CSV_DIR = Path("processed_sens_data") / "csv"
-_WIN_DIR = Path("processed_sens_data") / "nadir_window"
+_WIN_DIR = raw_layout.WINDOW_DIR
 
 # The ROI window is this page's own decision; the rate the processed CSVs
 # are written at belongs to the sensor (Prepare page), so _FS is only the
@@ -58,140 +56,9 @@ _NADIR_T_COL = "pres_min.time."
 _NADIR_V_COL = "pres_min.kPa."
 _VALIDATED_COL = "hstrike_processed"
 
-# selectable display channels -> (column name, axis label)
-_CHANNELS = {
-    "higacc_mag": ("higacc_mag_g", "HIG acc mag (g)"),
-    "inacc_mag": ("inacc_mag_ms", "IN acc mag (m/s²)"),
-    "pressure": ("pressure_kpa", "Pressure (kPa)"),
-    "rot_mag": ("rot_mag_degs", "Rotation mag (°/s)"),
-}
-_CHANNEL_ORDER = ["higacc_mag", "inacc_mag", "pressure", "rot_mag"]
-_MAX_RIGHT_PTS = 8000   # cap for the (manually decimated) right-axis overlay
 
 _OK = "#22c55e"
 _TEXT = "#dddddd"
-
-
-def _find_col(df, candidates, keyword=None):
-    """First candidate column present in df, else a keyword search."""
-    for c in candidates:
-        if c in df.columns:
-            return c
-    if keyword:
-        for c in df.columns:
-            if keyword in c.lower():
-                return c
-    return None
-
-
-def _decimate(x, y, max_pts):
-    """Min/max ('peak') decimation: keep each bucket's min and max in time order.
-
-    Used only for the right-axis overlay (pyqtgraph's own downsampling is unsafe
-    on an item in a secondary ViewBox).
-    """
-    n = len(x)
-    if n <= max_pts:
-        return x, y
-    n_buckets = max(1, max_pts // 2)
-    stride = n // n_buckets
-    usable = n_buckets * stride
-    yb = y[:usable].reshape(n_buckets, stride)
-    base = np.arange(n_buckets) * stride
-    i_min = yb.argmin(axis=1) + base
-    i_max = yb.argmax(axis=1) + base
-    first_min = i_min <= i_max
-    out = np.empty(n_buckets * 2, dtype=np.intp)
-    out[0::2] = np.where(first_min, i_min, i_max)
-    out[1::2] = np.where(first_min, i_max, i_min)
-    if usable < n:
-        out = np.concatenate([out, np.arange(usable, n, dtype=np.intp)])
-    return x[out], y[out]
-
-
-class _Spinner(QWidget):
-    """Small rotating arc drawn with QPainter. Show/hide around long ops."""
-
-    def __init__(self, parent=None, size=20, colour="#ff79c6"):
-        super().__init__(parent)
-        self.setFixedSize(size, size)
-        self._colour = colour
-        self._angle = 0
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._tick)
-
-    def start(self):
-        self.setVisible(True)
-        self._timer.start(40)   # ~25 fps
-
-    def stop(self):
-        self._timer.stop()
-        self.setVisible(False)
-
-    def _tick(self):
-        self._angle = (self._angle + 14) % 360
-        self.update()
-
-    def paintEvent(self, _event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(QPen(QColor("#2c313a"), 3, Qt.PenStyle.SolidLine,
-                      Qt.PenCapStyle.RoundCap))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        m = 3
-        p.drawEllipse(m, m, self.width() - m * 2, self.height() - m * 2)
-        p.setPen(QPen(QColor(self._colour), 3, Qt.PenStyle.SolidLine,
-                      Qt.PenCapStyle.RoundCap))
-        p.drawArc(m, m, self.width() - m * 2, self.height() - m * 2,
-                  self._angle * 16, 100 * 16)
-        p.end()
-
-
-class _CsvLoadThread(QThread):
-    """Reads one sensor CSV off the GUI thread so the UI stays responsive."""
-    loaded = Signal(object, object)   # (Path, DataFrame)
-    failed = Signal(object, str)      # (Path, message)
-
-    def __init__(self, path: Path):
-        super().__init__()
-        self._path = path
-
-    def run(self):
-        try:
-            df = pd.read_csv(self._path, low_memory=False)
-            self.loaded.emit(self._path, df)
-        except Exception as e:
-            self.failed.emit(self._path, str(e))
-
-
-class _NavViewBox(pg.ViewBox):
-    """ViewBox where the wheel *pans* instead of zooming.
-
-    - Plain wheel        -> scroll the X (time) axis left/right
-    - Shift + wheel      -> scroll the Y axis up/down
-    - Wheel over an axis -> native per-axis zoom (axis is not None)
-    Zoom proper is done with a box-select (RectMode), set on the widget.
-    """
-    _STEP = 0.10   # fraction of the current range to move per wheel notch
-
-    def wheelEvent(self, ev, axis=None):
-        if axis is not None:
-            super().wheelEvent(ev, axis=axis)
-            return
-        try:
-            delta = ev.delta()
-        except AttributeError:
-            delta = ev.angleDelta().y()
-        if not delta:
-            ev.accept()
-            return
-        frac = self._STEP if delta > 0 else -self._STEP
-        (x0, x1), (y0, y1) = self.viewRange()
-        if ev.modifiers() & Qt.KeyboardModifier.ShiftModifier:
-            self.translateBy(y=(y1 - y0) * frac)
-        else:
-            self.translateBy(x=(x1 - x0) * frac)
-        ev.accept()
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -244,10 +111,10 @@ class ValidatePage(QObject):
                           file_stub="segmentation")
         holder.addLayout(toolbar)
 
-        self._pw = pg.PlotWidget(viewBox=_NavViewBox())
+        self._pw = pg.PlotWidget(viewBox=NavViewBox())
         pi = self._pw.plotItem
         pi.getViewBox().setMouseMode(pg.ViewBox.RectMode)
-        pi.setLabel("left", _CHANNELS[self._left_key][1])
+        pi.setLabel("left", CHANNELS[self._left_key][1])
         pi.setLabel("bottom", "Time (s)")
         reserve_top_margin(pi)
         holder.addWidget(self._pw)
@@ -282,7 +149,7 @@ class ValidatePage(QObject):
         # spinner lives inside the placeholder frame from the .ui
         sp = QVBoxLayout(u.frame_val_spinner)
         sp.setContentsMargins(0, 0, 0, 0)
-        self._spinner = _Spinner(size=20)
+        self._spinner = Spinner(size=20)
         self._spinner.setVisible(False)
         sp.addWidget(self._spinner)
 
@@ -299,14 +166,14 @@ class ValidatePage(QObject):
         u.grp_val_library.layout().insertWidget(0, self.lbl_library)
 
         u.cmb_val_left.clear()
-        for k in _CHANNEL_ORDER:
-            u.cmb_val_left.addItem(_CHANNELS[k][1], k)
-        u.cmb_val_left.setCurrentIndex(_CHANNEL_ORDER.index(self._left_key))
+        for k in CHANNEL_ORDER:
+            u.cmb_val_left.addItem(CHANNELS[k][1], k)
+        u.cmb_val_left.setCurrentIndex(CHANNEL_ORDER.index(self._left_key))
 
         u.cmb_val_right.clear()
         u.cmb_val_right.addItem("None", None)
-        for k in _CHANNEL_ORDER:
-            u.cmb_val_right.addItem(_CHANNELS[k][1], k)
+        for k in CHANNEL_ORDER:
+            u.cmb_val_right.addItem(CHANNELS[k][1], k)
         u.cmb_val_right.setCurrentIndex(0)
 
         self._fill_window_combo()
@@ -400,13 +267,10 @@ class ValidatePage(QObject):
         self._csv_files = []
         if self._lib_root is None:
             return
-        csv_dir = self._lib_root / _CSV_DIR
-        if not csv_dir.exists():
+        csv_dir = self._lib_root / raw_layout.CSV_DIR
+        valid = raw_layout.processed_csvs(self._lib_root)
+        if not valid:
             return
-
-        valid = [p for p in sorted(csv_dir.rglob("*.csv"))
-                 if p.name not in _EXCL_NAMES
-                 and not any(p.stem.endswith(s) for s in _EXCL_SUFFIXES)]
         self._csv_files = valid
 
         folder_items = {}
@@ -448,7 +312,7 @@ class ValidatePage(QObject):
                   self.ui.btn_val_jump):
             b.setEnabled(False)
 
-        loader = _CsvLoadThread(path)
+        loader = CsvLoadThread(path)
         loader.loaded.connect(self._on_csv_loaded)
         loader.failed.connect(self._on_csv_failed)
         loader.finished.connect(lambda lt=loader: self._drop_loader(lt))
@@ -481,8 +345,8 @@ class ValidatePage(QObject):
         self._apply_loaded_df(path, df)
 
     def _apply_loaded_df(self, path: Path, df):
-        time_col = _find_col(df, ["time_s", "time"], keyword="time")
-        pres_col = _find_col(df, ["pressure_kpa", _NADIR_V_COL], keyword="pressure")
+        time_col = find_col(df, ["time_s", "time"], keyword="time")
+        pres_col = find_col(df, ["pressure_kpa", _NADIR_V_COL], keyword="pressure")
 
         time = (df[time_col].to_numpy(dtype=float) if time_col
                 else np.arange(len(df), dtype=float) / self._fs())
@@ -527,7 +391,7 @@ class ValidatePage(QObject):
     def _channel(self, key):
         if key is None or self._df is None:
             return None
-        col = _CHANNELS.get(key, (None,))[0]
+        col = CHANNELS.get(key, (None,))[0]
         if col and col in self._df.columns:
             return self._df[col].to_numpy(dtype=float)
         return None
@@ -566,7 +430,7 @@ class ValidatePage(QObject):
                                         pen=pg.mkPen("#dddddd", width=1))
             self._curve.setDownsampling(auto=True, method="peak")
             self._curve.setClipToView(True)
-        pi.setLabel("left", _CHANNELS[self._left_key][1])
+        pi.setLabel("left", CHANNELS[self._left_key][1])
 
         self._refresh_right_curve()
 
@@ -581,7 +445,7 @@ class ValidatePage(QObject):
             return
 
         set_right_axis_active(pi, True)
-        pi.setLabel("right", _CHANNELS[self._right_key][1])
+        pi.setLabel("right", CHANNELS[self._right_key][1])
         self._right_curve = pg.PlotCurveItem(
             pen=pg.mkPen("#ff5555", width=1))
         self._vb2.addItem(self._right_curve)
@@ -600,7 +464,7 @@ class ValidatePage(QObject):
         hi = min(len(t), int(np.searchsorted(t, x1, "right")) + 1)
         if hi - lo < 2:
             return
-        xd, yd = _decimate(t[lo:hi], y[lo:hi], _MAX_RIGHT_PTS)
+        xd, yd = decimate(t[lo:hi], y[lo:hi], MAX_RIGHT_PTS)
         self._right_curve.setData(xd, yd)
         self._vb2.enableAutoRange("y", True)
 
@@ -620,8 +484,8 @@ class ValidatePage(QObject):
 
     def _export_data(self):
         (x0, x1), _ = self._pw.plotItem.vb.viewRange()
-        left_label = _CHANNELS[self._left_key][1] if self._left_key else ""
-        right_label = _CHANNELS[self._right_key][1] if self._right_key else ""
+        left_label = CHANNELS[self._left_key][1] if self._left_key else ""
+        right_label = CHANNELS[self._right_key][1] if self._right_key else ""
         return build_export_data(
             self._time, left_label, self._channel(self._left_key),
             right_label, self._channel(self._right_key), (x0, x1))

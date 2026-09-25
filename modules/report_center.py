@@ -111,15 +111,6 @@ def default_output_dir(window=None):
     return base / f"Report_{ts}"
 
 
-def _wrap_document(body_html, title="StrikeWorks Report"):
-    """Sized for an A4 page with narrow margins - `ml_report.A4_REPORT_CSS`,
-    shared with every other report wrapper so they all print the same."""
-    return ("<!DOCTYPE html><html><head><meta charset='utf-8'/>"
-            f"<title>{title}</title>"
-            f"<style>{ml_report.A4_REPORT_CSS}</style>"
-            f"</head><body>{body_html}</body></html>")
-
-
 def _git_remote_url(root):
     """`origin`'s URL if `root` is a git repository with one, else None."""
     cfg = Path(root) / ".git" / "config"
@@ -176,7 +167,8 @@ def assemble(sections, out_dir, checked_keys):
 
     body = "<div>" + _HR.join(body_parts) + "</div>"
     doc_path = out_dir / "report.html"
-    doc_path.write_text(_wrap_document(body), encoding="utf-8")
+    doc_path.write_text(ml_report.wrap_html_document(body, "StrikeWorks Report"),
+                        encoding="utf-8")
     return doc_path, warnings
 
 
@@ -583,13 +575,14 @@ def misclassification_section(window, get_entry):
         entry_ = get_entry()
         if entry_ is None or mis is None:
             return None
-        from .page_misclassification import _misclassified_rows, build_video_index
+        from .page_misclassification import _misclassified_rows
+        from .raw_layout import video_index
         rows = _misclassified_rows(entry_)
         if not rows:
             return None
         # the page's cached index if it has built one, else build it here
         video_index = (mis._video_index if mis._video_index is not None
-                       else build_video_index(settings.get_libraries_dir()))
+                       else video_index(settings.get_libraries_dir()))
         for r in rows:
             r["video_matches"] = video_index.get(str(r["file"]), [])
 

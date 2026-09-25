@@ -25,14 +25,14 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from . import settings
+from . import raw_layout, settings
 from .ml_state import annotation_column, is_strike_value
 from .ml_tab_predict import _NumItem
 from .ml_widgets import (
     BAD, INFO, MUTED, OK, PALETTE, PINK, TEXT, WARN, ProbBars, Section,
     apply_section_defaults,
 )
-from .page_validate import _CsvLoadThread, _NavViewBox
+from .plot_widgets import CsvLoadThread, NavViewBox
 from .plot_style import (
     add_export_button, build_export_data, reserve_top_margin,
     set_right_axis_active,
@@ -224,7 +224,7 @@ class InspectTab:
                           file_stub="inspect")
         gv.addLayout(ctl)
 
-        self._pw = pg.PlotWidget(viewBox=_NavViewBox())
+        self._pw = pg.PlotWidget(viewBox=NavViewBox())
         self._pw.setMinimumHeight(260)
         self._pw.setSizePolicy(QSizePolicy.Policy.Expanding,
                                QSizePolicy.Policy.Expanding)
@@ -621,7 +621,7 @@ class InspectTab:
         except OSError:
             pass
         for root in roots:
-            csv_dir = root / "processed_sens_data" / "csv"
+            csv_dir = root / raw_layout.CSV_DIR
             if not csv_dir.exists():
                 continue
             direct = csv_dir / f"{stem}.csv"
@@ -643,7 +643,7 @@ class InspectTab:
         if self._pending_full == file_id:
             return True
         self._pending_full = file_id
-        loader = _CsvLoadThread(path)
+        loader = CsvLoadThread(path)
         loader.loaded.connect(
             lambda p, df, fid=file_id: self._on_full_loaded(fid, df))
         loader.failed.connect(

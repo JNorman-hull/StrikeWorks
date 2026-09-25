@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import deployment_index as di
-from . import settings
+from . import raw_layout, settings
 from .ml_widgets import (
     ACCENT, MUTED, MetaCard, Section, apply_section_defaults, on_show,
 )
@@ -279,7 +279,7 @@ def library_status_rows(root, session_state):
     else:
         rows.append(("Sensors indexed", "Not processed yet"))
 
-    dataset_path = root / "processed_sens_data" / "model_features.csv"
+    dataset_path = root / raw_layout.DATASET_REL
     if dataset_path.exists():
         try:
             # a line count, not a pandas parse - this file can be hundreds

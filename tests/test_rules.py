@@ -99,6 +99,26 @@ class RawLayout(unittest.TestCase):
         self.assertEqual(len(tree.videos["B61-0703140718"]), 1)
         self.assertEqual(tree.locations["B62-0703140412"][:3], ("Dep", "Old", "1"))
 
+    def test_processed_csvs(self):
+        lib = temp_dir("lib_")
+        csv_dir = lib / rl.CSV_DIR
+        csv_dir.mkdir(parents=True)
+        for name in ("B61-0703140718.csv", "B61-0703140718_min.csv",
+                     "B62-0703140412.csv", "notes.txt"):
+            (csv_dir / name).write_text("x")
+        self.assertEqual([p.name for p in rl.processed_csvs(lib)],
+                         ["B61-0703140718.csv", "B62-0703140412.csv"])
+        self.assertEqual(rl.processed_csvs(temp_dir("empty_")), [])
+
+    def test_video_index(self):
+        libs = temp_dir("libs_")
+        for lib in ("A", "B"):
+            video = rl.run_dir(libs / lib, "Dep", "T1", 1) / "VIDEO"
+            video.mkdir(parents=True)
+            (video / "B61-0703140718_vid_1.mp4").write_bytes(b"x")
+        index = rl.video_index(libs)
+        self.assertEqual(len(index["B61-0703140718"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

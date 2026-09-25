@@ -55,9 +55,6 @@ from .ml_widgets import (
 )
 from .plot_style import add_export_button, build_export_data
 
-pg.setConfigOptions(antialias=True, background="#21252b",
-                    foreground="#c8cdd6")
-
 _WIN_SEC = vc.WIN_SEC
 _IMAGES_DIR = Path(__file__).parent.parent / "images" / "images"
 _ICON_PATH = Path(__file__).parent.parent / "icon.ico"

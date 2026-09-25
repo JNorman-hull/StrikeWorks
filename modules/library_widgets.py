@@ -46,7 +46,6 @@ from .ml_widgets import (
 )
 from .raw_layout import RAW_DIR, UNGROUPED
 
-CSV_DIR = Path("processed_sens_data") / "csv"
 ALL_DEPLOYMENTS = None   # combo data sentinel for "All deployments"/"All treatments"/"All runs"
 
 
@@ -69,8 +68,6 @@ def _run_sort_key(run):
 # canonical rules for what counts as a "sensor" CSV versus a derived/scratch
 # output - the single definition every page (Validate, this widget, and
 # hence Annotate/Export/Process) agrees on
-_EXCL_SUFFIXES = {"_min", "_delineated"}
-_EXCL_NAMES = {"global_sensor_index.csv"}
 
 
 class _RawScanThread(QThread):
@@ -502,22 +499,12 @@ class LibrarySelector(QWidget):
         its (deployment, treatment) and filtered to the current
         deployment/treatment selection unless `apply_filters` is False.
 
-        The exclusion rules (`_EXCL_NAMES`/`_EXCL_SUFFIXES`) come from
-        `page_validate.py` - the single canonical definition of what counts
-        as a "sensor" CSV versus a derived/scratch output (nadir windows,
-        delineation, minimal/reduced variants) - so every caller of this
-        widget always agrees with Validate about what a sensor is.
+        Which CSVs count as sensors is raw_layout.processed_csvs' rule.
         """
         if self._lib_root is None:
             return []
-        csv_dir = self._lib_root / CSV_DIR
-        if not csv_dir.exists():
-            return []
         rows = []
-        for p in sorted(csv_dir.rglob("*.csv")):
-            if p.name in _EXCL_NAMES or any(
-                    p.stem.endswith(s) for s in _EXCL_SUFFIXES):
-                continue
+        for p in raw_layout.processed_csvs(self._lib_root):
             deployment, treatment, run, _raw = self._locations.get(
                 p.stem.upper(), (UNGROUPED, UNGROUPED, raw_layout.DEFAULT_RUN, None))
             if apply_filters and not self._matches_filters(deployment, treatment, run):

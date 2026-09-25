@@ -44,12 +44,13 @@ import pandas as pd
 from PySide6.QtCore import QObject, Signal
 
 from . import index_schema
+from . import raw_layout
 from .raw_layout import UNGROUPED
 
-INDEX_REL = Path("processed_sens_data") / "index" / "global_sensor_index.csv"
+INDEX_REL = raw_layout.INDEX_REL
 #: the library's running annotated dataset (Annotate's Save + next) - it
 #: carries deployment_id/treatment/run too, so a relabel follows into it
-DATASET_REL = Path("processed_sens_data") / "model_features.csv"
+DATASET_REL = raw_layout.DATASET_REL
 
 #: value in the `file` column that marks a row as plan, not sensor
 PAD_FILE = "label_pad"

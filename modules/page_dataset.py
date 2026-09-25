@@ -29,7 +29,6 @@ Extraction maths, the row standardisation, the meta columns carried over
 from the index, the annotation join and the three-panel summary figure are
 unchanged from the MVP.
 """
-import re
 from pathlib import Path
 
 import numpy as np
@@ -37,7 +36,7 @@ import pandas as pd
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
-from PySide6.QtCore import Qt, QObject, QThread, Signal
+from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtWidgets import (
     QFileDialog, QGroupBox, QLabel, QTreeWidgetItem, QVBoxLayout,
 )
@@ -45,24 +44,9 @@ from PySide6.QtWidgets import (
 from . import deployment_index as di
 from . import sensor_config, settings
 from .bind_datasets import BindTrainingData
-
-# paths relative to a library root
-_CSV_DIR = Path("processed_sens_data") / "csv"
-_INDEX_REL = di.INDEX_REL
-_NADIR_WIN_DIR = Path("processed_sens_data") / "nadir_window"
-
-# The window is 200 ms, as it has always been; how many rows that is
-# depends on the rate the selected sensor writes its CSVs at (Prepare
-# page) - 400 for RAPID at 2000 Hz, 1200 for a 6000 Hz device.
-_WIN_SEC = 0.2
-_TARGET_ROWS = 400        # fallback: 200 ms @ 2000 Hz
-_NADIR_COL = "pres_min.time."
-_NADIR_WIN_SUFFIX = "_200ms"
-_WIN_SUFFIX_RE = re.compile(r"_\d+ms$")
-_BAD_SENS_COL = "bad_sens"
-
-# columns carried through from the index into the output
-_META_COLS = ["deployment_id", "treatment", "run"]
+from .dataset_build import (
+    INDEX_REL, OPT_SEGMENTED, OPT_UNSEGMENTED, WIN_SEC, ExtractThread,
+)
 
 # ── annotation join (model_labels.csv) ──────────────────────────────────────
 _LABEL_FILE_COL = "sens_file"          # joins to feature 'file'
@@ -74,20 +58,6 @@ _REGION_ORDER = [1, 2, 3, 4, 5]
 _BLUES = ["#1e3a5f", "#2e5d9f", "#4a86c8", "#6fa8dc", "#9fc5e8"]
 _DARK = "#1e3a5f"
 
-# creation methods
-OPT_UNSEGMENTED = 2   # keeps the MVP's option numbering
-OPT_SEGMENTED = 3
-
-
-def _standardise(df, target):
-    """Trim or pad df to exactly `target` rows; tolerate a one-row shortfall."""
-    n = len(df)
-    if n >= target:
-        return df.iloc[:target].copy()
-    if n == target - 1:
-        return pd.concat([df, df.iloc[[-1]]]).reset_index(drop=True)
-    return None
-
 
 def _init_item(item, tristate=False):
     flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable
@@ -95,223 +65,6 @@ def _init_item(item, tristate=False):
         flags |= Qt.ItemFlag.ItemIsAutoTristate
     item.setFlags(flags)
     item.setCheckState(0, Qt.CheckState.Checked)
-
-
-# ── extraction thread (ported) ──────────────────────────────────────────────
-class _ExtractThread(QThread):
-    log = Signal(str)
-    done = Signal(int, int, int)   # n_ok, n_skip, n_rows
-
-    def __init__(self, root, option, selected_files, index_df, config=None):
-        super().__init__()
-        self._root = root
-        self._option = option
-        self._selected_files = selected_files
-        self._index_df = index_df
-        self._config = config or sensor_config.active()
-        self._result_df = None
-
-    @property
-    def _target_rows(self):
-        return self._config.window_samples(_WIN_SEC) or _TARGET_ROWS
-
-    @property
-    def _win_suffix(self):
-        return f"_{int(round(_WIN_SEC * 1000))}ms"
-
-    def _strip_window_suffix(self, stem):
-        """Recover the sensor stem from a saved window filename.
-
-        Validate names the file after the width it was saved at, which need
-        not be the width configured now, so any '_<n>ms' tail is removed -
-        otherwise a window saved at 300 ms would never match the index.
-        """
-        if stem.endswith(self._win_suffix):
-            return stem[: -len(self._win_suffix)]
-        return _WIN_SUFFIX_RE.sub("", stem)
-
-    @property
-    def result(self):
-        return self._result_df
-
-    def run(self):
-        try:
-            if self._option == OPT_UNSEGMENTED:
-                df, n_ok, n_skip = self._run_unsegmented()
-            else:
-                df, n_ok, n_skip = self._run_segmented()
-            self._result_df = df
-            self.done.emit(n_ok, n_skip, len(df) if df is not None else 0)
-        except Exception as e:
-            self.log.emit(f"\nFATAL: {e}")
-            self.done.emit(0, 0, 0)
-
-    def _meta_lookup(self):
-        if self._index_df is None or "file" not in self._index_df.columns:
-            return {}
-        # plan rows (deployment_index.save_plan's own "label_pad" rows,
-        # one per treatment/run) all share the same literal filename, so a
-        # library with more than one deployment has more than one -
-        # set_index("file") on the raw index then crashes with "index
-        # must be unique", which run()'s except-and-emit-zero swallows as
-        # a silent "no rows" instead of the real cause. sensor_rows()
-        # drops them the same way _run_unsegmented already does.
-        df = di.sensor_rows(self._index_df)
-        available = [c for c in _META_COLS if c in df.columns]
-        return (df.drop_duplicates("file", keep="last")
-                  .set_index("file")[available].to_dict(orient="index"))
-
-    def _attach_meta(self, df, stem, meta):
-        info = meta.get(stem, {})
-        insert_at = 1
-        cols = self._index_df.columns if self._index_df is not None else []
-        for col in _META_COLS:
-            if col in cols:
-                df.insert(insert_at, col, info.get(col, pd.NA))
-                insert_at += 1
-        return df
-
-    # ── auto nadir +/- half a window out of the full sensor CSV ─────────────
-    def _run_unsegmented(self):
-        index_path = self._root / _INDEX_REL
-        csv_dir = self._root / _CSV_DIR
-
-        if not index_path.exists():
-            raise FileNotFoundError(f"Sensor index not found:\n  {index_path}")
-        if not csv_dir.exists():
-            raise FileNotFoundError(f"Sensor CSV folder not found:\n  {csv_dir}")
-
-        index = di.sensor_rows(pd.read_csv(index_path, low_memory=False))
-
-        if _NADIR_COL not in index.columns:
-            alt = next((c for c in index.columns
-                        if "nadir" in c.lower() and "time" in c.lower()), None)
-            if alt is None:
-                raise ValueError(
-                    f"Column '{_NADIR_COL}' not found in sensor index.")
-            nadir_col = alt
-            self.log.emit(f"Note: using '{nadir_col}' as nadir time column.\n")
-        else:
-            nadir_col = _NADIR_COL
-
-        if "file" not in index.columns:
-            raise ValueError("Sensor index has no 'file' column.")
-
-        if self._selected_files:
-            index = index[index["file"].isin(self._selected_files)]
-
-        self.log.emit(f"Processing {len(index)} sensor file(s).\n")
-        meta = self._meta_lookup()
-        parts, n_ok, n_skip = [], 0, 0
-
-        for _, row in index.iterrows():
-            stem = str(row["file"])
-            nadir_time = row[nadir_col]
-
-            if pd.isna(nadir_time):
-                self.log.emit(f"  SKIP {stem} - {nadir_col} is NaN")
-                n_skip += 1
-                continue
-
-            sensor_path = csv_dir / f"{stem}.csv"
-            if not sensor_path.exists():
-                self.log.emit(f"  SKIP {stem} - sensor CSV not found")
-                n_skip += 1
-                continue
-
-            try:
-                half_sec = _WIN_SEC / 2
-                t_start = float(nadir_time) - half_sec
-                t_end = float(nadir_time) + half_sec
-
-                sensor = pd.read_csv(sensor_path, low_memory=False)
-                sliced = sensor[(sensor["time_s"] >= t_start)
-                                & (sensor["time_s"] <= t_end)].copy()
-
-                out = _standardise(sliced, self._target_rows)
-                if out is None:
-                    self.log.emit(
-                        f"  SKIP {stem} - only {len(sliced)} rows in window "
-                        f"(nadir near data boundary?)")
-                    n_skip += 1
-                    continue
-
-                out.insert(0, "file", stem)
-                out = self._attach_meta(out, stem, meta)
-                parts.append(out)
-                self.log.emit(f"  OK   {stem}")
-                n_ok += 1
-            except Exception as e:
-                self.log.emit(f"  FAIL {stem} - {e}")
-                n_skip += 1
-
-        result = pd.concat(parts, ignore_index=True) if parts else None
-        self.log.emit(f"\n-- Done: {n_ok} extracted, {n_skip} skipped.")
-        return result, n_ok, n_skip
-
-    # ── bind the saved nadir windows ────────────────────────────────────────
-    def _run_segmented(self):
-        win_dir = self._root / _NADIR_WIN_DIR
-        if not win_dir.exists():
-            raise FileNotFoundError(
-                f"Nadir window folder not found:\n  {win_dir}\n"
-                "Run the Validate & segment page first.")
-
-        win_files = sorted(win_dir.glob("*.csv"))
-        if not win_files:
-            raise FileNotFoundError(f"No CSV files in:\n  {win_dir}")
-
-        valid = None
-        if self._index_df is not None and "file" in self._index_df.columns:
-            if _BAD_SENS_COL in self._index_df.columns:
-                ok = self._index_df[
-                    self._index_df[_BAD_SENS_COL]
-                    .astype(str).str.strip().str.upper() == "N"]
-                valid = set(ok["file"].astype(str))
-                self.log.emit(
-                    f"Index: {len(valid)} sensor(s) with {_BAD_SENS_COL}=N.\n")
-            else:
-                self.log.emit(
-                    f"Note: '{_BAD_SENS_COL}' not in index - binding all files.\n")
-        else:
-            self.log.emit("Note: no index - binding all files.\n")
-
-        self.log.emit(f"Found {len(win_files)} nadir-window file(s).\n")
-        meta = self._meta_lookup()
-        parts, n_ok, n_skip = [], 0, 0
-
-        for win_path in win_files:
-            stem = self._strip_window_suffix(win_path.stem)
-
-            if self._selected_files and stem not in self._selected_files:
-                continue
-            if valid is not None and stem not in valid:
-                self.log.emit(f"  SKIP {stem} - not in index or bad_sens != N")
-                n_skip += 1
-                continue
-
-            try:
-                win = pd.read_csv(win_path, low_memory=False)
-                out = _standardise(win, self._target_rows)
-                if out is None:
-                    self.log.emit(
-                        f"  SKIP {stem} - only {len(win)} rows "
-                        f"(expected >= {self._target_rows - 1})")
-                    n_skip += 1
-                    continue
-
-                out.insert(0, "file", stem)
-                out = self._attach_meta(out, stem, meta)
-                parts.append(out)
-                self.log.emit(f"  OK   {stem}  ({len(out)} rows)")
-                n_ok += 1
-            except Exception as e:
-                self.log.emit(f"  FAIL {stem} - {e}")
-                n_skip += 1
-
-        result = pd.concat(parts, ignore_index=True) if parts else None
-        self.log.emit(f"\n-- Done: {n_ok} bound, {n_skip} skipped.")
-        return result, n_ok, n_skip
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -430,7 +183,7 @@ class DatasetPage(QObject):
         self.ui.tree_ds_filter.clear()
         self.ui.console_ds.clear()
 
-        idx_path = root / _INDEX_REL
+        idx_path = root / INDEX_REL
         if not idx_path.exists():
             self._log(f"Index not found:\n  {idx_path}\n")
             self._index = None
@@ -548,15 +301,15 @@ class DatasetPage(QObject):
         self.ui.console_ds.clear()
 
         cfg = sensor_config.active()
-        half = _WIN_SEC / 2
+        half = WIN_SEC / 2
         label = {OPT_UNSEGMENTED: f"Unsegmented (auto nadir +/- {half:g} s)",
                  OPT_SEGMENTED: "Segmented (bind saved nadir windows)"}[option]
         n_sel = len(selected) if selected else "all"
         self._log(f"Method: {label}\nFiles selected: {n_sel}\n"
-                  f"Sensor: {cfg.name} - {cfg.window_samples(_WIN_SEC)} rows "
+                  f"Sensor: {cfg.name} - {cfg.window_samples(WIN_SEC)} rows "
                   f"per window at {cfg.output_rate_hz:g} Hz\n")
 
-        self._thread = _ExtractThread(
+        self._thread = ExtractThread(
             self._root, option, selected or set(), self._index, cfg)
         self._thread.log.connect(self._log)
         self._thread.done.connect(self._on_done)

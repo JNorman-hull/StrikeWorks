@@ -38,9 +38,7 @@ from PySide6.QtWidgets import (
 
 from . import bsm_figures, bsm_io
 from .bsm_model import sensitivity_sweeps
-from .bsm_report import build_bsm_report_html
 from .bsm_state import output_card_rows
-from .ml_report import wrap_html_document
 from .ml_widgets import ACCENT, MetaCard, Section, apply_section_defaults, centred
 
 _NODIALOG = QFileDialog.Option.DontUseNativeDialog
@@ -203,32 +201,20 @@ class SensitivityPage(QWidget):
             self, "Generate report to folder...", "", _NODIALOG)
         if not dirpath:
             return
+        # the central report's Blade strike modelling section on its own,
+        # plus the results table as CSV
+        from pathlib import Path
+        from . import report_center
+        out = Path(dirpath)
         try:
-            from pathlib import Path
-            out = Path(dirpath)
             results = self.bsm_state.results or {
                 self.last_result["params"]["species"]: self.last_result}
             bsm_io.export_results(results, out)
-            image_paths = {"results": bsm_io.save_results_panels(
-                results, out / "bsm_results_panels", ("png",), 300)}
-            if self.sweeps:
-                species = self.last_result["params"]["species"]
-                bsm_io.export_sweeps_csv(self.sweeps, out,
-                                         f"sensitivity_sweeps_{species}")
-                image_paths["sweeps"] = bsm_io.save_sweep_panels(
-                    self.sweeps, species, self.last_result["params"],
-                    out / f"sensitivity_sweeps_{species}", ("png",), 300)
-
-            widths = {"results": bsm_figures.RESULTS_PANELS_CM[0],
-                      "sweeps": bsm_figures.SWEEP_PANELS_CM[0]}
-            body = build_bsm_report_html(
-                self.last_result,
-                res_other=next((r for sp, r in results.items()
-                                if r is not None and r is not self.last_result),
-                               None),
-                image_paths=image_paths, embed_images=True, widths_cm=widths)
-            (out / "report.html").write_text(wrap_html_document(body),
-                                             encoding="utf-8")
-            self.status.emit(f"Report generated in {out}", 5000)
+            _doc, warnings = report_center.assemble(
+                [report_center.bsm_section(self.window)], out, {"bsm"})
         except Exception as e:
             self.status.emit(f"Report failed: {e}", 6000)
+            return
+        self.status.emit(f"Report generated in {out}"
+                         + (f" ({'; '.join(warnings)})" if warnings else ""),
+                         5000)

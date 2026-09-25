@@ -35,7 +35,6 @@ Model training > Train with the corrected dataset loaded, after a
 notice that the model should be retrained before its next deployment -
 `notify_and_load_into_training()` is main.py's hook for this.
 """
-import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -58,15 +57,12 @@ from .ml_widgets import (
     MUTED, OK, Section, apply_section_defaults, discard_widget, when_visible,
 )
 from .page_annotate import LOSSLESSCUT_EXE
-from .library_widgets import RAW_DIR as _RAW_DIR
-from .page_validate import _NavViewBox
+from .raw_layout import video_index
+from .plot_widgets import NavViewBox
 from .plot_style import (
     add_export_button, build_export_data, reserve_top_margin,
     set_right_axis_active,
 )
-
-pg.setConfigOptions(antialias=True, background="#21252b",
-                    foreground="#c8cdd6")
 
 # StrikeWorks' own annotation_schema names vs. the MVP-legacy names the
 # training pipeline still recognises (ml_state.ANNOTATION_COLUMNS,
@@ -85,43 +81,8 @@ _VIEW_FULL = "full"
 _NON_CHANNEL_COLS = {"file", "time_s", "treatment", "deployment"}
 
 
-def build_video_index(lib_dir):
-    """{stem: [video paths]} across every library in `lib_dir` - one
-    os.walk per library's raw folder, only looking at `*_vid_*.mp4` names.
-
-    Deduplicated by resolved path: a library folder can be reachable under
-    more than one entry in the libraries directory (a case-variant name, a
-    shortcut/junction, a synced duplicate), which would otherwise list the
-    same physical video twice against one recording."""
-    index, seen_by_stem = {}, {}
-    try:
-        libs = [p for p in Path(lib_dir).iterdir() if p.is_dir()]
-    except OSError:
-        libs = []
-    for lib in libs:
-        raw_dir = lib / _RAW_DIR
-        if not raw_dir.is_dir():
-            continue
-        for dirpath, _dirnames, filenames in os.walk(raw_dir):
-            for name in filenames:
-                if "_vid_" not in name or not name.lower().endswith(".mp4"):
-                    continue
-                video = Path(dirpath) / name
-                stem = name.split("_vid_")[0]
-                try:
-                    key = str(video.resolve()).lower()
-                except OSError:
-                    key = str(video).lower()
-                seen = seen_by_stem.setdefault(stem, set())
-                if key in seen:
-                    continue
-                seen.add(key)
-                index.setdefault(stem, []).append(video)
-    return index
-
-
 class _VideoIndexThread(QThread):
-    """build_video_index off the GUI thread - it walks every library's raw
+    """raw_layout.video_index off the GUI thread - it walks every library's raw
     folder, which on OneDrive used to add a second or more to app startup
     and grows with every library added."""
     done = Signal(object)
@@ -132,7 +93,7 @@ class _VideoIndexThread(QThread):
 
     def run(self):
         try:
-            index = build_video_index(self._lib_dir)
+            index = video_index(self._lib_dir)
         except Exception:
             index = {}
         self.done.emit(index)
@@ -297,7 +258,7 @@ class MisclassificationPage(QObject):
                           file_stub="misclassification")
         sv.addLayout(axis_row)
 
-        self._pw = pg.PlotWidget(viewBox=_NavViewBox())
+        self._pw = pg.PlotWidget(viewBox=NavViewBox())
         pi = self._pw.plotItem
         pi.getViewBox().setMouseMode(pg.ViewBox.RectMode)
         pi.setLabel("bottom", "Time (s)")
@@ -435,7 +396,7 @@ class MisclassificationPage(QObject):
         else:
             self._fill_video_column()
 
-    # ── video index (background, cached - see build_video_index) ────────────
+    # ── video index (background, cached - see raw_layout.video_index) ────────────
     def _start_video_index(self):
         if self._video_thread is not None and self._video_thread.isRunning():
             return
