@@ -36,7 +36,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QThread, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 
 from . import annotation_schema as asch
 from . import deployment_index as di
@@ -150,15 +151,94 @@ def status_counts(stems, status):
 
 
 def counts_text(stems, status):
+    """The list's counter. "Flagged, to review" counts down as flagged
+    sensors are reviewed (Save + Next) - the flag the list shows is
+    "flagged and not reviewed yet", so that's the number that clears."""
     c = status_counts(stems, status)
-    return (f"Auto-validated: {c['auto']}/{c['total']}\n"
-            f"Flagged: {c['flagged']}\n"
-            f"User-validated: {c['user']}/{c['total']}"
+    left = c["flagged"] - c["flagged_reviewed"]
+    return (f"Flagged, to review: {left} of {c['flagged']}\n"
+            f"Reviewed by you: {c['user']}/{c['total']}\n"
+            f"Auto-validated: {c['auto']}/{c['total']}"
             + (f"\n({c['bad']} bad)" if c["bad"] else ""))
+
+
+def legend_html(ok, warn, bad, accent, plain, columns=1):
+    """What the list colours mean - shown under every validation list, in
+    one column (a narrow list) or two (under a wide one, to save height)."""
+    def row(colour, text):
+        return (f"<span style='color:{colour};font-size:14px;'>&#9679;</span>"
+                f"&nbsp;{text}")
+    if columns == 1:
+        return "<br>".join([
+            row(warn, "Flagged - needs your review (top of the list)"),
+            row(ok, "Reviewed by you (Save + Next)"),
+            row(accent, "Auto-validated, not flagged"),
+            row(plain, "Not processed yet"),
+            row(bad, "Marked bad"),
+        ])
+    # the compact form - the caller gives the full wording as a tooltip
+    rows = [row(warn, "Flagged, needs review"), row(ok, "Reviewed by you"),
+            row(accent, "Auto-validated"), row(plain, "Not processed yet"),
+            row(bad, "Marked bad")]
+    cells = [rows[i:i + columns] for i in range(0, len(rows), columns)]
+    body = "".join(
+        "<tr>" + "".join(f"<td style='padding-right:14px;'>{c}</td>" for c in r)
+        + "</tr>" for r in cells)
+    return f"<table cellspacing='0' cellpadding='0'>{body}</table>"
 
 
 def outstanding_flagged(stems, status):
     return [s for s in stems if needs_review(s, status)]
+
+
+def next_after_save(order, saved, status):
+    """Which sensor Save + Next goes to. `order` is the list as it was shown
+    before the save, `status` the validation status after it.
+
+    The sensor that followed the saved one in the list, while that one is
+    still flagged; else the first flagged sensor still waiting anywhere in
+    the list (one skipped further up); once none are left, simply the
+    sensor that followed the saved one. None at the end of the list."""
+    after = order[order.index(saved) + 1:] if saved in order else []
+    if after and needs_review(after[0], status):
+        return after[0]
+    pending = [s for s in order if s != saved and needs_review(s, status)]
+    if pending:
+        return pending[0]
+    return after[0] if after else None
+
+
+SAVE_NEXT_KEYS = "Ctrl+V"
+
+
+class _SaveNextKeyFilter(QObject):
+    """Ctrl+V pressed on the list itself - covers the case the page-wide
+    shortcut can't (its window isn't the active one, e.g. while the dev
+    console has focus during a demo run)."""
+
+    def __init__(self, callback, parent):
+        super().__init__(parent)
+        self._callback = callback
+
+    def eventFilter(self, obj, event):
+        if (event.type() == QEvent.Type.KeyPress
+                and event.key() == Qt.Key.Key_V
+                and event.modifiers() == Qt.KeyboardModifier.ControlModifier):
+            self._callback()
+            return True
+        return False
+
+
+def install_save_next_shortcut(page, list_widget, callback):
+    """Ctrl+V = Save + Next anywhere on `page` (a text box that's being
+    typed in keeps Ctrl+V as paste - Qt gives it precedence), and on
+    `list_widget` itself even when the page-wide shortcut can't fire."""
+    shortcut = QShortcut(QKeySequence(SAVE_NEXT_KEYS), page)
+    shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+    shortcut.activated.connect(callback)
+    key_filter = _SaveNextKeyFilter(callback, list_widget)
+    list_widget.installEventFilter(key_filter)
+    return shortcut
 
 
 def all_validated(stems, status):

@@ -34,7 +34,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QLabel, QPushButton, QSplitter, QVBoxLayout, QWidget,
 )
 
 from . import deployment_index as di
@@ -198,9 +198,20 @@ class ProcessPage(QObject):
         lv.addStretch()
         row.addWidget(left)
 
-        self.inventory = FileInventory(orientation=Qt.Orientation.Vertical)
+        self.inventory = FileInventory(orientation=Qt.Orientation.Vertical,
+                                       log_inside=False)
         row.addWidget(self.inventory, stretch=1)
-        layout.addWidget(page)
+
+        # filters/summary and the file inventory on top, the console full
+        # width underneath (draggable)
+        split = QSplitter(Qt.Orientation.Vertical)
+        split.setChildrenCollapsible(False)
+        split.addWidget(page)
+        split.addWidget(self.inventory.log_section)
+        split.setStretchFactor(0, 2)
+        split.setStretchFactor(1, 1)
+        split.setSizes([2000, 1000])
+        layout.addWidget(split)
 
     def _connect(self):
         self.lib_selector.library_changed.connect(self._on_lib_changed)

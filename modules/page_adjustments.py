@@ -62,7 +62,7 @@ class AdjustmentsDialog(QDialog):
     def __init__(self, window):
         super().__init__(window)
         self.window = window
-        self.setWindowTitle("Adjustments")
+        self.setWindowTitle("Settings")
         self.setMinimumWidth(520)
         # window-modal, not the exec()-default application-modal - this
         # should only block MainWindow, not an unrelated top-level window
@@ -77,7 +77,7 @@ class AdjustmentsDialog(QDialog):
         v.setContentsMargins(16, 16, 16, 16)
         v.setSpacing(12)
 
-        title = QLabel("Adjustments")
+        title = QLabel("Settings")
         title.setStyleSheet(f"color:{TEXT};font-size:16px;font-weight:bold;")
         v.addWidget(title)
         subtitle = QLabel("Folder locations used across the app.")

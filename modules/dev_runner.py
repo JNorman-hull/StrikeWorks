@@ -454,6 +454,26 @@ class _RunnerBase(QObject):
         if not stems:
             raise _RunnerError("Process: nothing was processed.")
 
+    def _reset_validation_state(self):
+        """The demo library is reused between runs, and Auto process all
+        leaves already-validated sensors alone - so a second run would
+        inherit the first run's flags and reviews. Clearing them here
+        (the demo's own library only) makes every run validate, flag and
+        review from scratch."""
+        from . import validation_core as vc
+        index_df = di.read_index(self.lib_root)
+        if index_df is None:
+            return
+        cols = [c for c in (vc.VALIDATED_COL, vc.USER_VALIDATED_COL,
+                            vc.FLAGGED_COL, vc.USER_ADJUSTED_COL,
+                            vc.HIG_WINDOW_MAX_COL) if c in index_df.columns]
+        if not cols:
+            return
+        index_df = index_df.drop(columns=cols)
+        vc.write_index(self.lib_root, index_df)
+        self._log("Validate: the demo library's previous validation state "
+                  "cleared, so this run starts from scratch.")
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 class SimpleDemoRunner(_RunnerBase):
@@ -489,12 +509,16 @@ class SimpleDemoRunner(_RunnerBase):
         self._check_stop()
 
         self._page(dlg, 3)
+        self._reset_validation_state()
         dlg._refresh_validate_step()
         thread = dlg._auto_process_all()
         if thread is None:
             raise _RunnerError("Validate: no processed sensors to validate.")
         self._wait_thread(thread, "Auto process all")
+        QApplication.processEvents()
         self._log(f"Validate: {dlg.lbl_all_validated.text()}")
+        self._step_review_flagged(dlg)
+        self._check_stop()
 
         df, path, msg = self._wait_for(dlg._exporter.finished, _LONG_TIMEOUT_MS,
                                        "Save and export", dlg._save_and_export)
@@ -508,7 +532,7 @@ class SimpleDemoRunner(_RunnerBase):
         dlg._refresh_predict_step()
         if state.bin_model_path is None:
             raise _RunnerError("Predict: no deployed model found (models "
-                               "folder / Adjustments' default model).")
+                               "folder / Settings' default model).")
         model = state.bin_model_path.name + (
             f" + {state.mc_model_path.name}" if state.mc_model_path else "")
         self._log(f"Predict: model {model} (Simple mode's own default).")
@@ -528,6 +552,97 @@ class SimpleDemoRunner(_RunnerBase):
         if not expected.exists():
             raise _RunnerError(f"Report: expected output not found at {expected}.")
         self._log(f"Report: downloaded to {expected.parent}.")
+
+    # ── Validate: review the flagged sensors, checking each step ─────────────
+    def _check(self, ok, what):
+        self._log(f"Validate check {'PASS' if ok else 'FAIL'}: {what}")
+        return ok
+
+    def _step_review_flagged(self, dlg):
+        """What a person does after Auto process all, done with the keys
+        they'd use - and checked at every step: the flagged sensors are
+        the top of the list (orange), the arrow keys load the sensor they
+        move to, and Save + Next (Ctrl+V) clears each flag (the sensor
+        turns green and leaves the flagged group) and moves on to the next
+        flagged sensor, until none are left."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QColor
+        from PySide6.QtTest import QTest
+        from . import validation_core as vc
+        from .ml_widgets import OK, WARN
+
+        lst = dlg.validate_list
+
+        def order():
+            return [lst.item(i).text() for i in range(lst.count())]
+
+        def colour_of(stem):
+            items = lst.findItems(stem, Qt.MatchFlag.MatchExactly)
+            return items[0].foreground().color() if items else None
+
+        status = dlg._validation_status()
+        pending = [s for s in order() if vc.needs_review(s, status)]
+        n = len(pending)
+        if not n:
+            self._log("Validate: Auto process all flagged no sensors in this "
+                      "demo data - nothing to review.")
+            return
+        self._log(f"Validate: reviewing the {n} flagged sensor(s) as a "
+                  "person would - arrow keys, then Save + Next (Ctrl+V) on "
+                  "each without moving its nadir.")
+        fails = 0
+        top = order()[:n]
+        fails += not self._check(
+            top == pending and all(colour_of(s) == QColor(WARN) for s in top),
+            f"the {n} flagged sensors are the top {n} of the list, in orange")
+
+        # arrow keys: the highlighted sensor is the one loaded
+        lst.setFocus()
+        lst.setCurrentRow(0)
+        QTest.keyClick(lst, Qt.Key.Key_Down)
+        QApplication.processEvents()
+        down_ok = dlg._cur_validate_stem == order()[1]
+        QTest.keyClick(lst, Qt.Key.Key_Up)
+        QApplication.processEvents()
+        fails += not self._check(
+            down_ok and dlg._cur_validate_stem == order()[0],
+            "Down/Up arrow keys load the sensor they move to")
+
+        # Save + Next (Ctrl+V) through every flagged sensor
+        moved_ok = cleared_ok = 0
+        for i in range(n):
+            self._check_stop()
+            stem = dlg._cur_validate_stem
+            QTest.keyClick(lst, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
+            QApplication.processEvents()
+            status = dlg._validation_status()
+            if (not vc.needs_review(stem, status) and stem in status[1]
+                    and colour_of(stem) == QColor(OK)
+                    and stem not in order()[:n - i - 1]):
+                cleared_ok += 1
+            expected = pending[i + 1] if i + 1 < n else None
+            if expected is None or dlg._cur_validate_stem == expected:
+                moved_ok += 1
+        fails += not self._check(
+            cleared_ok == n,
+            f"Save + Next (Ctrl+V) cleared {cleared_ok}/{n} flags - each "
+            "sensor turned green and left the flagged group")
+        fails += not self._check(
+            moved_ok == n,
+            f"Save + Next moved on to the next flagged sensor {moved_ok}/{n} "
+            "times")
+        status = dlg._validation_status()
+        stems = [f["stem"] for f in dlg._validate_files]
+        left = len(vc.outstanding_flagged(stems, status))
+        counter = dlg.lbl_validated_count.text().splitlines()[0]
+        fails += not self._check(
+            left == 0 and counter == f"Flagged, to review: 0 of {n}",
+            f"no flags left to review (counter reads '{counter}')")
+        fails += not self._check(
+            vc.all_validated(stems, status),
+            "every sensor validated (auto or reviewed)")
+        self._log("Validate: review checks "
+                  + ("all passed." if not fails else f"- {fails} FAILED."))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -627,6 +742,8 @@ class AdvancedDemoRunner(_RunnerBase):
         sel.rescan(wait=True)
         for cmb in (sel.cmb_deployment, sel.cmb_treatment, sel.cmb_run):
             cmb.setCurrentIndex(0)
+        self._reset_validation_state()
+        page._load_index()
         page._populate_sensor_table()
 
         thread = page._auto_process_all()

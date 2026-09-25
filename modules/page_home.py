@@ -220,9 +220,9 @@ class HomePage(QObject):
         """Advanced mode is every page as it exists today. The sidebar's
         section buttons start disabled (main.py, on launch) regardless of
         whether the sidebar itself is toggled wide or narrow - this is
-        the one place that actually activates them."""
+        the one place that actually activates them. No section's panel is
+        opened for the user - they pick where to start from the sidebar."""
         self.window.expand_sidebar()
-        self.window.openPanel("setup_deploy")
 
     def _go_simple(self):
         """Simple mode - one pop-up window (page_simple_mode.py) instead

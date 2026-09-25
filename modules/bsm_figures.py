@@ -15,6 +15,9 @@ unlike ml_figures' report-vs-canvas split) gives the themed presentation;
 dark=False is available for anything exported to a light-background report.
 """
 import textwrap
+import warnings
+
+from matplotlib.layout_engine import TightLayoutEngine
 
 from .ml_figures import _PALETTE, _awaiting, fg_colour, style_axes, style_legend, _grid
 
@@ -27,27 +30,41 @@ OBS_COLOR = _PALETTE[0]   # blue - "what was actually observed"
 SPECIES_COLORS = {"scaly": CEN_COLOR, "eel": _PALETTE[4]}
 
 
-def _bar_style(ax, dark, ylabel):
-    ax.set_ylabel(ylabel, fontsize=9)
+def _bar_style(ax, dark, ylabel, fontsize=9):
+    ax.set_ylabel(ylabel, fontsize=fontsize)
     ax.set_ylim(0, 100)
     _grid(ax, dark)
     style_axes(ax.figure, ax, dark)
 
 
-def _label_bars(ax, bars, values, dark=True):
+def _label_bars(ax, bars, values, dark=True, fontsize=8, tops=None):
     """Prints each bar's own value (%) just above it - every BSM output
-    plot shows its actual numbers now, not just a shape to eyeball."""
+    plot shows its actual numbers now, not just a shape to eyeball. A bar
+    reaching the top of the 0-100 axis gets its label just inside the bar
+    instead, so it can't run into the title above."""
     fg = fg_colour(dark)
-    for bar, value in zip(bars, values):
+    # `tops`: where each label sits, when a bar carries an error bar - above
+    # its upper whisker rather than on it
+    tops = tops or [None] * len(values)
+    for bar, value, top in zip(bars, values, tops):
+        inside = value > 90 and top is None
+        y = bar.get_height() if top is None else top
         ax.annotate(f"{value:.1f}%",
-                   xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
-                   xytext=(0, 3), textcoords="offset points",
-                   ha="center", va="bottom", fontsize=8, color=fg, zorder=5)
+                   xy=(bar.get_x() + bar.get_width() / 2, y),
+                   xytext=(0, -3 if inside else 3), textcoords="offset points",
+                   ha="center", va="top" if inside else "bottom",
+                   fontsize=fontsize, color="white" if inside else fg,
+                   fontweight="bold" if inside else "normal", zorder=5)
 
 
-def draw_pco(fig, res, dark=True):
-    fig.clear()
-    ax = fig.add_subplot(111)
+SPECIES_TITLES = {"scaly": "Scaly fish", "eel": "Eel"}
+
+# report figure sizes (cm) - the 4-panel results and the 4-panel sweeps
+RESULTS_PANELS_CM = (12.0, 12.0)
+SWEEP_PANELS_CM = (20.0, 16.0)
+
+
+def _pco_bars(ax, res, dark, value_fs=8, ylabel_fs=9):
     fg = fg_colour(dark)
     if "Pco_obs" in res:
         values = [res["Pco_tip"] * 100, res["Pco_obs"] * 100]
@@ -57,20 +74,19 @@ def draw_pco(fig, res, dark=True):
                     yerr=[[(res["Pco_obs"] - res["wilson_lo"]) * 100],
                           [(res["wilson_hi"] - res["Pco_obs"]) * 100]],
                     fmt="none", ecolor=fg, capsize=6, linewidth=1.2)
-        _label_bars(ax, bars, values, dark)
-        _bar_style(ax, dark, "Collision probability (%) [95% CI]")
+        tops = [None, res["wilson_hi"] * 100]
+        ylabel = "Collision probability (%) [95% CI]"
     else:
         values = [res["Pco_tip"] * 100]
         bars = ax.bar(["CEN"], values, width=0.55,
                       color=[CEN_COLOR], edgecolor=fg)
-        _label_bars(ax, bars, values, dark)
-        _bar_style(ax, dark, "Collision probability (%)")
-    fig.tight_layout()
+        tops = None
+        ylabel = "Collision probability (%)"
+    _label_bars(ax, bars, values, dark, fontsize=value_fs, tops=tops)
+    _bar_style(ax, dark, ylabel, fontsize=ylabel_fs)
 
 
-def draw_pm(fig, res, dark=True):
-    fig.clear()
-    ax = fig.add_subplot(111)
+def _pm_bars(ax, res, dark, value_fs=8, ylabel_fs=9):
     fg = fg_colour(dark)
     if "Pco_obs" in res:
         values = [res["Pm"] * 100, res["Pm_obs"] * 100]
@@ -80,9 +96,196 @@ def draw_pm(fig, res, dark=True):
         values = [res["Pm"] * 100]
         bars = ax.bar(["CEN"], values, width=0.55,
                       color=[CEN_COLOR], edgecolor=fg)
-    _label_bars(ax, bars, values, dark)
-    _bar_style(ax, dark, "Mortality probability (%)")
+    _label_bars(ax, bars, values, dark, fontsize=value_fs)
+    _bar_style(ax, dark, "Mortality probability (%)", fontsize=ylabel_fs)
+
+
+def draw_pco(fig, res, dark=True):
+    fig.clear()
+    _pco_bars(fig.add_subplot(111), res, dark)
     fig.tight_layout()
+
+
+def draw_pm(fig, res, dark=True):
+    fig.clear()
+    _pm_bars(fig.add_subplot(111), res, dark)
+    fig.tight_layout()
+
+
+def _panel_letter(ax, letter, dark):
+    """(a)/(b)/... top-left, above the axes - the multi-panel figures'
+    own panel labels."""
+    ax.text(-0.02, 1.03, f"({letter})", transform=ax.transAxes,
+            ha="right", va="bottom", fontsize=9, fontweight="bold",
+            color=fg_colour(dark))
+
+
+def draw_results_panels(fig, results, dark=False):
+    """The blade strike model's headline results as one 2x2 figure:
+    (a) scaly collision, (b) scaly mortality, (c) eel collision,
+    (d) eel mortality - CEN (and Observed, with its Wilson 95% CI, when
+    observed counts were entered) per panel. `results`: {"scaly": res,
+    "eel": res}, either may be missing (drawn as "Not calculated")."""
+    fig.clear()
+    fg = fg_colour(dark)
+    axes = fig.subplots(2, 2)
+    panels = (("scaly", "pco"), ("scaly", "pm"), ("eel", "pco"), ("eel", "pm"))
+    for letter, ax, (species, kind) in zip("abcd", axes.flat, panels):
+        res = (results or {}).get(species)
+        what = "collision" if kind == "pco" else "mortality"
+        if res is None:
+            ax.set_xticks([])
+            _awaiting(ax, "Not calculated")
+            _bar_style(ax, dark, f"{what.capitalize()} probability (%)",
+                       fontsize=8)
+        elif kind == "pco":
+            _pco_bars(ax, res, dark, value_fs=7, ylabel_fs=8)
+        else:
+            _pm_bars(ax, res, dark, value_fs=7, ylabel_fs=8)
+        # letter and title as one left-aligned title, so they can't run
+        # into each other however narrow the panel gets
+        ax.set_title(rf"$\bf{{({letter})}}$  {SPECIES_TITLES[species]} - {what}",
+                     fontsize=9, color=fg, loc="left")
+        ax.tick_params(labelsize=8)
+    _finish_layout(fig, dark)
+
+
+def _quiet_tight_layout(fig, rect=None):
+    """tight_layout, skipped while a canvas is still tiny (before it's
+    first laid out on screen) and without its "cannot make Axes small
+    enough" warning."""
+    w, h = fig.get_size_inches() * fig.dpi
+    if w < 120 or h < 100:
+        return
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        fig.tight_layout(rect=rect)
+
+
+class _LiveTightLayout(TightLayoutEngine):
+    def execute(self, fig):
+        w, h = fig.get_size_inches() * fig.dpi
+        if w < 120 or h < 100:
+            return
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            super().execute(fig)
+
+
+def _rotate_bar_labels(fig, ax, n_bars, label_px):
+    """Bar labels flat when each bar's slot is wide enough for its
+    (wrapped) label, slanted when it's tighter, vertical when it's very
+    narrow (the half-width mortality figure on screen) - worked out from
+    the figure's actual width, so the same figure reads at report size
+    and on a narrow canvas."""
+    slot = fig.get_size_inches()[0] * fig.dpi * 0.8 / max(n_bars, 1)
+    rotation = 0 if slot >= label_px else (30 if slot >= label_px * 0.55 else 90)
+    for lab in ax.get_xticklabels():
+        lab.set_rotation(rotation)
+        if rotation == 30:
+            lab.set_ha("right")
+            lab.set_rotation_mode("anchor")
+
+
+def _finish_layout(fig, dark, rect=None):
+    """tight_layout once - and for an in-app (dark) canvas, keep it as the
+    figure's layout engine so every resize re-lays the panels out rather
+    than stretching positions computed at the figure's first size."""
+    _quiet_tight_layout(fig, rect=rect)
+    if dark:
+        fig.set_layout_engine(_LiveTightLayout(rect=rect))
+
+
+def _nice_ceiling(value):
+    """Upper y limit for a mortality panel: the next 10 above the data
+    (at least 10), capped at 100."""
+    import math
+    return float(min(100, max(10, math.ceil(value * 1.1 / 10) * 10)))
+
+
+def draw_sweep_panels(fig, sweeps, dark=False, title=None):
+    """Sensitivity as one 2x2 figure, one line per flow rate Q in every
+    panel (viridis, the design Q drawn heavier, its design point marked):
+    (a) collision probability vs shaft speed, (b) collision probability
+    vs relative fish velocity, (c) mortality probability vs shaft speed,
+    (d) mortality probability vs relative fish velocity. One shared
+    legend underneath. `sweeps`: `bsm_model.sensitivity_sweeps()`'s dict,
+    or None for the awaiting-data placeholder."""
+    import matplotlib
+    import numpy as np
+
+    fig.clear()
+    fg = fg_colour(dark)
+    axes = fig.subplots(2, 2)
+    specs = (("pco_n", "N", "Shaft speed N (rpm)", "Collision probability (%)"),
+             ("pco_wf", "wf", "Relative fish velocity wf (m/s)",
+              "Collision probability (%)"),
+             ("pm_n", "N", "Shaft speed N (rpm)", "Mortality probability (%)"),
+             ("pm_wf", "wf", "Relative fish velocity wf (m/s)",
+              "Mortality probability (%)"))
+    pm_top = 10.0
+    if sweeps:
+        pm_max = max((float(np.max(y)) for key in ("pm_n", "pm_wf")
+                      for _x, y in sweeps[key].values()), default=0.0)
+        pm_top = _nice_ceiling(pm_max)
+    cmap = matplotlib.colormaps["viridis"]
+    handles = []
+    for letter, ax, (key, x_key, x_label, y_label) in zip("abcd", axes.flat,
+                                                         specs):
+        _grid(ax, dark)
+        ax.set_xlabel(x_label, fontsize=9)
+        ax.set_ylabel(y_label, fontsize=9)
+        ax.set_ylim(0, 100 if key.startswith("pco") else pm_top)
+        ax.tick_params(labelsize=8)
+        _panel_letter(ax, letter, dark)
+        if not sweeps:
+            ax.set_xticks([])
+            _awaiting(ax, "Run a Blade Strike Modelling calculation first")
+            style_axes(fig, ax, dark)
+            continue
+        if x_key == "wf":
+            ax.axvline(0, color=fg, linewidth=0.8, linestyle="--", alpha=0.6)
+        curves = sweeps[key]
+        n = max(len(curves) - 1, 1)
+        design_label = sweeps.get("design_label")
+        lines = []
+        x_lo, x_hi = None, None
+        for i, (label, (x_arr, y_arr)) in enumerate(curves.items()):
+            is_design = label == design_label
+            line, = ax.plot(x_arr, y_arr, color=cmap(i / n),
+                            linewidth=2.0 if is_design else 1.2,
+                            label=label, zorder=3 if is_design else 2)
+            lines.append(line)
+            x_lo = float(np.min(x_arr)) if x_lo is None else min(x_lo, float(np.min(x_arr)))
+            x_hi = float(np.max(x_arr)) if x_hi is None else max(x_hi, float(np.max(x_arr)))
+            if is_design:
+                dx = sweeps["design"][x_key]
+                ax.scatter([dx], [float(np.interp(dx, x_arr, y_arr))], s=28,
+                           color=cmap(i / n), edgecolor=fg, linewidth=0.8,
+                           zorder=4)
+        if x_lo is not None and x_hi > x_lo:
+            ax.set_xlim(x_lo, x_hi)
+        handles = handles or lines
+        style_axes(fig, ax, dark)
+    if handles:
+        leg = fig.legend(handles=handles, loc="lower center",
+                         ncol=min(len(handles), 3), fontsize=8, frameon=False)
+        if dark:
+            for text in leg.get_texts():
+                text.set_color(fg)
+    if title:
+        fig.suptitle(title, fontsize=9, color=fg, y=0.99)
+    _finish_layout(fig, dark, rect=(0, 0.08 if handles else 0, 1,
+                                    0.97 if title else 1))
+
+
+def sweep_panels_title(species, params):
+    """The fixed inputs every sweep panel holds constant, as a one-line
+    figure title."""
+    return (f"{SPECIES_TITLES.get(species, species)} - EVS-EN 18110 (2025); "
+            f"Lf = {params['lf'] * 1000:g} mm, Bf = {params['bf'] * 1000:g} mm, "
+            f"design Q = {params['Q']:g} m\u00b3/s, N = {params['N']:g} rpm, "
+            f"wf = {params['wf']:g} m/s")
 
 
 def draw_sens_wf(fig, x, y, x_fit, y_fit, span=4.0, dark=True,
@@ -204,7 +407,8 @@ def draw_vcrit_sweep(fig, series, dark=True, title=None):
 
 
 def draw_comparison_bars(fig, cen_values, comparisons, dark=True,
-                         ylabel="Strike / collision probability (%)"):
+                         ylabel="Strike / collision probability (%)",
+                         title="Model comparison"):
     """The mathematical (Cen) estimate against one bar per comparison -
     each treatment's data-driven strike rate, plus optional manually
     entered comparisons - the "BSM vs predicted" figure on Model
@@ -224,15 +428,20 @@ def draw_comparison_bars(fig, cen_values, comparisons, dark=True,
     fg = fg_colour(dark)
     cen_items = [(species, v) for species, v in (cen_values or {}).items()
                 if v is not None]
+    if title:
+        ax.set_title(title, fontsize=10, fontweight="bold", color=fg)
     if not cen_items and not comparisons:
         ax.set_xticks([])
         _awaiting(ax, "Run a Blade Strike Modelling calculation first")
         _bar_style(ax, dark, ylabel)
-        fig.tight_layout()
+        _finish_layout(fig, dark)
         return
     labels = [f"Cen ({sp})" for sp, _ in cen_items] + [c[0] for c in comparisons]
     heights = [v for _, v in cen_items] + [c[1] for c in comparisons]
-    colors = ([SPECIES_COLORS.get(sp, CEN_COLOR) for sp, _ in cen_items]
+    # keys are the page's own labels ("Blade strike model - eel") - the
+    # species is their last word
+    colors = ([SPECIES_COLORS.get(str(sp).split()[-1].lower(), CEN_COLOR)
+               for sp, _ in cen_items]
               + [OBS_COLOR] * len(comparisons))
     # long labels ("Cen (Blade strike model - scaly)") wrapped onto a few
     # lines so neighbouring bars' labels don't run into each other when the
@@ -247,8 +456,56 @@ def draw_comparison_bars(fig, cen_values, comparisons, dark=True,
             ax.errorbar(i, value, yerr=[[max(0.0, value - lo)],
                                         [max(0.0, hi - value)]],
                        fmt="none", ecolor=fg, capsize=4, linewidth=1.0)
-    _label_bars(ax, bars, heights, dark)
-    ax.tick_params(axis="x", labelsize=8,
-                   rotation=30 if len(labels) > 4 else 0)
+    tops = [None] * len(cen_items) + [c[3] for c in comparisons]
+    _label_bars(ax, bars, heights, dark, tops=tops)
+    ax.tick_params(axis="x", labelsize=8)
+    _rotate_bar_labels(fig, ax, len(labels), label_px=110)
     _bar_style(ax, dark, ylabel)
-    fig.tight_layout()
+    _finish_layout(fig, dark)
+
+
+def draw_mortality_bars(fig, items, dark=True, title="Mortality",
+                        ylabel="Mortality probability (%)"):
+    """Model comparison's mortality figure - the Blade Strike Model's own
+    mortality per species against the model-projected mortality (the
+    current model's predicted strike rate put through each species' BSM
+    injury model) and any video-observed mortality.
+
+    `items`: [(label, value_pct, ci_lo, ci_hi, kind)] - kind "scaly"/"eel"
+    for a BSM bar (that species' colour), anything else a data-driven bar;
+    ci_lo/ci_hi may be None. Same look as `draw_comparison_bars`; the y
+    axis tops out just above the tallest bar/whisker (mortality is usually
+    far below 100%) rather than always at 100."""
+    fig.clear()
+    ax = fig.add_subplot(111)
+    fg = fg_colour(dark)
+    if title:
+        ax.set_title(title, fontsize=10, fontweight="bold", color=fg)
+    if not items:
+        ax.set_xticks([])
+        _awaiting(ax, "Run a Blade Strike Modelling calculation first")
+        _bar_style(ax, dark, ylabel)
+        _finish_layout(fig, dark)
+        return
+    x = list(range(len(items)))
+    heights = [it[1] for it in items]
+    colors = [SPECIES_COLORS.get(it[4], OBS_COLOR) for it in items]
+    bars = ax.bar(x, heights, width=0.55, color=colors, edgecolor=fg)
+    ax.set_xticks(x)
+    ax.set_xticklabels([textwrap.fill(str(it[0]), 14) for it in items])
+    tops = []
+    for i, (_label, value, lo, hi, _kind) in enumerate(items):
+        if lo is not None and hi is not None:
+            ax.errorbar(i, value, yerr=[[max(0.0, value - lo)],
+                                        [max(0.0, hi - value)]],
+                        fmt="none", ecolor=fg, capsize=4, linewidth=1.0)
+            tops.append(hi)
+        else:
+            tops.append(None)
+    _label_bars(ax, bars, heights, dark, tops=tops)
+    ax.tick_params(axis="x", labelsize=7)
+    _rotate_bar_labels(fig, ax, len(items), label_px=85)
+    _bar_style(ax, dark, ylabel)
+    peak = max([h for h in heights] + [t for t in tops if t is not None])
+    ax.set_ylim(0, _nice_ceiling(peak * 1.12))
+    _finish_layout(fig, dark)

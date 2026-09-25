@@ -29,6 +29,10 @@ from .ml_widgets import (
 )
 
 
+# Train final model / Deploy model - a quarter of the 960 px column
+_BUTTON_WIDTH = 240
+
+
 class DeployTab:
     """Builds the Deploy tab UI into `frame`, bound to `state`."""
 
@@ -36,9 +40,29 @@ class DeployTab:
         self.state = state
         self.window = window
         self.models_dir = self._default_models_dir()
+        # True once "Change models folder…" picked one by hand - from then
+        # on the default (session library / Settings) no longer overrides it
+        self._custom_models_dir = False
 
         self._build(frame)
         self._connect_state()
+        self._refresh()
+        session_state = getattr(window, "session_state", None)
+        if session_state is not None:
+            session_state.library_changed.connect(
+                lambda _root: self.follow_default_models_dir())
+
+    def follow_default_models_dir(self):
+        """Re-point at the default models folder - the session library's
+        own, or Settings' models folder with no library - after either
+        changes, unless a folder was picked here by hand."""
+        if self._custom_models_dir:
+            return
+        new = self._default_models_dir()
+        if new == self.models_dir:
+            return
+        self.models_dir = new
+        self.ed_version.setText(self.state.suggest_version(self.models_dir))
         self._refresh()
 
     def _default_models_dir(self):
@@ -79,20 +103,19 @@ class DeployTab:
         dv = QVBoxLayout(grp_deploy)
         dv.setSpacing(8)
 
-        self.lbl_flow_status = QLabel("")
-        self.lbl_flow_status.setWordWrap(True)
-        self.lbl_flow_status.setStyleSheet(f"color:{MUTED};")
-        dv.addWidget(self.lbl_flow_status)
-
+        # the buttons at a quarter of the column's width; what each step
+        # will do (and the models folder) are their tooltips
         run_row = QHBoxLayout()
         self.btn_final = QPushButton("Train final model")
-        self.btn_final.setMinimumHeight(36)
+        self.btn_final.setMinimumHeight(32)
+        self.btn_final.setFixedWidth(_BUTTON_WIDTH)
         self.btn_final.setEnabled(False)
         self.btn_final.clicked.connect(self._train_final)
         self.spinner = Spinner(size=24)
         self.spinner.setVisible(False)
-        run_row.addWidget(self.btn_final, stretch=1)
+        run_row.addWidget(self.btn_final)
         run_row.addWidget(self.spinner)
+        run_row.addStretch()
         dv.addLayout(run_row)
         self.lbl_final_status = QLabel("")
         self.lbl_final_status.setWordWrap(True)
@@ -112,26 +135,22 @@ class DeployTab:
         ver_row.addStretch()
         dv.addLayout(ver_row)
 
-        dir_row = QHBoxLayout()
-        self.lbl_models_dir = QLabel("")
-        self.lbl_models_dir.setStyleSheet(f"color:{MUTED};")
-        self.lbl_models_dir.setWordWrap(True)
-        btn_dir = QPushButton("Change…")
-        btn_dir.setFixedWidth(80)
-        btn_dir.clicked.connect(self._change_models_dir)
-        dir_row.addWidget(self.lbl_models_dir, stretch=1)
-        dir_row.addWidget(btn_dir)
-        dv.addLayout(dir_row)
-
+        deploy_row = QHBoxLayout()
         self.btn_deploy = QPushButton("Deploy model")
-        self.btn_deploy.setMinimumHeight(36)
+        self.btn_deploy.setMinimumHeight(32)
+        self.btn_deploy.setFixedWidth(_BUTTON_WIDTH)
         self.btn_deploy.setEnabled(False)
         self.btn_deploy.setStyleSheet(
             f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
             "border-radius:5px;font-weight:bold;}"
             "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
         self.btn_deploy.clicked.connect(self._deploy)
-        dv.addWidget(self.btn_deploy)
+        deploy_row.addWidget(self.btn_deploy)
+        self.btn_models_dir = QPushButton("Models folder…")
+        self.btn_models_dir.clicked.connect(self._change_models_dir)
+        deploy_row.addWidget(self.btn_models_dir)
+        deploy_row.addStretch()
+        dv.addLayout(deploy_row)
         self.lbl_deploy_status = QLabel("")
         self.lbl_deploy_status.setWordWrap(True)
         self.lbl_deploy_status.setStyleSheet(f"color:{MUTED};")
@@ -165,10 +184,13 @@ class DeployTab:
         s = self.state
         self.btn_final.setEnabled(s.cv_done and not s.running)
         self.btn_deploy.setEnabled(s.final_done and not s.running)
-        self.lbl_models_dir.setText(f"Models folder: {self.models_dir}")
+        self.btn_models_dir.setToolTip(
+            f"Models folder: {self.models_dir}\nClick to change it.")
+        self.btn_deploy.setToolTip(
+            f"Deploy the final model(s) to {self.models_dir}")
 
         if not s.cv_done:
-            self.lbl_flow_status.setText(
+            self.btn_final.setToolTip(
                 "Train a model first (Train tab), review the results "
                 "(Evaluate tab), then accept them here by training the "
                 "final models.")
@@ -182,13 +204,13 @@ class DeployTab:
         mc_m = (s.model_results("multiclass") or {}).get("metrics", {})
         n = bin_m.get("n_samples", "?")
         if mc_m:
-            self.lbl_flow_status.setText(
+            self.btn_final.setToolTip(
                 f"Cross-validation complete for both pipeline stages. The "
                 f"final binary model will be trained on all {n} "
                 f"observations and the final region model on all "
                 f"{mc_m.get('n_samples', '?')} ground-truth strikes.")
         else:
-            self.lbl_flow_status.setText(
+            self.btn_final.setToolTip(
                 f"Cross-validation complete. The final binary model will "
                 f"now be trained using all {n} training observations. "
                 "(No multiclass stage in this run.)")
@@ -329,6 +351,7 @@ class DeployTab:
             self.window, "Select models folder", str(self.models_dir))
         if path:
             self.models_dir = Path(path)
+            self._custom_models_dir = True
             self.ed_version.setText(
                 self.state.suggest_version(self.models_dir))
             self._refresh()

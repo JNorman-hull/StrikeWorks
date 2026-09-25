@@ -2785,7 +2785,7 @@ class Ui_MainWindow(object):
         self.tabs_ml_prediction.setTabText(self.tabs_ml_prediction.indexOf(self.tab_ml_predict), QCoreApplication.translate("MainWindow", u"Predict", None))
         self.tabs_ml_prediction.setTabText(self.tabs_ml_prediction.indexOf(self.tab_ml_inspect), QCoreApplication.translate("MainWindow", u"Inspect", None))
         self.tabs_ml_prediction.setTabText(self.tabs_ml_prediction.indexOf(self.tab_ml_report), QCoreApplication.translate("MainWindow", u"Report", None))
-        self.btn_adjustments.setText(QCoreApplication.translate("MainWindow", u"Adjustments", None))
+        self.btn_adjustments.setText(QCoreApplication.translate("MainWindow", u"Settings", None))
         self.btn_about.setText(QCoreApplication.translate("MainWindow", u"About", None))
         self.btn_more.setText(QCoreApplication.translate("MainWindow", u"More", None))
         self.creditsLabel.setText(QCoreApplication.translate("MainWindow", u"StrikeWorks", None))

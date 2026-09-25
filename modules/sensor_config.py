@@ -93,6 +93,11 @@ RAPID_CHANNELS = [
 # a device that does not can have this edited in the JSON store.
 RAPID_FNAME_PATTERN = r"^([A-Za-z0-9]{2,4})-(\d{4})(\d{6})$"
 
+# EEL tag: the last ten digits are MMDDhhmmss and everything before them is
+# an operator-set device name ("EEL-001", "EEEEL-") - never a fixed prefix
+# (EEL Tag Binary Format Specification, section 2)
+EEL_FNAME_PATTERN = r"^(.+?)-?(\d{4})(\d{6})$"
+
 # How far either side of the acceleration peak the parser looks for the
 # pressure nadir. 1.5 s each way - the RAPID code's ±3000 samples at 2000 Hz.
 NADIR_SEARCH_SEC = 1.5
@@ -378,21 +383,24 @@ BUILTIN = {
         key="micro_eel",
         name="Micro-EEL",
         description=(
-            "Anticipated device, not yet in service. One file per recording "
-            "at roughly 6000 Hz. Extension, packet size and parser are "
-            "placeholders until a real recording is available - set the "
-            "parser once its reader is registered in sensor_config.PARSERS."),
-        timebase_hz=6000.0,
-        output_rate_hz=6000.0,
+            "EEL tag - a .HIG high-g stream (event-triggered, 5000 Hz) and a "
+            ".IMP IMU/pressure stream (100 Hz) on one master clock, decoded "
+            "per the EEL Tag Binary Format Specification v1.1.0: header "
+            "records discarded, re-emitted HIG records removed, sample rate "
+            "from the deployment .log when it's beside the files."),
+        timebase_hz=5000.0,
+        output_rate_hz=5000.0,
         sources=[
-            dict(extension=".dat", packet_size=0,
-                 native_rate_hz=6000.0, method="linear"),
+            dict(extension=".imp", packet_size=23,
+                 native_rate_hz=100.0, method="linear"),
+            dict(extension=".hig", packet_size=11,
+                 native_rate_hz=5000.0, method="nearest"),
         ],
         channels=list(RAPID_CHANNELS),
-        filename_pattern=RAPID_FNAME_PATTERN,
+        filename_pattern=EEL_FNAME_PATTERN,
         magnitudes=list(MAGNITUDE_KEYS),
         nadir_method=DEFAULT_NADIR_METHOD,
-        parser="unconfigured",
+        parser="eel_imp_hig",
     ),
 }
 
@@ -425,6 +433,12 @@ def _parse_rapid(paths, out_dir, config):
         paths[".imp"], paths[".hig"], out_dir, config=config)
 
 
+def _parse_eel(paths, out_dir, config):
+    """EEL tag: one .imp and one .hig on a shared master clock (eel_format)."""
+    from . import eel_format
+    return eel_format.process_eel(paths, out_dir, config)
+
+
 def _parse_unconfigured(paths, out_dir, config):
     raise NotImplementedError(
         f"'{config.name}' has no parser yet. Write its reader, register it "
@@ -435,6 +449,7 @@ def _parse_unconfigured(paths, out_dir, config):
 #: parser name -> callable(paths, out_dir, config) -> (DataFrame, summary)
 PARSERS = {
     "rapid_imp_hig": _parse_rapid,
+    "eel_imp_hig": _parse_eel,
     "unconfigured": _parse_unconfigured,
 }
 

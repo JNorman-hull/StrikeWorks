@@ -60,6 +60,19 @@ def _grid(ax, dark):
                   linewidth=0.5, alpha=0.8 if dark else 0.5)
 
 
+def bar_width(ax, n_bars):
+    """Bar width for a by-treatment bar chart - half the usual 0.6 with
+    three or fewer bars, so a single treatment isn't one slab filling the
+    plot. The x limits are pinned to where the full-width bars would have
+    put them (autoscale would otherwise just stretch the narrower bars
+    back out), so they really do show at half width."""
+    if n_bars > 3:
+        return 0.6
+    span = n_bars - 1 + 0.6
+    ax.set_xlim(-0.3 - 0.05 * span, n_bars - 1 + 0.3 + 0.05 * span)
+    return 0.3
+
+
 def _awaiting(ax, msg):
     ax.annotate(msg, xy=(0.5, 0.5), xycoords="axes fraction",
                 ha="center", va="center", color=_MUTED, fontsize=10)
@@ -90,8 +103,8 @@ def draw_strike_rate(fig, summary, dark=False):
     hi    = (summary["ci_hi"].values - summary["strike_rate"].values) * 100
 
     colors = [_BLUES[i % len(_BLUES)] for i in range(len(summary))]
-    bars   = ax.bar(x, rates, color=colors, edgecolor=fg, width=0.6,
-                    alpha=0.9)
+    bars   = ax.bar(x, rates, color=colors, edgecolor=fg,
+                    width=bar_width(ax, len(summary)), alpha=0.9)
     ax.errorbar(x, rates, yerr=[lo, hi],
                 fmt="none", ecolor=fg, capsize=5, linewidth=1.2)
 
@@ -142,7 +155,7 @@ def draw_region(fig, summary, class_names, dark=False):
         props  = np.divide(counts, n_strike, out=np.zeros_like(counts),
                            where=n_strike > 0)
         ax.bar(x, props, bottom=bottom, color=_PALETTE[i % len(_PALETTE)],
-               edgecolor=fg, lw=0.5, width=0.6, label=cn)
+               edgecolor=fg, lw=0.5, width=bar_width(ax, len(summary)), label=cn)
         bottom += props
 
     ax.set_xticks(x)

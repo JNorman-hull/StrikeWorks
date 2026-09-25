@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import settings
+from .bind_datasets import BindTrainingData
 from .ml_train_state import GROUPING_PRESETS
 from .ml_widgets import (
     ACCENT, BAD, BORDER, CARD_BG, EMPTY, MUTED, OK, PALETTE, TEXT,
@@ -143,6 +144,10 @@ class TrainTab:
         self.lbl_compat = QLabel("")
         self.lbl_compat.setStyleSheet(f"color:{OK};")
         dv.addWidget(self.lbl_compat)
+        # several datasets stacked into one - loaded straight away
+        self.bind_widget = BindTrainingData()
+        self.bind_widget.bound.connect(self._load_path)
+        dv.addWidget(self.bind_widget)
 
         self.grp_preview = Section("Dataset preview (file-level metadata)")
         pv = QVBoxLayout(self.grp_preview)

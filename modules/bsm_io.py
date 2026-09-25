@@ -5,52 +5,94 @@
 #
 # ///////////////////////////////////////////////////////////////
 """CSV/PNG export helpers for blade strike modelling results - port of the
-old MVP app's `bsm/io.py`, unchanged. Shared by Sensitivity (wf sweep) and
-Reporting (headline results) so there is one export routine per shape
-rather than one per page.
+old MVP app's `bsm/io.py`, unchanged. Shared by Analysis and reporting and the
+central report (report_center.py) so there is one export routine per shape
+rather than one per page - including the two fixed-size report figures.
 """
 import csv
 from pathlib import Path
 
+CM_PER_INCH = 2.54
 
-def export_results(res, fig_pco, fig_pm, out_dir):
+
+def export_results(results, out_dir):
+    """bsm_results.csv - one row per species and method (CEN, and
+    Observed when observed counts were entered). `results`: {"scaly":
+    res, "eel": res}."""
     out = Path(out_dir)
     with open(out / "bsm_results.csv", "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["method", "Pco", "fMR", "Pm", "S"])
-        w.writerow(["CEN", f"{res['Pco_tip']:.6f}", f"{res['fMR_tip']:.6f}",
-                    f"{res['Pm']:.6f}", f"{res['S']:.6f}"])
-        if "Pco_obs" in res:
-            w.writerow(["observed", f"{res['Pco_obs']:.6f}", f"{res['fMR_tip']:.6f}",
-                        f"{res['Pm_obs']:.6f}", f"{res['S_obs']:.6f}"])
-    fig_pco.savefig(out / "barplot_pco.png", dpi=300, bbox_inches="tight")
-    fig_pm.savefig(out / "barplot_pm.png", dpi=300, bbox_inches="tight")
+        w.writerow(["species", "method", "Pco", "fMR", "Pm", "S"])
+        for species, res in results.items():
+            if res is None:
+                continue
+            w.writerow([species, "CEN", f"{res['Pco_tip']:.6f}",
+                        f"{res['fMR_tip']:.6f}", f"{res['Pm']:.6f}",
+                        f"{res['S']:.6f}"])
+            if "Pco_obs" in res:
+                w.writerow([species, "observed", f"{res['Pco_obs']:.6f}",
+                            f"{res['fMR_tip']:.6f}", f"{res['Pm_obs']:.6f}",
+                            f"{res['S_obs']:.6f}"])
     return out
 
 
-def export_sensitivity(x, y, fig, out_dir, stem, x_header):
+def export_sweeps_csv(sweeps, out_dir, stem):
+    """Long-format export of `bsm_model.sensitivity_sweeps()` - one row per
+    (quantity, x, flow) point, matching the standalone Mathematical BSM
+    scripts' `*_sensitivity_wf_q.csv` convention."""
+    names = {"pco_n": ("collision_probability", "N_rpm"),
+             "pco_wf": ("collision_probability", "wf_m_per_s"),
+             "pm_n": ("mortality_probability", "N_rpm"),
+             "pm_wf": ("mortality_probability", "wf_m_per_s")}
     out = Path(out_dir)
-    with open(out / f"{stem}.csv", "w", newline="") as fh:
+    with open(out / f"{stem}.csv", "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
-        w.writerow([x_header, "Pco_percent"])
-        for xi, yi in zip(x, y):
-            w.writerow([f"{xi:g}", f"{yi:.6f}"])
-    fig.savefig(out / f"{stem}.png", dpi=300, bbox_inches="tight")
-    return out
+        w.writerow(["quantity", "x_variable", "x", "flow", "percent"])
+        for key, (quantity, x_name) in names.items():
+            for label, (x_arr, y_arr) in sweeps[key].items():
+                for xi, yi in zip(x_arr, y_arr):
+                    w.writerow([quantity, x_name, f"{xi:g}", label,
+                                f"{yi:.6f}"])
+    return out / f"{stem}.csv"
 
 
-def export_sweep_lines(curves, fig, out_dir, stem, x_header, line_header,
-                       y_header):
-    """Long-format export of a multi-line sweep (`bsm_figures.draw_sweep_lines`'
-    `curves` shape: label -> (x_arr, y_arr)) - one row per (x, line) pair,
-    matching the standalone Mathematical BSM scripts' `*_sensitivity_wf_q.csv`
-    convention."""
-    out = Path(out_dir)
-    with open(out / f"{stem}.csv", "w", newline="") as fh:
-        w = csv.writer(fh)
-        w.writerow([x_header, line_header, y_header])
-        for label, (x_arr, y_arr) in curves.items():
-            for xi, yi in zip(x_arr, y_arr):
-                w.writerow([f"{xi:g}", label, f"{yi:.6f}"])
-    fig.savefig(out / f"{stem}.png", dpi=300, bbox_inches="tight")
-    return out
+def save_fixed(fig, base_path, formats=("png",), dpi=300):
+    """Saves `fig` at exactly its own figure size (no tight bounding box,
+    which would crop it to a different size) once per format. Returns the
+    .png path if one was written, else the first path written."""
+    png, first = None, None
+    for fmt in formats or ("png",):
+        path = Path(base_path).with_suffix(f".{fmt}")
+        try:
+            fig.savefig(path, dpi=dpi, facecolor="white")
+        except Exception:
+            continue
+        first = first or path
+        if fmt == "png":
+            png = path
+    return png or first
+
+
+def sized_figure(size_cm):
+    from matplotlib.figure import Figure
+    w, h = size_cm
+    return Figure(figsize=(w / CM_PER_INCH, h / CM_PER_INCH), dpi=100)
+
+
+def save_results_panels(results, base_path, formats=("png",), dpi=300):
+    """The 4-panel headline results figure (12 x 12 cm), report styling."""
+    from . import bsm_figures
+    fig = sized_figure(bsm_figures.RESULTS_PANELS_CM)
+    bsm_figures.draw_results_panels(fig, results, dark=False)
+    return save_fixed(fig, base_path, formats, dpi)
+
+
+def save_sweep_panels(sweeps, species, params, base_path, formats=("png",),
+                      dpi=300):
+    """The 4-panel sensitivity figure (20 x 16 cm), report styling."""
+    from . import bsm_figures
+    fig = sized_figure(bsm_figures.SWEEP_PANELS_CM)
+    bsm_figures.draw_sweep_panels(
+        fig, sweeps, dark=False,
+        title=bsm_figures.sweep_panels_title(species, params))
+    return save_fixed(fig, base_path, formats, dpi)

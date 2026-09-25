@@ -276,7 +276,10 @@ def build_pipeline(cfg):
     from sklearn.linear_model import RidgeClassifierCV
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
-    from sktime.transformations.panel.rocket import MiniRocket
+    try:
+        from sktime.transformations.rocket import MiniRocket
+    except ImportError:   # sktime releases before the rocket module moved
+        from sktime.transformations.panel.rocket import MiniRocket
 
     ridge = cfg.get("ridge", {})
     alphas = np.logspace(ridge.get("alpha_min_exp", -3),

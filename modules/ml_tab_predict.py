@@ -20,7 +20,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt, QElapsedTimer, QTimer
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout, QHBoxLayout,
     QHeaderView, QLabel, QMessageBox, QPushButton, QScrollArea, QSizePolicy,
     QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
@@ -317,19 +317,23 @@ class PredictTab:
         v.setContentsMargins(4, 6, 4, 6)
         v.setSpacing(10)
 
-        # ── row 3: prediction summary cards ─────────────────────────────────
+        # ── row 3: prediction summary cards | results table, side by side ──
+        # the cards stacked three to a row, the table beside them
         grp_sum = Section("Prediction summary")
-        sv = QHBoxLayout(grp_sum)
-        sv.setSpacing(8)
-        self.card_recordings = RingCard("Recordings (by treatment)")
-        self.card_strikes    = RingCard("Predicted strikes")
-        self.card_rate       = RingCard("Strike rate")
-        self.card_conf       = RingCard("Mean confidence")
-        self.card_regions    = RingCard("Strike classes")
-        for c in (self.card_recordings, self.card_strikes, self.card_rate,
-                  self.card_conf, self.card_regions):
-            sv.addWidget(c, stretch=1)
-        v.addWidget(grp_sum)
+        sv = QVBoxLayout(grp_sum)
+        grid = QGridLayout()
+        grid.setSpacing(8)
+        self.card_recordings = RingCard("Recordings (by treatment)", w=170)
+        self.card_strikes    = RingCard("Predicted strikes", w=170)
+        self.card_rate       = RingCard("Strike rate", w=170)
+        self.card_conf       = RingCard("Mean confidence", w=170)
+        self.card_regions    = RingCard("Strike classes", w=170)
+        for i, c in enumerate((self.card_recordings, self.card_strikes,
+                               self.card_rate, self.card_conf,
+                               self.card_regions)):
+            grid.addWidget(c, i // 3, i % 3)
+        sv.addLayout(grid)
+        sv.addStretch()
 
         # ── row 4: results table ────────────────────────────────────────────
         grp_tbl = Section("Results by treatment")
@@ -346,7 +350,7 @@ class PredictTab:
         self.tbl.horizontalHeader().setStretchLastSection(True)
         self.tbl.itemSelectionChanged.connect(self._on_treatment_selected)
         tv.addWidget(self.tbl)
-        v.addWidget(grp_tbl)
+        v.addWidget(hsplit((grp_sum, 2), (grp_tbl, 3)))
 
         # ── row 5: figures ──────────────────────────────────────────────────
         grp_figs = Section("Prediction figures")

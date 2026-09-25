@@ -320,7 +320,7 @@ def _species_section(res):
 
 
 def build_bsm_report_html(res, res_other=None, image_paths=None,
-                          embed_images=True):
+                          embed_images=True, captions=None, widths_cm=None):
     """Full methodology report for one BSM result, or both species in one
     document when `res_other` (the other species' own independent
     `bsm_model.compute()` result - dual-species default, ROADMAP.md item
@@ -341,11 +341,17 @@ def build_bsm_report_html(res, res_other=None, image_paths=None,
         h.append(_species_section(res_other))
 
     image_paths = image_paths or {}
-    figs = [f for f in image_paths.values() if f]
+    captions = captions or {}
+    widths_cm = widths_cm or {}
+    figs = [(key, f) for key, f in image_paths.items() if f]
     if figs:
         h.append(f"<h2 style='color:{_DARK};'>Figures</h2>")
-        for f in figs:
-            h.append(_img_tag(f, embed_images))
+        for i, (key, f) in enumerate(figs, start=1):
+            h.append(_img_tag(f, embed_images, widths_cm.get(key)))
+            if captions.get(key):
+                h.append(f"<p style='color:{_MUTED};font-size:11px;"
+                         f"margin:2px 0 14px;'><b>Figure {i}.</b> "
+                         f"{captions[key]}</p>")
 
     h.append("</div>")
     return "".join(h)

@@ -263,7 +263,7 @@ class SimpleModeDialog(QDialog):
         btn_settings = QPushButton("Settings")
         btn_settings.setAutoDefault(False)
         btn_settings.setDefault(False)
-        btn_settings.setToolTip("Adjustments")
+        btn_settings.setToolTip("Settings")
         btn_settings.clicked.connect(self.window.openAdjustments)
         top_row.addWidget(btn_settings)
         right_col.addLayout(top_row)
@@ -499,7 +499,7 @@ class SimpleModeDialog(QDialog):
     def _go_development_toolkit(self):
         """"Development toolkit" (Home.png) - the opt-in door to the full
         Advanced GUI, reusing HomePage's own entry logic exactly
-        (expand_sidebar + land on Setup/deploy) rather than duplicating
+        (expand_sidebar, no section panel opened) rather than duplicating
         it. MainWindow is never shown by default any more (main.py) - set
         its state *then* show it, so it appears already in Advanced mode
         rather than flashing the (still-narrow) Home page first - and only
@@ -584,7 +584,9 @@ class SimpleModeDialog(QDialog):
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 0, 0)
         self.validate_list = QListWidget()
-        self.validate_list.itemClicked.connect(self._on_validate_file_clicked)
+        # the highlighted sensor is the loaded one - by mouse or arrow keys
+        self.validate_list.currentItemChanged.connect(
+            self._on_validate_current_changed)
         lv.addWidget(self.validate_list, stretch=1)
 
         mark_row = QHBoxLayout()
@@ -597,19 +599,24 @@ class SimpleModeDialog(QDialog):
         mark_row.addWidget(self.chk_show_bad)
         lv.addLayout(mark_row)
 
-        self.lbl_validated_count = QLabel("Validated: 0 / 0")
+        self.lbl_validated_count = QLabel("")
         self.lbl_validated_count.setStyleSheet(f"color:{TEXT};")
         lv.addWidget(self.lbl_validated_count)
+        lbl_legend = QLabel(vc.legend_html(OK, WARN, BAD, ACCENT, TEXT))
+        lbl_legend.setStyleSheet(f"color:{MUTED};")
+        lbl_legend.setWordWrap(True)
+        lv.addWidget(lbl_legend)
 
-        self.btn_save_next_v = QPushButton("Save + Next")
+        self.btn_save_next_v = QPushButton(f"Save + Next  ({vc.SAVE_NEXT_KEYS})")
+        self.btn_save_next_v.setToolTip(
+            "Save this sensor's window as reviewed (clears its flag) and go "
+            f"to the next sensor in the list - {vc.SAVE_NEXT_KEYS}. The "
+            "arrow keys move through the list.")
         self.btn_save_next_v.clicked.connect(self._save_and_next_validate)
         lv.addWidget(self.btn_save_next_v)
         self.btn_reset_v = QPushButton("Reset current sensor")
         self.btn_reset_v.clicked.connect(self._reset_current_validate)
         lv.addWidget(self.btn_reset_v)
-        self.btn_jump_v = QPushButton("Jump to next flagged")
-        self.btn_jump_v.clicked.connect(self._jump_next_unvalidated_validate)
-        lv.addWidget(self.btn_jump_v)
         split.addWidget(left)
 
         right = QWidget()
@@ -677,6 +684,8 @@ class SimpleModeDialog(QDialog):
         self.btn_save_export.clicked.connect(self._save_and_export)
         bottom.addWidget(self.btn_save_export)
         v.addLayout(bottom)
+        self._save_next_shortcut = vc.install_save_next_shortcut(
+            page, self.validate_list, self._save_and_next_validate)
         return page
 
     def _sync_vb2_validate(self):
@@ -727,6 +736,9 @@ class SimpleModeDialog(QDialog):
         ordered = sorted(self._validate_files,
                          key=lambda f: not vc.needs_review(f["stem"], status))
 
+        # rebuilt with signals blocked - the loaded sensor is re-highlighted
+        # afterwards, not reloaded (which would drop an unsaved nadir move)
+        self.validate_list.blockSignals(True)
         self.validate_list.clear()
         for f in ordered:
             stem = f["stem"]
@@ -739,15 +751,18 @@ class SimpleModeDialog(QDialog):
             if colour:
                 item.setForeground(QColor(colour))
             self.validate_list.addItem(item)
+            if stem == self._cur_validate_stem:
+                self.validate_list.setCurrentItem(item)
+        self.validate_list.blockSignals(False)
 
         stems = [f["stem"] for f in self._validate_files]
         self.lbl_validated_count.setText(vc.counts_text(stems, status))
         self.lbl_all_validated.setText(
             "All sensors validated" if vc.all_validated(stems, status) else "")
 
-    def _on_validate_file_clicked(self, item):
-        stem = item.text()
-        self._load_validate_file(stem)
+    def _on_validate_current_changed(self, current, _previous):
+        if current is not None and current.text() != self._cur_validate_stem:
+            self._load_validate_file(current.text())
 
     def _load_validate_file(self, stem):
         match = next((f for f in self._validate_files if f["stem"] == stem), None)
@@ -771,6 +786,7 @@ class SimpleModeDialog(QDialog):
         self._loaded_nadir_idx = self._cur_validate_nadir_idx
         self._draw_validate_plot()
         # select it in the list too, for Jump/Auto-process consistency
+        # (_on_validate_current_changed sees it's already loaded)
         for i in range(self.validate_list.count()):
             if self.validate_list.item(i).text() == stem:
                 self.validate_list.setCurrentRow(i)
@@ -871,12 +887,18 @@ class SimpleModeDialog(QDialog):
         self._refresh_validate_list()
 
     def _save_and_next_validate(self):
+        """Save + Next (Ctrl+V): saves the window as reviewed by a person -
+        which clears the sensor's flag (it turns green and leaves the
+        flagged group at the top) - then loads the next sensor in the
+        list (validation_core.next_after_save)."""
         if not self._cur_validate_stem:
             return
         index_df = self._validate_index()
         if index_df is None:
             return
         stem = self._cur_validate_stem
+        order = [self.validate_list.item(i).text()
+                 for i in range(self.validate_list.count())]
         nadir_changed = (self._loaded_nadir_idx is not None
                          and self._cur_validate_nadir_idx != self._loaded_nadir_idx)
         index_df = vc.save_window(
@@ -886,45 +908,18 @@ class SimpleModeDialog(QDialog):
         self._validate_dirty = True
         self._save_validate_index(index_df)
         self._refresh_validate_list()
-        self._jump_next_in_list_validate(stem)
+        target = vc.next_after_save(order, stem, self._validation_status())
+        if target is not None:
+            self._load_validate_file(target)
+        else:
+            self.lbl_all_validated.setText(
+                f"{stem} saved - end of the list.")
+        # keep the arrow keys / Ctrl+V on the list after a button click
+        self.validate_list.setFocus()
 
     def _reset_current_validate(self):
         if self._cur_validate_stem:
             self._load_validate_file(self._cur_validate_stem)
-
-    def _jump_next_in_list_validate(self, from_stem):
-        """While flagged sensors are still waiting for review, Save + Next
-        goes to the next of those (the review pass Auto process all sets
-        up); once none are left it steps through every visible sensor in
-        file order - it doesn't skip already-validated ones, so Save + Next
-        keeps working after Auto process all has validated everything."""
-        status = self._validation_status()
-        visible = [self.validate_list.item(i).text()
-                   for i in range(self.validate_list.count())]
-        outstanding = [s for s in visible if vc.needs_review(s, status)]
-        if outstanding:
-            self._load_validate_file(outstanding[0])
-            return
-        in_order = [f["stem"] for f in self._validate_files if f["stem"] in visible]
-        if from_stem in in_order:
-            idx = in_order.index(from_stem)
-            if idx + 1 < len(in_order):
-                self._load_validate_file(in_order[idx + 1])
-
-    def _jump_next_unvalidated_validate(self):
-        """Flagged-and-unreviewed first (what actually needs a look),
-        then anything Auto process all hasn't even auto-validated yet
-        (e.g. it was skipped or added after the last Auto process all
-        run) - matches the list's own sort order."""
-        status = self._validation_status()
-        for f in self._validate_files:
-            if vc.needs_review(f["stem"], status):
-                self._load_validate_file(f["stem"])
-                return
-        for f in self._validate_files:
-            if f["stem"] not in status[0]:
-                self._load_validate_file(f["stem"])
-                return
 
     def _auto_process_all(self):
         """Starts Auto process all in the background (validation_core.
@@ -962,6 +957,14 @@ class SimpleModeDialog(QDialog):
         n_flagged = sum(1 for f in self._validate_files if f["stem"] in status[2])
         self.lbl_all_validated.setText(
             f"Auto-processed {n_done} sensor(s), {n_flagged} flagged for review.")
+        # straight into the review: the first flagged sensor, list focused
+        # for the arrow keys and Ctrl+V
+        pending = [self.validate_list.item(i).text()
+                   for i in range(self.validate_list.count())
+                   if vc.needs_review(self.validate_list.item(i).text(), status)]
+        if pending and not vc.needs_review(self._cur_validate_stem or "", status):
+            self._load_validate_file(pending[0])
+        self.validate_list.setFocus()
 
     def _save_and_export(self):
         if self._lib_root is None or self._exporter.running:

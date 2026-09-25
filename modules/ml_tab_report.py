@@ -75,7 +75,6 @@ class ReportDialog(QDialog):
         self.state = state
         self.window = window
         self._checks = {}
-        self._status_labels = {}
         self._model_combos = {}
         self._sections = []
 
@@ -104,14 +103,6 @@ class ReportDialog(QDialog):
         sv = QVBoxLayout(grp_sections)
         sv.setSpacing(4)
 
-        hint = QLabel("Every StrikeWorks report shares one format. Check "
-                      "the sections to include. Sections with nothing to "
-                      "report yet are disabled, with the reason shown "
-                      "alongside.")
-        hint.setStyleSheet(f"color:{MUTED};")
-        hint.setWordWrap(True)
-        sv.addWidget(hint)
-
         for key, title in _SECTION_TITLES:
             row = QHBoxLayout()
             cb = QCheckBox(title)
@@ -125,17 +116,14 @@ class ReportDialog(QDialog):
                 self._model_combos[key] = combo
                 row.addWidget(combo)
                 if key == "training":
+                    combo.setToolTip(
+                        "The picked model's evaluation - its binary and "
+                        "multiclass (region) stages both, when it has both.")
                     self.chk_all_models = QCheckBox("All models")
                     self.chk_all_models.setToolTip(
                         "Include every available model's evaluation report "
                         "(with figures), not just the one picked above.")
                     row.addWidget(self.chk_all_models)
-            lab = QLabel("")
-            lab.setStyleSheet(f"color:{MUTED};font-size:11px;")
-            lab.setWordWrap(True)
-            lab.setMinimumWidth(160)
-            self._status_labels[key] = lab
-            row.addWidget(lab)
             sv.addLayout(row)
 
         sel_row = QHBoxLayout()
@@ -269,14 +257,13 @@ class ReportDialog(QDialog):
             formats=self._selected_formats(), dpi=self.spin_dpi.value())
         for sec in self._sections:
             cb = self._checks.get(sec.key)
-            lab = self._status_labels.get(sec.key)
             if cb is None:
                 continue
             cb.setEnabled(sec.available)
             if not sec.available:
                 cb.setChecked(False)
-            if lab is not None:
-                lab.setText("" if sec.available else sec.reason)
+            # why a section can't be ticked yet - on hover, not alongside
+            cb.setToolTip("" if sec.available else sec.reason)
 
     def _select_all_available(self):
         for sec in self._sections:

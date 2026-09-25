@@ -11,6 +11,18 @@ The whole pipeline is exercised end to end by the two demos (Dev console,
 folder of recordings + annotations) - see item 19 and "Future - end-to-end
 pipeline test bed" below.
 
+## Hidden for now
+
+Built and still constructed at start-up, just not offered in the UI. To
+bring one back, take it out of the list named alongside it.
+
+| Feature | Where it was | Hidden by | Why |
+|---|---|---|---|
+| Segmentation | Sensor processing | `MainWindow._HIDDEN_PAGES` (main.py) | Superseded by Validate and annotate's validation (Auto process all + Save + next) |
+| Data analysis | Sensor processing | `MainWindow._HIDDEN_PAGES` | Still a stub (task 7) |
+| Advanced dataset options | Validate and annotate | `MainWindow._HIDDEN_PAGES` | Its one remaining tool, Bind training data, moved to Model training > Train's Training dataset box (`modules/bind_datasets.py`) |
+| Annotate > Reporting tab | Validate and annotate > Annotate | `AnnotationPage._build` (page_annotate.py) | Its summary is already in the central report (report_center.annotation_section) |
+
 ## Done
 
 **Chunk 1 - ML analysis polish** (commit `f05f200`)

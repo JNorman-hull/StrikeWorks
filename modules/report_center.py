@@ -217,66 +217,68 @@ def bsm_section(window, formats=("png",), dpi=300):
     reason = "" if available else "Run a calculation on Calculator first."
 
     def build(out_dir):
-        from matplotlib.figure import Figure
         from . import bsm_figures, bsm_io
+        from .bsm_model import sensitivity_sweeps
         from .bsm_report import build_bsm_report_html
         res_ = bsm_state.last_result
         if res_ is None:
             return None
-        other_species = "eel" if res_["params"]["species"] == "scaly" else "scaly"
+        primary = res_["params"]["species"]
+        other_species = "eel" if primary == "scaly" else "scaly"
         res_other = (bsm_state.results or {}).get(other_species)
+        results = {primary: res_, other_species: res_other}
 
         fig_dir = out_dir / "bsm_figures"
         fig_dir.mkdir(parents=True, exist_ok=True)
-        image_paths = {}
-        # Fresh, report-sized figures per species (figsize/dpi matching
-        # ml_figures.render_figures' own convention - the "predicted
-        # blade strike rate" figure the user pointed to as the size/
-        # formatting to use) rather than reusing the Sensitivity page's
-        # single live GUI figure, which only ever holds whichever one
-        # species was drawn there most recently - that was why the eel
-        # bars never made it into a dual-species report.
-        for species_key, res_species in ((res_["params"]["species"], res_),
-                                         (other_species, res_other)):
+        image_paths, captions = {}, {}
+        # Both figures rendered fresh at their fixed report sizes - one
+        # 4-panel results figure (12 x 12 cm) for both species, and one
+        # 4-panel sensitivity figure (20 x 16 cm) per species
+        try:
+            p = bsm_io.save_results_panels(
+                results, fig_dir / "bsm_results_panels", formats, dpi)
+            if p:
+                image_paths["results"] = p
+                captions["results"] = (
+                    "Blade strike model results: (a) scaly fish collision "
+                    "probability, (b) scaly fish mortality probability, "
+                    "(c) eel collision probability, (d) eel mortality "
+                    "probability.")
+        except Exception:
+            pass
+        for species, res_species in results.items():
             if res_species is None:
                 continue
             try:
-                fig_pco = Figure(figsize=(6.0, 4.2), dpi=100)
-                bsm_figures.draw_pco(fig_pco, res_species, dark=False)
-                p = save_figure(fig_pco, fig_dir / f"barplot_pco_{species_key}",
-                                formats, dpi)
+                # the page's own sweeps when they're for this very result,
+                # else computed here (~3 s per species)
+                sweeps = (getattr(sens, "sweeps", None)
+                          if getattr(sens, "last_result", None) is res_species
+                          else None) or sensitivity_sweeps(res_species["params"])
+                bsm_io.export_sweeps_csv(sweeps, fig_dir,
+                                         f"sensitivity_sweeps_{species}")
+                p = bsm_io.save_sweep_panels(
+                    sweeps, species, res_species["params"],
+                    fig_dir / f"sensitivity_sweeps_{species}", formats, dpi)
                 if p:
-                    image_paths[f"pco_{species_key}"] = p
-                fig_pm = Figure(figsize=(6.0, 4.2), dpi=100)
-                bsm_figures.draw_pm(fig_pm, res_species, dark=False)
-                p = save_figure(fig_pm, fig_dir / f"barplot_pm_{species_key}",
-                                formats, dpi)
-                if p:
-                    image_paths[f"pm_{species_key}"] = p
+                    key = f"sweeps_{species}"
+                    image_paths[key] = p
+                    captions[key] = (
+                        f"Sensitivity ({'scaly fish' if species == 'scaly' else 'eel'}), "
+                        "one line per flow rate Q, the design Q heavier with "
+                        "its design point marked: (a) collision probability vs "
+                        "shaft speed, (b) collision probability vs relative "
+                        "fish velocity, (c) mortality probability vs shaft "
+                        "speed, (d) mortality probability vs relative fish "
+                        "velocity.")
             except Exception:
                 pass
-        try:
-            if getattr(sens, "wf_q_curves", None):
-                bsm_io.export_sweep_lines(
-                    sens.wf_q_curves, sens.fig_wf_q, fig_dir,
-                    stem="sensitivity_pco_wf_by_q", x_header="wf_m_per_s",
-                    line_header="flow", y_header="pco_percent")
-                image_paths["wf_q"] = fig_dir / "sensitivity_pco_wf_by_q.png"
-            if getattr(sens, "n_q_curves", None):
-                bsm_io.export_sweep_lines(
-                    sens.n_q_curves, sens.fig_n_q, fig_dir,
-                    stem="sensitivity_pm_n_by_q", x_header="N_rpm",
-                    line_header="flow", y_header="pm_percent")
-                image_paths["n_q"] = fig_dir / "sensitivity_pm_n_by_q.png"
-            if getattr(sens, "wf_pm_sweep", None):
-                bsm_io.export_sensitivity(
-                    *sens.wf_pm_sweep, sens.fig_wf_pm, fig_dir,
-                    stem="sensitivity_pm_wf", x_header="wf_m_per_s")
-                image_paths["wf_pm"] = fig_dir / "sensitivity_pm_wf.png"
-        except Exception:
-            pass
+        widths = {key: (bsm_figures.RESULTS_PANELS_CM[0] if key == "results"
+                        else bsm_figures.SWEEP_PANELS_CM[0])
+                  for key in image_paths}
         html = build_bsm_report_html(res_, res_other=res_other,
-                                     image_paths=image_paths, embed_images=True)
+                                     image_paths=image_paths, embed_images=True,
+                                     captions=captions, widths_cm=widths)
         return {"html": html}
 
     return ReportSection("bsm", "Blade strike modelling (mathematical)",
@@ -319,10 +321,17 @@ def study_design_section(window, formats=("png",), dpi=300):
         fig_dir = out_dir / "study_design_figures"
         fig_dir.mkdir(parents=True, exist_ok=True)
         try:
-            png = save_figure(precision.fig_precision,
-                              fig_dir / "precision_ci_vs_n", formats, dpi)
+            # report styling at a fixed 14 x 10 cm, not the page's dark
+            # on-screen canvas
+            from . import bsm_io
+            from .prepare_tab_precision import STUDY_DESIGN_SIZE_CM
+            fig = bsm_io.sized_figure(STUDY_DESIGN_SIZE_CM)
+            precision.draw_curve(fig, dark=False)
+            png = bsm_io.save_fixed(fig, fig_dir / "precision_ci_vs_n",
+                                    formats, dpi)
             if png:
-                h.append(ml_report._img_tag(png, True))
+                h.append(ml_report._img_tag(
+                    png, True, width_cm=STUDY_DESIGN_SIZE_CM[0]))
         except Exception:
             pass
 
@@ -544,7 +553,8 @@ def training_section(window, get_entry, all_models=None,
 
     def build(out_dir):
         want_all = bool(all_models and all_models())
-        targets = entries_avail if want_all else [get_entry()]
+        targets = (entries_avail if want_all
+                   else with_partner_stage(get_entry(), entries_avail))
         targets = [e for e in targets if e is not None]
         if not targets:
             return None
@@ -553,6 +563,33 @@ def training_section(window, get_entry, all_models=None,
 
     return ReportSection("training", "Model training", available, reason,
                          build)
+
+
+def _same_model_set(a, b):
+    """True when `a` and `b` are the two stages of one model: both this
+    session's, or both deployed under the same version in the same
+    folder (binary1_1 + multiclass1_1)."""
+    if a.source != b.source:
+        return False
+    if a.source == "session":
+        return True
+    return (a.version is not None and a.version == b.version
+            and Path(a.model_path).parent == Path(b.model_path).parent)
+
+
+def with_partner_stage(entry, entries):
+    """The picked model plus the other stage trained/deployed with it -
+    picking "binary" in the report's model picker used to report on the
+    binary stage alone, leaving the multiclass (region) evaluation out of
+    the report entirely. Binary first."""
+    if entry is None:
+        return []
+    out = [entry]
+    for e in entries:
+        if e.kind != entry.kind and _same_model_set(e, entry):
+            out.append(e)
+            break
+    return sorted(out, key=lambda e: e.kind != "binary")
 
 
 def misclassification_section(window, get_entry):
@@ -714,10 +751,38 @@ def biological_section(window, formats=("png",), dpi=300):
         if bio.lbl_manual.text():
             h.append(f"<p>{esc(bio.lbl_manual.text())}</p>")
         try:
-            cmp_png = save_figure(bio.fig_compare,
-                                  fig_dir / "comparison_bars", formats, dpi)
+            # rendered fresh in report styling at a fixed size - 12 x 10 cm
+            # up to three bars, 16 x 10 cm above - from what the page's
+            # own figure last drew
+            from . import bsm_figures, bsm_io
+            from .page_bsm_biological import comparison_size_cm
+            size = comparison_size_cm(bio.n_bars())
+            fig = bsm_io.sized_figure(size)
+            bsm_figures.draw_comparison_bars(fig, bio.cen_values,
+                                             bio.comparisons, dark=False,
+                                             title="Collision probability")
+            cmp_png = bsm_io.save_fixed(fig, fig_dir / "comparison_bars",
+                                        formats, dpi)
             if cmp_png:
-                h.append(ml_report._img_tag(cmp_png, True))
+                h.append(ml_report._img_tag(cmp_png, True, width_cm=size[0]))
+            if bio.mortality_items:
+                # the mortality counterpart - same size rule on its own
+                # bar count
+                size = comparison_size_cm(len(bio.mortality_items))
+                fig = bsm_io.sized_figure(size)
+                bsm_figures.draw_mortality_bars(fig, bio.mortality_items,
+                                                dark=False)
+                mort_png = bsm_io.save_fixed(
+                    fig, fig_dir / "mortality_bars", formats, dpi)
+                if mort_png:
+                    h.append(f"<h2 style='color:{dark};'>Mortality: "
+                             "model-projected vs Blade Strike Modelling</h2>")
+                    h.append("<p>Model-projected mortality puts the current "
+                             "model's predicted strike rate (with its 95% "
+                             "CI) through each species' Blade Strike Model "
+                             "injury model.</p>")
+                    h.append(ml_report._img_tag(mort_png, True,
+                                                width_cm=size[0]))
         except Exception:
             pass
         h.append("</div>")

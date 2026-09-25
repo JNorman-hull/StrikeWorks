@@ -47,6 +47,9 @@ from .wilson_calc import required_n, wilson_interval
 _N_MULTIPLIERS = (0.5, 1, 2, 4)
 _N_CURVE_POINTS = 60
 
+# the Study design report figure (cm)
+STUDY_DESIGN_SIZE_CM = (14.0, 10.0)
+
 
 class PrecisionCalcTab:
     """Builds the sampling-precision calculator into `frame`."""
@@ -54,6 +57,7 @@ class PrecisionCalcTab:
     def __init__(self, frame, window, status=None):
         self.window = window
         self._status = status
+        self._curve = None      # (p, n, confidence, planned_half) last drawn
         self._build(frame)
         self._recalculate()
 
@@ -238,16 +242,25 @@ class PrecisionCalcTab:
             self.spin_n.setValue(self._required_n)
 
     def _draw_precision_curve(self, p, n, confidence, planned_half):
+        self._curve = (p, n, confidence, planned_half)
+        self.draw_curve(self.fig_precision, dark=True)
+        self.canvas_precision.draw()
+
+    def draw_curve(self, fig, dark=True):
+        """Precision (±, percentage points) against sample size N, the
+        planned N marked - onto any figure: the page's own dark canvas,
+        or the Study design report's light 14 x 10 cm one."""
+        if self._curve is None:
+            return
+        p, n, confidence, planned_half = self._curve
         n_max = max(n * 4, 20)
         n_vals = np.unique(np.round(np.linspace(2, n_max, _N_CURVE_POINTS))
                            .astype(int))
         half_vals = np.array([wilson_interval(p, int(ni), confidence)[2] * 100
                               for ni in n_vals])
 
-        fig = self.fig_precision
         fig.clear()
         ax = fig.add_subplot(111)
-        dark = True
         fg = fg_colour(dark)
         _grid(ax, dark)
         ax.plot(n_vals, half_vals, color="#568af2", linewidth=1.5, zorder=2)
@@ -257,7 +270,8 @@ class PrecisionCalcTab:
         style_legend(ax.legend(loc="upper right", fontsize=8), dark)
         ax.set_xlabel("Sample size N", fontsize=9)
         ax.set_ylabel("Precision ± (percentage points)", fontsize=9)
+        ax.set_title(f"Precision at {p * 100:.1f}% expected strike rate "
+                     f"({confidence}% CI)", fontsize=10, fontweight="bold")
         ax.tick_params(labelsize=8)
         style_axes(fig, ax, dark)
         fig.tight_layout()
-        self.canvas_precision.draw()

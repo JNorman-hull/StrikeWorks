@@ -78,7 +78,7 @@ from .annotation_widgets import AnnotationValueEditor, VariableListDialog
 from .inventory_widgets import notifier as inventory_notifier
 from .library_widgets import LibrarySelector
 from .ml_widgets import (
-    ACCENT, BAD, MUTED, OK, WARN, MetaCard, Section, Spinner,
+    ACCENT, BAD, MUTED, OK, TEXT, WARN, MetaCard, Section, Spinner,
     apply_section_defaults, discard_widget, when_visible,
 )
 from .page_dataset import _META_COLS, _standardise
@@ -107,6 +107,11 @@ _FS = 2000
 _WIN_SEC = 0.2
 
 LOSSLESSCUT_EXE = Path(__file__).parent.parent / "exteneral_software" / "LosslessCut.exe"
+
+
+class _ReviewedOnly(Exception):
+    """Save + next with nothing annotated: the review is saved, the
+    dataset append is skipped."""
 
 
 class AnnotationPage(QObject):
@@ -176,10 +181,16 @@ class AnnotationPage(QObject):
         tab_annotate = QWidget()
         self._build_annotate_tab(tab_annotate)
         self.tabs.addTab(tab_annotate, "Annotate")
+        self._save_next_shortcut = vc.install_save_next_shortcut(
+            tab_annotate, self.tbl_sensors, self._save_and_next)
 
         tab_report = QWidget()
         self._build_reporting_tab(tab_report)
         self.tabs.addTab(tab_report, "Reporting")
+        # hidden for now - its summary still feeds the central report
+        # (report_center.annotation_section); with one tab left, no tab bar
+        self.tabs.setTabVisible(self.tabs.indexOf(tab_report), False)
+        self.tabs.tabBar().setVisible(False)
 
         apply_section_defaults(frame)
 
@@ -300,21 +311,57 @@ class AnnotationPage(QObject):
         self.btn_auto_process.setToolTip(
             "Accept every listed sensor's detected nadir and save its window "
             "- sensors whose window shows a weak HIG peak are flagged for "
-            "you to review. Sensors already validated are left alone.")
+            "you to review. Sensors already validated are left alone.\n\n"
+            "Tip: press Auto process all first, then review the sensors it "
+            "flagged (orange, at the top of the list) with Save + next "
+            f"({vc.SAVE_NEXT_KEYS}) - the arrow keys move through the list.")
         self.btn_auto_process.clicked.connect(self._auto_process_all)
         auto_row.addWidget(self.btn_auto_process)
         self._auto_spinner = Spinner(size=18)
         self._auto_spinner.setVisible(False)
         auto_row.addWidget(self._auto_spinner)
-        self.btn_jump_flagged = QPushButton("Jump to next flagged")
-        self.btn_jump_flagged.clicked.connect(self._jump_next_flagged)
-        auto_row.addWidget(self.btn_jump_flagged)
         auto_row.addStretch()
         gv.addLayout(auto_row)
-        tip = self._muted("Tip: press Auto process all first, then review "
-                          "the sensors it flagged (amber) with Save + next.")
-        tip.setWordWrap(True)
-        gv.addWidget(tip)
+        lbl_legend = QLabel(vc.legend_html(OK, WARN, BAD, ACCENT, TEXT,
+                                           columns=2))
+        lbl_legend.setToolTip(vc.legend_html(OK, WARN, BAD, ACCENT, TEXT))
+        lbl_legend.setStyleSheet(f"color:{MUTED};")
+        lbl_legend.setWordWrap(True)
+        gv.addWidget(lbl_legend)
+
+        # the current sensor's review: Good/Bad, then Save + next / Reset
+        flag_row = QHBoxLayout()
+        self.chk_good = QCheckBox("Good")
+        self.chk_good.setChecked(True)
+        self.chk_bad = QCheckBox("Bad")
+        self.chk_good.toggled.connect(self._on_good_toggled)
+        self.chk_bad.toggled.connect(self._on_bad_toggled)
+        flag_row.addWidget(self.chk_good)
+        flag_row.addWidget(self.chk_bad)
+        flag_row.addStretch()
+        gv.addLayout(flag_row)
+
+        act = QHBoxLayout()
+        self.btn_save_next = QPushButton(f"Save + next  ({vc.SAVE_NEXT_KEYS})")
+        self.btn_save_next.setToolTip(
+            f"Save + next ({vc.SAVE_NEXT_KEYS}) records your review of this "
+            "sensor's window - clearing its flag - with its Good/Bad flag "
+            "and any annotations or notes, extracts the ROI window for model "
+            "training and/or blade strike prediction (appending it to the "
+            "dataset when it's annotated), and moves on to the next sensor "
+            "in the list.")
+        self.btn_save_next.setStyleSheet(
+            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
+            "border-radius:5px;padding:4px 14px;font-weight:bold;}"
+            "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
+        self.btn_save_next.clicked.connect(self._save_and_next)
+        self.btn_reset = QPushButton("Reset sensor")
+        self.btn_reset.setToolTip("Reload this sensor's file without saving.")
+        self.btn_reset.clicked.connect(self._reset_current)
+        act.addWidget(self.btn_save_next)
+        act.addWidget(self.btn_reset)
+        act.addStretch()
+        gv.addLayout(act)
         self.lbl_validate_status = QLabel("")
         self.lbl_validate_status.setStyleSheet(f"color:{MUTED};")
         self.lbl_validate_status.setWordWrap(True)
@@ -405,52 +452,12 @@ class AnnotationPage(QObject):
         pi.addItem(self._region)
         pi.addItem(self._nadir_line)
 
-        act = QHBoxLayout()
-        self.btn_save_next = QPushButton("Save + next")
-        self.btn_save_next.setStyleSheet(
-            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-            "border-radius:5px;padding:4px 14px;font-weight:bold;}"
-            "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
-        self.btn_save_next.clicked.connect(self._save_and_next)
-        self.btn_save_annotations = QPushButton("Save annotations")
-        self.btn_save_annotations.setToolTip(
-            "Save the flag, annotation values and notes for this sensor "
-            "without extracting its window or moving to the next one.")
-        self.btn_save_annotations.clicked.connect(self._save_annotations)
-        self.btn_reset = QPushButton("Reset sensor")
-        self.btn_reset.clicked.connect(self._reset_current)
-        act.addWidget(self.btn_save_next)
-        act.addWidget(self.btn_save_annotations)
-        act.addWidget(self.btn_reset)
-        act.addStretch()
-        sv.addLayout(act)
-
-        lbl_save_help = self._muted(
-            "Save + next extracts the ROI window for model training and/or "
-            "blade strike prediction, appends it to the dataset, and moves "
-            "on. Save annotations writes just the flag/annotations/notes "
-            "and stays here - for a quick pass through a library's "
-            "annotations without also finalising each window. Use Reset "
-            "sensor to reload this file without saving.")
-        lbl_save_help.setWordWrap(True)
-        sv.addWidget(lbl_save_help)
         v.addWidget(grp_sig, stretch=1)
 
     def _build_annotation_side(self):
         grp = Section("Annotations")
         gv = QVBoxLayout(grp)
         gv.setSpacing(6)
-
-        flag_row = QHBoxLayout()
-        self.chk_good = QCheckBox("Good")
-        self.chk_good.setChecked(True)
-        self.chk_bad = QCheckBox("Bad")
-        self.chk_good.toggled.connect(self._on_good_toggled)
-        self.chk_bad.toggled.connect(self._on_bad_toggled)
-        flag_row.addWidget(self.chk_good)
-        flag_row.addWidget(self.chk_bad)
-        flag_row.addStretch()
-        gv.addLayout(flag_row)
 
         self.annotation_grid = QGridLayout()
         self.annotation_grid.setVerticalSpacing(6)
@@ -460,9 +467,19 @@ class AnnotationPage(QObject):
         self.chk_no_annotations = QCheckBox("No annotations for this sensor")
         gv.addWidget(self.chk_no_annotations)
 
+        btn_row = QHBoxLayout()
+        self.btn_save_annotations = QPushButton("Save annotations")
+        self.btn_save_annotations.setToolTip(
+            "Save the Good/Bad flag, annotation values and notes for this "
+            "sensor and stay here - for a quick pass through a library's "
+            "annotations without also finalising each window.")
+        self.btn_save_annotations.clicked.connect(self._save_annotations)
+        btn_row.addWidget(self.btn_save_annotations)
         self.btn_manage_vars = QPushButton("Manage variables…")
         self.btn_manage_vars.clicked.connect(self._manage_variables)
-        gv.addWidget(self.btn_manage_vars)
+        btn_row.addWidget(self.btn_manage_vars)
+        btn_row.addStretch()
+        gv.addLayout(btn_row)
 
         self.lbl_annotation_status = QLabel("")
         self.lbl_annotation_status.setStyleSheet(f"color:{MUTED};")
@@ -610,7 +627,9 @@ class AnnotationPage(QObject):
 
     def _variable_value_counts(self, df):
         """[(variable label, value, count), ...] across every annotated
-        sensor row, one group per variable, most common value first."""
+        sensor row, one group per variable - numeric levels (concentric
+        pump region) in their own order (1, 2, 3...), anything else most
+        common value first."""
         from .ml_train_state import level_key
         rows = []
         for var in asch.all_variables():
@@ -624,7 +643,12 @@ class AnnotationPage(QObject):
             # in-session and reloaded-from-disk values count identically,
             # same rule the training pipeline already applies (level_key)
             values = values.map(level_key)
-            for value, count in values.value_counts().items():
+            counts = list(values.value_counts().items())
+            try:
+                counts.sort(key=lambda vc: float(vc[0]))
+            except ValueError:
+                pass   # text levels - keep most common first
+            for value, count in counts:
                 rows.append((var.label, value, int(count)))
         return rows
 
@@ -1082,6 +1106,11 @@ class AnnotationPage(QObject):
     def _annotation_values(self):
         return {name: editor.current() for name, editor in self._editors.items()}
 
+    def _has_annotation_content(self, values):
+        return (any(v for v in values.values())
+                or bool(self.txt_notes.toPlainText().strip())
+                or self.chk_no_annotations.isChecked())
+
     def _has_content_to_save(self, values):
         """Shared gate for both save actions: at least one annotation
         value, a note, or an explicit "no annotations" tick - a note alone
@@ -1128,12 +1157,23 @@ class AnnotationPage(QObject):
         self.status.emit(f"Saved annotations for {self._cur_stem}.", 4000)
 
     def _save_and_next(self):
+        """Save + next (Ctrl+V): records a human review of the window -
+        which clears the sensor's flag - and moves to the next sensor in
+        the list. With annotation values or a note entered they're saved
+        and the window is appended to the dataset too; without, it's just
+        the review (no empty annotations written)."""
         if self._df is None or self._lib_root is None:
+            return
+        # a sensor still loading (in the background) would otherwise have
+        # Ctrl+V re-save the previous one - the buttons are off meanwhile
+        if not self.btn_save_next.isEnabled():
             return
 
         values = self._annotation_values()
-        if not self._has_content_to_save(values):
-            return
+        annotated = self._has_annotation_content(values)
+        stem = self._cur_stem
+        order = [self.tbl_sensors.item(r, 0).text()
+                 for r in range(self.tbl_sensors.rowCount())]
 
         try:
             start, end = self._window_bounds()
@@ -1149,13 +1189,12 @@ class AnnotationPage(QObject):
                 nadir_changed=(self._loaded_nadir_idx is not None
                                and self._nadir_idx != self._loaded_nadir_idx))
             flag_value = "Y" if self.chk_bad.isChecked() else "N"
-            index_values = {
-                _BAD_SENS_COL: flag_value,
-                _NOTES_COL: self.txt_notes.toPlainText().strip(),
-            }
-            for name, value in values.items():
-                if value:
-                    index_values[name] = value
+            index_values = {_BAD_SENS_COL: flag_value}
+            if annotated:
+                index_values[_NOTES_COL] = self.txt_notes.toPlainText().strip()
+                for name, value in values.items():
+                    if value:
+                        index_values[name] = value
             mask = index_df["file"].astype(str) == self._cur_stem
             for col, value in index_values.items():
                 if col not in index_df.columns:
@@ -1164,6 +1203,8 @@ class AnnotationPage(QObject):
                 index_df.loc[mask, col] = value
             vc.write_index(self._lib_root, index_df)
             self._index_df = index_df
+            if not annotated:
+                raise _ReviewedOnly()
 
             target_rows = sensor_config.active().window_samples(self._win_sec)
             block = _standardise(sliced, target_rows)
@@ -1188,45 +1229,38 @@ class AnnotationPage(QObject):
             for name in self._editors:
                 block[name] = values.get(name, "")
             self._append_to_dataset(block)
+            message = (f"Saved {stem} ({len(self._dataset_stems)} in "
+                       "dataset).")
+        except _ReviewedOnly:
+            message = f"Reviewed {stem} (no annotations entered)."
         except Exception as e:
             QMessageBox.critical(self.window, "Save error", str(e))
             return
 
         self._load_index()
         self._populate_sensor_table()
-        self.status.emit(
-            f"Saved {self._cur_stem} "
-            f"({len(self._dataset_stems)} in dataset).", 4000)
-        self._jump_next()
-
-    def _jump_next(self):
-        """Flagged sensors still waiting for review first (the pass Auto
-        process all sets up), then anything not yet in the dataset."""
-        pending = [r for r in self._sensor_rows
-                   if vc.needs_review(r["stem"], self._status)]
-        if not pending:
-            pending = [r for r in self._sensor_rows
-                       if r["stem"] not in self._dataset_stems]
-        if not pending:
-            self.status.emit("Every sensor here is in the dataset.", 5000)
-            return
-        self._select_row(pending[0])
+        self.status.emit(message, 4000)
+        self.lbl_validate_status.setText(message)
+        target = vc.next_after_save(order, stem, self._status)
+        row = next((r for r in self._sensor_rows if r["stem"] == target), None)
+        if row is not None:
+            self._select_row(row)
+        else:
+            self.status.emit(f"{stem} saved - end of the list.", 4000)
+        # keep the arrow keys / Ctrl+V on the list after a button click
+        self.tbl_sensors.setFocus()
 
     def _select_row(self, row):
         for r in range(self.tbl_sensors.rowCount()):
             if self.tbl_sensors.item(r, 0).text() == row["stem"]:
                 self.tbl_sensors.setCurrentCell(r, 0)
                 break
-        else:
+        # after a save the table is rebuilt and the next sensor can slide
+        # into the row that's already selected - selecting it again then
+        # changes nothing and loads nothing, so load it here instead
+        if (self._cur_stem != row["stem"]
+                and self._pending_path != row["path"]):
             self._load_sensor(row["path"])
-
-    def _jump_next_flagged(self):
-        pending = [r for r in self._sensor_rows
-                   if vc.needs_review(r["stem"], self._status)]
-        if not pending:
-            self.status.emit("No flagged sensors left to review.", 4000)
-            return
-        self._select_row(pending[0])
 
     # ── validation (validation_core.py) ──────────────────────────────────────
     def _review_rows(self, df):

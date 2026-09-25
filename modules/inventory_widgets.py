@@ -127,14 +127,19 @@ class FileInventory(QWidget):
     Host API: `set_source(lib_root, folder, row_filter=None)` then
     `refresh()`; `files` is the current list (each a dict - see
     `scan_raw`). `processing_done(code, stems)` fires once a batch has
-    finished *and* been labelled (0 = every file succeeded)."""
+    finished *and* been labelled (0 = every file succeeded).
+
+    `log_inside=False` leaves the console out of this widget - it's built
+    as `log_section` for the host to place itself (Raw data processing
+    puts it full width under the filters and the table)."""
 
     processing_started = Signal()
     processing_done = Signal(int, list)
     files_changed = Signal()
 
     def __init__(self, parent=None, orientation=Qt.Orientation.Horizontal,
-                 inventory_title="File inventory", log_title="Console output"):
+                 inventory_title="File inventory", log_title="Console output",
+                 log_inside=True):
         super().__init__(parent)
         self._lib_root = None
         self._folder = None
@@ -146,10 +151,10 @@ class FileInventory(QWidget):
         self._batch_done = []
         self._scan_gen = 0
         self._scan_threads = []
-        self._build(orientation, inventory_title, log_title)
+        self._build(orientation, inventory_title, log_title, log_inside)
 
     # ── layout ───────────────────────────────────────────────────────────────
-    def _build(self, orientation, inventory_title, log_title):
+    def _build(self, orientation, inventory_title, log_title, log_inside=True):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         split = QSplitter(orientation)
@@ -202,6 +207,9 @@ class FileInventory(QWidget):
         self.lbl_status.setStyleSheet(f"color:{OK};font-weight:bold;")
         self.lbl_status.setWordWrap(True)
         lv.addWidget(self.lbl_status)
+        self.log_section = grp_log
+        if not log_inside:
+            return                 # the host places log_section
         split.addWidget(grp_log)
 
         if orientation == Qt.Orientation.Horizontal:

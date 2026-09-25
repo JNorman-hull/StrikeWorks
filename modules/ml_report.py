@@ -74,7 +74,13 @@ def _data_table(headers, rows):
             f"<tr>{head}</tr>{body}</table>")
 
 
-def _img_tag(path, embed):
+# the report's default figure (6 in / 15.24 cm wide) is shown 560 px wide -
+# a figure saved at a fixed size in cm is shown at the same scale, so its
+# text comes out the same size as every other figure's
+_PX_PER_CM = 560 / 15.24
+
+
+def _img_tag(path, embed, width_cm=None):
     path = Path(path)
     if not path.exists():
         return ""
@@ -83,8 +89,9 @@ def _img_tag(path, embed):
         src = f"data:image/png;base64,{data}"
     else:
         src = path.as_uri()
-    return (f"<img src='{src}' width='560' "
-            f"style='margin:8px 16px 8px 0;'/>")
+    width = round(width_cm * _PX_PER_CM) if width_cm else 560
+    return (f"<img src='{src}' width='{width}' "
+            f"style='margin:8px 16px 8px 0;max-width:100%;height:auto;'/>")
 
 
 # ═════════════════════════════════════════════════════════════════════════════

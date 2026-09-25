@@ -39,14 +39,12 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt, QObject, QThread, Signal
 from PySide6.QtWidgets import (
-    QAbstractItemView, QFileDialog, QGroupBox,
-    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox,
-    QPushButton, QTreeWidgetItem, QVBoxLayout,
+    QFileDialog, QGroupBox, QLabel, QTreeWidgetItem, QVBoxLayout,
 )
 
 from . import deployment_index as di
 from . import sensor_config, settings
-from .ml_widgets import MUTED
+from .bind_datasets import BindTrainingData
 
 # paths relative to a library root
 _CSV_DIR = Path("processed_sens_data") / "csv"
@@ -340,8 +338,6 @@ class DatasetPage(QObject):
         self._feat_path = None
         self._label_path = None
 
-        self._bind_paths = []
-
         self._build_figure()
         self._build_bind_training_data()
         self._configure_widgets()
@@ -368,44 +364,23 @@ class DatasetPage(QObject):
         columns rather than a Designer restructure."""
         grp = QGroupBox("Bind training data")
         gv = QVBoxLayout(grp)
-        gv.setSpacing(6)
+        gv.addWidget(BindTrainingData(start_dir=lambda: self._root
+                                      or settings.get_libraries_dir()))
 
-        hint = QLabel(
-            "Combine several model_features.csv files - e.g. one per "
-            "library - into one training set. Rows are stacked; columns "
-            "not shared by every file are kept and left blank where "
-            "missing.")
-        hint.setWordWrap(True)
-        gv.addWidget(hint)
-
-        self.list_bind_files = QListWidget()
-        self.list_bind_files.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.list_bind_files.setMaximumHeight(120)
-        gv.addWidget(self.list_bind_files)
-
-        file_row = QHBoxLayout()
-        self.btn_bind_add = QPushButton("Add file…")
-        self.btn_bind_add.clicked.connect(self._bind_add_files)
-        file_row.addWidget(self.btn_bind_add)
-        self.btn_bind_remove = QPushButton("Remove selected")
-        self.btn_bind_remove.clicked.connect(self._bind_remove_selected)
-        file_row.addWidget(self.btn_bind_remove)
-        file_row.addStretch()
-        gv.addLayout(file_row)
-
-        self.lbl_bind_status = QLabel("")
-        self.lbl_bind_status.setWordWrap(True)
-        gv.addWidget(self.lbl_bind_status)
-
-        run_row = QHBoxLayout()
-        run_row.addStretch()
-        self.btn_bind_run = QPushButton("Bind and save…")
-        self.btn_bind_run.clicked.connect(self._bind_run)
-        run_row.addWidget(self.btn_bind_run)
-        gv.addLayout(run_row)
-
-        self.ui.grid_dataset.addWidget(grp, 3, 0, 1, 2)
+        # Advanced dataset options is just this box now: creating/annotating
+        # a dataset is Validate and annotate's job (Save and export), so the
+        # library/filter/console/create/annotate/figure boxes built in
+        # main.ui are hidden rather than offered a second time here
+        grid = self.ui.grid_dataset
+        for w in (self.ui.grp_ds_library, self.ui.grp_ds_filter,
+                  self.ui.grp_ds_console, self.ui.grp_ds_create,
+                  self.ui.grp_ds_annotate, self.ui.grp_ds_figure):
+            w.setVisible(False)
+        for row in range(3):
+            grid.setRowStretch(row, 0)
+        grid.addWidget(grp, 3, 0, 1, 2)
+        grid.setRowStretch(3, 0)
+        grid.setRowStretch(4, 1)
 
     def _configure_widgets(self):
         u = self.ui
@@ -790,69 +765,3 @@ class DatasetPage(QObject):
         sb = self.ui.console_ds.verticalScrollBar()
         sb.setValue(sb.maximum())
 
-    # ── bind training data (join several model_features.csv) ────────────────
-    def _bind_add_files(self):
-        start = str(self._root or settings.get_libraries_dir())
-        paths, _ = QFileDialog.getOpenFileNames(
-            self.window, "Add model_features.csv file(s)", start,
-            "CSV files (*.csv)")
-        added = 0
-        for p in paths:
-            path = Path(p)
-            if path not in self._bind_paths:
-                self._bind_paths.append(path)
-                self.list_bind_files.addItem(QListWidgetItem(str(path)))
-                added += 1
-        if added:
-            self.lbl_bind_status.setText(
-                f"{len(self._bind_paths)} file(s) queued.")
-
-    def _bind_remove_selected(self):
-        for item in self.list_bind_files.selectedItems():
-            row = self.list_bind_files.row(item)
-            self.list_bind_files.takeItem(row)
-            del self._bind_paths[row]
-        self.lbl_bind_status.setText(
-            f"{len(self._bind_paths)} file(s) queued." if self._bind_paths
-            else "")
-
-    def _bind_run(self):
-        if len(self._bind_paths) < 2:
-            self.lbl_bind_status.setText(
-                "Add at least two files to bind together.")
-            return
-
-        dfs = []
-        column_sets = set()
-        for path in self._bind_paths:
-            try:
-                df = pd.read_csv(path, low_memory=False)
-            except Exception as e:
-                QMessageBox.critical(
-                    self.window, "Could not read file", f"{path}:\n{e}")
-                return
-            df.insert(0, "_bind_source", path.name)
-            dfs.append(df)
-            column_sets.add(frozenset(df.columns) - {"_bind_source"})
-
-        joined = pd.concat(dfs, ignore_index=True, sort=False)
-
-        out_path, _ = QFileDialog.getSaveFileName(
-            self.window, "Save bound training data",
-            str(Path.cwd() / "model_features_bound.csv"), "CSV files (*.csv)")
-        if not out_path:
-            return
-        try:
-            joined.to_csv(out_path, index=False)
-        except Exception as e:
-            QMessageBox.critical(self.window, "Save failed", str(e))
-            return
-
-        msg = (f"Bound {len(self._bind_paths)} file(s), "
-              f"{len(joined)} total rows → {out_path}")
-        if len(column_sets) > 1:
-            msg += (" (note: files did not all share the same columns - "
-                   "missing values were left blank; check the result "
-                   "before training on it)")
-        self.lbl_bind_status.setText(msg)
-        self.status.emit(f"Bound training data saved to {out_path}", 6000)

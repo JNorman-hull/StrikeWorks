@@ -63,7 +63,8 @@ from modules.bsm_state import BSMState
 from modules.page_bsm_calculator import CalculatorPage
 from modules.page_bsm_sensitivity import SensitivityPage
 from modules.page_bsm_biological import BiologicalPage
-from modules.ml_widgets import style_table
+from modules.ml_widgets import style_table, when_visible
+from modules import settings
 from modules import table_copy
 from modules import win_utils
 os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
@@ -329,6 +330,8 @@ class MainWindow(QMainWindow):
         self._panel_mode = "sensor"
         self._panel_btn = widgets.btn_sensor
         self._configure_panel("sensor")
+        for name in self._HIDDEN_PAGES:
+            getattr(widgets, name).setVisible(False)
 
         for mode, (_label, _names, top_btn) in self._PANEL_SECTIONS.items():
             getattr(widgets, top_btn).clicked.connect(
@@ -440,10 +443,10 @@ class MainWindow(QMainWindow):
                           "btn_initiate_deployment"),
                          "btn_setup_deploy"),
         "sensor": ("Sensor processing",
-                  ("btn_process", "btn_validate", "btn_data_analysis"),
+                  ("btn_process",),
                   "btn_sensor"),
         "annotation": ("Validate and annotate",
-                      ("btn_annotate", "btn_export_animations", "btn_dataset"),
+                      ("btn_annotate", "btn_export_animations"),
                       "btn_annotation"),
         "model_training": ("Model training",
                            ("btn_ml_training", "btn_evaluate_train",
@@ -491,6 +494,10 @@ class MainWindow(QMainWindow):
         # navigating to a page/tab, wired directly to
         # ml_prediction_page.open_report() instead.
     }
+
+    # pages hidden for now (built, just not offered in the sidebar) -
+    # listed in ROADMAP.md under "Hidden for now"
+    _HIDDEN_PAGES = ("btn_validate", "btn_data_analysis", "btn_dataset")
 
     def _section_for_button(self, btn_name):
         for mode, (_label, names, _top) in self._PANEL_SECTIONS.items():
@@ -616,11 +623,35 @@ class MainWindow(QMainWindow):
     # ADJUSTMENTS - folder settings (modules/page_adjustments.py)
     # ///////////////////////////////////////////////////////////////
     def openAdjustments(self):
+        models_before = settings.get_models_dir()
         dlg = AdjustmentsDialog(self)
         dlg.exec()
         # the libraries folder may have changed - Home owns library
         # discovery, so it's what re-reads settings.get_libraries_dir()
         self.home_page._refresh_library_combo()
+        if settings.get_models_dir() != models_before:
+            self._on_models_dir_changed(models_before)
+
+    def _on_models_dir_changed(self, old_dir):
+        """Settings' models folder changed: every model page that was
+        following the default re-reads the new one (a folder picked by
+        hand on a page is left alone)."""
+        new_dir = settings.get_models_dir()
+        training = self.ml_training_page
+        training.tab_evaluate.follow_default_models_dir()
+        training.tab_deploy.follow_default_models_dir()
+        mp = self.misclassification_page
+        when_visible(widgets.content_misclassification, mp._reload_models,
+                     key="models")
+        state = self.ml_prediction_page.state
+        if Path(state.models_dir) == Path(old_dir):
+            ok, msg = state.load_models_from_dir(new_dir)
+            if not ok:
+                # nothing deployed there yet - point at it anyway, keeping
+                # whichever model is already loaded
+                state.models_dir = new_dir
+                state.models_changed.emit()
+            print(f"[status] Models folder: {new_dir} - {msg}")
 
     # SIDEBAR ACTIVATION - Simple/Advanced mode (Home; page_simple_mode.py)
     # The sidebar's own show/hide (`toggleButton`, unchanged - still just

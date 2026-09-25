@@ -5013,7 +5013,7 @@ background-repeat: no-repeat;</string>
                             <string notr="true">background-image: url(:/icons/images/icons/cil-equalizer.png);</string>
                            </property>
                            <property name="text">
-                            <string>Adjustments</string>
+                            <string>Settings</string>
                            </property>
                           </widget>
                          </item>

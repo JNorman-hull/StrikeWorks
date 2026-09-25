@@ -21,7 +21,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QHBoxLayout, QHeaderView,
+    QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QHeaderView,
     QLabel, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSplitter,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -29,8 +29,8 @@ from PySide6.QtWidgets import (
 from . import ml_model_library, ml_train_figures, settings
 from .ml_tab_predict import _NumItem
 from .ml_widgets import (
-    BAD, MUTED, OK, TEXT, WARN, CARD_W2, CARD_H2, MetaCard, RingCard, Section,
-    apply_section_defaults,
+    BAD, MUTED, OK, WARN, CARD_W2, CARD_H2, MetaCard, RingCard, Section,
+    apply_section_defaults, hsplit,
 )
 
 FIG_MIN_W, FIG_MIN_H = 300, 250
@@ -103,46 +103,30 @@ class EvaluateTab:
         self.lbl_source.setWordWrap(True)
         v.addWidget(self.lbl_source)
 
-        # ── performance cards ───────────────────────────────────────────────
+        # ── performance cards | CV summary, side by side ────────────────────
+        # the rings stacked three to a row with the Details card under them,
+        # so the pair shares one row instead of two full-width ones
         grp_perf = Section("Performance (out-of-fold)")
-        pv = QHBoxLayout(grp_perf)
+        pv = QVBoxLayout(grp_perf)
         pv.setSpacing(8)
-        # the rings share the row's width with the Details card (no cap), so
-        # the row scales with the page instead of leaving dead space
+        grid = QGridLayout()
+        grid.setSpacing(8)
         self.rings = []
-        for _ in range(5):
+        for i in range(5):
             ring = RingCard("", w=CARD_W2 + 30, h=CARD_H2)
             self.rings.append(ring)
-            pv.addWidget(ring, stretch=1)
+            grid.addWidget(ring, i // 3, i % 3)
+        pv.addLayout(grid)
         self.card_detail = MetaCard("Details")
-        pv.addWidget(self.card_detail, stretch=3)
-        v.addWidget(grp_perf)
+        pv.addWidget(self.card_detail)
+        pv.addStretch()
 
-        # ── CV summary + error analysis ─────────────────────────────────────
-        split2 = QSplitter(Qt.Orientation.Horizontal)
-        split2.setChildrenCollapsible(False)
         grp_cv = Section("Cross-validation (mean ± SD across folds)")
         cv = QVBoxLayout(grp_cv)
         self.tbl_cv = self._make_table(["Metric", "Mean", "SD"])
         self.tbl_cv.setMinimumHeight(190)
         cv.addWidget(self.tbl_cv)
-        split2.addWidget(grp_cv)
-
-        grp_err = Section("Error analysis")
-        ev = QVBoxLayout(grp_err)
-        self.lbl_mis = QLabel("No model selected.")
-        self.lbl_mis.setStyleSheet(f"color:{TEXT};")
-        ev.addWidget(self.lbl_mis)
-        self.lbl_err_note = QLabel("")
-        self.lbl_err_note.setStyleSheet(f"color:{MUTED};")
-        self.lbl_err_note.setWordWrap(True)
-        ev.addWidget(self.lbl_err_note)
-        ev.addStretch()
-        split2.addWidget(grp_err)
-        split2.setStretchFactor(0, 1)
-        split2.setStretchFactor(1, 2)
-        split2.setSizes([1000, 2000])
-        v.addWidget(split2)
+        v.addWidget(hsplit(grp_perf, grp_cv))
 
         # ── figures ─────────────────────────────────────────────────────────
         grp_figs = Section("Evaluation figures")
@@ -239,6 +223,17 @@ class EvaluateTab:
             self.window, "Select models folder", str(self.models_dir))
         if path:
             self.models_dir = Path(path)
+            self._custom_models_dir = True
+            self._reload_sources()
+
+    def follow_default_models_dir(self):
+        """Settings' models folder changed - follow it, unless a folder
+        was picked here by hand."""
+        if getattr(self, "_custom_models_dir", False):
+            return
+        new = Path(settings.get_models_dir())
+        if new != self.models_dir:
+            self.models_dir = new
             self._reload_sources()
 
     def _reload_sources(self):
@@ -282,7 +277,7 @@ class EvaluateTab:
         elif entry.source == "deployed":
             extra = ("" if entry.cv_predictions is not None else
                      "  Cross-validation predictions are not available for "
-                     "this model, so error analysis and per-recording "
+                     "this model, so the per-recording "
                      "figures are omitted.")
             self.lbl_source.setText(
                 f"Deployed model: {entry.model_path}{extra}")
@@ -304,6 +299,8 @@ class EvaluateTab:
                      ("Macro F1", "macro_f1"), ("", None)]
         for ring, (title, key) in zip(self.rings, specs):
             ring.set_title(title)
+            # a multiclass model has four metrics - no empty fifth ring
+            ring.setVisible(bool(title))
             val = perf.get(key) if key else None
             if val is None:
                 ring.clear()
@@ -354,34 +351,7 @@ class EvaluateTab:
         for canvas in self.canvases.values():
             canvas.draw()
 
-        self._refresh_errors(binary, m, cv_predictions)
         self._refresh_stratification(binary, m, cv_predictions)
-
-    def _refresh_errors(self, binary, metrics, df):
-        mis = (metrics or {}).get("misclassified", {})
-        if binary:
-            self.lbl_mis.setText(
-                f"MISCLASSIFICATION   total: {mis.get('total', 0)}    "
-                f"false positives: {mis.get('false_positives', 0)}    "
-                f"false negatives: {mis.get('false_negatives', 0)}"
-                if mis else "No model selected.")
-        else:
-            self.lbl_mis.setText(
-                f"MISCLASSIFICATION   total: {mis.get('total', 0)}"
-                + (f" of {len(df)}" if df is not None else "")
-                if mis else "No model selected.")
-
-        if df is None:
-            self.lbl_err_note.setText(
-                "Per-recording cross-validation predictions were not saved "
-                "with this model, so the individual misclassifications "
-                "cannot be listed. Models trained and deployed from this "
-                "page keep them in their deployment package.")
-            return
-        self.lbl_err_note.setText(
-            "The per-recording list moved to Model training > "
-            "Misclassification analysis, where it can be reviewed against "
-            "each sensor's signal and corrected.")
 
     def _refresh_stratification(self, binary, metrics, df):
         m = metrics or {}

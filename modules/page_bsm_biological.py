@@ -10,25 +10,76 @@ box that used to live here moved to Model prediction > Predict, see
 ml_tab_predict.py).
 
 Comparison: each treatment's data-driven (ML model) strike rate against
-the mathematical (BSM) collision-probability estimate, as a table and a
-bar figure, plus a manual strike/total count that folds into the same
-figure as its own "Manual" bar (Wilson 95% CI).
+the mathematical (BSM) collision-probability estimate, as a figure and a
+table, plus manual Video observed / Model 1 counts that fold into the same
+figure as their own bars (Wilson 95% CI).
+
+Mortality: the current model's predicted strike rate put through each
+species' BSM injury model (bsm_model.mortality_from_strike_rate - the same
+formula as the BSM's own observed-counts mortality) - the model-projected
+mortality - against the BSM's own mortality and any video-observed
+mortality, as its own figure (half the collision figure's width) and
+table columns. Only the current model gets a projected mortality - the
+manual Model 1 counts have no BSM run behind them.
+
+Layout: the Filters box (the same Deployment / Treatment / Run filters as
+Raw data processing) and the three input boxes down the left, the figure
+over the table on the right. The filters narrow the prediction run's
+per-recording results, and each treatment's strike rate and CI are
+recomputed from just those recordings - so one deployment, treatment or
+run can be compared on its own.
 """
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QScrollArea,
-    QSizePolicy, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QCheckBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QScrollArea, QSizePolicy, QSpinBox, QSplitter, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from . import bsm_figures
-from .ml_widgets import (
-    MUTED, TEXT, Section, apply_section_defaults, centred, discard_widget,
-)
+from .bsm_model import mortality_from_strike_rate
+from .library_widgets import LibrarySelector
+from .ml_model_library import model_display_name
+from .ml_widgets import MUTED, TEXT, Section, apply_section_defaults
 from .wilson_calc import wilson_interval
+
+# the report's comparison figures: 12 x 10 cm up to three bars, 16 x 10 above
+COMPARISON_SIZE_CM = ((12.0, 10.0), (16.0, 10.0))
+
+
+def comparison_size_cm(n_bars):
+    return COMPARISON_SIZE_CM[0] if n_bars <= 3 else COMPARISON_SIZE_CM[1]
+
+
+def _pct(value):
+    """A percentage for the table - two decimals below 1% (mortality is
+    often that small), one above."""
+    return f"{value:.2f}%" if value < 1 else f"{value:.1f}%"
+
+
+def _pct_ci(value, lo, hi):
+    return f"{_pct(value)} [{_pct(lo)}, {_pct(hi)}]"
+
+
+def _text(value):
+    if value is None:
+        return ""
+    s = str(value).strip()
+    return "" if s.lower() == "nan" else s
+
+
+def _run_text(value):
+    """Run as the raw layout names it ("1"), whether the prediction
+    results carry it as 1, 1.0 or "1"."""
+    s = _text(value)
+    try:
+        f = float(s)
+        return str(int(f)) if f.is_integer() else s
+    except ValueError:
+        return s
 
 
 class BiologicalPage(QWidget):
@@ -39,10 +90,18 @@ class BiologicalPage(QWidget):
         self.window = window
         self.bsm_state = bsm_state
         self.prediction_state = prediction_state
+        self.session_state = getattr(window, "session_state", None)
+        # what the figure last drew - the report re-renders it at its
+        # own fixed size from these
+        self.cen_values = {}
+        self.comparisons = []
+        self.mortality_items = []
+        self.model_name = "Model"
         self._build(frame)
         bsm_state.calculated_all.connect(self._refresh_comparison)
         if prediction_state is not None:
             prediction_state.run_finished.connect(self._refresh_comparison)
+        self.lib_selector.filters_changed.connect(self._refresh_comparison)
         self._refresh_comparison()
 
     # ── layout ───────────────────────────────────────────────────────────────
@@ -60,58 +119,90 @@ class BiologicalPage(QWidget):
         v = QVBoxLayout(body)
         v.setContentsMargins(4, 6, 4, 6)
         v.setSpacing(10)
-        v.addWidget(self._comparison_group())
-        v.addStretch()
+        v.addWidget(self._comparison_group(), stretch=1)
         apply_section_defaults(frame)
 
     def _comparison_group(self):
         g = Section("Comparison")
         gv = QVBoxLayout(g)
 
-        gv.addWidget(self._muted(
-            "Treatments (deselect to leave out of the table and figure) - "
-            "no deployment filter yet: the curated prediction dataset "
-            "doesn't carry which deployment a treatment came from, only "
-            "its name, so same-named treatments across deployments can't "
-            "be told apart here."))
-        self._treatment_checks = {}
-        self.treatment_check_col = QVBoxLayout()
-        gv.addLayout(self.treatment_check_col)
+        split = QSplitter(Qt.Orientation.Horizontal)
+        split.setChildrenCollapsible(False)
+        split.addWidget(self._inputs_column())
+        split.addWidget(self._results_column())
+        split.setStretchFactor(0, 0)
+        split.setStretchFactor(1, 1)
+        split.setSizes([320, 1000])
+        split.setMinimumHeight(520)
+        gv.addWidget(split)
+        return g
 
-        self.tbl_compare = QTableWidget(0, 7)
-        self.tbl_compare.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.tbl_compare.setMinimumHeight(120)
+    def _inputs_column(self):
+        """Filters, then Video observed / Model 1 / Blade strike model."""
+        left = QWidget()
+        left.setMinimumWidth(300)
+        left.setMaximumWidth(440)
+        lv = QVBoxLayout(left)
+        lv.setContentsMargins(0, 0, 4, 0)
+        lv.setSpacing(8)
 
+        self.lib_selector = LibrarySelector(session_state=self.session_state,
+                                            show_picker=False)
+        btn_rescan = QPushButton("Rescan folders")
+        btn_rescan.setToolTip("Pick up deployments, treatments or runs added "
+                              "to the library's raw folders since it was "
+                              "opened.")
+        btn_rescan.clicked.connect(lambda: self.lib_selector.rescan())
+        self.lib_selector.section_layout.addWidget(btn_rescan)
+        lv.addWidget(self.lib_selector)
+
+        lv.addWidget(self._video_observed_group())
+        lv.addWidget(self._model1_group())
+        lv.addWidget(self._bsm_group())
+        lv.addStretch()
+        return left
+
+    def _results_column(self):
+        """The collision and mortality figures side by side (mortality at
+        half the collision figure's width) over the table, the figures
+        taking two thirds of the height."""
         self.fig_compare = Figure(figsize=(5.0, 3.2), dpi=100)
         self.canvas_compare = FigureCanvas(self.fig_compare)
-        self.canvas_compare.setMinimumSize(220, 190)
+        self.canvas_compare.setMinimumSize(260, 240)
         self.canvas_compare.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.fig_mortality = Figure(figsize=(2.5, 3.2), dpi=100)
+        self.canvas_mortality = FigureCanvas(self.fig_mortality)
+        self.canvas_mortality.setMinimumSize(180, 240)
+        self.canvas_mortality.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        # table and plot share the width half and half by default (still
-        # draggable) - tiny setSizes values used to be overridden by the
-        # widgets' own size hints, leaving the table a narrow strip
-        row = QSplitter(Qt.Orientation.Horizontal)
-        row.setChildrenCollapsible(False)
-        row.addWidget(self.tbl_compare)
-        row.addWidget(self.canvas_compare)
-        row.setStretchFactor(0, 1)
-        row.setStretchFactor(1, 1)
-        row.setSizes([1000, 1000])
-        row.setMinimumHeight(320)
-        gv.addWidget(row, stretch=1)
+        # redrawn at their real size - the bar labels' angle depends on it
+        self.canvas_compare.mpl_connect(
+            "resize_event", lambda _e: self._draw_figures())
+        self.canvas_mortality.mpl_connect(
+            "resize_event", lambda _e: self._draw_figures())
 
-        # the three input boxes: half the page width, centred, rather than
-        # stretched edge to edge
-        inputs = QWidget()
-        iv = QVBoxLayout(inputs)
-        iv.setContentsMargins(0, 0, 0, 0)
-        iv.setSpacing(8)
-        iv.addWidget(self._video_observed_group())
-        iv.addWidget(self._model1_group())
-        iv.addWidget(self._bsm_group())
-        gv.addWidget(centred(inputs, share=0.5))
-        return g
+        figs = QSplitter(Qt.Orientation.Horizontal)
+        figs.setChildrenCollapsible(False)
+        figs.addWidget(self.canvas_compare)
+        figs.addWidget(self.canvas_mortality)
+        figs.setStretchFactor(0, 2)
+        figs.setStretchFactor(1, 1)
+        figs.setSizes([2000, 1000])
+
+        self.tbl_compare = QTableWidget(0, 12)
+        self.tbl_compare.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.tbl_compare.setMinimumHeight(110)
+
+        right = QSplitter(Qt.Orientation.Vertical)
+        right.setChildrenCollapsible(False)
+        right.addWidget(figs)
+        right.addWidget(self.tbl_compare)
+        right.setStretchFactor(0, 2)
+        right.setStretchFactor(1, 1)
+        right.setSizes([2000, 1000])
+        return right
 
     def _video_observed_group(self):
         g = Section("Video observed")
@@ -128,7 +219,7 @@ class BiologicalPage(QWidget):
         gv.addLayout(head)
 
         form = QGridLayout()
-        form.setHorizontalSpacing(10)
+        form.setHorizontalSpacing(8)
         self.spin_manual_total = QSpinBox()
         self.spin_manual_total.setRange(0, 1000000)
         self.spin_manual_total.valueChanged.connect(self._refresh_comparison)
@@ -139,6 +230,14 @@ class BiologicalPage(QWidget):
         self.spin_manual_strike.valueChanged.connect(self._refresh_comparison)
         form.addWidget(self._muted("Strikes observed"), 0, 2)
         form.addWidget(self.spin_manual_strike, 0, 3)
+        self.spin_manual_mort = QSpinBox()
+        self.spin_manual_mort.setRange(0, 1000000)
+        self.spin_manual_mort.setToolTip(
+            "Fish killed, out of the sensors deployed - the observed "
+            "mortality the mortality figure compares against.")
+        self.spin_manual_mort.valueChanged.connect(self._refresh_comparison)
+        form.addWidget(self._muted("Mortalities observed"), 1, 2)
+        form.addWidget(self.spin_manual_mort, 1, 3)
         gv.addLayout(form)
         self.lbl_manual = QLabel("")
         self.lbl_manual.setStyleSheet(f"color:{TEXT};")
@@ -161,7 +260,7 @@ class BiologicalPage(QWidget):
         gv.addLayout(head)
 
         form = QGridLayout()
-        form.setHorizontalSpacing(10)
+        form.setHorizontalSpacing(8)
         self.spin_model1_total = QSpinBox()
         self.spin_model1_total.setRange(0, 1000000)
         self.spin_model1_total.valueChanged.connect(self._refresh_comparison)
@@ -191,23 +290,41 @@ class BiologicalPage(QWidget):
 
         form = QGridLayout()
         form.setHorizontalSpacing(10)
-        self.lbl_scaly_value = QLabel("Not calculated")
-        self.lbl_scaly_value.setStyleSheet(f"color:{TEXT};")
+        form.addWidget(self._muted("Collision"), 0, 1)
+        form.addWidget(self._muted("Mortality"), 0, 2)
+
+        def value_label():
+            lab = QLabel("Not calculated")
+            lab.setStyleSheet(f"color:{TEXT};")
+            return lab
+
+        self.lbl_scaly_value = value_label()
+        self.lbl_scaly_mort = value_label()
         self.chk_scaly_show = QCheckBox("Show")
         self.chk_scaly_show.setChecked(True)
         self.chk_scaly_show.toggled.connect(self._refresh_comparison)
-        form.addWidget(self._muted("Scaly"), 0, 0)
-        form.addWidget(self.lbl_scaly_value, 0, 1)
-        form.addWidget(self.chk_scaly_show, 0, 2)
-        self.lbl_eel_value = QLabel("Not calculated")
-        self.lbl_eel_value.setStyleSheet(f"color:{TEXT};")
+        form.addWidget(self._muted("Scaly"), 1, 0)
+        form.addWidget(self.lbl_scaly_value, 1, 1)
+        form.addWidget(self.lbl_scaly_mort, 1, 2)
+        form.addWidget(self.chk_scaly_show, 1, 3)
+        self.lbl_eel_value = value_label()
+        self.lbl_eel_mort = value_label()
         self.chk_eel_show = QCheckBox("Show")
         self.chk_eel_show.setChecked(True)
         self.chk_eel_show.toggled.connect(self._refresh_comparison)
-        form.addWidget(self._muted("Eel"), 1, 0)
-        form.addWidget(self.lbl_eel_value, 1, 1)
-        form.addWidget(self.chk_eel_show, 1, 2)
+        form.addWidget(self._muted("Eel"), 2, 0)
+        form.addWidget(self.lbl_eel_value, 2, 1)
+        form.addWidget(self.lbl_eel_mort, 2, 2)
+        form.addWidget(self.chk_eel_show, 2, 3)
+        form.setColumnStretch(1, 1)
+        form.setColumnStretch(2, 1)
         gv.addLayout(form)
+        note = self._muted(
+            "Collision probability (Pco) and mortality (Pm) from the Blade "
+            "Strike Model. The model-projected mortality puts the current "
+            "model's predicted strike rate through the same injury model.")
+        note.setWordWrap(True)
+        gv.addWidget(note)
         return g
 
     @staticmethod
@@ -217,32 +334,52 @@ class BiologicalPage(QWidget):
         lab.setWordWrap(True)
         return lab
 
-    # ── treatments checklist ─────────────────────────────────────────────────
-    def _rebuild_treatment_checks(self, names):
-        """Rebuilds the checklist (vertically stacked) from whatever
-        treatments are actually in the current prediction summary,
-        keeping each box's checked state (matched by name) across
-        refreshes rather than resetting every treatment back to selected
-        whenever a new run comes in."""
-        current_names = list(self._treatment_checks.keys())
-        if current_names == list(names):
-            return
-        keep = {n: cb.isChecked() for n, cb in self._treatment_checks.items()}
-        while self.treatment_check_col.count():
-            item = self.treatment_check_col.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                discard_widget(w)
-        self._treatment_checks = {}
-        for name in names:
-            cb = QCheckBox(str(name))
-            cb.setChecked(keep.get(name, True))
-            cb.toggled.connect(self._refresh_comparison)
-            self.treatment_check_col.addWidget(cb)
-            self._treatment_checks[name] = cb
+    # ── filtered per-treatment results ──────────────────────────────────────
+    def _location(self, row):
+        """(deployment, treatment, run) of one prediction row - where the
+        library's raw folders put that recording, else the deployment/
+        treatment/run the dataset itself carries."""
+        loc = self.lib_selector.locations.get(_text(row.get("file")).upper())
+        if loc:
+            return loc[0], loc[1], loc[2]
+        return (_text(row.get("deployment_id")), _text(row.get("treatment")),
+                _run_text(row.get("run")))
 
-    def _selected_treatments(self):
-        return {n for n, cb in self._treatment_checks.items() if cb.isChecked()}
+    def _treatment_rows(self):
+        """[(label, n, strike rate, ci_lo, ci_hi)] per treatment, from the
+        prediction run's per-recording results narrowed to the Filters
+        box's deployment/treatment/run. Falls back to the run's own
+        treatment summary (unfiltered) when it has no per-recording
+        results."""
+        state = self.prediction_state
+        if state is None:
+            return []
+        preds = state.predictions
+        if preds is None or not len(preds):
+            summary = state.summary
+            if summary is None or not len(summary):
+                return []
+            return [(str(r["treatment"]), int(r["n"]), float(r["strike_rate"]),
+                     float(r["ci_lo"]), float(r["ci_hi"]))
+                    for _, r in summary.iterrows()]
+
+        groups = {}
+        for row in preds.to_dict("records"):
+            dep, treat, run = self._location(row)
+            if not self.lib_selector.matches_filters(dep, treat, run):
+                continue
+            label = _text(row.get("treatment")) or treat or "All data"
+            groups.setdefault((dep, label), []).append(
+                int(row.get("predicted_strike", 0) or 0))
+        several_deps = len({dep for dep, _ in groups}) > 1
+        out = []
+        for (dep, label), strikes in groups.items():
+            n = len(strikes)
+            k = sum(strikes)
+            lo, hi, _half = wilson_interval(k / n, n, confidence=95)
+            name = f"{dep} / {label}" if several_deps and dep else label
+            out.append((name, n, k / n, lo, hi))
+        return sorted(out)
 
     # ── reactions ────────────────────────────────────────────────────────────
     def _video_observed_bar(self):
@@ -252,22 +389,44 @@ class BiologicalPage(QWidget):
         deployment-wide count, not per treatment)."""
         total = self.spin_manual_total.value()
         strike = self.spin_manual_strike.value()
+        mort = self.spin_manual_mort.value()
         if total == 0:
             self.lbl_manual.setText("")
         elif strike > total:
             self.lbl_manual.setText(
                 "Strikes observed cannot exceed sensors deployed.")
+        elif mort > total:
+            self.lbl_manual.setText(
+                "Mortalities observed cannot exceed sensors deployed.")
         else:
             lo, hi, half = wilson_interval(strike / total, total, confidence=95)
-            self.lbl_manual.setText(
-                f"{strike}/{total} = {strike / total * 100:.1f}% strike rate, "
-                f"95% CI [{lo * 100:.1f}%, {hi * 100:.1f}%], "
-                f"precision +/-{half * 100:.1f} percentage points.")
+            text = (f"{strike}/{total} = {strike / total * 100:.1f}% strike "
+                    f"rate, 95% CI [{lo * 100:.1f}%, {hi * 100:.1f}%], "
+                    f"precision +/-{half * 100:.1f} percentage points.")
+            if mort:
+                m_lo, m_hi, _h = wilson_interval(mort / total, total,
+                                                 confidence=95)
+                text += (f"\n{mort}/{total} = {mort / total * 100:.1f}% "
+                         f"mortality, 95% CI [{m_lo * 100:.1f}%, "
+                         f"{m_hi * 100:.1f}%].")
+            self.lbl_manual.setText(text)
         if total == 0 or strike > total or not self.chk_video_plot.isChecked():
             return None
         lo, hi, _half = wilson_interval(strike / total, total, confidence=95)
         label = self.ed_video_label.text().strip() or "Video observed"
         return (label, strike / total * 100, lo * 100, hi * 100)
+
+    def _video_mortality_bar(self):
+        """(label, value_pct, ci_lo, ci_hi) for the video-observed
+        mortality, or None if none was entered / it's hidden."""
+        total = self.spin_manual_total.value()
+        mort = self.spin_manual_mort.value()
+        if (total == 0 or mort == 0 or mort > total
+                or not self.chk_video_plot.isChecked()):
+            return None
+        lo, hi, _half = wilson_interval(mort / total, total, confidence=95)
+        label = self.ed_video_label.text().strip() or "Video observed"
+        return (label, mort / total * 100, lo * 100, hi * 100)
 
     def _model1_bar(self):
         """(label, value_pct, ci_lo, ci_hi) for Model 1, or None if it's
@@ -291,6 +450,15 @@ class BiologicalPage(QWidget):
         label = self.ed_model1_label.text().strip() or "Model 1"
         return (label, strike / total * 100, lo * 100, hi * 100)
 
+    def _run_model_name(self):
+        """The model the prediction run used, named as it's deployed
+        ("Model 1.1") rather than a fixed placeholder."""
+        state = self.prediction_state
+        if state is None:
+            return "Model"
+        path = (state.run_meta or {}).get("bin_model") or state.bin_model_path
+        return model_display_name(path)
+
     def _refresh_comparison(self, *_args):
         # dual-species default: Calculator computes both scaly and eel per
         # run (BSMState.set_results()) - each species' Cen is that
@@ -301,64 +469,113 @@ class BiologicalPage(QWidget):
             sp: (results[sp]["Pco_tip"] * 100 if results.get(sp) else None)
             for sp in ("scaly", "eel")
         }
-        self.lbl_scaly_value.setText(
-            f"{cen_raw['scaly']:.1f}%" if cen_raw["scaly"] is not None
-            else "Not calculated")
-        self.lbl_eel_value.setText(
-            f"{cen_raw['eel']:.1f}%" if cen_raw["eel"] is not None
-            else "Not calculated")
+        pm_raw = {
+            sp: (results[sp]["Pm"] * 100 if results.get(sp) else None)
+            for sp in ("scaly", "eel")
+        }
+        for sp, lab_c, lab_m in (("scaly", self.lbl_scaly_value, self.lbl_scaly_mort),
+                                 ("eel", self.lbl_eel_value, self.lbl_eel_mort)):
+            lab_c.setText(f"{cen_raw[sp]:.1f}%" if cen_raw[sp] is not None
+                          else "Not calculated")
+            lab_m.setText(_pct(pm_raw[sp]) if pm_raw[sp] is not None
+                          else "Not calculated")
+        shown = {"scaly": self.chk_scaly_show.isChecked(),
+                 "eel": self.chk_eel_show.isChecked()}
         bsm_label = self.ed_bsm_label.text().strip() or "Blade strike model"
         cen_values = {
             f"{bsm_label} - scaly": cen_raw["scaly"] if self.chk_scaly_show.isChecked() else None,
             f"{bsm_label} - eel": cen_raw["eel"] if self.chk_eel_show.isChecked() else None,
         }
 
-        summary = (self.prediction_state.summary
-                  if self.prediction_state is not None else None)
-        all_rows = summary if summary is not None and len(summary) else None
-        self._rebuild_treatment_checks(
-            list(all_rows["treatment"]) if all_rows is not None else [])
-        selected = self._selected_treatments()
-        rows = (all_rows[all_rows["treatment"].isin(selected)]
-                if all_rows is not None else None)
-
+        model_name = self._run_model_name()
         video_label = self.ed_video_label.text().strip() or "Video observed"
         model1_label = self.ed_model1_label.text().strip() or "Model 1"
         self.tbl_compare.setHorizontalHeaderLabels(
-            ["Treatment", "N", video_label, "Model 1.1 OOF", model1_label,
-             f"{bsm_label} - scaly", f"{bsm_label} - eel"])
+            ["Treatment", "N", video_label, model_name, model1_label,
+             f"{bsm_label} - scaly", f"{bsm_label} - eel",
+             f"{video_label} mortality",
+             f"{model_name} mortality - scaly",
+             f"{model_name} mortality - eel",
+             f"{bsm_label} mortality - scaly",
+             f"{bsm_label} mortality - eel"])
 
         # each also refreshes its own status label as a side effect - one
         # call each, reused below, rather than once per table row
         video = self._video_observed_bar()
+        video_mort = self._video_mortality_bar()
         model1 = self._model1_bar()
 
-        self.tbl_compare.setRowCount(len(rows) if rows is not None else 0)
+        rows = self._treatment_rows()
+        self.tbl_compare.setRowCount(len(rows))
         comparisons = []
-        if rows is not None:
-            for i, (_, r) in enumerate(rows.iterrows()):
-                ml_rate = r["strike_rate"] * 100
-                self.tbl_compare.setItem(i, 0, QTableWidgetItem(str(r["treatment"])))
-                self.tbl_compare.setItem(i, 1, QTableWidgetItem(str(int(r["n"]))))
-                self.tbl_compare.setItem(i, 2, QTableWidgetItem(
-                    f"{video[1]:.1f}%" if video else ""))
-                self.tbl_compare.setItem(i, 3, QTableWidgetItem(
-                    f"{ml_rate:.1f}% [{r['ci_lo'] * 100:.1f}%, {r['ci_hi'] * 100:.1f}%]"))
-                self.tbl_compare.setItem(i, 4, QTableWidgetItem(
-                    f"{model1[1]:.1f}%" if model1 else ""))
-                self.tbl_compare.setItem(i, 5, QTableWidgetItem(
-                    f"{cen_raw['scaly']:.1f}%" if cen_raw["scaly"] is not None
+        for i, (label, n, rate, lo, hi) in enumerate(rows):
+            self.tbl_compare.setItem(i, 0, QTableWidgetItem(label))
+            self.tbl_compare.setItem(i, 1, QTableWidgetItem(str(n)))
+            self.tbl_compare.setItem(i, 2, QTableWidgetItem(
+                f"{video[1]:.1f}%" if video else ""))
+            self.tbl_compare.setItem(i, 3, QTableWidgetItem(
+                f"{rate * 100:.1f}% [{lo * 100:.1f}%, {hi * 100:.1f}%]"))
+            self.tbl_compare.setItem(i, 4, QTableWidgetItem(
+                f"{model1[1]:.1f}%" if model1 else ""))
+            self.tbl_compare.setItem(i, 5, QTableWidgetItem(
+                f"{cen_raw['scaly']:.1f}%" if cen_raw["scaly"] is not None
+                else "Not calculated"))
+            self.tbl_compare.setItem(i, 6, QTableWidgetItem(
+                f"{cen_raw['eel']:.1f}%" if cen_raw["eel"] is not None
+                else "Not calculated"))
+            self.tbl_compare.setItem(i, 7, QTableWidgetItem(
+                _pct_ci(*video_mort[1:]) if video_mort else ""))
+            for col, sp in ((8, "scaly"), (9, "eel")):
+                res = results.get(sp)
+                self.tbl_compare.setItem(i, col, QTableWidgetItem(
+                    _pct_ci(*(mortality_from_strike_rate(res, v) * 100
+                              for v in (rate, lo, hi)))
+                    if res else "Not calculated"))
+            for col, sp in ((10, "scaly"), (11, "eel")):
+                self.tbl_compare.setItem(i, col, QTableWidgetItem(
+                    _pct(pm_raw[sp]) if pm_raw[sp] is not None
                     else "Not calculated"))
-                self.tbl_compare.setItem(i, 6, QTableWidgetItem(
-                    f"{cen_raw['eel']:.1f}%" if cen_raw["eel"] is not None
-                    else "Not calculated"))
-                comparisons.append((f"{r['treatment']} (Model 1.1 OOF)", ml_rate,
-                                   r["ci_lo"] * 100, r["ci_hi"] * 100))
+            comparisons.append((f"{label} ({model_name})", rate * 100,
+                               lo * 100, hi * 100))
+        self.tbl_compare.resizeColumnsToContents()
 
         if video is not None:
             comparisons.append(video)
         if model1 is not None:
             comparisons.append(model1)
 
-        bsm_figures.draw_comparison_bars(self.fig_compare, cen_values, comparisons)
-        self.canvas_compare.draw()
+        # mortality: per species, the BSM's own then the current model's
+        # projection for each treatment; video-observed last
+        mortality = []
+        for sp in ("scaly", "eel"):
+            res = results.get(sp)
+            if res is None or not shown[sp]:
+                continue
+            mortality.append((f"{bsm_label} - {sp}", pm_raw[sp], None, None, sp))
+            for label, _n, rate, lo, hi in rows:
+                m = [mortality_from_strike_rate(res, v) * 100
+                     for v in (rate, lo, hi)]
+                mortality.append((f"{label} ({model_name}) - {sp}", *m, "model"))
+        if video_mort is not None:
+            mortality.append((*video_mort, "observed"))
+
+        self.cen_values, self.comparisons = cen_values, comparisons
+        self.mortality_items = mortality
+        self.model_name = model_name
+        self._draw_figures()
+
+    def _draw_figures(self):
+        """Both figures from what `_refresh_comparison` last worked out."""
+        bsm_figures.draw_comparison_bars(
+            self.fig_compare, self.cen_values, self.comparisons,
+            title="Collision probability")
+        self.canvas_compare.draw_idle()
+        bsm_figures.draw_mortality_bars(self.fig_mortality,
+                                        self.mortality_items)
+        self.canvas_mortality.draw_idle()
+
+    def n_bars(self):
+        """Bars in the comparison figure right now (picks the report
+        figure's size)."""
+        return (sum(1 for v in self.cen_values.values() if v is not None)
+                + len(self.comparisons))

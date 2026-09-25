@@ -241,3 +241,72 @@ def recompute_mortality_at_vcrit(res, species, vcrit, lf=None):
     integral = np.sum(np.diff(f_arr) * (integrand[:-1] + integrand[1:]) / 2)
     Pm = min(1.0, max(0.0, 2 / (r + bh) * integral))
     return {"species": species, "vcrit": vcrit, "lf": lf, "Pm": Pm, "S": 1 - Pm}
+
+
+
+def mortality_from_strike_rate(res, strike_rate):
+    """Mortality (0-1) when the collision probability is an externally
+    estimated strike rate rather than the CEN geometry - the same formula
+    as the observed-counts mortality above (Pm,obs = 2/(r + bh) . P .
+    integral fMR(f).r(f) df), with this result's own mutilation ratio
+    fMR along the blade. Model comparison's model-projected mortality:
+    the ML model's predicted strike rate put through each species' BSM
+    injury model. Linear in `strike_rate`, so a strike rate's confidence
+    limits map straight onto mortality limits."""
+    p = res["params"]
+    f_arr = res["f_arr"]
+    integrand = res["fMR_arr"] * res["r_arr"]
+    integral = np.sum(np.diff(f_arr) * (integrand[:-1] + integrand[1:]) / 2)
+    return float(min(1.0, max(0.0, 2 / (p["r"] + p["bh"]) * strike_rate
+                               * integral)))
+
+# ── sensitivity sweeps (Analysis and reporting, the BSM report) ─────────────
+SWEEP_Q_MULTIPLIERS = (0.6, 0.8, 1.0, 1.2, 1.4, 1.6)
+SWEEP_N_SPAN = (0.6, 1.4)       # shaft-speed sweep bounds, x the design N
+SWEEP_N_POINTS = 41
+SWEEP_WF_SPAN = 3.5             # relative fish velocity, +/- m/s
+SWEEP_WF_STEP = 0.1
+
+
+def sensitivity_sweeps(params):
+    """Collision and mortality probability against shaft speed N and
+    against relative fish velocity wf, one line per flow rate Q (the
+    design Q x SWEEP_Q_MULTIPLIERS) - every sweep holds the rest of
+    `params` at its design value. One `compute()` per point gives both
+    Pco and Pm, so the four sweeps cost two passes, not four.
+
+    Returns {"pco_n", "pm_n", "pco_wf", "pm_wf"}: each {label: (x, y%)},
+    plus "design_label" (the design-Q line's label) and "design"
+    ({"N", "wf", "Q"} - where the design point sits on each x axis)."""
+    design_q, design_n = params["Q"], params["N"]
+    lo, hi = SWEEP_N_SPAN
+    n_vals = np.linspace(design_n * lo, design_n * hi, SWEEP_N_POINTS)
+    wf_vals = np.round(np.arange(-SWEEP_WF_SPAN, SWEEP_WF_SPAN + 1e-9,
+                                 SWEEP_WF_STEP), 10)
+    out = {"pco_n": {}, "pm_n": {}, "pco_wf": {}, "pm_wf": {},
+           "design_label": None,
+           "design": {"N": design_n, "wf": params["wf"], "Q": design_q}}
+
+    def sweep(key, values, q):
+        pco = np.empty(len(values))
+        pm = np.empty(len(values))
+        for i, x in enumerate(values):
+            p = dict(params)
+            p.update({key: float(x), "Q": q})
+            r = compute(p)
+            pco[i], pm[i] = r["Pco_tip"] * 100, r["Pm"] * 100
+        return pco, pm
+
+    for mult in SWEEP_Q_MULTIPLIERS:
+        q = design_q * mult
+        is_design = abs(mult - 1.0) < 1e-9
+        label = f"Q = {q:.3g} m³/s" + (" (design)" if is_design else "")
+        if is_design:
+            out["design_label"] = label
+        pco, pm = sweep("N", n_vals, q)
+        out["pco_n"][label] = (n_vals, pco)
+        out["pm_n"][label] = (n_vals, pm)
+        pco, pm = sweep("wf", wf_vals, q)
+        out["pco_wf"][label] = (wf_vals, pco)
+        out["pm_wf"][label] = (wf_vals, pm)
+    return out

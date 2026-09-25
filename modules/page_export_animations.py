@@ -193,8 +193,15 @@ class ExportAnimationsPage(QObject):
         split.setChildrenCollapsible(False)
         root.addWidget(split)
         split.addWidget(self._build_browser())
-        split.addWidget(self._build_detail())
-        split.setSizes([1, 3])
+        detail = self._build_detail()
+        detail.setMinimumWidth(560)
+        split.addWidget(detail)
+        # sensor list : detail at 1:3 by default, like Annotate - tiny
+        # setSizes values were overridden by the table's own size hint,
+        # which is what left the list stretched across most of the page
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 3)
+        split.setSizes([1000, 3000])
         apply_section_defaults(frame)
 
     def _build_browser(self):
@@ -221,8 +228,8 @@ class ExportAnimationsPage(QObject):
     def _build_detail(self):
         """Right column: Signal (the sensor plot, plus the Video preview/
         Process/Save actions - moved in from their own row) and Sensor
-        sync inputs (moved in from the left column) as two stacked,
-        independently resizable rows. Video preview itself is a pop-out
+        sync inputs (moved in from the left column) as two stacked rows,
+        the sync inputs at their full height. Video preview itself is a pop-out
         window (_build_video_preview_dialog()) rather than embedded here -
         opening it and the Signal plot stay visible together on screen,
         since matching a nadir point to a video frame means looking at
@@ -244,18 +251,13 @@ class ExportAnimationsPage(QObject):
         dv.setContentsMargins(5, 0, 0, 0)
         dv.setSpacing(8)
 
-        right_split = QSplitter(Qt.Orientation.Vertical)
-        right_split.setChildrenCollapsible(False)
-        right_split.addWidget(self._build_signal_side())
-        sync_scroll = QScrollArea()
-        sync_scroll.setWidgetResizable(True)
-        sync_scroll.setStyleSheet(
-            "QScrollArea{border:none;background:transparent;}")
-        sync_scroll.setWidget(self._build_sync_inputs())
-        right_split.addWidget(sync_scroll)
-        right_split.setSizes([1, 1])
-        right_split.setMinimumHeight(500)
-        dv.addWidget(right_split, stretch=1)
+        # Signal (with a floor on the plot's height) over Sensor sync inputs
+        # at its full natural height - the column scrolls when the two
+        # don't fit, rather than squeezing the sync inputs into their own
+        # small scroll box
+        dv.addWidget(self._build_signal_side(), stretch=1)
+        self._pw.setMinimumHeight(380)
+        dv.addWidget(self._build_sync_inputs(), stretch=0)
 
         self._build_video_preview_dialog()
         return outer

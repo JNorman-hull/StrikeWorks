@@ -40,7 +40,7 @@ deployment) asks: Save and continue / Continue / Cancel -
 import os
 import shutil
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPushButton, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem,
@@ -267,6 +267,8 @@ class DeploymentEditor(QWidget):
         dv.addLayout(form)
         lv.addWidget(grp_dep)
         lv.addStretch()
+        self._left = left
+        self._grp_dep = grp_dep
 
         # the left column scrolls internally rather than forcing its host
         # window taller (four stacked sections)
@@ -318,7 +320,35 @@ class DeploymentEditor(QWidget):
         self.lbl_files_found = QLabel("")
         self.lbl_files_found.setStyleSheet(f"color:{OK};")
         rv.addWidget(self.lbl_files_found)
-        row.addWidget(grp_tr, stretch=3)
+        # the Treatments box ends where the left column's last box does
+        # (_match_treatments_height) instead of running on down the page
+        row.addWidget(grp_tr, stretch=3, alignment=Qt.AlignmentFlag.AlignTop)
+        self._grp_tr = grp_tr
+        left.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj is self._left and event.type() in (QEvent.Type.Resize,
+                                                  QEvent.Type.LayoutRequest):
+            QTimer.singleShot(0, self._match_treatments_height)
+        return super().eventFilter(obj, event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._match_treatments_height)
+
+    def _match_treatments_height(self):
+        """Treatments box: top level with the Session library box, bottom
+        level with the Deployment box - never taller than the editor
+        itself (a short window scrolls the left column), never shorter
+        than its own table and buttons need."""
+        if not self._grp_dep.isVisible():
+            return
+        bottom = self._grp_dep.mapTo(
+            self, self._grp_dep.rect().bottomLeft()).y() + 1
+        height = max(self._grp_tr.minimumSizeHint().height(),
+                     min(bottom, self.height()))
+        if self._grp_tr.height() != height or self._grp_tr.minimumHeight() != height:
+            self._grp_tr.setFixedHeight(height)
 
     @staticmethod
     def _muted(text):

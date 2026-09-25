@@ -55,6 +55,17 @@ class ModelEntry:
         return None
 
 
+def model_display_name(model_path):
+    """How a deployed model is named in tables and figures - "Model 1.1"
+    for binary1_1.joblib (or its multiclass partner), "Model 1" for
+    binary1.joblib; any other file name as it is."""
+    if not model_path:
+        return "Model"
+    stem = Path(model_path).stem
+    m = _STEM_RE.match(stem)
+    return f"Model {m.group(2).replace('_', '.')}" if m else stem
+
+
 def roc_pr_from_scores(y_true, scores):
     """ROC and precision-recall curves from raw scores, in numpy only.
 
