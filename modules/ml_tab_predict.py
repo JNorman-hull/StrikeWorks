@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import bsm_figures, ml_figures
+from . import bsm_figures, ml_figures, settings
 from .bsm_model import (
     default_vcrit, recompute_mortality, recompute_mortality_at_vcrit,
 )
@@ -554,7 +554,7 @@ class PredictTab:
 
     def _load_csv(self):
         path, _ = QFileDialog.getOpenFileName(
-            self.window, "Load dataset CSV", str(Path.cwd()),
+            self.window, "Load dataset CSV", str(settings.get_input_data_dir()),
             "CSV files (*.csv)")
         if not path:
             return

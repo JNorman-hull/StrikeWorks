@@ -75,8 +75,16 @@ reaches the grid. Two ship:
   (`modules/eel_format.py`, per the EEL tag binary format specification).
 
 A new device is New or Duplicate in Sensor configuration plus a Save
-(kept in the settings file, `%APPDATA%\StrikeWorks\settings.json`); only
-its reader is code, written and registered under `sensor_config.PARSERS`.
+(kept in the settings file); only its reader is code, written and
+registered under `sensor_config.PARSERS`.
+
+### Settings
+
+One file, `settings.json`: beside `StrikeWorks.exe` in the packaged app
+(so the folder is self-contained and starts on its own libraries, models,
+input_data and output_data folders), or `%APPDATA%\StrikeWorks\` when
+running from source. The `STRIKEWORKS_SETTINGS` environment variable
+overrides the location.
 
 ### Models
 
@@ -92,10 +100,18 @@ a subprocess, so the model stack never loads into the GUI.
 Settings > Dev mode opens the **Dev console**, which shows all app output
 and runs two demos:
 
-* **Simple** - Simple mode's wizard end to end (no training).
+* **Simple** - Simple mode's wizard end to end: deployment, processing,
+  validation, export, prediction with the default models, report (no
+  training).
 * **Advanced** - the full app: Calculator > Study design > deployment >
   processing > Annotate (Auto process all, Import annotations CSV, Save
-  and export) > Train > Deploy > Predict > Model comparison > report.
+  and export) > Train > Deploy > Predict (with the default models) >
+  Model comparison > report.
+
+Reports go to the demo library's output folder,
+`libraries/StrikeWorks_demo/StrikeWorks_user_output/`. The same demos run
+unattended with `StrikeWorks.exe --demo simple|advanced [--log <file>]`
+(or `python main.py --demo ...`), exiting 0 when they pass.
 
 Both use a **demo pack**: a folder called `demo_data` in the libraries
 folder (or the app's own `libraries/`), shaped like a library:
@@ -112,11 +128,18 @@ the user's libraries folder. `demo_data` is never listed as a library.
 
 ## Development
 
-Environment: Python 3.13 (`.venv/`), PySide6. Run the app:
+Environment: Python 3.13 (`.venv/`), PySide6. `requirements.txt` lists the
+dependencies; `requirements-lock.txt` pins the exact versions the app was
+built and tested with. Run the app:
 
 ```
 .venv\Scripts\python.exe main.py
 ```
+
+Video review (Annotate, Export animations, Misclassification analysis)
+opens clips in LosslessCut, which isn't in the repo or the build (900 MB):
+put it at `exteneral_software/LosslessCut.exe` in the repo, or beside
+`StrikeWorks.exe` in a packaged copy.
 
 ### Tests
 
@@ -135,11 +158,22 @@ needs `libraries/Testbed`).
 ```
 
 PyInstaller builds into `build/staging/`; only `StrikeWorks.exe` and
-`_internal/` are then swapped into `dist/StrikeWorks/`, so the libraries,
-models, input and output folders beside the exe are never touched.
-`tools\smoke_test.ps1 -Dataset <dataset.csv>` checks the packaged app
-starts and its prediction worker runs (add `-TrainConfig <train_config.json>`
-for the training worker).
+`_internal/` are then swapped into `dist/StrikeWorks/`, so anything made
+with the built app stays. The build also places what ships with it: the
+default models, the BSM presets, an example model dataset in `input_data`
+and the demo pack in `libraries/demo_data` (copied from
+`libraries/Testbed`).
+
+```
+powershell -File tools\smoke_test.ps1 -Demos
+.venv\Scripts\python.exe build.py --zip-only
+```
+
+The smoke test checks the packaged app starts and predicts the example
+dataset, and with `-Demos` runs both demos on a fresh copy of the folder.
+`--zip-only` (or `--zip` to build and zip in one go) zips
+`dist/StrikeWorks` for handing over - refusing, with a list, if the folder
+holds anything the build didn't put there.
 
 ### The UI file
 

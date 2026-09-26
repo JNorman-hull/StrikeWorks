@@ -54,6 +54,21 @@ class SettingsFileTest(unittest.TestCase):
         self.assertEqual(settings.read_section("sensor_configs"), {"active": "micro_eel"})
         self.assertEqual(settings.get_models_dir(), self.dir / "models")
 
+    def test_where_the_file_lives(self):
+        import os
+        import sys
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"STRIKEWORKS_SETTINGS": ""}):
+            with mock.patch.object(sys, "frozen", True, create=True):
+                # packaged: beside the exe, so the folder is self-contained
+                self.assertEqual(settings.settings_path(),
+                                 settings.app_root() / "settings.json")
+            with mock.patch.dict(os.environ, {"APPDATA": str(self.dir)}):
+                self.assertEqual(settings.settings_path(),
+                                 self.dir / "StrikeWorks" / "settings.json")
+        with mock.patch.dict(os.environ, {"STRIKEWORKS_SETTINGS": str(self.dir / "x.json")}):
+            self.assertEqual(settings.settings_path(), self.dir / "x.json")
+
     def test_recent_datasets_keep_existing_absolute_paths(self):
         real = self.dir / "a.csv"
         real.write_text("x\n1\n")

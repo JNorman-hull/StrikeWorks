@@ -470,7 +470,8 @@ class TrainTab:
     # ── dataset loading ──────────────────────────────────────────────────────
     def _load_dataset(self):
         path, _ = QFileDialog.getOpenFileName(
-            self.window, "Load training dataset", str(Path.cwd()),
+            self.window, "Load training dataset",
+            str(settings.get_input_data_dir()),
             "CSV files (*.csv)")
         if path:
             self._load_path(path)

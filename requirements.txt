@@ -11,3 +11,6 @@ opencv-python
 # model stack for the prediction worker subprocess
 sktime
 numba
+
+# building the packaged app (build.py)
+pyinstaller

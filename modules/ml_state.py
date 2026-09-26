@@ -292,6 +292,27 @@ class PredictionState(QObject):
         """Every multiclass*.joblib found in models_dir, for a model picker."""
         return list(self._mc_candidates)
 
+    def use_default_models(self):
+        """Load the models folder (Settings) and pick its default models:
+        the ones pinned in Settings, else 'binary1' / 'multiclass1', else
+        the newest. Rescans every time, since an earlier load may have
+        pointed `models_dir` elsewhere."""
+        self.load_models_from_dir(settings.get_models_dir())
+        for candidates, pinned, stem, current, select in (
+                (self.bin_candidates, settings.get_default_model(), "binary1",
+                 self.bin_model_path, self.select_bin_model),
+                (self.mc_candidates, settings.get_default_mc_model(),
+                 "multiclass1", self.mc_model_path, self.select_mc_model)):
+            if not candidates:
+                continue
+            if pinned is not None and Path(pinned) in candidates:
+                chosen = Path(pinned)
+            else:
+                chosen = (next((p for p in candidates if p.stem == stem), None)
+                          or max(candidates, key=lambda p: p.stat().st_mtime))
+            if current != chosen:
+                select(chosen)
+
     def select_bin_model(self, path):
         """Switch to a different binary model already found in models_dir."""
         ok, msg = self._apply_bin_model(path)

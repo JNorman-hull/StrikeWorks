@@ -1,37 +1,48 @@
-# Smoke test of the packaged app in dist\StrikeWorks, isolated from the real
-# user profile (settings go to a temporary folder):
+# Smoke test of the packaged app in dist\StrikeWorks. Settings go to a
+# temporary file, so nothing in dist\StrikeWorks or the user profile changes:
 #   1. the app starts and is still running after 25 s
-#   2. the prediction worker runs the shipped models on a dataset
+#   2. the prediction worker runs the default models on a dataset (by
+#      default the example dataset shipped in input_data)
 #   3. (optional) the training worker's final stage runs a train_config.json
+#   4. (-Demos) on a copy of the whole folder, as a colleague would get it:
+#      the Simple demo, then the Advanced demo, from the demo pack's raw
+#      files to the reports - using only the copy's own folders
 #
 # Usage (from the repo root):
-#   powershell -File tools\smoke_test.ps1 -Dataset input_data\<dataset>.csv
-#   powershell -File tools\smoke_test.ps1 -Dataset ... -TrainConfig <run>\train_config.json
+#   powershell -File tools\smoke_test.ps1
+#   powershell -File tools\smoke_test.ps1 -Demos
+#   powershell -File tools\smoke_test.ps1 -Dataset <dataset.csv> -TrainConfig <run>\train_config.json
 param(
-    [Parameter(Mandatory = $true)][string]$Dataset,
-    [string]$TrainConfig = ""
+    [string]$Dataset = "",
+    [string]$TrainConfig = "",
+    [switch]$Demos
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $root "dist\StrikeWorks"
 $exe = Join-Path $dist "StrikeWorks.exe"
+if (-not $Dataset) { $Dataset = Join-Path $dist "input_data\Pumpflow_2024_datatset1_only.csv" }
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ("strikeworks_smoke_" + [guid]::NewGuid().ToString("N").Substring(0, 8))
 New-Item -ItemType Directory -Force $work | Out-Null
 $failed = $false
 
+function Start-App($path, $arguments, $settingsFile) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo $path
+    $psi.Arguments = $arguments
+    $psi.UseShellExecute = $false
+    $psi.EnvironmentVariables["QT_QPA_PLATFORM"] = "offscreen"
+    if ($settingsFile) { $psi.EnvironmentVariables["STRIKEWORKS_SETTINGS"] = $settingsFile }
+    else { $psi.EnvironmentVariables.Remove("STRIKEWORKS_SETTINGS") }
+    return [System.Diagnostics.Process]::Start($psi)
+}
+
 "1. App start (offscreen, 25 s)"
-$psi = New-Object System.Diagnostics.ProcessStartInfo $exe
-$psi.UseShellExecute = $false
-$psi.EnvironmentVariables["QT_QPA_PLATFORM"] = "offscreen"
-$psi.EnvironmentVariables["USERPROFILE"] = $work
-$psi.EnvironmentVariables["HOME"] = $work
-$psi.EnvironmentVariables["APPDATA"] = $work
-$app = [System.Diagnostics.Process]::Start($psi)
+$app = Start-App $exe "" (Join-Path $work "settings.json")
 Start-Sleep -Seconds 25
 if ($app.HasExited) { "   FAIL - exited with code $($app.ExitCode)"; $failed = $true }
 else { "   OK"; $app.Kill(); $app.WaitForExit() }
 
-"2. Prediction worker"
+"2. Prediction worker ($(Split-Path -Leaf $Dataset))"
 $models = Join-Path $dist "models"
 $out = Join-Path $work "predict"
 New-Item -ItemType Directory -Force $out | Out-Null
@@ -57,6 +68,30 @@ if ($TrainConfig) {
     else { "   FAIL - exit $($t.ExitCode)"; Get-Content (Join-Path $work "train_err.txt") -Tail 5; $failed = $true }
 }
 
+if ($Demos) {
+    "4. Demos on a fresh copy of the folder"
+    $copy = Join-Path $work "StrikeWorks"
+    robocopy $dist $copy /E /NFL /NDL /NJH /NJS /NP | Out-Null
+    $copyExe = Join-Path $copy "StrikeWorks.exe"
+    $reports = Join-Path $copy "libraries\StrikeWorks_demo\StrikeWorks_user_output"
+    foreach ($mode in "simple", "advanced") {
+        $log = Join-Path $work "demo_$mode.log"
+        $start = Get-Date
+        # no STRIKEWORKS_SETTINGS: the copy uses its own settings.json
+        $p = Start-App $copyExe "--demo $mode --log `"$log`"" ""
+        $p.WaitForExit()
+        $secs = [int]((Get-Date) - $start).TotalSeconds
+        if ($p.ExitCode -eq 0) { "   $mode demo OK ($secs s)" }
+        else { "   $mode demo FAIL - exit $($p.ExitCode)"; Get-Content $log -Tail 15; $failed = $true }
+    }
+    "   Reports written:"
+    Get-ChildItem $reports -Recurse -Filter report.html -ErrorAction SilentlyContinue |
+        ForEach-Object { "     " + $_.FullName.Substring($copy.Length + 1) }
+    "   Folders the copy wrote to (all inside it):"
+    Get-ChildItem $copy -Directory | Where-Object { $_.Name -ne "_internal" } |
+        ForEach-Object { "     " + $_.Name }
+}
+
+if ($failed) { "Kept for inspection: $work"; exit 1 }
 Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
-if ($failed) { exit 1 }
 "All checks passed."

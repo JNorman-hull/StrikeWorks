@@ -319,7 +319,8 @@ class DatasetPage(QObject):
     # ── annotate ─────────────────────────────────────────────────────────────
     def _browse_features(self):
         path, _ = QFileDialog.getOpenFileName(
-            self.window, "Select sensor dataset CSV", str(Path.cwd()),
+            self.window, "Select sensor dataset CSV",
+            str(settings.get_input_data_dir()),
             "CSV files (*.csv)")
         if not path:
             return
@@ -329,7 +330,8 @@ class DatasetPage(QObject):
 
     def _browse_labels(self):
         path, _ = QFileDialog.getOpenFileName(
-            self.window, "Select annotation dataset CSV", str(Path.cwd()),
+            self.window, "Select annotation dataset CSV",
+            str(settings.get_input_data_dir()),
             "CSV files (*.csv)")
         if not path:
             return

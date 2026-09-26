@@ -75,7 +75,9 @@ _NOTES_COL = "notes"
 _FS = 2000
 _WIN_SEC = 0.2
 
-LOSSLESSCUT_EXE = Path(__file__).parent.parent / "exteneral_software" / "LosslessCut.exe"
+# video review opens clips in LosslessCut (not shipped - 900 MB): from the
+# repo root from source, beside StrikeWorks.exe once packaged
+LOSSLESSCUT_EXE = settings.app_root() / "exteneral_software" / "LosslessCut.exe"
 
 
 class _ReviewedOnly(Exception):

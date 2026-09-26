@@ -4,18 +4,24 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""The app's persisted settings, in one file: `%APPDATA%\\StrikeWorks\\
-settings.json`.
+"""The app's persisted settings, in one JSON file:
+
+  - the packaged app: `settings.json` beside StrikeWorks.exe, so the
+    folder is self-contained - it starts on its own libraries, models,
+    input and output folders, and can be copied or handed over as it is;
+  - from source: `%APPDATA%\\StrikeWorks\\settings.json`;
+  - either way, the `STRIKEWORKS_SETTINGS` environment variable, when set,
+    names the file instead (the tests and the smoke test use it).
 
 Top-level keys are the app settings below (folders, default models, the
 last library, dev mode, recent datasets). Other modules keep their own
 data in a named section (`read_section` / `write_section`): the sensor
 configurations and the annotation variables.
 
-On first start the settings are read once from the three files earlier
-versions kept in the home folder (`.hifistrike_settings.json`,
-`.strikeworks_sensors.json`, `.strikeworks_annotations.json`); those files
-are left where they are.
+From source, the first start reads the three files earlier versions kept
+in the home folder (`.hifistrike_settings.json`,
+`.strikeworks_sensors.json`, `.strikeworks_annotations.json`) once; those
+files are left where they are.
 """
 import json
 import os
@@ -27,20 +33,31 @@ def app_root() -> Path:
     """Where the default data folders (libraries, models, output_data,
     input_data) live: next to the exe once packaged, the repo root from
     source."""
-    if getattr(sys, "frozen", False):
+    if _frozen():
         return Path(sys.executable).parent
     return Path(__file__).parent.parent
 
 
-def _settings_dir() -> Path:
+def _frozen() -> bool:
+    return bool(getattr(sys, "frozen", False))
+
+
+def settings_path() -> Path:
+    override = os.environ.get("STRIKEWORKS_SETTINGS")
+    if override:
+        return Path(override)
+    if _frozen():
+        return app_root() / "settings.json"
     base = os.environ.get("APPDATA")
-    return (Path(base) if base else Path.home() / ".config") / "StrikeWorks"
+    return ((Path(base) if base else Path.home() / ".config")
+            / "StrikeWorks" / "settings.json")
 
 
-SETTINGS_FILE = _settings_dir() / "settings.json"
+SETTINGS_FILE = settings_path()
 
-# section name (None: the app settings themselves) -> the older file
-_LEGACY_FILES = {
+# section name (None: the app settings themselves) -> the older file; a
+# packaged app starts from its own folders instead
+_LEGACY_FILES = {} if _frozen() else {
     None: Path.home() / ".hifistrike_settings.json",
     "sensor_configs": Path.home() / ".strikeworks_sensors.json",
     "annotation_variables": Path.home() / ".strikeworks_annotations.json",

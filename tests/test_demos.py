@@ -39,25 +39,23 @@ class Demos(unittest.TestCase):
         cls.main, cls.window = main_window()
 
     def _run(self, mode):
-        from modules.dev_runner import RUNNERS
-        result = {}
-        runner = RUNNERS[mode](self.window)
-        runner.finished.connect(lambda ok, msg: result.update(ok=ok, msg=msg))
+        from modules.dev_runner import run_headless
         log = io.StringIO()
         with contextlib.redirect_stdout(log):
-            runner.run()
-        return result, log.getvalue()
+            passed, _msg = run_headless(self.window, mode)
+        return passed, log.getvalue()
 
     def test_simple(self):
-        result, log = self._run("simple")
-        self.assertTrue(result.get("ok"), log[-3000:])
+        passed, log = self._run("simple")
+        self.assertTrue(passed, log[-3000:])
         self.assertNotIn("Validate check FAIL", log)
         self.assertIn("review checks all passed", log)
 
     def test_advanced(self):
-        result, log = self._run("advanced")
-        self.assertTrue(result.get("ok"), log[-3000:])
+        passed, log = self._run("advanced")
+        self.assertTrue(passed, log[-3000:])
         self.assertIn("Model training: final model trained", log)
+        self.assertIn("Predict: the default models", log)
 
 
 if __name__ == "__main__":

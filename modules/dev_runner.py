@@ -693,9 +693,9 @@ class AdvancedDemoRunner(_RunnerBase):
         self._check_stop()
         self._step_train(csv_path)
         self._check_stop()
-        bin_path, mc_path = self._step_deploy()
+        self._step_deploy()
         self._check_stop()
-        self._step_predict(df, bin_path, mc_path)
+        self._step_predict(df)
         self._check_stop()
         self._step_compare()
         self._step_report()
@@ -732,7 +732,7 @@ class AdvancedDemoRunner(_RunnerBase):
                   f"{precision.spin_rate.value():.1f}% (from the Calculator); "
                   f"±{_STUDY_TARGET_PRECISION_PP:.0f} pp needs N = {needed}; "
                   f"planned N = {self.source.n_recordings} → "
-                  f"{precision.lbl_result.text()}")
+                  f"{' '.join(precision.result_text().split())}")
 
     # ── Annotate: validate, annotate, export ─────────────────────────────────
     def _step_annotate(self):
@@ -815,25 +815,25 @@ class AdvancedDemoRunner(_RunnerBase):
         _pkg, deployed = state.deploy(models_dir, version)
         self._log(f"Deploy: v{version} to {models_dir} "
                   f"({len(deployed)} model file(s)).")
-        bin_path = next((p for p in deployed if p.name.startswith("binary")), None)
-        mc_path = next((p for p in deployed if p.name.startswith("multiclass")), None)
-        return bin_path, mc_path
 
     # ── Model prediction ─────────────────────────────────────────────────────
-    def _step_predict(self, df, bin_path, mc_path):
+    def _step_predict(self, df):
+        """The dataset just exported, predicted with the models folder's
+        default models (the ones shipped with the app) - the model the demo
+        just trained is only a demonstration of training."""
         self._go("btn_ml_prediction")
         page = self.window.ml_prediction_page
         state = page.state
-        if bin_path is not None:
-            ok, msg = state.select_bin_model(bin_path)
-            if not ok:
-                raise _RunnerError(f"Predict: {msg}")
-        ok, msg = state.select_mc_model(mc_path)
-        if mc_path is not None and not ok:
-            self._log(f"Predict: multiclass model not applied - {msg}")
+        state.use_default_models()
+        if state.bin_model_path is None:
+            raise _RunnerError("Predict: no models in the models folder "
+                               f"({settings.get_models_dir()}).")
         if state.dataset_df is None:
             page.on_dataset_ready(df, "Demo - Annotate export")
-        self._log("Predict: the model just deployed + the dataset just exported.")
+        model = state.bin_model_path.name + (
+            f" + {state.mc_model_path.name}" if state.mc_model_path else "")
+        self._log(f"Predict: the default models ({model}) + the dataset "
+                  "just exported.")
         self._race(state.run_finished, state.run_failed, _LONG_TIMEOUT_MS,
                    "prediction run", state.run_prediction)
         n_rows = len(state.summary) if state.summary is not None else 0
@@ -857,3 +857,13 @@ class AdvancedDemoRunner(_RunnerBase):
 
 
 RUNNERS = {"simple": SimpleDemoRunner, "advanced": AdvancedDemoRunner}
+
+
+def run_headless(window, mode):
+    """Run one demo to the end, for `StrikeWorks --demo <mode>` and the
+    tests. Returns (passed, message)."""
+    result = {}
+    runner = RUNNERS[mode](window)
+    runner.finished.connect(lambda ok, msg: result.update(ok=ok, msg=msg))
+    runner.run()
+    return bool(result.get("ok")), result.get("msg", "")

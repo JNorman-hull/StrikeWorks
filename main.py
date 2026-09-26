@@ -442,12 +442,40 @@ class MainWindow(QMainWindow):
         self.dragPos = event.globalPos()
 
 
+def _run_demo(mode, log_path=None):
+    """`StrikeWorks --demo simple|advanced [--log <file>]`: run one demo
+    to the end, unattended, and exit 0 if it passed - checks a build from
+    raw files to a report (tools/smoke_test.ps1 -Demos)."""
+    from modules.dev_runner import RUNNERS, run_headless
+    if mode not in RUNNERS:
+        print(f"Unknown demo: {mode} (choose {', '.join(RUNNERS)})",
+              file=sys.stderr)
+        return 2
+    if log_path:
+        sys.stdout = sys.stderr = open(log_path, "w", encoding="utf-8",
+                                       buffering=1)
+    window = MainWindow()
+    passed, message = run_headless(window, mode)
+    print(f"[demo] {mode}: {'PASSED' if passed else 'FAILED'} - {message}")
+    return 0 if passed else 1
+
+
+def _option(name):
+    """The value after `name` on the command line, or None."""
+    if name in sys.argv:
+        i = sys.argv.index(name)
+        return sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
+    return None
+
+
 if __name__ == "__main__":
     startup.set_windows_app_id()
     startup.ensure_default_folders()
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(str(startup.ICON_PATH)))
     table_copy.install(app)
+    if _option("--demo") is not None:
+        sys.exit(_run_demo(_option("--demo"), _option("--log")))
     splash = startup.build_splash()
     splash.show()
     app.processEvents()

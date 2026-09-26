@@ -947,45 +947,13 @@ class SimpleModeDialog(QDialog):
 
     def _refresh_predict_step(self):
         state = self.window.ml_prediction_page.state
-        self._auto_select_model(state)
+        state.use_default_models()
         self._refresh_predict_dataset_card()
         self.btn_run_predict.setEnabled(state.dataset_df is not None)
 
-    def _auto_select_model(self, state):
-        """Pick the models in the models folder: the one pinned in
-        Settings, else 'binary1' / 'multiclass1', else the newest. Rescans
-        each time, since an earlier load may have pointed `state.models_dir`
-        elsewhere."""
-        models_dir = settings.get_models_dir()
-        state.load_models_from_dir(models_dir)
-
-        bin_candidates = state.bin_candidates
-        if bin_candidates:
-            default = settings.get_default_model()
-            if default is not None and Path(default) in bin_candidates:
-                chosen = Path(default)
-            else:
-                chosen = (next((p for p in bin_candidates if p.stem == "binary1"),
-                               None)
-                          or max(bin_candidates, key=lambda p: p.stat().st_mtime))
-            if state.bin_model_path != chosen:
-                state.select_bin_model(chosen)
-
-        mc_candidates = state.mc_candidates
-        if mc_candidates:
-            mc_default = settings.get_default_mc_model()
-            if mc_default is not None and Path(mc_default) in mc_candidates:
-                mc_chosen = Path(mc_default)
-            else:
-                mc_chosen = (next((p for p in mc_candidates
-                                   if p.stem == "multiclass1"), None)
-                             or max(mc_candidates, key=lambda p: p.stat().st_mtime))
-            if state.mc_model_path != mc_chosen:
-                state.select_mc_model(mc_chosen)
-
     def _load_dataset_csv(self):
         path, _ = QFileDialog.getOpenFileName(
-            self.window, "Load dataset CSV", str(Path.cwd()),
+            self.window, "Load dataset CSV", str(settings.get_input_data_dir()),
             "CSV files (*.csv)")
         if not path:
             return
