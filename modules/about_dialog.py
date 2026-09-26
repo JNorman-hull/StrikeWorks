@@ -91,7 +91,7 @@ def _version(dist, module):
     if dist:
         try:
             return metadata.version(dist)
-        except Exception:
+        except metadata.PackageNotFoundError:
             pass
     mod = sys.modules.get(module) if module else None
     return getattr(mod, "__version__", "") if mod is not None else ""

@@ -804,7 +804,7 @@ class ExportAnimationsPage(QObject):
             frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             fps = cap.get(cv2.CAP_PROP_FPS) or 0
             cap.release()
-        except Exception:
+        except cv2.error:
             return None, None
         return frames, (frames / fps if fps > 0 else None)
 
@@ -1246,8 +1246,8 @@ class ExportAnimationsPage(QObject):
 
 def _read_json(path):
     try:
-        return json.loads(Path(path).read_text())
-    except Exception:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
         return None
 
 

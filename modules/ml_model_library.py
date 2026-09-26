@@ -126,7 +126,7 @@ def _read_json(path):
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except (OSError, ValueError):
         return None
 
 
@@ -168,7 +168,8 @@ def discover_models(models_dir):
             if cv_path.exists():
                 try:
                     cv_predictions = pd.read_csv(cv_path)
-                except Exception:
+                except (OSError, ValueError) as e:
+                    print(f"Could not read {cv_path}: {e}")
                     cv_predictions = None
             curves = _read_json(pkg / f"{kind}_cv_curves.json")
         if curves is None and kind == "binary":

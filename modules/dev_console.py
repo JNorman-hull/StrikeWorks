@@ -42,8 +42,8 @@ class _StreamTee(QObject):
         if self.real is not None:
             try:
                 self.real.write(text)
-            except Exception:
-                pass
+            except (OSError, ValueError):
+                pass    # a closed stream; reporting it would loop back here
         if text.strip():
             self.written.emit(text)
         return len(text)
@@ -52,7 +52,7 @@ class _StreamTee(QObject):
         if self.real is not None:
             try:
                 self.real.flush()
-            except Exception:
+            except (OSError, ValueError):
                 pass
 
     def isatty(self):

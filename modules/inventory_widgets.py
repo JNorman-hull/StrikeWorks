@@ -107,7 +107,8 @@ class _InventoryScanThread(QThread):
         gen, lib_root, folder, config = self._args
         try:
             records = scan_raw(lib_root, folder, config)
-        except Exception:
+        except Exception as e:
+            print(f"Could not scan {folder}: {e}")
             records = []
         self.done.emit(gen, records)
 

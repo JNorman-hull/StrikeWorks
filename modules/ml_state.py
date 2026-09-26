@@ -581,9 +581,9 @@ class PredictionState(QObject):
         self.region_summary = pd.read_csv(region) if region.exists() else None
         meta = out_dir / "run_meta.json"
         try:
-            with open(meta) as f:
+            with open(meta, encoding="utf-8") as f:
                 self.run_meta = json.load(f)
-        except Exception:
+        except (OSError, ValueError):
             self.run_meta = {}
         # clear any stale selection from a previous run
         self.selected_file = None

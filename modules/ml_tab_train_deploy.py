@@ -276,7 +276,7 @@ class DeployTab:
                 try:
                     with open(cfg_path, encoding="utf-8") as f:
                         cfg = json.load(f)
-                except Exception:
+                except (OSError, ValueError):
                     cfg = {}
             metrics = (s.model_results(kind) or {}).get("metrics", {})
             perf = metrics.get("out_of_fold_performance", {})

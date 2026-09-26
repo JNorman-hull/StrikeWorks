@@ -810,8 +810,8 @@ class DeploymentEditor(QWidget):
         if open_folder:
             try:
                 os.startfile(str(dep_dir))
-            except Exception:
-                pass
+            except OSError as e:
+                self.status.emit(f"Couldn't open the folder: {e}", 5000)
             QMessageBox.information(self.window(), "Deployment folder ready",
                                     raw_layout.README_TEXT)
         return True

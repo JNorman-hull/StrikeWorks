@@ -317,16 +317,13 @@ def wilson_ci(k, n):
 
 
 def _package_versions():
+    from importlib.metadata import PackageNotFoundError, version
     out = {}
-    try:
-        from importlib.metadata import version
-        for pkg in ("numpy", "pandas", "scikit-learn", "sktime", "joblib"):
-            try:
-                out[pkg] = version(pkg)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    for pkg in ("numpy", "pandas", "scikit-learn", "sktime", "joblib"):
+        try:
+            out[pkg] = version(pkg)
+        except PackageNotFoundError:
+            pass
     return out
 
 

@@ -131,16 +131,13 @@ def _wilson_ci(k, n, z=1.96):
 
 def _package_versions():
     """Versions of the model stack, for provenance. Best effort only."""
+    from importlib.metadata import PackageNotFoundError, version
     out = {}
-    try:
-        from importlib.metadata import version
-        for pkg in ("numpy", "pandas", "scikit-learn", "sktime", "joblib"):
-            try:
-                out[pkg] = version(pkg)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    for pkg in ("numpy", "pandas", "scikit-learn", "sktime", "joblib"):
+        try:
+            out[pkg] = version(pkg)
+        except PackageNotFoundError:
+            pass
     return out
 
 

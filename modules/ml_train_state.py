@@ -56,10 +56,7 @@ DEFAULT_CHANNELS = [
 
 def canonical_channels():
     """Channel set for the active sensor, or the RAPID default."""
-    try:
-        return list(sensor_config.active().channels) or list(DEFAULT_CHANNELS)
-    except Exception:
-        return list(DEFAULT_CHANNELS)
+    return list(sensor_config.active().channels) or list(DEFAULT_CHANNELS)
 
 
 def level_key(value):
@@ -143,19 +140,20 @@ class _StreamThread(QThread):
         self._cmd = cmd
 
     def run(self):
+        tail = deque(maxlen=60)
         try:
-            proc = subprocess.Popen(
-                self._cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, encoding="utf-8", errors="replace", bufsize=1)
-            tail = deque(maxlen=60)
-            for raw in proc.stdout:
-                ln = raw.rstrip("\n")
-                tail.append(ln)
-                self.line.emit(ln)
-                if ln.strip():
-                    # mirrored into the dev console (dev_console.py tees print)
-                    print(f"[train-worker] {ln}")
-            proc.wait()
+            # the with block closes the pipe and waits for the process
+            with subprocess.Popen(
+                    self._cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, encoding="utf-8", errors="replace",
+                    bufsize=1) as proc:
+                for raw in proc.stdout:
+                    ln = raw.rstrip("\n")
+                    tail.append(ln)
+                    self.line.emit(ln)
+                    if ln.strip():
+                        # also in the dev console (it tees print)
+                        print(f"[train-worker] {ln}")
             self.done.emit(proc.returncode, "\n".join(tail))
         except Exception as e:
             self.done.emit(-1, str(e))

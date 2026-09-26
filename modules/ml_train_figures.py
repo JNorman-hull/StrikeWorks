@@ -454,6 +454,6 @@ def render_model_figures(out_dir, metrics, cv_predictions, curves,
                 fig.savefig(p, dpi=dpi, bbox_inches="tight")
                 paths.append(p)
             out[name] = paths
-        except Exception:
-            continue
+        except Exception as e:
+            print(f"Figure '{name}' not drawn: {e}")
     return out

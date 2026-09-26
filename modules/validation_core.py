@@ -344,8 +344,8 @@ class AutoProcessThread(QThread):
                     index_df = save_window(self._lib_root, index_df, stem, df,
                                            nadir_idx, self._win_sec)
                     n_done += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"Auto process: skipped {stem} ({e})")
             self.progress.emit(i + 1, total)
         self.done.emit(index_df, n_done)
 
@@ -459,20 +459,20 @@ def import_annotations_csv(lib_root, csv_path):
 
 def merge_into_running_dataset(lib_root, df):
     """Replace these sensors' blocks in the library's running dataset
-    (`processed_sens_data/model_features.csv`, what Annotate's Save + next
-    builds sensor by sensor) with `df`'s - so an export and the per-sensor
-    path always agree on what's "in the dataset"."""
+    (`processed_sens_data/model_features.csv`) with `df`'s. Annotate's
+    Save + next adds one sensor at a time; Save and export adds them all.
+
+    Raises if the existing file can't be read (open in Excel, say) rather
+    than overwriting it."""
     path = Path(lib_root) / di.DATASET_REL
     path.parent.mkdir(parents=True, exist_ok=True)
-    stems = set(df["file"].astype(str))
     out = df
     if path.exists():
-        try:
-            existing = pd.read_csv(path, low_memory=False)
+        existing = pd.read_csv(path, low_memory=False)
+        if "file" in existing.columns:
+            stems = set(df["file"].astype(str))
             existing = existing[~existing["file"].astype(str).isin(stems)]
-            out = pd.concat([existing, df], ignore_index=True)
-        except Exception:
-            out = df
+        out = pd.concat([existing, df], ignore_index=True)
     out.to_csv(path, index=False)
     return path
 
@@ -529,8 +529,8 @@ class DatasetExporter(QObject):
         # whichever mode exported it
         try:
             merge_into_running_dataset(self._lib_root, df)
-        except Exception:
-            pass
+        except (OSError, ValueError) as e:
+            print(f"The library's running dataset was not updated: {e}")
         self.finished.emit(
             df, out_path,
             f"Saved and exported {n_rows} row(s) ({n_ok} sensor(s)) to "

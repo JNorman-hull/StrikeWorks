@@ -388,16 +388,13 @@ def parse_filename_info(filename, config=None):
         filename = Path(filename).stem
 
     if config is not None:
-        try:
-            sensor, date_deploy, time_deploy = config.parse_stem(filename)
-            if date_deploy and time_deploy:
-                return {
-                    'sensor': sensor,
-                    'date_deploy': date_deploy,
-                    'time_deploy': time_deploy
-                }
-        except Exception:
-            pass
+        sensor, date_deploy, time_deploy = config.parse_stem(filename)
+        if date_deploy and time_deploy:
+            return {
+                'sensor': sensor,
+                'date_deploy': date_deploy,
+                'time_deploy': time_deploy
+            }
 
     if '-' in filename:
         sensor, date_time = filename.split('-')

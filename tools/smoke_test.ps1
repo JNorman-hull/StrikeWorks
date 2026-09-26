@@ -25,6 +25,7 @@ $psi.UseShellExecute = $false
 $psi.EnvironmentVariables["QT_QPA_PLATFORM"] = "offscreen"
 $psi.EnvironmentVariables["USERPROFILE"] = $work
 $psi.EnvironmentVariables["HOME"] = $work
+$psi.EnvironmentVariables["APPDATA"] = $work
 $app = [System.Diagnostics.Process]::Start($psi)
 Start-Sleep -Seconds 25
 if ($app.HasExited) { "   FAIL - exited with code $($app.ExitCode)"; $failed = $true }

@@ -7,8 +7,8 @@
 """Annotation variables: what Annotate lets a user record about a
 recording, and the known values of each.
 
-A small dataclass, a JSON store in the user's home folder and a
-``notifier`` the page follows, as in ``sensor_config.py``. The values
+A small dataclass, a section of the settings file and a ``notifier`` the
+page follows, as in ``sensor_config.py``. The values
 themselves go onto the sensor's index row (``deployment_index.
 set_row_values``); this module only tracks which columns exist.
 
@@ -16,13 +16,14 @@ The default columns are the ones the dataset build (``page_dataset.
 _LABEL_COLS``) and prediction (``ml_state.ANNOTATION_COLUMNS``) read, so a
 dataset annotated from an external CSV reads the same way.
 """
-import json
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
-_SETTINGS_FILE = Path.home() / ".strikeworks_annotations.json"
+from . import settings
+
+# this module's section of the settings file (settings.py)
+_SECTION = "annotation_variables"
 
 
 @dataclass
@@ -78,25 +79,21 @@ def _load():
     if _store is not None:
         return _store
     try:
-        data = json.loads(_SETTINGS_FILE.read_text(encoding="utf-8"))
-        _store = [AnnotationVariable.from_dict(d) for d in data.get(
-            "variables", [])]
-        if not _store:
-            _store = [AnnotationVariable.from_dict(v.to_dict())
-                      for v in DEFAULT_VARIABLES]
-    except Exception:
+        _store = [AnnotationVariable.from_dict(d) for d in
+                  settings.read_section(_SECTION).get("variables", [])]
+    except (KeyError, TypeError, ValueError) as e:
+        print(f"Saved annotation variables can't be read, using the "
+              f"defaults: {e}")
+        _store = []
+    if not _store:
         _store = [AnnotationVariable.from_dict(v.to_dict())
                   for v in DEFAULT_VARIABLES]
     return _store
 
 
 def _write():
-    payload = {"variables": [v.to_dict() for v in _load()]}
-    try:
-        _SETTINGS_FILE.write_text(json.dumps(payload, indent=2),
-                                  encoding="utf-8")
-    except Exception:
-        pass
+    settings.write_section(
+        _SECTION, {"variables": [v.to_dict() for v in _load()]})
 
 
 def all_variables() -> list:

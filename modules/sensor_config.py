@@ -70,12 +70,13 @@ is the library's ``processed_sens_data`` folder and ``config`` is the
 SensorConfig in use. This is the single code point a new device needs:
 write the reader, register it here, and point a configuration at it.
 """
-import json
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
+
+from . import settings
 
 # Channels the RAPID parser produces and the models consume. Kept here so a
 # configuration can carry its own list; ml_train_state.DEFAULT_CHANNELS is
@@ -135,7 +136,8 @@ METHODS = [
     ("Hold previous value", "previous"),
 ]
 
-_SETTINGS_FILE = Path.home() / ".strikeworks_sensors.json"
+# this module's section of the settings file (settings.py)
+_SECTION = "sensor_configs"
 
 
 # ── one raw file within a recording ──────────────────────────────────────────
@@ -467,14 +469,7 @@ _store = None                      # {"active": key, "configs": {key: cfg}}
 
 def config_path() -> Path:
     """Where user configurations and the current choice are kept."""
-    return _SETTINGS_FILE
-
-
-def _read_file() -> dict:
-    try:
-        return json.loads(_SETTINGS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return settings.SETTINGS_FILE
 
 
 def _load():
@@ -484,11 +479,12 @@ def _load():
 
     configs = {k: SensorConfig.from_dict(d) for k, d in BUILTIN.items()}
 
-    data = _read_file()
+    data = settings.read_section(_SECTION)
     for d in data.get("sensors", []):
         try:
             cfg = SensorConfig.from_dict(d)
-        except Exception:
+        except (KeyError, TypeError, ValueError) as e:
+            print(f"Skipped a saved sensor configuration that can't be read: {e}")
             continue
         configs[cfg.key] = cfg          # user copy overrides the built-in
 
@@ -521,11 +517,7 @@ def _write():
         "sensors": [c.to_dict() for c in store["configs"].values()
                     if not _is_unmodified_builtin(c)],
     }
-    try:
-        _SETTINGS_FILE.write_text(json.dumps(payload, indent=2),
-                                  encoding="utf-8")
-    except Exception:
-        pass
+    settings.write_section(_SECTION, payload)
 
 
 def all_configs() -> list:

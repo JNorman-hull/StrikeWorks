@@ -64,7 +64,8 @@ def save_fixed(fig, base_path, formats=("png",), dpi=300):
         path = Path(base_path).with_suffix(f".{fmt}")
         try:
             fig.savefig(path, dpi=dpi, facecolor="white")
-        except Exception:
+        except (OSError, ValueError) as e:
+            print(f"Could not save {path.name}: {e}")
             continue
         first = first or path
         if fmt == "png":

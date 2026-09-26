@@ -75,8 +75,8 @@ reaches the grid. Two ship:
   (`modules/eel_format.py`, per the EEL tag binary format specification).
 
 A new device is New or Duplicate in Sensor configuration plus a Save
-(stored in `~/.strikeworks_sensors.json`); only its reader is code, written
-and registered under `sensor_config.PARSERS`.
+(kept in the settings file, `%APPDATA%\StrikeWorks\settings.json`); only
+its reader is code, written and registered under `sensor_config.PARSERS`.
 
 ### Models
 

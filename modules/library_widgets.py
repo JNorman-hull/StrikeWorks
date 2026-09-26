@@ -54,7 +54,8 @@ class _RawScanThread(QThread):
     def run(self):
         try:
             tree = raw_layout.scan_tree(self._raw_dir)
-        except Exception:
+        except Exception as e:
+            print(f"Could not scan {self._raw_dir}: {e}")
             tree = raw_layout.RawTree()
         self.done.emit(self._gen, tree)
 

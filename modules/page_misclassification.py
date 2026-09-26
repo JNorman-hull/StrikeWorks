@@ -82,7 +82,8 @@ class _VideoIndexThread(QThread):
     def run(self):
         try:
             index = video_index(self._lib_dir)
-        except Exception:
+        except Exception as e:
+            print(f"Could not scan {self._lib_dir} for video: {e}")
             index = {}
         self.done.emit(index)
 
@@ -471,15 +472,15 @@ class MisclassificationPage(QObject):
             if corrected.exists():
                 try:
                     df = pd.read_csv(corrected, low_memory=False)
-                except Exception:
-                    df = None
+                except (OSError, ValueError) as e:
+                    self.status.emit(f"Could not read {corrected.name}: {e}", 6000)
             elif entry.source == "session" and self.training_state is not None:
                 df = self.training_state.dataset_df
             elif base_path.exists():
                 try:
                     df = pd.read_csv(base_path, low_memory=False)
-                except Exception:
-                    df = None
+                except (OSError, ValueError) as e:
+                    self.status.emit(f"Could not read {base_path.name}: {e}", 6000)
         self._df_cache[key] = df
         return df
 

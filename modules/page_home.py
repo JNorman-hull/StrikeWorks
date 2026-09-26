@@ -283,7 +283,7 @@ def library_status_rows(root, session_state):
                 for chunk in iter(lambda: f.read(1 << 20), b""):
                     n_lines += chunk.count(b"\n")
             rows.append(("Dataset built", f"Yes ({max(0, n_lines - 1)} rows)"))
-        except Exception:
+        except OSError:
             rows.append(("Dataset built", "Yes"))
     else:
         rows.append(("Dataset built", "Not yet"))

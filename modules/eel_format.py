@@ -98,7 +98,7 @@ def samplerate_from_log(hig_path):
                     if str(row.get("Filename", "")).strip() == stem:
                         rate = int(float(row.get("Samplerate", "") or 0))
                         return rate if rate > 0 else None
-        except Exception:
+        except (OSError, ValueError, csv.Error):
             continue
     return None
 

@@ -498,24 +498,12 @@ class AnnotationPage(QObject):
         try:
             df = pd.read_csv(path, usecols=["file"], low_memory=False)
             self._dataset_stems = set(df["file"].astype(str).unique())
-        except Exception:
+        except (OSError, ValueError) as e:
+            self.status.emit(f"Could not read the running dataset: {e}", 6000)
             self._dataset_stems = set()
 
     def _append_to_dataset(self, block: pd.DataFrame):
-        path = self._dataset_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        existing = None
-        if path.exists():
-            try:
-                existing = pd.read_csv(path, low_memory=False)
-            except Exception:
-                existing = None
-        if existing is not None and "file" in existing.columns:
-            existing = existing[existing["file"].astype(str) != self._cur_stem]
-            out = pd.concat([existing, block], ignore_index=True)
-        else:
-            out = block
-        out.to_csv(path, index=False)
+        vc.merge_into_running_dataset(self._lib_root, block)
         self._dataset_stems.add(self._cur_stem)
 
     # ── sensor table ─────────────────────────────────────────────────────────

@@ -115,7 +115,7 @@ def _git_remote_url(root):
         return None
     try:
         text = cfg.read_text(encoding="utf-8", errors="ignore")
-    except Exception:
+    except OSError:
         return None
     in_origin = False
     for line in text.splitlines():
@@ -131,10 +131,9 @@ def _git_remote_url(root):
 def assemble(sections, out_dir, checked_keys):
     """Build one combined report from the checked, available `sections`.
 
-    Returns (report_html_path, warnings) - `warnings` lists sections that
-    were checked but failed to build (e.g. figures could not be rendered),
-    so a partial report is still produced rather than the whole action
-    failing over one section.
+    Returns (report_html_path, warnings): `warnings` lists what couldn't
+    be included (a section that failed, a figure that couldn't be drawn),
+    so one failure still leaves a report.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -153,11 +152,12 @@ def assemble(sections, out_dir, checked_keys):
             warnings.append(f"{sec.title}: nothing to report")
             continue
         body_parts.append(content["html"])
+        warnings.extend(f"{sec.title}: {w}" for w in content.get("warnings", ()))
         for name, table in (content.get("tables") or {}).items():
             try:
                 table.to_csv(out_dir / f"{sec.key}_{name}.csv", index=False)
-            except Exception:
-                pass
+            except OSError as e:
+                warnings.append(f"{sec.title}: table '{name}' not saved ({e})")
 
     if not body_parts:
         raise RuntimeError("None of the checked sections had data to report.")
@@ -196,7 +196,7 @@ def bsm_section(window, formats=("png",), dpi=300):
 
         fig_dir = out_dir / "bsm_figures"
         fig_dir.mkdir(parents=True, exist_ok=True)
-        image_paths, captions = {}, {}
+        image_paths, captions, problems = {}, {}, []
         # Both figures rendered fresh at their fixed report sizes - one
         # 4-panel results figure (12 x 12 cm) for both species, and one
         # 4-panel sensitivity figure (20 x 16 cm) per species
@@ -210,8 +210,8 @@ def bsm_section(window, formats=("png",), dpi=300):
                     "probability, (b) scaly fish mortality probability, "
                     "(c) eel collision probability, (d) eel mortality "
                     "probability.")
-        except Exception:
-            pass
+        except Exception as e:
+            problems.append(f"results figure not drawn ({e})")
         for species, res_species in results.items():
             if res_species is None:
                 continue
@@ -237,15 +237,15 @@ def bsm_section(window, formats=("png",), dpi=300):
                         "fish velocity, (c) mortality probability vs shaft "
                         "speed, (d) mortality probability vs relative fish "
                         "velocity.")
-            except Exception:
-                pass
+            except Exception as e:
+                problems.append(f"{species} sensitivity figure not drawn ({e})")
         widths = {key: (bsm_figures.RESULTS_PANELS_CM[0] if key == "results"
                         else bsm_figures.SWEEP_PANELS_CM[0])
                   for key in image_paths}
         html = build_bsm_report_html(res_, res_other=res_other,
                                      image_paths=image_paths, embed_images=True,
                                      captions=captions, widths_cm=widths)
-        return {"html": html}
+        return {"html": html, "warnings": problems}
 
     return ReportSection("bsm", "Blade strike modelling (mathematical)",
                          available, reason, build)
@@ -286,6 +286,7 @@ def study_design_section(window, formats=("png",), dpi=300):
             h.append(table(headers, rows))
         fig_dir = out_dir / "study_design_figures"
         fig_dir.mkdir(parents=True, exist_ok=True)
+        problems = []
         try:
             # report styling at a fixed 14 x 10 cm, not the page's dark
             # on-screen canvas
@@ -298,13 +299,13 @@ def study_design_section(window, formats=("png",), dpi=300):
             if png:
                 h.append(ml_report._img_tag(
                     png, True, width_cm=STUDY_DESIGN_SIZE_CM[0]))
-        except Exception:
-            pass
+        except Exception as e:
+            problems.append(f"precision figure not drawn ({e})")
 
         root = getattr(dep, "_lib_root", None) if dep is not None else None
         if root is None:
             h.append("</div>")
-            return {"html": "".join(h)}
+            return {"html": "".join(h), "warnings": problems}
 
         h.append(f"<h2 style='color:{dark};'>Library</h2>")
         h.append(kv([
@@ -345,7 +346,7 @@ def study_design_section(window, formats=("png",), dpi=300):
                          "recorded yet.</p>")
 
         h.append("</div>")
-        return {"html": "".join(h)}
+        return {"html": "".join(h), "warnings": problems}
 
     return ReportSection("study_design", "Study design", available, reason,
                          build)
@@ -498,7 +499,7 @@ def training_section(window, get_entry, all_models=None,
     available = bool(entries_avail)
     reason = "" if available else "No trained or deployed models found."
 
-    def _one(out_dir, entry_):
+    def _one(out_dir, entry_, problems):
         from . import ml_model_library, ml_train_figures
         fig_dir = out_dir / "training_figures" / _slug(entry_.label)
         fig_dir.mkdir(parents=True, exist_ok=True)
@@ -508,8 +509,8 @@ def training_section(window, get_entry, all_models=None,
                 fig_dir, entry_.metrics, entry_.cv_predictions,
                 entry_.curves, formats=formats, dpi=dpi)
             image_paths = {name: paths[0] for name, paths in figs.items()}
-        except Exception:
-            pass
+        except Exception as e:
+            problems.append(f"{entry_.label}: figures not drawn ({e})")
         mp = getattr(window, "ml_prediction_page", None)
         pred_state = getattr(mp, "state", None) if mp is not None else None
         app_version = getattr(pred_state, "app_version", "") if pred_state else ""
@@ -524,8 +525,9 @@ def training_section(window, get_entry, all_models=None,
         targets = [e for e in targets if e is not None]
         if not targets:
             return None
-        html = _HR.join(_one(out_dir, e) for e in targets)
-        return {"html": html}
+        problems = []
+        html = _HR.join(_one(out_dir, e, problems) for e in targets)
+        return {"html": html, "warnings": problems}
 
     return ReportSection("training", "Model training", available, reason,
                          build)
@@ -667,9 +669,10 @@ def prediction_section(window, formats=("png",), dpi=300):
         try:
             figs = ml_figures.render_figures(state, fig_dir, formats=formats,
                                              dpi=dpi)
-            image_paths = {name: paths[0] for name, paths in figs.items()}
-        except Exception:
-            image_paths = {}
+            image_paths, problems = (
+                {name: paths[0] for name, paths in figs.items()}, [])
+        except Exception as e:
+            image_paths, problems = {}, [f"figures not drawn ({e})"]
         html = ml_report.build_report_html(state, image_paths=image_paths,
                                            embed_images=True)
         tables = {"prediction_summary": state.summary}
@@ -677,7 +680,7 @@ def prediction_section(window, formats=("png",), dpi=300):
             tables["predictions_per_file"] = state.predictions
         if state.region_summary is not None:
             tables["region_summary"] = state.region_summary
-        return {"html": html, "tables": tables}
+        return {"html": html, "tables": tables, "warnings": problems}
 
     return ReportSection("prediction", "Model prediction", available, reason,
                          build)
@@ -713,6 +716,7 @@ def biological_section(window, formats=("png",), dpi=300):
                 "<p style='color:#64748b;'>No comparison data available.</p>")
         if bio.lbl_manual.text():
             h.append(f"<p>{esc(bio.lbl_manual.text())}</p>")
+        problems = []
         try:
             # rendered fresh in report styling at a fixed size - 12 x 10 cm
             # up to three bars, 16 x 10 cm above - from what the page's
@@ -746,10 +750,10 @@ def biological_section(window, formats=("png",), dpi=300):
                              "injury model.</p>")
                     h.append(ml_report._img_tag(mort_png, True,
                                                 width_cm=size[0]))
-        except Exception:
-            pass
+        except Exception as e:
+            problems.append(f"comparison figures not drawn ({e})")
         h.append("</div>")
-        return {"html": "".join(h)}
+        return {"html": "".join(h), "warnings": problems}
 
     return ReportSection("biological", "Model comparison",
                          available, reason, build)

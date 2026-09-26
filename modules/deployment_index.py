@@ -123,7 +123,8 @@ def read_index(root):
         return None
     try:
         return pd.read_csv(path, low_memory=False)
-    except Exception:
+    except (OSError, ValueError) as e:
+        print(f"Could not read the sensor index {path}: {e}")
         return None
 
 
@@ -478,8 +479,8 @@ def relabel(root, where, values):
             ds = pd.read_csv(dataset, low_memory=False)
             if _relabel_frame(ds, where, values):
                 ds.to_csv(dataset, index=False)
-        except Exception:
-            pass
+        except (OSError, ValueError) as e:
+            print(f"The running dataset {dataset} was not relabelled: {e}")
     return n
 
 
