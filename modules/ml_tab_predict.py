@@ -20,19 +20,21 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt, QElapsedTimer, QTimer
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout, QHBoxLayout,
-    QHeaderView, QLabel, QMessageBox, QPushButton, QScrollArea, QSizePolicy,
-    QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout,
+    QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton, QSizePolicy,
+    QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout,
+    QWidget,
 )
 
 from . import bsm_figures, ml_figures
 from .bsm_model import (
     default_vcrit, recompute_mortality, recompute_mortality_at_vcrit,
 )
-from .ml_widgets import (
-    ACCENT, BAD, MUTED, OK, PALETTE, PINK, TEXT, WARN,
-    CARD_W2, CARD_H2, MetaCard, RingCard, Spinner, Section, apply_section_defaults,
-    hsplit,
+from .cards import MetaCard, RingCard, Spinner
+from .layout import apply_section_defaults, hsplit, scroll_page, Section
+from .theme import (
+    ACCENT, BAD, CARD_H2, CARD_W2, MUTED, OK, PALETTE, PINK, TEXT, WARN,
+    muted_label,
 )
 
 FIG_MIN_W, FIG_MIN_H = 320, 300
@@ -125,21 +127,7 @@ class PredictTab:
         apply_section_defaults(frame)
 
     def _build_setup_tab(self, frame):
-        outer = QVBoxLayout(frame)
-        outer.setContentsMargins(0, 0, 0, 0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet(
-            "QScrollArea{border:none;background:transparent;}")
-        outer.addWidget(scroll)
-
-        body = QWidget()
-        body.setStyleSheet("background:transparent;")
-        scroll.setWidget(body)
-        v = QVBoxLayout(body)
-        v.setContentsMargins(4, 6, 4, 6)
-        v.setSpacing(10)
+        v = scroll_page(frame)
 
         # ── row 1: model + dataset cards (hsplit: fills the width, the
         # boundary can be dragged) ───────────────────────────────────────
@@ -251,7 +239,7 @@ class PredictTab:
             "Which pump condition the mortality plot represents - a "
             "label only, since the BSM run itself has no per-treatment "
             "input; populated from the current prediction's treatments.")
-        mort_row.addWidget(self._muted("Treatment"))
+        mort_row.addWidget(muted_label("Treatment"))
         mort_row.addWidget(self.cmb_mortality_treatment)
         self.spin_eel_vcrit = QDoubleSpinBox()
         self.spin_eel_vcrit.setRange(0.0, 50.0)
@@ -259,7 +247,7 @@ class PredictTab:
         self.spin_eel_vcrit.setValue(_EEL_VCRIT_DEFAULT)
         self.spin_eel_vcrit.setSuffix(" m/s")
         self.spin_eel_vcrit.valueChanged.connect(self._on_mortality_inputs_changed)
-        mort_row.addWidget(self._muted("Eel critical velocity"))
+        mort_row.addWidget(muted_label("Eel critical velocity"))
         mort_row.addWidget(self.spin_eel_vcrit)
         mort_row.addStretch()
         gv.addLayout(mort_row)
@@ -301,21 +289,7 @@ class PredictTab:
         v.addStretch()
 
     def _build_results_tab(self, frame):
-        outer = QVBoxLayout(frame)
-        outer.setContentsMargins(0, 0, 0, 0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet(
-            "QScrollArea{border:none;background:transparent;}")
-        outer.addWidget(scroll)
-
-        body = QWidget()
-        body.setStyleSheet("background:transparent;")
-        scroll.setWidget(body)
-        v = QVBoxLayout(body)
-        v.setContentsMargins(4, 6, 4, 6)
-        v.setSpacing(10)
+        v = scroll_page(frame)
 
         # ── row 3: prediction summary cards | results table, side by side ──
         # the cards stacked three to a row, the table beside them
@@ -769,12 +743,6 @@ class PredictTab:
     def _inspect_low_conf(self):
         if self._goto_inspect:
             self._goto_inspect("low_conf")
-
-    @staticmethod
-    def _muted(text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};")
-        return lab
 
     # ── mortality (BSM, moved here from Biological interpretation / Model
     # comparison - independent of the model prediction above). Dual-

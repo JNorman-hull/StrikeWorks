@@ -53,7 +53,7 @@ class Reports(unittest.TestCase):
         original = QFileDialog.getExistingDirectory
         QFileDialog.getExistingDirectory = staticmethod(lambda *a, **k: str(out))
         try:
-            self.window.bsm_sensitivity_page._generate_report()
+            self.window.bsm_analysis_page._generate_report()
         finally:
             QFileDialog.getExistingDirectory = original
         self.assertTrue((out / "report.html").exists())

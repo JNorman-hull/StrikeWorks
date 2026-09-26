@@ -47,6 +47,7 @@ from .bind_datasets import BindTrainingData
 from .dataset_build import (
     INDEX_REL, OPT_SEGMENTED, OPT_UNSEGMENTED, WIN_SEC, ExtractThread,
 )
+from .theme import CONSOLE_STYLE, MUTED
 
 # ── annotation join (model_labels.csv) ──────────────────────────────────────
 _LABEL_FILE_COL = "sens_file"          # joins to feature 'file'
@@ -142,13 +143,11 @@ class DatasetPage(QObject):
         u.tree_ds_library.setVisible(False)
         u.btn_ds_change_libraries.setVisible(False)
         self.lbl_library = QLabel("No library selected.")
-        self.lbl_library.setStyleSheet("color:#8a95aa;")
+        self.lbl_library.setStyleSheet(f"color:{MUTED};")
         self.lbl_library.setWordWrap(True)
         u.grp_ds_library.layout().insertWidget(0, self.lbl_library)
 
-        u.console_ds.setStyleSheet(
-            "QPlainTextEdit{background:#1b1e23;color:#d4d4d4;"
-            "border:1px solid #2c313a;border-radius:4px;}")
+        u.console_ds.setStyleSheet(CONSOLE_STYLE)
         u.chk_ds_select_all.setChecked(True)
 
     def _connect(self):

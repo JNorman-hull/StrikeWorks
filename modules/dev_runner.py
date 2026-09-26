@@ -569,7 +569,7 @@ class SimpleDemoRunner(_RunnerBase):
         from PySide6.QtGui import QColor
         from PySide6.QtTest import QTest
         from . import validation_core as vc
-        from .ml_widgets import OK, WARN
+        from .theme import OK, WARN
 
         lst = dlg.validate_list
 
@@ -675,7 +675,7 @@ class AdvancedDemoRunner(_RunnerBase):
         self._step_study_design()
 
         self._go("btn_initiate_deployment")
-        self._step_deployment(w.initiate_deployment_page.editor)
+        self._step_deployment(w.deployment_page.editor)
         self._check_stop()
         self._step_copy_in()
 
@@ -720,7 +720,7 @@ class AdvancedDemoRunner(_RunnerBase):
         sample-size helper then says how many sensors a ±10 pp estimate
         needs, and the planned N is what this demo actually deploys."""
         self._go("btn_study_design")
-        precision = getattr(self.window.prepare_page, "tab_precision", None)
+        precision = getattr(self.window.setup_page, "tab_precision", None)
         if precision is None:
             self._log("Study design: page not available - skipped.")
             return
@@ -841,7 +841,7 @@ class AdvancedDemoRunner(_RunnerBase):
 
     def _step_compare(self):
         self._go("btn_biological")
-        self.window.biological_page._refresh_comparison()
+        self.window.model_comparison_page._refresh_comparison()
         self._log("Model comparison: refreshed against the BSM estimate.")
 
     def _step_report(self):

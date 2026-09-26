@@ -43,13 +43,16 @@ import shutil
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
-    QPushButton, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
 from . import deployment_index as di
 from . import raw_layout, sensor_config, settings
-from .ml_widgets import ACCENT, MUTED, OK, WARN, MetaCard, Section, style_table
+from .cards import MetaCard
+from .layout import scroll_area, Section
+from .tables import style_table
+from .theme import ACCENT, MUTED, OK, WARN, muted_label
 
 NEW_DEPLOYMENT = "__new__"
 _TMP_SUFFIX = ".__renaming__"
@@ -259,7 +262,7 @@ class DeploymentEditor(QWidget):
         form.setColumnStretch(1, 1)
         self.dep_edits = {}
         for i, (column, label) in enumerate(di.DEPLOYMENT_FIELDS):
-            form.addWidget(self._muted(label), i, 0)
+            form.addWidget(muted_label(label, wrap=True), i, 0)
             edit = QLineEdit()
             edit.textChanged.connect(self._on_edited)
             form.addWidget(edit, i, 1)
@@ -272,9 +275,7 @@ class DeploymentEditor(QWidget):
 
         # the left column scrolls internally rather than forcing its host
         # window taller (four stacked sections)
-        left_scroll = QScrollArea()
-        left_scroll.setWidgetResizable(True)
-        left_scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
+        left_scroll = scroll_area()
         left_scroll.setWidget(left)
         row.addWidget(left_scroll, stretch=2)
 
@@ -349,13 +350,6 @@ class DeploymentEditor(QWidget):
                      min(bottom, self.height()))
         if self._grp_tr.height() != height or self._grp_tr.minimumHeight() != height:
             self._grp_tr.setFixedHeight(height)
-
-    @staticmethod
-    def _muted(text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};")
-        lab.setWordWrap(True)
-        return lab
 
     # ── public ───────────────────────────────────────────────────────────────
     @property

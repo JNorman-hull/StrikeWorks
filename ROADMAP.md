@@ -27,7 +27,7 @@ bring one back, take it out of the list named alongside it.
 
 **Chunk 1 - ML analysis polish** (commit `f05f200`)
 Collapsible `Section` panels everywhere with `SECTION_DEFAULTS` in
-`modules/ml_widgets.py` (all open; flip to `False` to start collapsed).
+`modules/layout.py` (all open; flip to `False` to start collapsed).
 Predict: compatibility folded into the Dataset box, READY TO PREDICT
 removed, annotation detection de-hardcoded (`ANNOTATION_COLUMNS`,
 `is_strike_value` in `modules/ml_state.py`). Inspect: magnitude channels

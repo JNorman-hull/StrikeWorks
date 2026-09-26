@@ -31,17 +31,17 @@ plus a Save; only its reader needs writing, registered under
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QGridLayout,
-    QHBoxLayout,
-    QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy,
+    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy,
     QSpinBox, QVBoxLayout, QWidget,
 )
 
 from . import sensor_config
-from .ml_widgets import (
-    ACCENT, BAD, MUTED, OK, TEXT, WARN, MetaCard, Section,
-    apply_section_defaults, discard_widget,
+from .cards import MetaCard
+from .layout import (
+    apply_section_defaults, discard_widget, scroll_page, Section,
 )
+from .theme import ACCENT_BUTTON, BAD, MUTED, OK, TEXT, WARN, muted_label
 
 
 class SensorTab:
@@ -61,18 +61,7 @@ class SensorTab:
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
-        outer = QVBoxLayout(frame)
-        outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        outer.addWidget(scroll)
-        body = QWidget()
-        body.setStyleSheet("background:transparent;")
-        scroll.setWidget(body)
-        v = QVBoxLayout(body)
-        v.setContentsMargins(4, 6, 4, 6)
-        v.setSpacing(10)
+        v = scroll_page(frame)
 
         # ── row 1: the session's sensor + what it means downstream ──────────
         row1 = QHBoxLayout()
@@ -99,7 +88,7 @@ class SensorTab:
         sv.addLayout(pick)
 
         name_row = QHBoxLayout()
-        name_row.addWidget(self._muted("Name"))
+        name_row.addWidget(muted_label("Name"))
         self.ed_name = QLineEdit()
         self.ed_name.setPlaceholderText("Display name")
         self.ed_name.textEdited.connect(self._touch)
@@ -121,10 +110,7 @@ class SensorTab:
         act.setSpacing(6)
         self.btn_save = QPushButton("Save sensor")
         self.btn_save.setMinimumHeight(30)
-        self.btn_save.setStyleSheet(
-            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-            "border-radius:5px;padding:4px 14px;font-weight:bold;}"
-            "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
+        self.btn_save.setStyleSheet(ACCENT_BUTTON)
         self.btn_save.clicked.connect(self._save)
         self.btn_revert = QPushButton("Discard changes")
         self.btn_revert.clicked.connect(self._revert)
@@ -161,7 +147,7 @@ class SensorTab:
         rates.setVerticalSpacing(6)
         rates.setColumnStretch(3, 1)
 
-        rates.addWidget(self._muted("Timestamp clock (Hz)"), 0, 0)
+        rates.addWidget(muted_label("Timestamp clock (Hz)"), 0, 0)
         self.spin_clock = QDoubleSpinBox()
         self.spin_clock.setRange(1.0, 1_000_000.0)
         self.spin_clock.setDecimals(1)
@@ -169,7 +155,7 @@ class SensorTab:
         self.spin_clock.valueChanged.connect(self._touch)
         rates.addWidget(self.spin_clock, 0, 1)
 
-        rates.addWidget(self._muted("Output rate (Hz)"), 0, 2)
+        rates.addWidget(muted_label("Output rate (Hz)"), 0, 2)
         self.spin_output = QDoubleSpinBox()
         self.spin_output.setRange(1.0, 1_000_000.0)
         self.spin_output.setDecimals(1)
@@ -177,7 +163,7 @@ class SensorTab:
         self.spin_output.valueChanged.connect(self._touch)
         rates.addWidget(self.spin_output, 0, 3)
 
-        clock_note = self._muted(
+        clock_note = muted_label(
             "Ticks per second in the raw file."
         )
         clock_note.setWordWrap(True)
@@ -189,7 +175,7 @@ class SensorTab:
         for col, text in enumerate(
                 ("File", "Packet (bytes)", "Native rate (Hz)",
                  "Onto the output grid")):
-            lab = self._muted(text)
+            lab = muted_label(text)
             lab.setStyleSheet(f"color:{MUTED};font-size:10px;")
             header.addWidget(lab, 0, col)
         self.sources_layout = header
@@ -208,7 +194,7 @@ class SensorTab:
         src_btns.addStretch()
         av.addLayout(src_btns)
 
-        src_note = self._muted(
+        src_note = muted_label(
             "RAPID uses paired .imp and .hig files."
         )
         src_note.setWordWrap(True)
@@ -227,7 +213,7 @@ class SensorTab:
         grp_ch = Section("Channels")
         cv = QVBoxLayout(grp_ch)
         cv.setSpacing(6)
-        cv.addWidget(self._muted(
+        cv.addWidget(muted_label(
             "Double click to rename")
         )
         self.list_channels = QListWidget()
@@ -249,7 +235,7 @@ class SensorTab:
         ch_btns.addStretch()
         cv.addLayout(ch_btns)
 
-        cv.addWidget(self._muted(
+        cv.addWidget(muted_label(
             "Magnitude of each three-axis sensor"
             )
         )
@@ -266,18 +252,18 @@ class SensorTab:
         pv = QVBoxLayout(grp_parser)
         pv.setSpacing(6)
         prow = QHBoxLayout()
-        prow.addWidget(self._muted("Reader"))
+        prow.addWidget(muted_label("Reader"))
         self.cmb_parser = QComboBox()
         self.cmb_parser.currentIndexChanged.connect(self._touch)
         prow.addWidget(self.cmb_parser, stretch=1)
         pv.addLayout(prow)
-        parser_note = self._muted(
+        parser_note = muted_label(
             "Registered readers only")
         parser_note.setWordWrap(True)
         pv.addWidget(parser_note)
 
         nrow = QHBoxLayout()
-        nrow.addWidget(self._muted("Nadir detection"))
+        nrow.addWidget(muted_label("Nadir detection"))
         self.cmb_nadir = QComboBox()
         for key, label in sensor_config.NADIR_METHOD_LABELS.items():
             self.cmb_nadir.addItem(label, key)
@@ -285,7 +271,7 @@ class SensorTab:
         nrow.addWidget(self.cmb_nadir, stretch=1)
         pv.addLayout(nrow)
 
-        nadir_note = self._muted(
+        nadir_note = muted_label(
             "How the passage nadir is detected")
         nadir_note.setWordWrap(True)
         pv.addWidget(nadir_note)
@@ -295,12 +281,6 @@ class SensorTab:
 
         v.addStretch()
         apply_section_defaults(frame)
-
-    @staticmethod
-    def _muted(text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};")
-        return lab
 
     # ── configuration list ───────────────────────────────────────────────────
     def _reload_list(self, select=None):

@@ -8,7 +8,7 @@
 Misclassification tool's Labels box - the same component, not a second
 implementation).
 
-``AnnotationValueEditor`` is deliberately not ``ml_widgets.LevelGrouper``.
+``AnnotationValueEditor`` is deliberately not ``level_grouper.LevelGrouper``.
 LevelGrouper groups *many observed levels* into *few named classes* for
 training, and is dataframe-agnostic by design (``set_data``/``groups()``/
 ``changed``). Annotation entry is "pick or add one value for one
@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import annotation_schema as asch
-from .ml_widgets import MUTED
+from .theme import MUTED
 
 _BLANK = "-"   # em dash: "no value entered"
 

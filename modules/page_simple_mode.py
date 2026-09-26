@@ -49,15 +49,17 @@ from . import ml_figures, ml_report, settings, win_utils
 from . import validation_core as vc
 from .deployment_editor import DeploymentEditor
 from .inventory_widgets import FileInventory
-from .ml_widgets import (
-    ACCENT, BAD, MUTED, OK, PALETTE, PINK, TEXT, WARN, MetaCard, RingCard,
-    Section, Spinner,
+from .cards import MetaCard, RingCard, Spinner
+from .layout import Section
+from .theme import (
+    ACCENT, ACCENT_BUTTON, BAD, MUTED, OK, PALETTE, PINK, TEXT, WARN,
+    muted_label,
 )
 from .plot_style import add_export_button, build_export_data
+from .startup import ICON_PATH
 
 _WIN_SEC = vc.WIN_SEC
 _IMAGES_DIR = Path(__file__).parent.parent / "images" / "images"
-_ICON_PATH = Path(__file__).parent.parent / "icon.ico"
 
 # The left step list: (label, indent level, stack page index or None).
 # None means a non-clickable group heading - "Process" and "Report" are
@@ -105,7 +107,7 @@ class SimpleModeDialog(QDialog):
         super().__init__(window)
         self.window = window
         self.setWindowTitle("StrikeWorks")
-        self.setWindowIcon(QIcon(str(_ICON_PATH)))
+        self.setWindowIcon(QIcon(str(ICON_PATH)))
         # resizable, not setFixedSize() - fixing it at exactly 1340x700
         # forced every page's own layout to compress into that regardless
         # of what its content actually needed, which is what was causing
@@ -261,7 +263,7 @@ class SimpleModeDialog(QDialog):
         btn_settings.setAutoDefault(False)
         btn_settings.setDefault(False)
         btn_settings.setToolTip("Settings")
-        btn_settings.clicked.connect(self.window.openAdjustments)
+        btn_settings.clicked.connect(self.window.openSettings)
         top_row.addWidget(btn_settings)
         right_col.addLayout(top_row)
 
@@ -449,13 +451,6 @@ class SimpleModeDialog(QDialog):
             self.logo_h.setVisible(page not in _NO_SMALL_LOGO_PAGES)
         self.lbl_guidance.setText(_GUIDANCE.get(page, ""))
 
-    @staticmethod
-    def _muted(text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};")
-        lab.setWordWrap(True)
-        return lab
-
     # ── page 0: welcome ──────────────────────────────────────────────────────
     def _build_welcome_page(self):
         page = QWidget()
@@ -474,9 +469,7 @@ class SimpleModeDialog(QDialog):
         btn_row.addStretch()
         btn_blade_strike = QPushButton("Blade strike\n(next)")
         btn_blade_strike.setMinimumSize(140, 44)
-        btn_blade_strike.setStyleSheet(
-            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-            "border-radius:5px;font-weight:bold;}")
+        btn_blade_strike.setStyleSheet(ACCENT_BUTTON)
         btn_blade_strike.clicked.connect(self._go_next)
         btn_row.addWidget(btn_blade_strike)
         btn_dev_toolkit = QPushButton("Development\ntoolkit")
@@ -663,11 +656,11 @@ class SimpleModeDialog(QDialog):
         self._auto_spinner.setVisible(False)
         auto_row.addWidget(self._auto_spinner)
         auto_col.addLayout(auto_row)
-        auto_col.addWidget(self._muted(
+        auto_col.addWidget(muted_label(
             "Tip: press Auto process all first, then check the sensors "
-            "it flagged for review."))
+            "it flagged for review.", wrap=True))
         bottom.addLayout(auto_col)
-        bottom.addWidget(self._muted("ROI window:"))
+        bottom.addWidget(muted_label("ROI window:", wrap=True))
         self.cmb_window = QComboBox()
         self.cmb_window.currentIndexChanged.connect(self._on_validate_win_size_changed)
         bottom.addWidget(self.cmb_window)
@@ -844,7 +837,7 @@ class SimpleModeDialog(QDialog):
         time = self._cur_validate_time
         if self._cur_validate_pres is not None:
             self._validate_curve = self._pw_validate.plot(
-                time, self._cur_validate_pres, pen=pg.mkPen("#dddddd", width=1))
+                time, self._cur_validate_pres, pen=pg.mkPen(TEXT, width=1))
         if self._cur_validate_hig is not None:
             self._validate_curve2 = pg.PlotCurveItem(
                 pen=pg.mkPen("#ff5555", width=1))

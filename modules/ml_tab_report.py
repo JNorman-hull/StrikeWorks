@@ -44,7 +44,8 @@ from PySide6.QtWidgets import (
 )
 
 from . import ml_report, report_center
-from .ml_widgets import ACCENT, MUTED, Section, apply_section_defaults
+from .layout import apply_section_defaults, Section
+from .theme import ACCENT_BUTTON, MUTED, muted_label
 
 # (key, title) in the order report_center.all_sections() builds them
 _SECTION_TITLES = [
@@ -141,9 +142,7 @@ class ReportDialog(QDialog):
         self.btn_preview = QPushButton("Preview report")
         self.btn_preview.clicked.connect(self._preview_report)
         self.btn_export_full = QPushButton("Export full report")
-        self.btn_export_full.setStyleSheet(
-            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-            "border-radius:5px;padding:4px 14px;font-weight:bold;}")
+        self.btn_export_full.setStyleSheet(ACCENT_BUTTON)
         self.btn_export_full.clicked.connect(self._export_full_report)
         self.btn_export_all = QPushButton("Export all")
         self.btn_export_all.clicked.connect(self._export_all)
@@ -178,7 +177,7 @@ class ReportDialog(QDialog):
         gv.setSpacing(6)
 
         row = QHBoxLayout()
-        row.addWidget(self._muted("File format"))
+        row.addWidget(muted_label("File format"))
         self.chk_png = QCheckBox(".png")
         self.chk_png.setChecked(True)
         self.chk_svg = QCheckBox(".svg")
@@ -186,14 +185,14 @@ class ReportDialog(QDialog):
         row.addWidget(self.chk_png)
         row.addWidget(self.chk_svg)
         row.addSpacing(16)
-        row.addWidget(self._muted("DPI"))
+        row.addWidget(muted_label("DPI"))
         self.spin_dpi = QSpinBox()
         self.spin_dpi.setRange(50, 1200)
         self.spin_dpi.setValue(300)
         self.spin_dpi.setSingleStep(50)
         row.addWidget(self.spin_dpi)
         row.addSpacing(16)
-        row.addWidget(self._muted("Output size"))
+        row.addWidget(muted_label("Output size"))
         self.cmb_fig_size = QComboBox()
         self.cmb_fig_size.addItem("Default")
         self.cmb_fig_size.setEnabled(False)
@@ -204,12 +203,6 @@ class ReportDialog(QDialog):
         row.addStretch()
         gv.addLayout(row)
         return grp
-
-    @staticmethod
-    def _muted(text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};")
-        return lab
 
     def _connect_state(self):
         s = self.state

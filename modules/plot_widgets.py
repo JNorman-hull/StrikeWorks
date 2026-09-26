@@ -15,6 +15,8 @@ import pyqtgraph as pg
 
 from PySide6.QtCore import Qt, QThread, Signal
 
+from .theme import CARD_BG
+
 # display channels -> (column name, axis label)
 CHANNELS = {
     "higacc_mag": ("higacc_mag_g", "HIG acc mag (g)"),
@@ -29,7 +31,7 @@ MAX_RIGHT_PTS = 8000   # points kept for a right-axis overlay (see decimate)
 def configure_pyqtgraph():
     """The dark theme and antialiasing every plot uses - once, before the
     first plot widget is built."""
-    pg.setConfigOptions(antialias=True, background="#21252b",
+    pg.setConfigOptions(antialias=True, background=CARD_BG,
                         foreground="#c8cdd6")
 
 

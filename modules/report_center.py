@@ -179,7 +179,7 @@ def assemble(sections, out_dir, checked_keys):
 # eagerly; `build()` itself is only ever called once the app is fully up).
 # ═════════════════════════════════════════════════════════════════════════════
 def bsm_section(window, formats=("png",), dpi=300):
-    sens = getattr(window, "bsm_sensitivity_page", None)
+    sens = getattr(window, "bsm_analysis_page", None)
     bsm_state = getattr(window, "bsm_state", None)
     res = bsm_state.last_result if bsm_state is not None else None
     available = res is not None and sens is not None
@@ -259,9 +259,9 @@ def study_design_section(window, formats=("png",), dpi=300):
     # opens with sensible defaults rather than requiring input - so this
     # section is always available; the deployment plan half is folded in
     # underneath it only once a library is selected.
-    prep = getattr(window, "prepare_page", None)
+    prep = getattr(window, "setup_page", None)
     precision = getattr(prep, "tab_precision", None) if prep is not None else None
-    dep = getattr(window, "initiate_deployment_page", None)
+    dep = getattr(window, "deployment_page", None)
     available = precision is not None
     reason = "" if available else "Study design tab not built yet."
 
@@ -293,7 +293,7 @@ def study_design_section(window, formats=("png",), dpi=300):
             # report styling at a fixed 14 x 10 cm, not the page's dark
             # on-screen canvas
             from . import bsm_io
-            from .prepare_tab_precision import STUDY_DESIGN_SIZE_CM
+            from .setup_precision import STUDY_DESIGN_SIZE_CM
             fig = bsm_io.sized_figure(STUDY_DESIGN_SIZE_CM)
             precision.draw_curve(fig, dark=False)
             png = bsm_io.save_fixed(fig, fig_dir / "precision_ci_vs_n",
@@ -693,7 +693,7 @@ def biological_section(window, formats=("png",), dpi=300):
     Blade Strike Modelling per treatment. Mortality moved to Model
     prediction > Predict (its own "Prediction configuration"/"Prediction
     figures" - see ml_tab_predict.py), so it no longer appears here."""
-    bio = getattr(window, "biological_page", None)
+    bio = getattr(window, "model_comparison_page", None)
     bsm_state = getattr(bio, "bsm_state", None) if bio is not None else None
     available = bsm_state is not None and bsm_state.last_result is not None
     reason = "" if available else "Run a Blade Strike Modelling calculation first."
@@ -725,7 +725,7 @@ def biological_section(window, formats=("png",), dpi=300):
             # up to three bars, 16 x 10 cm above - from what the page's
             # own figure last drew
             from . import bsm_figures, bsm_io
-            from .page_bsm_biological import comparison_size_cm
+            from .page_model_comparison import comparison_size_cm
             size = comparison_size_cm(bio.n_bars())
             fig = bsm_io.sized_figure(size)
             bsm_figures.draw_comparison_bars(fig, bio.cen_values,

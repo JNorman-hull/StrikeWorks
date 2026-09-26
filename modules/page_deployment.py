@@ -4,33 +4,18 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Controller for Create and edit deployment (Setup and deploy).
-
-Object names (`page_initiate_deployment`, `btn_initiate_deployment`, this
-module's filename) still say "initiate deployment" - that was this page's
-working name; renaming the object graph for a label change isn't worth the
-main.ui/main.py churn (see ROADMAP.md Chunk 5's "renames are text-only"
-note), so only the sidebar button text says "Create and edit deployment".
-
-The page is the shared deployment editor (deployment_editor.py) - exactly
-what Simple mode's Deploy step shows: session library, library status,
-sensor, deployment, treatment table, Create & open data folder / Update.
-Libraries now always live in the libraries folder (Adjustments), like
-everywhere else in the app; the old "Choose library…" arbitrary-folder
-picker is gone with the rest of this page's own form.
+"""Create and edit deployment (Setup and deploy): hosts the shared
+deployment editor (deployment_editor.py), the same one Simple mode's Deploy
+step shows. The Designer object names (`page_initiate_deployment`,
+`btn_initiate_deployment`) keep the page's old working name.
 """
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QVBoxLayout
 
-from . import raw_layout
 from .deployment_editor import DeploymentEditor
 
-# kept for anything still importing it from here - the text itself now
-# lives with the folder layout it describes
-_README_TEXT = raw_layout.README_TEXT
 
-
-class InitiateDeploymentPage(QObject):
+class DeploymentPage(QObject):
     """Binds Create and edit deployment to `ui.content_initiate_deployment`."""
 
     status = Signal(str, int)

@@ -14,6 +14,7 @@ the highlight styles of the selected menu buttons."""
 class UIConfig:
     ENABLE_CUSTOM_TITLE_BAR = True
     MENU_WIDTH = 240
+    MENU_COLLAPSED_WIDTH = 60      # the icon strip
     LEFT_BOX_WIDTH = 240
     RIGHT_BOX_WIDTH = 240
     TIME_ANIMATION = 500

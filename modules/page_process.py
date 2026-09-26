@@ -41,7 +41,8 @@ from . import sensor_config
 from . import validation_core as vc
 from .inventory_widgets import FileInventory
 from .library_widgets import LibrarySelector
-from .ml_widgets import BAD, INFO, MUTED, OK, PINK, WARN, Section, when_visible
+from .layout import Section, when_visible
+from .theme import BAD, INFO, MUTED, OK, PINK, WARN
 
 # theme colours kept under their old names (StatCard is imported elsewhere)
 _ACCENT = PINK

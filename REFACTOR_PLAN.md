@@ -1,8 +1,8 @@
 # StrikeWorks clean-up and refactoring plan
 
-Status: **proposed, not started.** Nothing here is to be done until the
-current changes are built, smoke-tested and committed. Each phase below
-ends in a working app, so the work can stop after any of them.
+Status: **in progress** on branch `cleanup-2026-09` - phases A-F done
+(see the progress table in section 9). Each phase ends in a working app,
+so the work can stop after any of them.
 
 Numbers come from an audit of the source on 2026-09-25 (70 modules,
 ~30,000 hand-written lines, plus the generated `ui_main.py` and
@@ -275,6 +275,32 @@ the changed pages, then a commit.
 
 Phase B comes early on purpose: everything after it changes a lot of code,
 and the tests are what show nothing broke.
+
+### Progress
+
+| Phase | Commit | Notes |
+|---|---|---|
+| A | e69c102 | `build.py` builds into `build/staging` and swaps in only the exe and `_internal` |
+| B | b08a6ec | `tests/` (unittest), `tools/smoke_test.ps1` |
+| C | 275e534 | 35 unused functions/classes removed |
+| D | a8780ce | `plot_widgets`, `dataset_build`, `processing`, `raw_layout` paths; one report wrapper. The Evaluate model-package export and Simple mode's analysis export stay separate deliverables |
+| E | d928462 | template leftovers gone, `main.ui` trimmed, no star imports |
+| F | this phase | `ml_widgets` split into `theme` / `layout` / `tables` / `cards` / `level_grouper`; `muted_label`, `ACCENT_BUTTON`, `CONSOLE_STYLE`, `scroll_page`, `scroll_area`; modules renamed per 2.7; `main.py` 825 -> 461 lines, start-up helpers in `startup.py` |
+
+Decisions taken on the way:
+- **2.6 hidden pages are kept, not deleted** - they are hidden temporarily
+  (ROADMAP.md, "Hidden for now"). Building them lazily is left to phase I.
+- **2.5 one page pattern is deferred.** Converting the `QObject` page
+  controllers that bind to `main.ui` widgets into self-building `QWidget`s
+  means moving each page's layout out of `main.ui`; worth doing page by
+  page when a page is next reworked, not as one sweep.
+- **2.7 Designer object names stay** (`page_prepare`, `btn_adjustments`,
+  `btn_biological`, ...): renaming them touches `main.ui`, the generated
+  file and every lookup for no visible gain. Only modules, classes and
+  attributes were renamed.
+- **3, the app-wide stylesheet** (241 `setStyleSheet` calls) is not done:
+  the repeated ones are now theme constants; the rest are one-offs, and a
+  named-rule stylesheet is a visual change to check page by page.
 
 ## 10. Not changing
 

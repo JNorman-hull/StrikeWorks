@@ -32,19 +32,21 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QPushButton, QScrollArea,
-    QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QFileDialog, QHBoxLayout, QPushButton, QSizePolicy, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import bsm_figures, bsm_io
 from .bsm_model import sensitivity_sweeps
 from .bsm_state import output_card_rows
-from .ml_widgets import ACCENT, MetaCard, Section, apply_section_defaults, centred
+from .cards import MetaCard
+from .layout import apply_section_defaults, centred, scroll_page, Section
+from .theme import ACCENT_BUTTON
 
 _NODIALOG = QFileDialog.Option.DontUseNativeDialog
 
 
-class SensitivityPage(QWidget):
+class BSMAnalysisPage(QWidget):
     status = Signal(str, int)
 
     def __init__(self, frame, window, bsm_state):
@@ -65,19 +67,7 @@ class SensitivityPage(QWidget):
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
-        outer = QVBoxLayout(frame)
-        outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        outer.addWidget(scroll)
-
-        body = QWidget()
-        body.setStyleSheet("background:transparent;")
-        scroll.setWidget(body)
-        v = QVBoxLayout(body)
-        v.setContentsMargins(4, 6, 4, 6)
-        v.setSpacing(10)
+        v = scroll_page(frame)
 
         v.addWidget(self._figures_group())
 
@@ -88,10 +78,7 @@ class SensitivityPage(QWidget):
 
         self.btn_report = QPushButton("Generate report...")
         self.btn_report.setEnabled(False)
-        self.btn_report.setStyleSheet(
-            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-            "border-radius:5px;padding:4px 14px;font-weight:bold;}"
-            "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
+        self.btn_report.setStyleSheet(ACCENT_BUTTON)
         self.btn_report.clicked.connect(self._generate_report)
         report_row = QHBoxLayout()
         report_row.addStretch()

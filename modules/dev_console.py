@@ -41,7 +41,8 @@ from PySide6.QtWidgets import (
     QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout,
 )
 
-from .ml_widgets import ACCENT, BAD, MUTED, OK, TEXT, Section
+from .layout import Section
+from .theme import ACCENT, ACCENT_BUTTON, BAD, MUTED, OK, TEXT
 
 
 class _StreamTee(QObject):
@@ -124,10 +125,7 @@ class DevConsole(QDialog):
             "folder and build a 'StrikeWorks_demo' library there.")
         dv.addWidget(self.cmb_demo, stretch=1)
         self.btn_run = QPushButton("Run demo")
-        self.btn_run.setStyleSheet(
-            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-            "border-radius:5px;padding:4px 14px;font-weight:bold;}"
-            "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
+        self.btn_run.setStyleSheet(ACCENT_BUTTON)
         self.btn_run.clicked.connect(self._run_demo)
         dv.addWidget(self.btn_run)
         self.btn_stop = QPushButton("Stop")

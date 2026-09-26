@@ -50,19 +50,18 @@ import pandas as pd
 from PySide6.QtCore import Qt, QObject, QThread, QTimer, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
-    QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox,
-    QPushButton, QScrollArea, QSizePolicy, QSlider, QSpinBox, QSplitter,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QGridLayout,
+    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox, QPushButton,
+    QSizePolicy, QSlider, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
 from . import deployment_index as di
 from . import sensor_config, video_sync
 from .library_widgets import LibrarySelector
 from .session_state import OUTPUT_DIR_NAME
-from .ml_widgets import (
-    ACCENT, MUTED, TEXT, Section, apply_section_defaults, when_visible,
-)
+from .layout import apply_section_defaults, scroll_area, Section, when_visible
+from .theme import ACCENT_BUTTON, MUTED, TEXT, muted_label
 from .page_annotate import LOSSLESSCUT_EXE
 from .plot_widgets import CsvLoadThread, NavViewBox, find_col
 from .plot_style import reserve_top_margin, set_right_axis_active
@@ -234,9 +233,7 @@ class ExportAnimationsPage(QObject):
         outer = QWidget()
         outer_v = QVBoxLayout(outer)
         outer_v.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
+        scroll = scroll_area()
         outer_v.addWidget(scroll)
 
         detail = QWidget()
@@ -319,10 +316,7 @@ class ExportAnimationsPage(QObject):
         self.btn_video_preview.clicked.connect(self._open_video_preview)
         act.addWidget(self.btn_video_preview)
         self.btn_process = QPushButton("Process")
-        self.btn_process.setStyleSheet(
-            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-            "border-radius:5px;padding:4px 14px;font-weight:bold;}"
-            "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
+        self.btn_process.setStyleSheet(ACCENT_BUTTON)
         act.addWidget(self.btn_process)
         self.btn_save = QPushButton("Save")
         act.addWidget(self.btn_save)
@@ -417,7 +411,7 @@ class ExportAnimationsPage(QObject):
                 ("Shaft speed", self.ed_shaft_speed),
                 ("Video camera", self.ed_camera),
                 ("Passive sensor", self.ed_sensor)]):
-            text_grid.addWidget(self._muted(label), row, 0)
+            text_grid.addWidget(muted_label(label), row, 0)
             text_grid.addWidget(edit, row, 1)
         gv.addLayout(text_grid)
 
@@ -474,7 +468,7 @@ class ExportAnimationsPage(QObject):
                 ("Zoom", self.spin_zoom),
                 ("Frame nudge (px)", self.spin_video_nudge),
                 ("Graph plotting space", self.spin_graph_frac)]):
-            opt_grid.addWidget(self._muted(label), row, 0)
+            opt_grid.addWidget(muted_label(label), row, 0)
             opt_grid.addWidget(widget, row, 1)
         opt_grid.addWidget(self.chk_labels, 6, 0, 1, 2)
 
@@ -489,7 +483,7 @@ class ExportAnimationsPage(QObject):
         logo_row.addWidget(self.btn_clear_logo)
         opt_grid.addLayout(logo_row, 7, 0, 1, 2)
 
-        opt_grid.addWidget(self._muted("Overlay opacity"), 8, 0)
+        opt_grid.addWidget(muted_label("Overlay opacity"), 8, 0)
         self.spin_logo_opacity = QDoubleSpinBox()
         self.spin_logo_opacity.setRange(0.0, 1.0)
         self.spin_logo_opacity.setSingleStep(0.1)
@@ -527,7 +521,7 @@ class ExportAnimationsPage(QObject):
         gv.addLayout(ch_row)
 
         opt_row = QHBoxLayout()
-        opt_row.addWidget(self._muted("Layout"))
+        opt_row.addWidget(muted_label("Layout"))
         self.cmb_channel_layout = QComboBox()
         self.cmb_channel_layout.addItem("Row (side by side)", "row")
         self.cmb_channel_layout.addItem("Grid (up to 3 rows of 3)", "grid")
@@ -625,12 +619,6 @@ class ExportAnimationsPage(QObject):
             channels.append({"column": column, "label": label or column,
                             "color": color})
         return channels or list(video_sync.DEFAULT_CHANNELS)
-
-    @staticmethod
-    def _muted(text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};")
-        return lab
 
     @staticmethod
     def _muted_header(text):
@@ -889,7 +877,7 @@ class ExportAnimationsPage(QObject):
             self._video_region.setVisible(False)
             return
         y = self._df["pressure_kpa"].to_numpy(dtype=float)
-        self._curve = self._pw.plot(self._time, y, pen=pg.mkPen("#dddddd", width=1))
+        self._curve = self._pw.plot(self._time, y, pen=pg.mkPen(TEXT, width=1))
         self._curve.setDownsampling(auto=True, method="peak")
         self._curve.setClipToView(True)
         pi.enableAutoRange("y", True)

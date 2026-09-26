@@ -10,17 +10,12 @@
 
 import sys
 import os
-import platform
 from pathlib import Path
 
-# WORKER DISPATCH (predict_worker.py / train_worker.py, launched as a
-# subprocess by ml_state.py / ml_train_state.py via modules/worker_launch.py)
-# - checked before any GUI import so a frozen build's worker subprocess
-# never pulls in PySide6/Qt at all. From source the worker runs directly
-# as its own script (`sys.executable <script>.py args...`); a frozen exe
-# has no bundled interpreter to hand a loose .py file to, so it instead
-# re-invokes itself as `<exe> --worker <name> args...` and lands here.
-# ///////////////////////////////////////////////////////////////
+# Worker subprocesses (prediction / training). A frozen exe has no Python
+# to hand a .py file to, so worker_launch.py re-runs the exe as
+# `<exe> --worker <name> args...`. Checked before the GUI imports so a
+# worker never loads Qt.
 if len(sys.argv) > 2 and sys.argv[1] == "--worker":
     _worker_name = sys.argv[2]
     sys.argv = [sys.argv[0]] + sys.argv[3:]
@@ -39,412 +34,63 @@ if len(sys.argv) > 2 and sys.argv[1] == "--worker":
         sys.exit(1)
     sys.exit(0)
 
-# IMPORT / GUI AND MODULES AND WIDGETS
-# ///////////////////////////////////////////////////////////////
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QMainWindow, QPushButton, QSplashScreen,
-    QTableWidget, QVBoxLayout,
+    QApplication, QFrame, QMainWindow, QPushButton, QTableWidget, QVBoxLayout,
 )
 
-from modules.ui_main import Ui_MainWindow
-from modules.ui_config import UIConfig
-from modules.ui_functions import UIFunctions
-from modules.page_prepare import PreparePage
-from modules.page_process import ProcessPage
-from modules.page_validate import ValidatePage
-from modules.page_dataset import DatasetPage
+from modules import settings, startup, table_copy, win_utils
+from modules.bsm_state import BSMState
+from modules.dev_console import DevConsole
+from modules.layout import when_visible
 from modules.page_annotate import AnnotationPage
+from modules.page_bsm_analysis import BSMAnalysisPage
+from modules.page_bsm_calculator import CalculatorPage
+from modules.page_dataset import DatasetPage
+from modules.page_deployment import DeploymentPage
+from modules.page_export_animations import ExportAnimationsPage
+from modules.page_home import HomePage
+from modules.page_misclassification import MisclassificationPage
 from modules.page_ml_prediction import MLPredictionPage
 from modules.page_ml_training import MLTrainingPage
-from modules.page_stub import StubPage
-from modules.page_initiate_deployment import InitiateDeploymentPage
-from modules.page_misclassification import MisclassificationPage
-from modules.page_export_animations import ExportAnimationsPage
-from modules.session_state import SessionState
-from modules.page_home import HomePage
-from modules.page_adjustments import AdjustmentsDialog
-from modules.dev_console import DevConsole
+from modules.page_model_comparison import ModelComparisonPage
+from modules.page_process import ProcessPage
+from modules.page_settings import SettingsDialog
+from modules.page_setup import SetupPage
 from modules.page_simple_mode import SimpleModeDialog
-from modules.bsm_state import BSMState
-from modules.page_bsm_calculator import CalculatorPage
-from modules.page_bsm_sensitivity import SensitivityPage
-from modules.page_bsm_biological import BiologicalPage
-from modules.ml_widgets import style_table, when_visible
+from modules.page_stub import StubPage
+from modules.page_validate import ValidatePage
 from modules.plot_widgets import configure_pyqtgraph
-from modules import settings
-from modules import table_copy
-from modules import win_utils
-os.environ["QT_FONT_DPI"] = "96" # FIX Problem for High DPI and Scale above 100%
+from modules.session_state import SessionState
+from modules.tables import style_table
+from modules.ui_config import UIConfig
+from modules.ui_functions import UIFunctions
+from modules.ui_main import Ui_MainWindow
 
-# SET AS GLOBAL WIDGETS
-# ///////////////////////////////////////////////////////////////
-widgets = None
+os.environ["QT_FONT_DPI"] = "96"  # consistent sizing at display scaling above 100 %
 
-# matches UIFunctions.toggleMenu's own hardcoded "standard" icon-strip
-# width - the sidebar's starting, deactivated state (Simple/Advanced mode)
-_LEFT_MENU_COLLAPSED_WIDTH = 60
 
-# APP ICON - __file__-relative, not a bare "icon.ico", so it still
-# resolves once frozen: PyInstaller's `datas` (StrikeWorks.spec) bundles
-# icon.ico into _internal/, and __file__ for this module resolves there
-# too under a onedir build - the same reasoning _build_splash() below
-# already relies on for the PyDracula logo. A relative "icon.ico" would
-# instead be looked up against the process's current working directory,
-# which is *not* guaranteed to be the .exe's own folder (e.g. launched
-# from a pinned taskbar/Start Menu shortcut) - silently resolving to
-# nothing, which is what was leaving the taskbar button blank.
-_ICON_PATH = Path(__file__).parent / "icon.ico"
+def _print_status(msg, _ms=0):
+    print(f"[status] {msg}")
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
-        QMainWindow.__init__(self)
-
-        # SET AS GLOBAL WIDGETS
-        # ///////////////////////////////////////////////////////////////
-        self.ui = Ui_MainWindow()
-        self.ui.setupUi(self)
-        global widgets
-        widgets = self.ui
-
-        # USE CUSTOM TITLE BAR | USE AS "False" FOR MAC OR LINUX
-        # ///////////////////////////////////////////////////////////////
-        UIConfig.ENABLE_CUSTOM_TITLE_BAR = True
-
-        # APP NAME
-        # ///////////////////////////////////////////////////////////////
-        title = "StrikeWorks"
-        # APPLY TEXTS
-        self.setWindowTitle(title)
-        # set directly on this window too, not just QApplication - a
-        # frameless custom-title-bar window (below) can otherwise lose
-        # the app-level default and fall back to a generic taskbar icon
-        self.setWindowIcon(QIcon(str(_ICON_PATH)))
-        # NOTE: the header label (titleRightInfo) is deliberately NOT set here.
-        # Its text comes from main.ui so it can be edited in Qt Designer.
-        # Calling setText() on a widget here overrides the .ui at startup and
-        # makes Designer edits look like they have no effect.
-
-        # TOGGLE MENU
-        # ///////////////////////////////////////////////////////////////
-        widgets.toggleButton.clicked.connect(lambda: UIFunctions.toggleMenu(self, True))
-
-        # SET UI DEFINITIONS
-        # ///////////////////////////////////////////////////////////////
-        UIFunctions.uiDefinitions(self)
-
-        # DEV CONSOLE - constructed (hidden, no stdout/stderr tee) before
-        # every page below, but deliberately never auto-shown here even if
-        # settings.get_dev_mode() was left on from a previous session -
-        # it should only ever appear because the user opened it, from
-        # Adjustments' Dev mode toggle or "Show console" button. `self` is
-        # only a reference for its demo runners, never its Qt parent (see
-        # dev_console.py for why it must stay parentless).
-        # ///////////////////////////////////////////////////////////////
-        configure_pyqtgraph()
-        self.dev_console = DevConsole(self)
-
-        # SESSION STATE + HOME (library selection) - constructed before
-        # every page below, and in that order: Home's own construction is
-        # what resolves session_state.library (persisted last library, or
-        # auto-selecting the first one found - see page_home.py), so any
-        # page reading it at construction time (soft-synced pickers,
-        # default output folders) sees the real answer instead of None.
-        # ///////////////////////////////////////////////////////////////
-        self.session_state = SessionState(self)
-        self.home_page = HomePage(widgets, self, self.session_state)
-        self.home_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-
-        # PAGE CONTROLLERS
-        # ///////////////////////////////////////////////////////////////
-        # Prepare comes first: the sensor chosen here drives raw import,
-        # validation and dataset creation on the pages that follow.
-        self.prepare_page = PreparePage(widgets, self)
-        self.prepare_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-        self.process_page = ProcessPage(widgets, self, self.session_state)
-        self.process_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-        self.validate_page = ValidatePage(widgets, self, self.session_state)
-        self.validate_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-        self.dataset_page = DatasetPage(widgets, self, self.session_state)
-        self.dataset_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-        self.initiate_deployment_page = InitiateDeploymentPage(
-            widgets, self, self.session_state)
-        self.initiate_deployment_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-
-        # ANNOTATION & VIDEO ANALYSIS PAGES
-        self.annotation_page = AnnotationPage(widgets, self, self.session_state)
-        self.annotation_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-        self.export_animations_page = ExportAnimationsPage(
-            widgets, self, self.session_state)
-        self.export_animations_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-
-        # MATHEMATICAL BLADE STRIKE MODELLING STATE - constructed before
-        # Model Prediction since its Predict tab now hosts the mortality
-        # panel (moved there from Biological interpretation / Model
-        # comparison) and needs bsm_state to read the Calculator's result.
-        self.bsm_state = BSMState(self)
-
-        # MACHINE LEARNING ANALYSIS PAGES
-        self.ml_prediction_page = MLPredictionPage(widgets, self, self.bsm_state)
-        self.ml_prediction_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-        # Simple mode reuses ml_prediction_page.state directly (Predict
-        # step) - constructed after it for exactly that reason
-        self.simple_mode_dialog = SimpleModeDialog(self)
-        self.ml_training_page = MLTrainingPage(widgets, self)
-        self.ml_training_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-        self.misclassification_page = MisclassificationPage(
-            widgets, self, self.ml_training_page.state)
-        self.misclassification_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-
-        # the curated dataset from Sensor Processing feeds Model Prediction
-        self.dataset_page.dataset_ready.connect(
-            self.ml_prediction_page.on_dataset_ready)
-
-        # a freshly deployed model becomes available to Model Prediction
-        self.ml_training_page.model_deployed.connect(
-            lambda _p: self.ml_prediction_page.state.load_models_from_dir(
-                self.ml_prediction_page.state.models_dir))
-
-        # MATHEMATICAL BLADE STRIKE MODELLING PAGES (Chunk 5 task 5)
-        # Calculator owns each run; Analysis and reporting reacts to its
-        # `calculated` signal via the shared BSMState and also owns export
-        # (the standalone Reporting page was folded into it). Model
-        # comparison (formerly Biological interpretation) additionally
-        # compares against Model prediction's data-driven per-treatment
-        # results; bsm_state itself is constructed earlier, above, for
-        # Model prediction > Predict's mortality panel.
-        # ///////////////////////////////////////////////////////////////
-        self.bsm_calculator_page = CalculatorPage(
-            widgets.content_bsm_calculator, self, self.bsm_state)
-        self.bsm_calculator_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-        self.bsm_sensitivity_page = SensitivityPage(
-            widgets.content_bsm_sensitivity, self, self.bsm_state)
-        self.bsm_sensitivity_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-        self.biological_page = BiologicalPage(
-            widgets.content_biological, self, self.bsm_state,
-            self.ml_prediction_page.state)
-        self.biological_page.status.connect(
-            lambda msg, ms: print(f"[status] {msg}"))
-
-        # STUB PAGES (Chunk 5 restructure - not built yet; see ROADMAP.md)
-        # ///////////////////////////////////////////////////////////////
-        self._stub_pages = [
-            StubPage(widgets.content_data_analysis, "Data analysis",
-                     "Passage duration, time-series normalisation, "
-                     "barotrauma metrics, acceleration peak finding. Part "
-                     "of task 7."),
-        ]
-
-        # TAB WIDGETS NOW DRIVEN BY THE SIDEBAR
-        # Train/Evaluate/Deploy, Predict/Inspect/Report and Sensor
-        # configuration/Study design are QTabWidgets standing in for what
-        # is now a set of sidebar sub-pages (see ROADMAP.md, Chunk 5): the
-        # tab bar is hidden and the sidebar drives setCurrentIndex().
-        # ///////////////////////////////////////////////////////////////
-        for tab_widget_name in ("tabs_prepare", "tabs_ml_training",
-                                "tabs_ml_prediction"):
-            getattr(widgets, tab_widget_name).tabBar().setVisible(False)
-
-        # SUB-MENU DISPLAY ORDER
-        # extraTopMenu is one flat layout shared by every section - a
-        # button kept from before Chunk 5 (btn_prepare, btn_ml_training, ...)
-        # stayed at its original position when new buttons were appended
-        # after it, which does not always match the requested order within
-        # its (new) section. Reorder just the handful that need it; a
-        # brand-new button already sits in the right place relative to its
-        # section siblings.
-        # ///////////////////////////////////////////////////////////////
-        def move_before(widget_name, before_name):
-            layout = widgets.extraTopMenu.layout()
-            widget = getattr(widgets, widget_name)
-            layout.removeWidget(widget)
-            layout.insertWidget(layout.indexOf(getattr(widgets, before_name)),
-                                widget)
-
-        def move_after(widget_name, after_name):
-            layout = widgets.extraTopMenu.layout()
-            widget = getattr(widgets, widget_name)
-            layout.removeWidget(widget)
-            layout.insertWidget(
-                layout.indexOf(getattr(widgets, after_name)) + 1, widget)
-
-        move_before("btn_export_animations", "btn_dataset")
-        move_after("btn_deploy_train", "btn_misclassification")
-
-        # PIN "EXPORT AND REPORT" TO THE BOTTOM OF THE SIDEBAR
-        # Built in main.ui as an ordinary topMenu button (simplest safe
-        # edit there) and relocated here at runtime into its own frame,
-        # pushed to the bottom of the sidebar by a stretch - the same
-        # "build normally, reposition in Python" approach move_before/
-        # move_after use above, rather than restructuring topMenu's own
-        # layout in the .ui file. `#bottomMenu` already has its own QSS
-        # rule (carried over from the PyDracula template) that nothing
-        # used until now, so this also gets a visually distinct treatment
-        # for free.
-        # ///////////////////////////////////////////////////////////////
-        widgets.topMenu.layout().removeWidget(widgets.btn_export_report)
-        bottomMenu = QFrame(widgets.leftMenuFrame)
-        bottomMenu.setObjectName("bottomMenu")
-        bottomMenuLayout = QVBoxLayout(bottomMenu)
-        bottomMenuLayout.setContentsMargins(0, 0, 0, 0)
-        bottomMenuLayout.setSpacing(0)
-
-        # "Simple mode" - a way back into the guided wizard for anyone who
-        # landed in Advanced mode (Development toolkit, or Close on Simple
-        # mode with nothing chosen) and wants it again without relaunching
-        # the app. Built the same way as btn_export_report just above it
-        # (a plain QPushButton matching its sizePolicy/font/cursor, since
-        # neither has any widget of its own in main.ui to relocate from).
-        widgets.btn_simple_mode_nav = QPushButton()
-        widgets.btn_simple_mode_nav.setObjectName("btn_simple_mode_nav")
-        widgets.btn_simple_mode_nav.setSizePolicy(
-            widgets.btn_export_report.sizePolicy())
-        widgets.btn_simple_mode_nav.setMinimumSize(QSize(0, 45))
-        widgets.btn_simple_mode_nav.setFont(widgets.btn_export_report.font())
-        widgets.btn_simple_mode_nav.setCursor(
-            QCursor(Qt.CursorShape.PointingHandCursor))
-        widgets.btn_simple_mode_nav.setLayoutDirection(Qt.LeftToRight)
-        widgets.btn_simple_mode_nav.setStyleSheet(
-            "background-image: url(:/icons/images/icons/cil-external-link.png);")
-        widgets.btn_simple_mode_nav.setText("Simple mode")
-        widgets.btn_simple_mode_nav.clicked.connect(self.openSimpleMode)
-        bottomMenuLayout.addWidget(widgets.btn_simple_mode_nav)
-
-        bottomMenuLayout.addWidget(widgets.btn_export_report)
-        widgets.leftMenuFrame.layout().addStretch(1)
-        widgets.leftMenuFrame.layout().addWidget(bottomMenu)
-
-        # BUTTONS CLICK
-        # ///////////////////////////////////////////////////////////////
-
-        # LEFT MENUS
-        widgets.btn_home.clicked.connect(self.buttonClick)
-
-        # SLIDE-OUT PANEL (shared by every multi-page section - the panel
-        # contents swap with the active section)
-        self._panel_mode = "sensor"
-        self._panel_btn = widgets.btn_sensor
-        self._configure_panel("sensor")
-        for name in self._HIDDEN_PAGES:
-            getattr(widgets, name).setVisible(False)
-
-        for mode, (_label, _names, top_btn) in self._PANEL_SECTIONS.items():
-            getattr(widgets, top_btn).clicked.connect(
-                lambda _checked=False, m=mode: self.openPanel(m))
-        widgets.extraCloseColumnBtn.clicked.connect(
-            lambda: UIFunctions.toggleLeftBox(self, True))
-
-        # EVERY SECTION'S SUB-MENU - one dispatcher (see submenuButtonClick /
-        # _SUBMENU_TARGETS) instead of one near-identical method per section
-        for btn_name in self._SUBMENU_TARGETS:
-            getattr(widgets, btn_name).clicked.connect(self.submenuButtonClick)
-
-        # "Export and report" opens a pop-up dialog (ml_tab_report.py)
-        # rather than navigating to a page/tab, so it's wired directly
-        # instead of through _SUBMENU_TARGETS/submenuButtonClick.
-        widgets.btn_export_report.clicked.connect(
-            self.ml_prediction_page.open_report)
-
-        # SETTINGS PANEL (right hand box)
-        def openCloseRightBox():
-            UIFunctions.toggleRightBox(self, True)
-        widgets.settingsTopBtn.clicked.connect(openCloseRightBox)
-        widgets.btn_about.clicked.connect(self.openAbout)
-        widgets.btn_adjustments.clicked.connect(self.openAdjustments)
-
-        # UNIFORM TABLE STYLING - one pass over every QTableWidget in the
-        # app (built by every page above) rather than each page styling
-        # its own tables: the same card background/outline everything
-        # else gets, rows and columns both left user-resizable.
-        # ///////////////////////////////////////////////////////////////
-        for tbl in self.findChildren(QTableWidget):
-            style_table(tbl)
-
-        # SET HOME PAGE AND SELECT MENU
-        # ///////////////////////////////////////////////////////////////
-        widgets.stackedWidget.setCurrentWidget(widgets.home)
-        self.setSelected(widgets.btn_home)
-
-        # SIMPLE/ADVANCED MODE - the sidebar starts collapsed to the
-        # existing PyDracula icon-strip width (toggleButton still works
-        # normally, purely cosmetic - it never got hidden, just started
-        # narrow) and every section button on it starts disabled; only
-        # Home's own "Advanced mode" button activates them, regardless of
-        # whether the sidebar itself is later toggled wide or narrow.
-        # ///////////////////////////////////////////////////////////////
-        widgets.leftMenuBg.setMinimumWidth(_LEFT_MENU_COLLAPSED_WIDTH)
-        widgets.leftMenuBg.setMaximumWidth(_LEFT_MENU_COLLAPSED_WIDTH)
-        self.set_sidebar_active(False)
-
-        # NOT shown here - Simple mode (page_simple_mode.py) is the app's
-        # default landing experience now, opened over this window by
-        # main.py's __main__ while this stays hidden; showing it
-        # unconditionally at the end of construction (as this used to do)
-        # meant it appeared *behind* that modal dialog immediately on
-        # launch instead of staying out of the way until the user actually
-        # asks for it ("Development toolkit", or closing Simple mode with
-        # nothing chosen - both call/fall back to MainWindow.show()
-        # themselves, in main.py and page_simple_mode.py respectively).
-        # win_utils.ensure_taskbar_button() still runs unconditionally
-        # here though: it must happen before this window's *first* show()
-        # ever, from whichever of those two paths that turns out to be -
-        # see its own docstring for why. SimpleModeDialog gets the same
-        # call, in its own __init__ (page_simple_mode.py) - it's the one
-        # actually shown first now, and had the identical missing-button
-        # symptom for the same underlying reason (see that module).
-        # ///////////////////////////////////////////////////////////////
-        win_utils.ensure_taskbar_button(self)
-
-
-    # APPLY THE "SELECTED" HIGHLIGHT TO A MENU BUTTON
-    # Deselect first so repeated clicks don't stack the stylesheet.
-    # ///////////////////////////////////////////////////////////////
-    def setSelected(self, btn):
-        clean = UIFunctions.deselectMenu(btn.styleSheet())
-        btn.setStyleSheet(UIFunctions.selectMenu(clean))
-
-
-    # CLOSE THE SLIDE-OUT PANEL IF IT IS OPEN
-    # Navigating to another top-level page slides the panel away.
-    # ///////////////////////////////////////////////////////////////
-    def closeSensorPanel(self):
-        if widgets.extraLeftBox.width() > 0:
-            UIFunctions.toggleLeftBox(self, True)
-
-
-    # SLIDE-OUT PANEL MODE
-    # One panel serves every multi-page section: its header and sub-menu
-    # swap with the requested section. See ROADMAP.md, Chunk 5.
-    # ///////////////////////////////////////////////////////////////
+    # Sidebar sections: panel title, sub-menu buttons, top-level button.
     _PANEL_SECTIONS = {
         "bsm": ("Mathematical blade strike modelling",
-               ("btn_bsm_calculator", "btn_bsm_sensitivity"),
-               "btn_bsm"),
+                ("btn_bsm_calculator", "btn_bsm_sensitivity"),
+                "btn_bsm"),
         "setup_deploy": ("Setup and deploy",
                          ("btn_prepare", "btn_study_design",
                           "btn_initiate_deployment"),
                          "btn_setup_deploy"),
         "sensor": ("Sensor processing",
-                  ("btn_process",),
-                  "btn_sensor"),
+                   ("btn_process",),
+                   "btn_sensor"),
         "annotation": ("Validate and annotate",
-                      ("btn_annotate", "btn_export_animations"),
-                      "btn_annotation"),
+                       ("btn_annotate", "btn_export_animations"),
+                       "btn_annotation"),
         "model_training": ("Model training",
                            ("btn_ml_training", "btn_evaluate_train",
                             "btn_misclassification", "btn_deploy_train"),
@@ -455,24 +101,22 @@ class MainWindow(QMainWindow):
                              "btn_model_prediction"),
     }
 
-    # Every sub-menu button's destination: the stacked-widget page to show,
-    # and - for the buttons standing in for a promoted tab (Train/Evaluate/
-    # Deploy, Predict/Inspect/Report, Sensor configuration/Study design) -
-    # the tab widget and index to select on it. `None, None` for a button
-    # that owns its whole page outright.
+    # Each sub-menu button's destination: the stacked-widget page, and for
+    # pages built as a QTabWidget (tab bar hidden), the tab to select.
+    # Export and report isn't here - it opens a dialog.
     _SUBMENU_TARGETS = {
         # Setup and deploy
-        "btn_prepare":              ("page_prepare", "tabs_prepare", 0),
-        "btn_study_design":         ("page_prepare", "tabs_prepare", 1),
-        "btn_initiate_deployment":  ("page_initiate_deployment", None, None),
+        "btn_prepare":             ("page_prepare", "tabs_prepare", 0),
+        "btn_study_design":        ("page_prepare", "tabs_prepare", 1),
+        "btn_initiate_deployment": ("page_initiate_deployment", None, None),
         # Sensor processing
-        "btn_process":              ("page_process", None, None),
-        "btn_validate":             ("page_validate", None, None),
-        "btn_data_analysis":        ("page_data_analysis", None, None),
+        "btn_process":             ("page_process", None, None),
+        "btn_validate":            ("page_validate", None, None),
+        "btn_data_analysis":       ("page_data_analysis", None, None),
         # Validate and annotate
-        "btn_annotate":             ("page_annotate", None, None),
-        "btn_export_animations":    ("page_export_animations", None, None),
-        "btn_dataset":              ("page_dataset", None, None),
+        "btn_annotate":            ("page_annotate", None, None),
+        "btn_export_animations":   ("page_export_animations", None, None),
+        "btn_dataset":             ("page_dataset", None, None),
         # Model training
         "btn_ml_training":         ("page_ml_training", "tabs_ml_training", 0),
         "btn_evaluate_train":      ("page_ml_training", "tabs_ml_training", 1),
@@ -481,20 +125,194 @@ class MainWindow(QMainWindow):
         # Model prediction
         "btn_ml_prediction":  ("page_ml_prediction", "tabs_ml_prediction", 0),
         "btn_inspect_pred":   ("page_ml_prediction", "tabs_ml_prediction", 1),
-        "btn_biological":           ("page_biological", None, None),
-        # Mathematical Blade Strike Modelling
-        "btn_bsm_calculator":       ("page_bsm_calculator", None, None),
-        "btn_bsm_sensitivity":      ("page_bsm_sensitivity", None, None),
-        # Export and report is NOT here - it's pinned to the bottom of the
-        # sidebar (see the relocation right after uiDefinitions() below)
-        # and opens a pop-up dialog (ml_tab_report.py) rather than
-        # navigating to a page/tab, wired directly to
-        # ml_prediction_page.open_report() instead.
+        "btn_biological":          ("page_biological", None, None),
+        # Mathematical blade strike modelling
+        "btn_bsm_calculator":      ("page_bsm_calculator", None, None),
+        "btn_bsm_sensitivity":     ("page_bsm_sensitivity", None, None),
     }
 
-    # pages hidden for now (built, just not offered in the sidebar) -
-    # listed in ROADMAP.md under "Hidden for now"
+    # built but not offered in the sidebar for now (ROADMAP.md, "Hidden for now")
     _HIDDEN_PAGES = ("btn_validate", "btn_data_analysis", "btn_dataset")
+
+    # greyed out until Home's "Advanced mode" enables them
+    _SIDEBAR_NAV_BUTTONS = (
+        "btn_bsm", "btn_setup_deploy", "btn_sensor", "btn_annotation",
+        "btn_model_training", "btn_model_prediction", "btn_export_report",
+    )
+
+    def __init__(self):
+        super().__init__()
+        self.ui = ui = Ui_MainWindow()
+        ui.setupUi(self)
+        self.setWindowTitle("StrikeWorks")
+        # set on the window as well as the app: the frameless window can
+        # otherwise lose the app-level icon on the taskbar
+        self.setWindowIcon(QIcon(str(startup.ICON_PATH)))
+        # (the header text, titleRightInfo, comes from main.ui)
+
+        ui.toggleButton.clicked.connect(lambda: UIFunctions.toggleMenu(self, True))
+        UIFunctions.uiDefinitions(self)
+
+        configure_pyqtgraph()
+        # hidden until opened from Settings; `self` is only a reference for
+        # its demo runners, not its Qt parent
+        self.dev_console = DevConsole(self)
+
+        # Home first: it resolves the session library, which the pages
+        # below read while they're built
+        self.session_state = SessionState(self)
+        self.home_page = self._page(HomePage(ui, self, self.session_state))
+
+        # Setup and deploy comes first: its sensor drives processing,
+        # validation and dataset building
+        self.setup_page = self._page(SetupPage(ui, self))
+        self.process_page = self._page(ProcessPage(ui, self, self.session_state))
+        self.validate_page = self._page(ValidatePage(ui, self, self.session_state))
+        self.dataset_page = self._page(DatasetPage(ui, self, self.session_state))
+        self.deployment_page = self._page(
+            DeploymentPage(ui, self, self.session_state))
+        self.annotation_page = self._page(
+            AnnotationPage(ui, self, self.session_state))
+        self.export_animations_page = self._page(
+            ExportAnimationsPage(ui, self, self.session_state))
+
+        # before Model prediction: its Predict tab shows BSM mortality
+        self.bsm_state = BSMState(self)
+        self.ml_prediction_page = self._page(
+            MLPredictionPage(ui, self, self.bsm_state))
+        # Simple mode shares ml_prediction_page.state
+        self.simple_mode_dialog = SimpleModeDialog(self)
+        self.ml_training_page = self._page(MLTrainingPage(ui, self))
+        self.misclassification_page = self._page(
+            MisclassificationPage(ui, self, self.ml_training_page.state))
+
+        self.dataset_page.dataset_ready.connect(
+            self.ml_prediction_page.on_dataset_ready)
+        # a newly deployed model becomes available to Model prediction
+        self.ml_training_page.model_deployed.connect(
+            lambda _p: self.ml_prediction_page.state.load_models_from_dir(
+                self.ml_prediction_page.state.models_dir))
+
+        # Calculator runs the BSM; Analysis and reporting and Model
+        # comparison follow its result through the shared BSMState
+        self.bsm_calculator_page = self._page(CalculatorPage(
+            ui.content_bsm_calculator, self, self.bsm_state))
+        self.bsm_analysis_page = self._page(BSMAnalysisPage(
+            ui.content_bsm_sensitivity, self, self.bsm_state))
+        self.model_comparison_page = self._page(ModelComparisonPage(
+            ui.content_biological, self, self.bsm_state,
+            self.ml_prediction_page.state))
+
+        self._stub_pages = [
+            StubPage(ui.content_data_analysis, "Data analysis",
+                     "Passage duration, time-series normalisation, "
+                     "barotrauma metrics, acceleration peak finding."),
+        ]
+
+        # the sidebar drives these tab widgets, so their own tab bars are hidden
+        for name in ("tabs_prepare", "tabs_ml_training", "tabs_ml_prediction"):
+            getattr(ui, name).tabBar().setVisible(False)
+
+        self._order_panel_buttons()
+        self._build_bottom_menu()
+
+        ui.btn_home.clicked.connect(self._go_home)
+
+        self._panel_mode = "sensor"
+        self._panel_btn = ui.btn_sensor
+        self._configure_panel("sensor")
+        for name in self._HIDDEN_PAGES:
+            getattr(ui, name).setVisible(False)
+        for mode, (_label, _names, top_btn) in self._PANEL_SECTIONS.items():
+            getattr(ui, top_btn).clicked.connect(
+                lambda _checked=False, m=mode: self.openPanel(m))
+        ui.extraCloseColumnBtn.clicked.connect(
+            lambda: UIFunctions.toggleLeftBox(self, True))
+        for btn_name in self._SUBMENU_TARGETS:
+            getattr(ui, btn_name).clicked.connect(self.submenuButtonClick)
+        ui.btn_export_report.clicked.connect(self.ml_prediction_page.open_report)
+
+        # the right-hand settings panel
+        ui.settingsTopBtn.clicked.connect(
+            lambda: UIFunctions.toggleRightBox(self, True))
+        ui.btn_about.clicked.connect(self.openAbout)
+        ui.btn_adjustments.clicked.connect(self.openSettings)
+
+        for tbl in self.findChildren(QTableWidget):
+            style_table(tbl)
+
+        ui.stackedWidget.setCurrentWidget(ui.home)
+        self.setSelected(ui.btn_home)
+
+        # start as the collapsed icon strip, section buttons disabled
+        ui.leftMenuBg.setMinimumWidth(UIConfig.MENU_COLLAPSED_WIDTH)
+        ui.leftMenuBg.setMaximumWidth(UIConfig.MENU_COLLAPSED_WIDTH)
+        self.set_sidebar_active(False)
+
+        # Not shown here: Simple mode opens first (see __main__). The
+        # taskbar fix has to run before the window's first show().
+        win_utils.ensure_taskbar_button(self)
+
+    def _page(self, page):
+        page.status.connect(_print_status)
+        return page
+
+    # ── sidebar layout ──────────────────────────────────────────────────────
+    def _order_panel_buttons(self):
+        """extraTopMenu is one flat layout for every section; put the few
+        buttons that main.ui has out of order in their place."""
+        layout = self.ui.extraTopMenu.layout()
+
+        def move(name, anchor, offset):
+            widget = getattr(self.ui, name)
+            layout.removeWidget(widget)
+            layout.insertWidget(
+                layout.indexOf(getattr(self.ui, anchor)) + offset, widget)
+
+        move("btn_export_animations", "btn_dataset", 0)
+        move("btn_deploy_train", "btn_misclassification", 1)
+
+    def _build_bottom_menu(self):
+        """Pin "Simple mode" and "Export and report" to the bottom of the
+        sidebar, in the template's `#bottomMenu` frame."""
+        ui = self.ui
+        ui.topMenu.layout().removeWidget(ui.btn_export_report)
+        bottom = QFrame(ui.leftMenuFrame)
+        bottom.setObjectName("bottomMenu")
+        bottom_v = QVBoxLayout(bottom)
+        bottom_v.setContentsMargins(0, 0, 0, 0)
+        bottom_v.setSpacing(0)
+
+        btn = ui.btn_simple_mode_nav = QPushButton("Simple mode")
+        btn.setObjectName("btn_simple_mode_nav")
+        btn.setSizePolicy(ui.btn_export_report.sizePolicy())
+        btn.setMinimumSize(QSize(0, 45))
+        btn.setFont(ui.btn_export_report.font())
+        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn.setLayoutDirection(Qt.LeftToRight)
+        btn.setStyleSheet(
+            "background-image: url(:/icons/images/icons/cil-external-link.png);")
+        btn.clicked.connect(self.openSimpleMode)
+        bottom_v.addWidget(btn)
+        bottom_v.addWidget(ui.btn_export_report)
+
+        ui.leftMenuFrame.layout().addStretch(1)
+        ui.leftMenuFrame.layout().addWidget(bottom)
+
+    def set_sidebar_active(self, active):
+        for name in self._SIDEBAR_NAV_BUTTONS:
+            getattr(self.ui, name).setEnabled(active)
+
+    def expand_sidebar(self):
+        """Advanced mode: open the sidebar and enable its sections."""
+        self.ui.leftMenuBg.setMinimumWidth(UIConfig.MENU_WIDTH)
+        self.ui.leftMenuBg.setMaximumWidth(UIConfig.MENU_WIDTH)
+        self.set_sidebar_active(True)
+
+    # ── menu highlight and section panel ────────────────────────────────────
+    def setSelected(self, btn):
+        clean = UIFunctions.deselectMenu(btn.styleSheet())
+        btn.setStyleSheet(UIFunctions.selectMenu(clean))
 
     def _section_for_button(self, btn_name):
         for mode, (_label, names, _top) in self._PANEL_SECTIONS.items():
@@ -504,21 +322,16 @@ class MainWindow(QMainWindow):
 
     def _configure_panel(self, mode):
         label, this_section, top_btn = self._PANEL_SECTIONS[mode]
-        widgets.extraLabel.setText(label)
-        all_sub_buttons = {
-            name for _l, names, _b in self._PANEL_SECTIONS.values()
-            for name in names}
-        for name in all_sub_buttons:
-            getattr(widgets, name).setVisible(name in this_section)
+        self.ui.extraLabel.setText(label)
+        for _l, names, _b in self._PANEL_SECTIONS.values():
+            for name in names:
+                getattr(self.ui, name).setVisible(name in this_section)
         self._panel_mode = mode
-        self._panel_btn = getattr(widgets, top_btn)
+        self._panel_btn = getattr(self.ui, top_btn)
 
     def _swap_panel_ownership(self, mode):
-        """Reconfigure the panel for `mode` and move the "owns the open
-        panel" highlight (`BTN_LEFT_BOX_COLOR`) from the old top button to
-        the new one, in place - no close/reopen. Distinct from the
-        MENU_SELECTED_STYLESHEET highlight setSelected()/resetStyle() apply,
-        which marks the active top-level page rather than the open panel."""
+        """Switch the open panel to `mode`, moving the "owns the panel"
+        highlight to the new section's button without closing it."""
         color = UIConfig.BTN_LEFT_BOX_COLOR
         old_btn = self._panel_btn
         old_btn.setStyleSheet(old_btn.styleSheet().replace(color, ''))
@@ -526,52 +339,31 @@ class MainWindow(QMainWindow):
         self._panel_btn.setStyleSheet(self._panel_btn.styleSheet() + color)
 
     def openPanel(self, mode):
-        is_open = widgets.extraLeftBox.width() > 0
-        if is_open and self._panel_mode != mode:
+        if self.ui.extraLeftBox.width() > 0 and self._panel_mode != mode:
             self._swap_panel_ownership(mode)
             return
         self._configure_panel(mode)
         UIFunctions.toggleLeftBox(self, True)
 
+    # ── navigation ──────────────────────────────────────────────────────────
+    def _go_home(self):
+        ui = self.ui
+        ui.stackedWidget.setCurrentWidget(ui.home)
+        UIFunctions.resetStyle(self, "btn_home")
+        UIFunctions.resetPanelStyle(self, "")
+        if ui.extraLeftBox.width() > 0:
+            UIFunctions.toggleLeftBox(self, True)
+        self.setSelected(ui.btn_home)
 
-    # BUTTONS CLICK
-    # Post here your functions for clicked buttons
-    # ///////////////////////////////////////////////////////////////
-    def buttonClick(self):
-        # GET BUTTON CLICKED
-        btn = self.sender()
-        btnName = btn.objectName()
-
-        # SHOW HOME PAGE
-        if btnName == "btn_home":
-            widgets.stackedWidget.setCurrentWidget(widgets.home)
-            UIFunctions.resetStyle(self, btnName)
-            UIFunctions.resetPanelStyle(self, "")
-            self.closeSensorPanel()
-            self.setSelected(btn)
-
-        # PRINT BTN NAME
-        print(f'Button "{btnName}" pressed!')
-
-
-    # EVERY SECTION'S SUB-MENU CLICK
-    # One dispatcher for every promoted-tab-or-page sub-button (see
-    # _SUBMENU_TARGETS above) instead of one near-identical method per
-    # section - there are six sections sharing this pattern now.
-    # ///////////////////////////////////////////////////////////////
     def navigate_to(self, btn_name):
-        """Switch to `btn_name`'s page (and tab index, if it targets one),
-        reconfiguring the slide-out panel to its section first so this also
-        works when called from outside that section (e.g. a cross-page
-        "go to Evaluate" link).
+        """Show `btn_name`'s page (and tab), switching the section panel to
+        its section first, so it also works from a link on another page.
 
-        Leaving Misclassification analysis with at least one correction
-        made overrides wherever the user was headed: notify, load the
-        corrected dataset into Model training > Train, and land there
-        instead - whatever button was actually clicked."""
+        Leaving Misclassification analysis with corrections made goes to
+        Model training > Train instead, with the corrected dataset loaded."""
+        ui = self.ui
         mp = self.misclassification_page
-        if (widgets.stackedWidget.currentWidget() is
-                widgets.page_misclassification
+        if (ui.stackedWidget.currentWidget() is ui.page_misclassification
                 and btn_name != "btn_misclassification"
                 and mp.has_changes()):
             mp.notify_and_load_into_training()
@@ -579,8 +371,7 @@ class MainWindow(QMainWindow):
 
         section = self._section_for_button(btn_name)
         if section is not None:
-            is_open = widgets.extraLeftBox.width() > 0
-            if is_open and section != self._panel_mode:
+            if ui.extraLeftBox.width() > 0 and section != self._panel_mode:
                 self._swap_panel_ownership(section)
             else:
                 self._configure_panel(section)
@@ -589,236 +380,82 @@ class MainWindow(QMainWindow):
         if target is None:
             return
         page_name, tab_widget_name, tab_index = target
-        widgets.stackedWidget.setCurrentWidget(getattr(widgets, page_name))
+        ui.stackedWidget.setCurrentWidget(getattr(ui, page_name))
         if tab_widget_name is not None:
-            getattr(widgets, tab_widget_name).setCurrentIndex(tab_index)
+            getattr(ui, tab_widget_name).setCurrentIndex(tab_index)
 
-        # HIGHLIGHT THE SUB-MENU ENTRY
         UIFunctions.resetPanelStyle(self, btn_name)
-        self.setSelected(getattr(widgets, btn_name))
-
-        # KEEP THE SECTION MARKED AS THE ACTIVE TOP-LEVEL MENU
+        self.setSelected(getattr(ui, btn_name))
         if section is not None:
             top_btn = self._PANEL_SECTIONS[section][2]
             UIFunctions.resetStyle(self, top_btn)
-            self.setSelected(getattr(widgets, top_btn))
+            self.setSelected(getattr(ui, top_btn))
 
     def submenuButtonClick(self):
-        btn = self.sender()
-        self.navigate_to(btn.objectName())
-        print(f'Button "{btn.objectName()}" pressed!')
+        self.navigate_to(self.sender().objectName())
 
-
-    # ABOUT - the same dialog Simple mode's About button shows
-    # (modules/about_dialog.py: description, credits, package citations,
-    # PyDracula template credit)
-    # ///////////////////////////////////////////////////////////////
+    # ── dialogs ─────────────────────────────────────────────────────────────
     def openAbout(self):
         from modules.about_dialog import AboutDialog
         AboutDialog(self).exec()
 
-    # ADJUSTMENTS - folder settings (modules/page_adjustments.py)
-    # ///////////////////////////////////////////////////////////////
-    def openAdjustments(self):
+    def openSettings(self):
         models_before = settings.get_models_dir()
-        dlg = AdjustmentsDialog(self)
-        dlg.exec()
-        # the libraries folder may have changed - Home owns library
-        # discovery, so it's what re-reads settings.get_libraries_dir()
+        SettingsDialog(self).exec()
+        # Home owns library discovery; the libraries folder may have changed
         self.home_page._refresh_library_combo()
         if settings.get_models_dir() != models_before:
             self._on_models_dir_changed(models_before)
 
     def _on_models_dir_changed(self, old_dir):
-        """Settings' models folder changed: every model page that was
-        following the default re-reads the new one (a folder picked by
-        hand on a page is left alone)."""
+        """Settings' models folder changed: every model page still on the
+        default folder follows it (a folder picked on a page stays)."""
         new_dir = settings.get_models_dir()
         training = self.ml_training_page
         training.tab_evaluate.follow_default_models_dir()
         training.tab_deploy.follow_default_models_dir()
         mp = self.misclassification_page
-        when_visible(widgets.content_misclassification, mp._reload_models,
+        when_visible(self.ui.content_misclassification, mp._reload_models,
                      key="models")
         state = self.ml_prediction_page.state
         if Path(state.models_dir) == Path(old_dir):
             ok, msg = state.load_models_from_dir(new_dir)
             if not ok:
-                # nothing deployed there yet - point at it anyway, keeping
-                # whichever model is already loaded
+                # nothing deployed there yet: point at it anyway, keeping
+                # the model already loaded
                 state.models_dir = new_dir
                 state.models_changed.emit()
-            print(f"[status] Models folder: {new_dir} - {msg}")
+            _print_status(f"Models folder: {new_dir} - {msg}")
 
-    # SIDEBAR ACTIVATION - Simple/Advanced mode (Home; page_simple_mode.py)
-    # The sidebar's own show/hide (`toggleButton`, unchanged - still just
-    # animates leftMenuBg between the 60px icon strip and MENU_WIDTH) is
-    # purely cosmetic now: every section button on it starts disabled
-    # (`_SIDEBAR_NAV_BUTTONS`, greyed out) regardless of width, and stays
-    # that way through any amount of toggling. Only Home's own "Advanced
-    # mode" button - `expand_sidebar()` - actually activates them; the
-    # sidebar's width and its buttons' enabled state are deliberately two
-    # separate things now, not one.
-    # ///////////////////////////////////////////////////////////////
-    _SIDEBAR_NAV_BUTTONS = (
-        "btn_bsm", "btn_setup_deploy", "btn_sensor", "btn_annotation",
-        "btn_model_training", "btn_model_prediction", "btn_export_report",
-    )
-
-    def set_sidebar_active(self, active):
-        for name in self._SIDEBAR_NAV_BUTTONS:
-            getattr(widgets, name).setEnabled(active)
-
-    def expand_sidebar(self):
-        widgets.leftMenuBg.setMinimumWidth(UIConfig.MENU_WIDTH)
-        widgets.leftMenuBg.setMaximumWidth(UIConfig.MENU_WIDTH)
-        self.set_sidebar_active(True)
-
-    # SIMPLE MODE - pop-up walkthrough (modules/page_simple_mode.py)
-    # ///////////////////////////////////////////////////////////////
     def openSimpleMode(self):
-        """Runs Simple mode's wizard modally. Returns True if it was left
-        via "Development toolkit" (which already made MainWindow visible
-        itself - page_simple_mode.py's _go_development_toolkit), False
-        if closed any other way (Close button, window X). main.py's own
-        startup call uses this to decide whether to fall back to showing
-        MainWindow or quit the app entirely; the sidebar's own "Simple
-        mode" button - already in Advanced mode, by definition, whenever
-        it's reachable - ignores the return value."""
+        """Run Simple mode. True if it was left through "Development
+        toolkit" (which shows this window itself), False otherwise."""
         self.simple_mode_dialog.exec()
         return self.simple_mode_dialog.went_to_dev_toolkit
 
-
-    # RESIZE EVENTS
-    # ///////////////////////////////////////////////////////////////
+    # ── window events ───────────────────────────────────────────────────────
     def resizeEvent(self, event):
-        # Update Size Grips
         UIFunctions.resize_grips(self)
 
-    # MOUSE CLICK EVENTS
-    # ///////////////////////////////////////////////////////////////
     def mousePressEvent(self, event):
-        # SET DRAG POS WINDOW
+        # the custom title bar drags the window from here
         self.dragPos = event.globalPos()
-
-        # PRINT MOUSE EVENTS
-        if event.buttons() == Qt.LeftButton:
-            print('Mouse click: LEFT CLICK')
-        if event.buttons() == Qt.RightButton:
-            print('Mouse click: RIGHT CLICK')
-
-def _build_splash():
-    """Loading splash shown while MainWindow() constructs every page -
-    same look as Simple mode's Welcome page (page_simple_mode.py): the
-    PyDracula_vertical logo + "Deploy. Process. Predict.", plus a
-    "Loading application..." message for this moment specifically.
-
-    The logo + tagline are centred as one block within the space above
-    the loading message (not pinned near the top with the message just
-    tacked on at the bottom) - they used to be positioned independently
-    at fixed offsets, which read as slightly top-heavy/off-centre."""
-    pix = QPixmap(420, 480)
-    pix.fill(QColor("#21252b"))   # PyDracula's own dark background
-    painter = QPainter(pix)
-
-    logo_path = Path(__file__).parent / "images" / "images" / "PyDracula_vertical.png"
-    logo = QPixmap(str(logo_path)) if logo_path.exists() else None
-    if logo is not None and not logo.isNull():
-        logo = logo.scaledToWidth(220, Qt.TransformationMode.SmoothTransformation)
-
-    font = QFont()
-    font.setPointSize(13)
-    font.setItalic(True)
-    painter.setFont(font)
-    tagline = "Deploy. Process. Predict."
-    tagline_h = painter.fontMetrics().height()
-
-    bottom_reserved = 60   # room for the "Loading application..." message
-    usable_h = pix.height() - bottom_reserved
-    spacing = 20
-    logo_h = logo.height() if logo is not None and not logo.isNull() else 0
-    block_h = logo_h + (spacing if logo_h else 0) + tagline_h
-    top = max(20, (usable_h - block_h) // 2)
-
-    if logo is not None and not logo.isNull():
-        painter.drawPixmap((pix.width() - logo.width()) // 2, top, logo)
-        top += logo_h + spacing
-
-    painter.setPen(QColor("#dddddd"))
-    painter.drawText(0, top, pix.width(), tagline_h,
-                     int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop),
-                     tagline)
-    painter.end()
-
-    splash = QSplashScreen(pix)
-    # stay above every other window for the whole loading window,
-    # including MainWindow's own brief pre-final-layout state and any
-    # other top-level widget that happens to construct itself in the
-    # process - nothing should visibly pop up in front of/beside it
-    splash.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-    splash.showMessage(
-        "Loading application...",
-        int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom),
-        QColor("#8a95aa"))
-    return splash
-
-
-def _ensure_default_folders():
-    """Creates the four default data folders (libraries/models/
-    output_data/input_data) if they don't already exist - packaged, these
-    live next to the .exe (settings.app_root()); a fresh install should
-    show them immediately rather than only after something happens to
-    write into one for the first time. Cheap and safe to call on every
-    launch, source or frozen."""
-    from modules import settings
-    for getter in (settings.get_libraries_dir, settings.get_models_dir,
-                  settings.get_output_dir, settings.get_input_data_dir):
-        try:
-            getter().mkdir(parents=True, exist_ok=True)
-        except OSError:
-            pass
-
-
-def _set_windows_app_id():
-    """Windows groups/identifies taskbar buttons by AppUserModelID, not
-    by window icon alone - without explicitly setting one, a Python-based
-    exe can get folded under (and iconed as) a generic "python"/host
-    identity rather than showing its own icon.ico. No-op off Windows."""
-    if platform.system() != "Windows":
-        return
-    import ctypes
-    try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "StrikeWorks.App")
-    except Exception:
-        pass
 
 
 if __name__ == "__main__":
-    _set_windows_app_id()
-    _ensure_default_folders()
+    startup.set_windows_app_id()
+    startup.ensure_default_folders()
     app = QApplication(sys.argv)
-    app.setWindowIcon(QIcon(str(_ICON_PATH)))
+    app.setWindowIcon(QIcon(str(startup.ICON_PATH)))
     table_copy.install(app)
-    splash = _build_splash()
+    splash = startup.build_splash()
     splash.show()
     app.processEvents()
     window = MainWindow()
-    # MainWindow itself is NOT shown here (see its own __init__) - Simple
-    # mode is what the user actually sees first, and QSplashScreen.finish()
-    # only hides the splash once the widget passed to it isVisible(), so
-    # it's closed directly instead of via finish(window), which would
-    # otherwise silently no-op forever against a window that's staying
-    # hidden on purpose.
+    # close() rather than finish(window): finish() waits for the window to
+    # become visible, and it stays hidden behind Simple mode
     splash.close()
-    # exec() blocks in its own nested Qt event loop until the user closes
-    # Simple mode or picks "Development toolkit" (which shows MainWindow,
-    # already switched to Advanced mode, itself - page_simple_mode.py's
-    # _go_development_toolkit, and is what the True return means here).
-    # Any other way out (Close button, window X) means the user never
-    # asked for the full app at all - quit outright rather than falling
-    # back to showing it anyway, which used to happen unconditionally.
-    went_to_dev_toolkit = window.openSimpleMode()
-    if not went_to_dev_toolkit:
+    # Simple mode first; the full app only if the user asks for it
+    if not window.openSimpleMode():
         sys.exit(0)
-    sys.exit(app.exec_())
+    sys.exit(app.exec())

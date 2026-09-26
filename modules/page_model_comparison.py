@@ -32,8 +32,8 @@ run can be compared on its own.
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QScrollArea, QSizePolicy, QSpinBox, QSplitter, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QSizePolicy, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
 from matplotlib.figure import Figure
@@ -43,7 +43,8 @@ from . import bsm_figures
 from .bsm_model import mortality_from_strike_rate
 from .library_widgets import LibrarySelector
 from .ml_model_library import model_display_name
-from .ml_widgets import MUTED, TEXT, Section, apply_section_defaults
+from .layout import apply_section_defaults, scroll_page, Section
+from .theme import TEXT, muted_label
 from .wilson_calc import wilson_interval
 
 # the report's comparison figures: 12 x 10 cm up to three bars, 16 x 10 above
@@ -82,7 +83,7 @@ def _run_text(value):
         return s
 
 
-class BiologicalPage(QWidget):
+class ModelComparisonPage(QWidget):
     status = Signal(str, int)
 
     def __init__(self, frame, window, bsm_state, prediction_state=None):
@@ -106,19 +107,7 @@ class BiologicalPage(QWidget):
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
-        outer = QVBoxLayout(frame)
-        outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        outer.addWidget(scroll)
-
-        body = QWidget()
-        body.setStyleSheet("background:transparent;")
-        scroll.setWidget(body)
-        v = QVBoxLayout(body)
-        v.setContentsMargins(4, 6, 4, 6)
-        v.setSpacing(10)
+        v = scroll_page(frame)
         v.addWidget(self._comparison_group(), stretch=1)
         apply_section_defaults(frame)
 
@@ -223,12 +212,12 @@ class BiologicalPage(QWidget):
         self.spin_manual_total = QSpinBox()
         self.spin_manual_total.setRange(0, 1000000)
         self.spin_manual_total.valueChanged.connect(self._refresh_comparison)
-        form.addWidget(self._muted("Sensors deployed"), 0, 0)
+        form.addWidget(muted_label("Sensors deployed", wrap=True), 0, 0)
         form.addWidget(self.spin_manual_total, 0, 1)
         self.spin_manual_strike = QSpinBox()
         self.spin_manual_strike.setRange(0, 1000000)
         self.spin_manual_strike.valueChanged.connect(self._refresh_comparison)
-        form.addWidget(self._muted("Strikes observed"), 0, 2)
+        form.addWidget(muted_label("Strikes observed", wrap=True), 0, 2)
         form.addWidget(self.spin_manual_strike, 0, 3)
         self.spin_manual_mort = QSpinBox()
         self.spin_manual_mort.setRange(0, 1000000)
@@ -236,7 +225,7 @@ class BiologicalPage(QWidget):
             "Fish killed, out of the sensors deployed - the observed "
             "mortality the mortality figure compares against.")
         self.spin_manual_mort.valueChanged.connect(self._refresh_comparison)
-        form.addWidget(self._muted("Mortalities observed"), 1, 2)
+        form.addWidget(muted_label("Mortalities observed", wrap=True), 1, 2)
         form.addWidget(self.spin_manual_mort, 1, 3)
         gv.addLayout(form)
         self.lbl_manual = QLabel("")
@@ -264,12 +253,12 @@ class BiologicalPage(QWidget):
         self.spin_model1_total = QSpinBox()
         self.spin_model1_total.setRange(0, 1000000)
         self.spin_model1_total.valueChanged.connect(self._refresh_comparison)
-        form.addWidget(self._muted("Sensors deployed"), 0, 0)
+        form.addWidget(muted_label("Sensors deployed", wrap=True), 0, 0)
         form.addWidget(self.spin_model1_total, 0, 1)
         self.spin_model1_strike = QSpinBox()
         self.spin_model1_strike.setRange(0, 1000000)
         self.spin_model1_strike.valueChanged.connect(self._refresh_comparison)
-        form.addWidget(self._muted("Predicted strike"), 0, 2)
+        form.addWidget(muted_label("Predicted strike", wrap=True), 0, 2)
         form.addWidget(self.spin_model1_strike, 0, 3)
         gv.addLayout(form)
         self.lbl_model1 = QLabel("")
@@ -290,8 +279,8 @@ class BiologicalPage(QWidget):
 
         form = QGridLayout()
         form.setHorizontalSpacing(10)
-        form.addWidget(self._muted("Collision"), 0, 1)
-        form.addWidget(self._muted("Mortality"), 0, 2)
+        form.addWidget(muted_label("Collision", wrap=True), 0, 1)
+        form.addWidget(muted_label("Mortality", wrap=True), 0, 2)
 
         def value_label():
             lab = QLabel("Not calculated")
@@ -303,7 +292,7 @@ class BiologicalPage(QWidget):
         self.chk_scaly_show = QCheckBox("Show")
         self.chk_scaly_show.setChecked(True)
         self.chk_scaly_show.toggled.connect(self._refresh_comparison)
-        form.addWidget(self._muted("Scaly"), 1, 0)
+        form.addWidget(muted_label("Scaly", wrap=True), 1, 0)
         form.addWidget(self.lbl_scaly_value, 1, 1)
         form.addWidget(self.lbl_scaly_mort, 1, 2)
         form.addWidget(self.chk_scaly_show, 1, 3)
@@ -312,27 +301,20 @@ class BiologicalPage(QWidget):
         self.chk_eel_show = QCheckBox("Show")
         self.chk_eel_show.setChecked(True)
         self.chk_eel_show.toggled.connect(self._refresh_comparison)
-        form.addWidget(self._muted("Eel"), 2, 0)
+        form.addWidget(muted_label("Eel", wrap=True), 2, 0)
         form.addWidget(self.lbl_eel_value, 2, 1)
         form.addWidget(self.lbl_eel_mort, 2, 2)
         form.addWidget(self.chk_eel_show, 2, 3)
         form.setColumnStretch(1, 1)
         form.setColumnStretch(2, 1)
         gv.addLayout(form)
-        note = self._muted(
+        note = muted_label(
             "Collision probability (Pco) and mortality (Pm) from the Blade "
             "Strike Model. The model-projected mortality puts the current "
-            "model's predicted strike rate through the same injury model.")
+            "model's predicted strike rate through the same injury model.", wrap=True)
         note.setWordWrap(True)
         gv.addWidget(note)
         return g
-
-    @staticmethod
-    def _muted(text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};")
-        lab.setWordWrap(True)
-        return lab
 
     # ── filtered per-treatment results ──────────────────────────────────────
     def _location(self, row):

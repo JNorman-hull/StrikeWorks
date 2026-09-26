@@ -41,7 +41,7 @@ def isolate(env_dir=None):
         }))
 
     from modules import (annotation_schema, bsm_state, ml_train_state,
-                         page_bsm_calculator, prepare_tab_precision,
+                         page_bsm_calculator, setup_precision,
                          sensor_config, settings)
     settings._SETTINGS_FILE = settings_file
     sensor_config._SETTINGS_FILE = env / "sensors.json"
@@ -49,7 +49,7 @@ def isolate(env_dir=None):
     latest = env / "bsm" / "latest_result.json"
     bsm_state.LATEST_RESULT_PATH = latest
     page_bsm_calculator.LATEST_RESULT_PATH = latest
-    prepare_tab_precision.LATEST_RESULT_PATH = latest
+    setup_precision.LATEST_RESULT_PATH = latest
     ml_train_state._RUNS_DIR = env / "training_runs"
     return env
 

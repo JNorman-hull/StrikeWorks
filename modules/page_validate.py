@@ -33,7 +33,9 @@ from PySide6.QtWidgets import (
 from . import deployment_index as di
 from . import sensor_config
 from . import raw_layout
-from .ml_widgets import MUTED, Spinner, when_visible
+from .cards import Spinner
+from .layout import when_visible
+from .theme import MUTED, OK, TEXT
 from .plot_widgets import (
     CHANNEL_ORDER, CHANNELS, MAX_RIGHT_PTS, CsvLoadThread, NavViewBox,
     decimate, find_col,
@@ -55,10 +57,6 @@ _WIN_SEC = 0.2    # seconds - default ROI window width (centered on nadir)
 _NADIR_T_COL = "pres_min.time."
 _NADIR_V_COL = "pres_min.kPa."
 _VALIDATED_COL = "hstrike_processed"
-
-
-_OK = "#22c55e"
-_TEXT = "#dddddd"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -276,7 +274,7 @@ class ValidatePage(QObject):
         folder_items = {}
         for p in valid:
             rel = p.relative_to(csv_dir)
-            colour = QColor(_OK) if self._is_validated(p.stem) else QColor(_TEXT)
+            colour = QColor(OK) if self._is_validated(p.stem) else QColor(TEXT)
 
             if len(rel.parts) == 1:
                 parent = tree.invisibleRootItem()
@@ -626,7 +624,7 @@ class ValidatePage(QObject):
     # ── tree helpers ─────────────────────────────────────────────────────────
     def _mark_validated_in_tree(self, path: Path):
         self._walk_tree(
-            lambda item: item.setForeground(0, QColor(_OK))
+            lambda item: item.setForeground(0, QColor(OK))
             if item.data(0, Qt.ItemDataRole.UserRole) == path else None)
 
     def _select_tree_item(self, path: Path):

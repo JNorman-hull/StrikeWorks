@@ -21,17 +21,16 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QHeaderView,
-    QLabel, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSplitter,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
+    QMessageBox, QPushButton, QSizePolicy, QSplitter, QTableWidget,
+    QTableWidgetItem, QVBoxLayout,
 )
 
 from . import ml_model_library, ml_train_figures, settings
 from .ml_tab_predict import _NumItem
-from .ml_widgets import (
-    MUTED, CARD_W2, CARD_H2, MetaCard, RingCard, Section,
-    apply_section_defaults, hsplit,
-)
+from .cards import MetaCard, RingCard
+from .layout import apply_section_defaults, hsplit, scroll_page, Section
+from .theme import CARD_H2, CARD_W2, MUTED
 
 FIG_MIN_W, FIG_MIN_H = 300, 250
 
@@ -64,18 +63,7 @@ class EvaluateTab:
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
-        outer = QVBoxLayout(frame)
-        outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        outer.addWidget(scroll)
-        body = QWidget()
-        body.setStyleSheet("background:transparent;")
-        scroll.setWidget(body)
-        v = QVBoxLayout(body)
-        v.setContentsMargins(4, 6, 4, 6)
-        v.setSpacing(10)
+        v = scroll_page(frame)
 
         # ── model source ────────────────────────────────────────────────────
         sel_row = QHBoxLayout()

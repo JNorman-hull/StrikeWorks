@@ -23,18 +23,20 @@ from PySide6.QtCore import Qt, QElapsedTimer, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout,
-    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
-    QPlainTextEdit, QProgressBar, QPushButton, QRadioButton, QScrollArea,
-    QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout,
-    QWidget,
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
+    QProgressBar, QPushButton, QRadioButton, QSizePolicy, QSpinBox,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import settings
 from .bind_datasets import BindTrainingData
 from .ml_train_state import GROUPING_PRESETS
-from .ml_widgets import (
-    ACCENT, BAD, EMPTY, MUTED, OK, PALETTE, TEXT, LevelGrouper, MetaCard,
-    Spinner, Section, apply_section_defaults, hsplit,
+from .cards import MetaCard, Spinner
+from .layout import apply_section_defaults, hsplit, scroll_page, Section
+from .level_grouper import LevelGrouper
+from .theme import (
+    ACCENT, BAD, CONSOLE_STYLE, EMPTY, MUTED, OK, PALETTE, TEXT, WARN,
+    muted_label,
 )
 
 _PREVIEW_ROWS = 200
@@ -113,18 +115,7 @@ class TrainTab:
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
-        outer = QVBoxLayout(frame)
-        outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        outer.addWidget(scroll)
-        body = QWidget()
-        body.setStyleSheet("background:transparent;")
-        scroll.setWidget(body)
-        v = QVBoxLayout(body)
-        v.setContentsMargins(4, 6, 4, 6)
-        v.setSpacing(10)
+        v = scroll_page(frame)
 
         # ── row 1: dataset + preview ────────────────────────────────────────
         grp_ds = Section("Training dataset")
@@ -183,17 +174,17 @@ class TrainTab:
 
         tr = QGridLayout()
         tr.setVerticalSpacing(6)
-        tr.addWidget(self._muted("Target variable"), 0, 0)
+        tr.addWidget(muted_label("Target variable"), 0, 0)
         self.cmb_target = QComboBox()
         self.cmb_target.currentIndexChanged.connect(self._target_changed)
         tr.addWidget(self.cmb_target, 0, 1)
 
-        tr.addWidget(self._muted("Negative class"), 1, 0)
+        tr.addWidget(muted_label("Negative class"), 1, 0)
         self.cmb_negative = QComboBox()
         self.cmb_negative.currentIndexChanged.connect(self._negative_changed)
         tr.addWidget(self.cmb_negative, 1, 1)
 
-        tr.addWidget(self._muted("Positive class"), 2, 0)
+        tr.addWidget(muted_label("Positive class"), 2, 0)
         self.ed_positive = QLineEdit()
         self.ed_positive.setPlaceholderText("blade_strike")
         self.ed_positive.editingFinished.connect(self._positive_changed)
@@ -210,10 +201,10 @@ class TrainTab:
         self.chk_multiclass = QCheckBox(
             "Multiclass class model")
         self.chk_multiclass.toggled.connect(self._mc_toggled)
-        self.lbl_class_col = self._muted("Class variable")
+        self.lbl_class_col = muted_label("Class variable")
         self.cmb_class_col = QComboBox()
         self.cmb_class_col.currentIndexChanged.connect(self._class_col_changed)
-        self.lbl_preset = self._muted("Grouping")
+        self.lbl_preset = muted_label("Grouping")
         self.cmb_preset = QComboBox()
         for key, spec in GROUPING_PRESETS.items():
             self.cmb_preset.addItem(spec["desc"], key)
@@ -238,19 +229,19 @@ class TrainTab:
         self.lbl_derived.setWordWrap(True)
         tv.addWidget(self.lbl_derived)
 
-        self.lbl_dist_bin = self._muted(
+        self.lbl_dist_bin = muted_label(
             "Binary class distribution")
         tv.addWidget(self.lbl_dist_bin)
         self.class_dist = _ClassDist()
         tv.addWidget(self.class_dist)
-        self.lbl_dist_mc = self._muted(
+        self.lbl_dist_mc = muted_label(
             "Multiclass class distribution")
         tv.addWidget(self.lbl_dist_mc)
         self.class_dist_mc = _ClassDist()
         tv.addWidget(self.class_dist_mc)
         tv.addStretch()
         # side-by-side boxes fill the width and can be resized by
-        # dragging - hsplit (ml_widgets), not a fixed-proportion row
+        # dragging - hsplit (layout.py), not a fixed-proportion row
         v.addWidget(hsplit((grp_ds, 2), (grp_filter, 1), (grp_target, 3)))
         v.addWidget(self.grp_preview)
 
@@ -283,11 +274,11 @@ class TrainTab:
         sv.addWidget(self.rb_seq_auto, 0, 0, 1, 2)
         sv.addWidget(self.rb_seq_manual, 1, 0)
         sv.addWidget(self.spin_seq, 1, 1)
-        sv.addWidget(self._muted("Padding"), 2, 0)
+        sv.addWidget(muted_label("Padding"), 2, 0)
         self.cmb_padding = QComboBox()
         self.cmb_padding.addItem("Repeat final observation", "repeat_last")
         sv.addWidget(self.cmb_padding, 2, 1)
-        sv.addWidget(self._muted("Truncation"), 3, 0)
+        sv.addWidget(muted_label("Truncation"), 3, 0)
         self.cmb_trunc = QComboBox()
         self.cmb_trunc.addItem("Truncate to target length", "truncate")
         sv.addWidget(self.cmb_trunc, 3, 1)
@@ -307,7 +298,7 @@ class TrainTab:
         self.rb_cv_only.toggled.connect(self._val_changed)
         vv.addWidget(self.rb_cv_only, 0, 0, 1, 2)
         vv.addWidget(self.rb_holdout, 1, 0, 1, 2)
-        vv.addWidget(self._muted("Test set"), 2, 0)
+        vv.addWidget(muted_label("Test set"), 2, 0)
         self.spin_test = QDoubleSpinBox()
         self.spin_test.setRange(0.05, 0.5)
         self.spin_test.setSingleStep(0.05)
@@ -316,11 +307,11 @@ class TrainTab:
         self.spin_test.setEnabled(False)
         self.spin_test.valueChanged.connect(self._val_changed)
         vv.addWidget(self.spin_test, 2, 1)
-        vv.addWidget(self._muted("CV method"), 3, 0)
+        vv.addWidget(muted_label("CV method"), 3, 0)
         cmb_cv = QComboBox()
         cmb_cv.addItem("Stratified K-Fold")
         vv.addWidget(cmb_cv, 3, 1)
-        vv.addWidget(self._muted("Number of folds"), 4, 0)
+        vv.addWidget(muted_label("Number of folds"), 4, 0)
         self.spin_folds = QSpinBox()
         self.spin_folds.setRange(2, 20)
         self.spin_folds.setValue(10)
@@ -331,7 +322,7 @@ class TrainTab:
         self.chk_shuffle.toggled.connect(self._val_changed)
         vv.addWidget(self.chk_shuffle, 5, 0)
         seed_row = QHBoxLayout()
-        seed_row.addWidget(self._muted("Random seed"))
+        seed_row.addWidget(muted_label("Random seed"))
         self.spin_seed = QSpinBox()
         self.spin_seed.setRange(0, 999999)
         self.spin_seed.setValue(42)
@@ -361,35 +352,35 @@ class TrainTab:
         grp_model = Section("Model")
         mv = QGridLayout(grp_model)
         mv.setVerticalSpacing(6)
-        mv.addWidget(self._muted("Architecture"), 0, 0)
+        mv.addWidget(muted_label("Architecture"), 0, 0)
         cmb_arch = QComboBox()
         cmb_arch.addItem("MiniRocket + RidgeClassifierCV")
         mv.addWidget(cmb_arch, 0, 1, 1, 3)
-        mv.addWidget(self._muted("MiniRocket seed"), 1, 0)
+        mv.addWidget(muted_label("MiniRocket seed"), 1, 0)
         self.spin_mr_seed = QSpinBox()
         self.spin_mr_seed.setRange(0, 999999)
         self.spin_mr_seed.setValue(42)
         self.spin_mr_seed.valueChanged.connect(self._model_changed)
         mv.addWidget(self.spin_mr_seed, 1, 1)
-        mv.addWidget(self._muted("n_jobs"), 1, 2)
+        mv.addWidget(muted_label("n_jobs"), 1, 2)
         self.spin_njobs = QSpinBox()
         self.spin_njobs.setRange(-1, 64)
         self.spin_njobs.setValue(-1)
         self.spin_njobs.valueChanged.connect(self._model_changed)
         mv.addWidget(self.spin_njobs, 1, 3)
-        mv.addWidget(self._muted("Ridge alphas"), 2, 0)
+        mv.addWidget(muted_label("Ridge alphas"), 2, 0)
         self.spin_a_min = QSpinBox()
         self.spin_a_min.setRange(-8, 0)
         self.spin_a_min.setValue(-3)
         self.spin_a_min.valueChanged.connect(self._model_changed)
         mv.addWidget(self.spin_a_min, 2, 1)
-        mv.addWidget(self._muted("to"), 2, 2)
+        mv.addWidget(muted_label("to"), 2, 2)
         self.spin_a_max = QSpinBox()
         self.spin_a_max.setRange(0, 8)
         self.spin_a_max.setValue(3)
         self.spin_a_max.valueChanged.connect(self._model_changed)
         mv.addWidget(self.spin_a_max, 2, 3)
-        mv.addWidget(self._muted("Alpha values"), 3, 0)
+        mv.addWidget(muted_label("Alpha values"), 3, 0)
         self.spin_n_alpha = QSpinBox()
         self.spin_n_alpha.setRange(5, 500)
         self.spin_n_alpha.setValue(100)
@@ -453,21 +444,12 @@ class TrainTab:
         self.console.setReadOnly(True)
         self.console.setMaximumBlockCount(5000)
         self.console.setMinimumHeight(280)
-        self.console.setStyleSheet(
-            "QPlainTextEdit{background:#1b1e23;color:#d4d4d4;"
-            "border:1px solid #2c313a;border-radius:4px;"
-            "font-family:Consolas,monospace;font-size:9pt;}")
+        self.console.setStyleSheet(CONSOLE_STYLE)
         cv.addWidget(self.console, stretch=1)
         v.addWidget(hsplit((grp_run, 2), (grp_console, 3)))
         v.addStretch()
 
         apply_section_defaults(frame)
-
-    @staticmethod
-    def _muted(text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};")
-        return lab
 
     # ── state wiring ─────────────────────────────────────────────────────────
     def _connect_state(self):
@@ -761,7 +743,7 @@ class TrainTab:
             "Dataset ok" if ok
             else "Dataset incorrect")
         self.lbl_compat.setStyleSheet(
-            f"color:{OK if ok else '#f59e0b'};")
+            f"color:{OK if ok else WARN};")
 
     def _refresh_target(self):
         s = self.state

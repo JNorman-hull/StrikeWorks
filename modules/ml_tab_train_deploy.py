@@ -18,15 +18,14 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
-    QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
+    QVBoxLayout, QWidget,
 )
 
 from . import settings
-from .ml_widgets import (
-    ACCENT, BAD, MUTED, OK, MetaCard, Spinner, Section, apply_section_defaults,
-    centred,
-)
+from .cards import MetaCard, Spinner
+from .layout import apply_section_defaults, centred, scroll_page, Section
+from .theme import ACCENT, ACCENT_BUTTON, BAD, MUTED, OK
 
 
 # Train final model / Deploy model - a quarter of the 960 px column
@@ -77,19 +76,8 @@ class DeployTab:
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
-        outer = QVBoxLayout(frame)
-        outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        outer.addWidget(scroll)
-        body = QWidget()
-        body.setStyleSheet("background:transparent;")
-        scroll.setWidget(body)
-        page_v = QVBoxLayout(body)
-        page_v.setContentsMargins(4, 6, 4, 6)
-        page_v.setSpacing(10)
-        # the boxes sit in one centred column (ml_widgets.centred) rather
+        page_v = scroll_page(frame)
+        # the boxes sit in one centred column (layout.centred) rather
         # than stretching across the full width of a wide page
         column = QWidget()
         v = QVBoxLayout(column)
@@ -140,10 +128,7 @@ class DeployTab:
         self.btn_deploy.setMinimumHeight(32)
         self.btn_deploy.setFixedWidth(_BUTTON_WIDTH)
         self.btn_deploy.setEnabled(False)
-        self.btn_deploy.setStyleSheet(
-            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-            "border-radius:5px;font-weight:bold;}"
-            "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
+        self.btn_deploy.setStyleSheet(ACCENT_BUTTON)
         self.btn_deploy.clicked.connect(self._deploy)
         deploy_row.addWidget(self.btn_deploy)
         self.btn_models_dir = QPushButton("Models folder…")

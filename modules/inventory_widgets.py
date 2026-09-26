@@ -35,10 +35,10 @@ from PySide6.QtWidgets import (
 
 from . import deployment_index as di
 from . import raw_layout, sensor_config
-from .ml_widgets import (
-    ACCENT, BAD, MUTED, OK, WARN, Section, Spinner, fill_table_width,
-    style_table,
-)
+from .cards import Spinner
+from .layout import Section
+from .tables import fill_table_width, style_table
+from .theme import ACCENT, ACCENT_BUTTON, BAD, CONSOLE_STYLE, MUTED, OK, WARN
 
 
 COLUMNS = ["Filename", "Sensor", "Date", "Time", "Deployment", "Treatment",
@@ -174,10 +174,7 @@ class FileInventory(QWidget):
         sel_row.addWidget(self.lbl_counts)
         sel_row.addStretch()
         self.btn_process = QPushButton("Process selected")
-        self.btn_process.setStyleSheet(
-            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-            "border-radius:5px;padding:4px 14px;font-weight:bold;}"
-            "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
+        self.btn_process.setStyleSheet(ACCENT_BUTTON)
         self.btn_process.setEnabled(False)
         self.btn_process.clicked.connect(self.process_selected)
         sel_row.addWidget(self.btn_process)
@@ -190,9 +187,7 @@ class FileInventory(QWidget):
         self.console.setReadOnly(True)
         self.console.setMaximumBlockCount(5000)
         self.console.setFont(QFont("Consolas", 9))
-        self.console.setStyleSheet(
-            "QPlainTextEdit{background:#1b1e23;color:#d4d4d4;"
-            "border:1px solid #2c313a;border-radius:4px;}")
+        self.console.setStyleSheet(CONSOLE_STYLE)
         lv.addWidget(self.console, stretch=1)
         self.lbl_status = QLabel("")
         self.lbl_status.setStyleSheet(f"color:{OK};font-weight:bold;")

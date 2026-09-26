@@ -28,10 +28,9 @@ from PySide6.QtWidgets import (
 from . import raw_layout, settings
 from .ml_state import annotation_column, is_strike_value
 from .ml_tab_predict import _NumItem
-from .ml_widgets import (
-    BAD, INFO, MUTED, OK, PALETTE, PINK, TEXT, WARN, ProbBars, Section,
-    apply_section_defaults,
-)
+from .cards import ProbBars
+from .layout import apply_section_defaults, Section
+from .theme import BAD, INFO, MUTED, OK, PALETTE, PINK, TEXT, WARN
 from .plot_widgets import CsvLoadThread, NavViewBox
 from .plot_style import (
     add_export_button, build_export_data, reserve_top_margin,
@@ -708,7 +707,7 @@ class InspectTab:
         if left and left in sig.columns:
             y = sig[left].to_numpy(dtype=float)
             self._left_curve = self._pw.plot(
-                t, y, pen=pg.mkPen("#dddddd", width=1))
+                t, y, pen=pg.mkPen(TEXT, width=1))
             self._left_curve.setDownsampling(auto=True, method="peak")
             self._left_curve.setClipToView(True)
             pi.setLabel("left", left)

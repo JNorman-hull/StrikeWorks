@@ -13,7 +13,7 @@ this until its own task replaces it.
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QLabel, QVBoxLayout
 
-from .ml_widgets import MUTED, TEXT
+from .theme import MUTED, TEXT
 
 
 class StubPage(QObject):

@@ -20,11 +20,11 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea,
-    QVBoxLayout, QWidget,
+    QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
-from .ml_widgets import ACCENT, BORDER, CARD_BG, MUTED, TEXT, centred
+from .layout import centred, scroll_area
+from .theme import ACCENT, BORDER, CARD_BG, MUTED, TEXT
 
 _IMAGES_DIR = Path(__file__).parent.parent / "images" / "images"
 _COLUMN_WIDTH = 760
@@ -106,9 +106,7 @@ class AboutDialog(QDialog):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
+        scroll = scroll_area()
         outer.addWidget(scroll)
 
         # everything sits in one centred column (capped width), so nothing

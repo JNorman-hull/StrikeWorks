@@ -31,9 +31,9 @@ from PySide6.QtWidgets import (
 
 from . import deployment_index as di
 from . import raw_layout, settings
-from .ml_widgets import (
-    ACCENT, MUTED, MetaCard, Section, apply_section_defaults, on_show,
-)
+from .cards import MetaCard
+from .layout import apply_section_defaults, on_show, Section
+from .theme import ACCENT, MUTED
 from .session_state import OUTPUT_DIR_NAME
 
 _LOGO_RESOURCE = ":/images/images/images/PyDracula_vertical.png"

@@ -35,13 +35,14 @@ from PySide6.QtCore import Qt
 
 from PySide6.QtWidgets import (
     QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QSizePolicy, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QSizePolicy, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
+    QVBoxLayout,
 )
 
 from .bsm_state import LATEST_RESULT_PATH
 from .ml_figures import fg_colour, style_axes, style_legend, _grid
-from .ml_widgets import MUTED, TEXT, Section, apply_section_defaults
+from .layout import apply_section_defaults, scroll_page, Section
+from .theme import TEXT, muted_label
 from .wilson_calc import required_n, wilson_interval
 
 _N_MULTIPLIERS = (0.5, 1, 2, 4)
@@ -63,19 +64,7 @@ class PrecisionCalcTab:
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
-        outer = QVBoxLayout(frame)
-        outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        outer.addWidget(scroll)
-
-        body = QWidget()
-        body.setStyleSheet("background:transparent;")
-        scroll.setWidget(body)
-        v = QVBoxLayout(body)
-        v.setContentsMargins(4, 6, 4, 6)
-        v.setSpacing(10)
+        v = scroll_page(frame)
 
         grp = Section("Study size")
         gv = QVBoxLayout(grp)
@@ -85,7 +74,7 @@ class PrecisionCalcTab:
         form.setHorizontalSpacing(10)
         form.setVerticalSpacing(6)
 
-        form.addWidget(self._muted("Expected strike rate (%)"), 0, 0)
+        form.addWidget(muted_label("Expected strike rate (%)"), 0, 0)
         rate_row = QHBoxLayout()
         self.spin_rate = QDoubleSpinBox()
         self.spin_rate.setRange(0.0, 100.0)
@@ -98,14 +87,14 @@ class PrecisionCalcTab:
         rate_row.addWidget(self.btn_load_bsm)
         form.addLayout(rate_row, 0, 1)
 
-        form.addWidget(self._muted("Planned sample size (N)"), 1, 0)
+        form.addWidget(muted_label("Planned sample size (N)"), 1, 0)
         self.spin_n = QSpinBox()
         self.spin_n.setRange(1, 100000)
         self.spin_n.setValue(50)
         self.spin_n.valueChanged.connect(self._recalculate)
         form.addWidget(self.spin_n, 1, 1)
 
-        form.addWidget(self._muted("Confidence level"), 2, 0)
+        form.addWidget(muted_label("Confidence level"), 2, 0)
         self.cmb_confidence = QComboBox()
         for pct in (90, 95, 99):
             self.cmb_confidence.addItem(f"{pct}%", pct)
@@ -114,7 +103,7 @@ class PrecisionCalcTab:
         form.addWidget(self.cmb_confidence, 2, 1)
 
         # the inverse question: how many sensors for a wanted precision
-        form.addWidget(self._muted("Target precision (± pp)"), 3, 0)
+        form.addWidget(muted_label("Target precision (± pp)"), 3, 0)
         target_row = QHBoxLayout()
         self.spin_target = QDoubleSpinBox()
         self.spin_target.setRange(0.1, 50.0)
@@ -169,12 +158,6 @@ class PrecisionCalcTab:
         v.addWidget(grp)
         v.addStretch()
         apply_section_defaults(frame)
-
-    @staticmethod
-    def _muted(text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};")
-        return lab
 
     # ── Blade Strike Modelling handoff ──────────────────────────────────────
     def _load_from_bsm(self):

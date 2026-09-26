@@ -38,14 +38,15 @@ from pathlib import Path
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout,
-    QWidget,
+    QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import bsm_config
 from .bsm_model import compute
 from .bsm_state import LATEST_RESULT_PATH, build_latest_payload, output_card_rows
-from .ml_widgets import ACCENT, MUTED, MetaCard, Section, apply_section_defaults
+from .cards import MetaCard
+from .layout import apply_section_defaults, scroll_area, Section
+from .theme import ACCENT, ACCENT_BUTTON, MUTED, muted_label
 
 _EEL_LF_DEFAULT = 0.66
 _EEL_BF_DEFAULT = 0.08
@@ -74,9 +75,7 @@ class CalculatorPage(QWidget):
         outer.setContentsMargins(4, 6, 4, 6)
         outer.setSpacing(10)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
+        scroll = scroll_area()
         left = QWidget()
         left.setStyleSheet("background:transparent;")
         lv = QVBoxLayout(left)
@@ -179,7 +178,7 @@ class CalculatorPage(QWidget):
         for i, (lbl, w) in enumerate([
                 ("Body length Lf (m)", self.in_lf_scaly),
                 ("Body height Bf (m)", self.in_bf_scaly)]):
-            scaly_grid.addWidget(self._muted(lbl), i, 0)
+            scaly_grid.addWidget(muted_label(lbl), i, 0)
             scaly_grid.addWidget(w, i, 1)
         v.addLayout(scaly_grid)
 
@@ -191,7 +190,7 @@ class CalculatorPage(QWidget):
         for i, (lbl, w) in enumerate([
                 ("Body length Lf (m)", self.in_lf_eel),
                 ("Body height Bf (m)", self.in_bf_eel)]):
-            eel_grid.addWidget(self._muted(lbl), i, 0)
+            eel_grid.addWidget(muted_label(lbl), i, 0)
             eel_grid.addWidget(w, i, 1)
         v.addLayout(eel_grid)
 
@@ -205,7 +204,7 @@ class CalculatorPage(QWidget):
                 ("Rel. velocity wf (m/s)", self.in_wf),
                 ("Pre-rotation α (rad)", self.in_alpha),
                 ("Eel vcrit (m/s)", self.in_eel_vcrit)]):
-            shared_grid.addWidget(self._muted(lbl), i, 0)
+            shared_grid.addWidget(muted_label(lbl), i, 0)
             shared_grid.addWidget(w, i, 1)
         v.addLayout(shared_grid)
         return g
@@ -227,7 +226,7 @@ class CalculatorPage(QWidget):
             ("Hub radius bh (m)", self.in_bh),
         ]
         for i, (lbl, w) in enumerate(rows):
-            grid.addWidget(self._muted(lbl), i, 0)
+            grid.addWidget(muted_label(lbl), i, 0)
             grid.addWidget(w, i, 1)
         return g
 
@@ -274,9 +273,9 @@ class CalculatorPage(QWidget):
         grid.setColumnStretch(1, 1)
         self.in_total = QLineEdit()
         self.in_strike = QLineEdit()
-        grid.addWidget(self._muted("Sensors deployed"), 0, 0)
+        grid.addWidget(muted_label("Sensors deployed"), 0, 0)
         grid.addWidget(self.in_total, 0, 1)
-        grid.addWidget(self._muted("Strikes observed"), 1, 0)
+        grid.addWidget(muted_label("Strikes observed"), 1, 0)
         grid.addWidget(self.in_strike, 1, 1)
         v.addLayout(grid)
         return g
@@ -285,10 +284,7 @@ class CalculatorPage(QWidget):
         row = QHBoxLayout()
         self.btn_calc = QPushButton("Calculate")
         self.btn_calc.setMinimumHeight(30)
-        self.btn_calc.setStyleSheet(
-            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-            "border-radius:5px;padding:4px 14px;font-weight:bold;}"
-            "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
+        self.btn_calc.setStyleSheet(ACCENT_BUTTON)
         self.btn_calc.clicked.connect(self.calculate)
         row.addStretch()
         row.addWidget(self.btn_calc)
@@ -309,12 +305,6 @@ class CalculatorPage(QWidget):
         self.wilson_lbl.setWordWrap(True)
         v.addWidget(self.wilson_lbl)
         return g
-
-    @staticmethod
-    def _muted(text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};")
-        return lab
 
     @staticmethod
     def _bold_muted(text):

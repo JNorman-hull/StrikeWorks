@@ -21,11 +21,11 @@ bar is hidden - Setup and deploy's sidebar drives which tab shows, per
 """
 from PySide6.QtCore import QObject, Signal
 
-from .prepare_tab_sensor import SensorTab
-from .prepare_tab_precision import PrecisionCalcTab
+from .setup_sensor import SensorTab
+from .setup_precision import PrecisionCalcTab
 
 
-class PreparePage(QObject):
+class SetupPage(QObject):
     """Binds the Prepare page widgets defined in main.ui."""
 
     status = Signal(str, int)

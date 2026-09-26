@@ -52,10 +52,11 @@ from PySide6.QtWidgets import (
 )
 
 from . import settings
-from .ml_widgets import MUTED, TEXT, Section, apply_section_defaults
+from .layout import apply_section_defaults, Section
+from .theme import MUTED, TEXT
 
 
-class AdjustmentsDialog(QDialog):
+class SettingsDialog(QDialog):
     """Modal-to-its-parent folder-settings dialog, opened from the gear
     icon's Adjustments button."""
 

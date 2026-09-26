@@ -65,9 +65,8 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QInputDialog,
-    QLabel, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
-    QSizePolicy, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget,
-    QVBoxLayout, QWidget,
+    QLabel, QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy, QSplitter,
+    QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from . import annotation_schema as asch
@@ -78,9 +77,13 @@ from . import validation_core as vc
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
 from .inventory_widgets import notifier as inventory_notifier
 from .library_widgets import LibrarySelector
-from .ml_widgets import (
-    ACCENT, BAD, MUTED, OK, TEXT, WARN, MetaCard, Section, Spinner,
-    apply_section_defaults, discard_widget, when_visible,
+from .cards import MetaCard, Spinner
+from .layout import (
+    apply_section_defaults, discard_widget, scroll_page, Section,
+    when_visible,
+)
+from .theme import (
+    ACCENT, ACCENT_BUTTON, BAD, MUTED, OK, TEXT, WARN, muted_label,
 )
 from .dataset_build import META_COLS, standardise
 from .plot_style import (
@@ -221,19 +224,7 @@ class AnnotationPage(QObject):
         split.setSizes([1000, 3000])
 
     def _build_reporting_tab(self, frame):
-        outer = QVBoxLayout(frame)
-        outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
-        outer.addWidget(scroll)
-
-        body = QWidget()
-        body.setStyleSheet("background:transparent;")
-        scroll.setWidget(body)
-        v = QVBoxLayout(body)
-        v.setContentsMargins(4, 6, 4, 6)
-        v.setSpacing(10)
+        v = scroll_page(frame)
 
         grp_sum = Section("Annotation summary")
         sv = QVBoxLayout(grp_sum)
@@ -260,9 +251,7 @@ class AnnotationPage(QObject):
         gv.addWidget(self.lbl_report_status)
         self.btn_generate_report = QPushButton("Generate dataset report")
         self.btn_generate_report.setMinimumHeight(30)
-        self.btn_generate_report.setStyleSheet(
-            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-            "border-radius:5px;padding:4px 14px;font-weight:bold;}")
+        self.btn_generate_report.setStyleSheet(ACCENT_BUTTON)
         self.btn_generate_report.clicked.connect(self._generate_report)
         gv.addWidget(self.btn_generate_report)
         v.addWidget(grp_gen)
@@ -339,10 +328,7 @@ class AnnotationPage(QObject):
             "training and/or blade strike prediction (appending it to the "
             "dataset when it's annotated), and moves on to the next sensor "
             "in the list.")
-        self.btn_save_next.setStyleSheet(
-            f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-            "border-radius:5px;padding:4px 14px;font-weight:bold;}"
-            "QPushButton:disabled{background-color:#3a4150;color:#8a95aa;}")
+        self.btn_save_next.setStyleSheet(ACCENT_BUTTON)
         self.btn_save_next.clicked.connect(self._save_and_next)
         self.btn_reset = QPushButton("Reset sensor")
         self.btn_reset.setToolTip("Reload this sensor's file without saving.")
@@ -389,14 +375,14 @@ class AnnotationPage(QObject):
         self.cmb_right.addItem("None", None)
         for key in CHANNEL_ORDER:
             self.cmb_right.addItem(CHANNELS[key][1], key)
-        axis_row.addWidget(self._muted("Left"))
+        axis_row.addWidget(muted_label("Left"))
         axis_row.addWidget(self.cmb_left, stretch=1)
-        axis_row.addWidget(self._muted("Right"))
+        axis_row.addWidget(muted_label("Right"))
         axis_row.addWidget(self.cmb_right, stretch=1)
         sv.addLayout(axis_row)
 
         win_row = QHBoxLayout()
-        win_row.addWidget(self._muted("ROI window"))
+        win_row.addWidget(muted_label("ROI window"))
         self.cmb_window = QComboBox()
         win_row.addWidget(self.cmb_window)
         self._spinner = Spinner(size=18)
@@ -485,12 +471,6 @@ class AnnotationPage(QObject):
             "Free-text notes for this sensor…")
         gv.addWidget(self.txt_notes)
         return grp
-
-    @staticmethod
-    def _muted(text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};")
-        return lab
 
     @staticmethod
     def _row(label, widget):
@@ -853,7 +833,7 @@ class AnnotationPage(QObject):
         y = self._channel(self._left_key)
         if y is not None:
             self._curve = self._pw.plot(
-                self._time, y, pen=pg.mkPen("#dddddd", width=1))
+                self._time, y, pen=pg.mkPen(TEXT, width=1))
             self._curve.setDownsampling(auto=True, method="peak")
             self._curve.setClipToView(True)
         pi.setLabel("left", CHANNELS[self._left_key][1])
@@ -1036,7 +1016,7 @@ class AnnotationPage(QObject):
                 discard_widget(w)
         self._editors = {}
         for row, var in enumerate(asch.all_variables()):
-            lab = self._muted(var.label)
+            lab = muted_label(var.label)
             editor = AnnotationValueEditor(var.name)
             self.annotation_grid.addWidget(lab, row, 0)
             self.annotation_grid.addWidget(editor, row, 1)

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import settings
-from .ml_widgets import MUTED
+from .theme import MUTED
 
 
 def bind_csvs(paths):

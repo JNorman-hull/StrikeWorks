@@ -38,8 +38,8 @@ class AppStarts(unittest.TestCase):
     def test_dialogs_build(self):
         from modules.about_dialog import AboutDialog
         from modules.ml_tab_report import ReportDialog
-        from modules.page_adjustments import AdjustmentsDialog
-        for dialog in (AboutDialog(self.window), AdjustmentsDialog(self.window),
+        from modules.page_settings import SettingsDialog
+        for dialog in (AboutDialog(self.window), SettingsDialog(self.window),
                        ReportDialog(self.window.ml_prediction_page.state,
                                     self.window)):
             dialog.show()

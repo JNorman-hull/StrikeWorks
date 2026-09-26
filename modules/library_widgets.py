@@ -41,9 +41,10 @@ from PySide6.QtWidgets import (
 )
 
 from . import raw_layout, settings
-from .ml_widgets import (
-    BAD, MUTED, OK, WARN, Section, Spinner, style_table, when_visible,
-)
+from .cards import Spinner
+from .layout import Section, when_visible
+from .tables import style_table
+from .theme import BAD, MUTED, OK, WARN, muted_label
 from .raw_layout import RAW_DIR, UNGROUPED
 
 ALL_DEPLOYMENTS = None   # combo data sentinel for "All deployments"/"All treatments"/"All runs"
@@ -214,11 +215,11 @@ class LibrarySelector(QWidget):
         fv.addLayout(loading_row)
 
         self.cmb_deployment = QComboBox()
-        fv.addLayout(self._row(self._muted("Deployment"), self.cmb_deployment))
+        fv.addLayout(self._row(muted_label("Deployment"), self.cmb_deployment))
         self.cmb_treatment = QComboBox()
-        fv.addLayout(self._row(self._muted("Treatment"), self.cmb_treatment))
+        fv.addLayout(self._row(muted_label("Treatment"), self.cmb_treatment))
         self.cmb_run = QComboBox()
-        fv.addLayout(self._row(self._muted("Run"), self.cmb_run))
+        fv.addLayout(self._row(muted_label("Run"), self.cmb_run))
         v.addWidget(self.section)
 
         if sensor_list:
@@ -248,12 +249,6 @@ class LibrarySelector(QWidget):
         self.tbl_sensors.itemDoubleClicked.connect(
             lambda item: self.row_activated.emit(item.row(), item.column()))
         v.addWidget(self.tbl_sensors, stretch=1)
-
-    @staticmethod
-    def _muted(text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};")
-        return lab
 
     @staticmethod
     def _row(label, widget):

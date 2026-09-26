@@ -21,8 +21,6 @@ from widgets import CustomGrip
 
 from .ui_config import UIConfig
 
-_COLLAPSED_MENU_WIDTH = 60
-
 
 class UIFunctions:
     # ── maximise / restore ──────────────────────────────────────────────────
@@ -57,8 +55,8 @@ class UIFunctions:
         only the minimum animated, an opening side panel could squeeze it."""
         if enable:
             width = self.ui.leftMenuBg.width()
-            target = (UIConfig.MENU_WIDTH if width == _COLLAPSED_MENU_WIDTH
-                      else _COLLAPSED_MENU_WIDTH)
+            target = (UIConfig.MENU_WIDTH if width == UIConfig.MENU_COLLAPSED_WIDTH
+                      else UIConfig.MENU_COLLAPSED_WIDTH)
             UIFunctions.animate_menu_width(self, width, target)
 
     def animate_menu_width(self, start, end):

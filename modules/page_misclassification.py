@@ -53,9 +53,10 @@ from . import annotation_schema as asch
 from . import ml_model_library
 from . import settings
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
-from .ml_widgets import (
-    MUTED, OK, Section, apply_section_defaults, discard_widget, when_visible,
+from .layout import (
+    apply_section_defaults, discard_widget, Section, when_visible,
 )
+from .theme import MUTED, OK, TEXT, muted_label
 from .page_annotate import LOSSLESSCUT_EXE
 from .raw_layout import video_index
 from .plot_widgets import NavViewBox
@@ -249,9 +250,9 @@ class MisclassificationPage(QObject):
         axis_row.addWidget(self.cmb_view)
         self.cmb_left = QComboBox()
         self.cmb_right = QComboBox()
-        axis_row.addWidget(self._muted("Left"))
+        axis_row.addWidget(muted_label("Left"))
         axis_row.addWidget(self.cmb_left, stretch=1)
-        axis_row.addWidget(self._muted("Right"))
+        axis_row.addWidget(muted_label("Right"))
         axis_row.addWidget(self.cmb_right, stretch=1)
         axis_row.addStretch()
         add_export_button(axis_row, self._export_data, self.window,
@@ -307,12 +308,6 @@ class MisclassificationPage(QObject):
         self.lbl_detail_status.setWordWrap(True)
         gv.addWidget(self.lbl_detail_status)
         return grp
-
-    @staticmethod
-    def _muted(text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};")
-        return lab
 
     def _connect(self):
         self.cmb_model.currentIndexChanged.connect(self._on_model_changed)
@@ -586,7 +581,7 @@ class MisclassificationPage(QObject):
         if self._left_key and self._left_key in sig.columns:
             y = sig[self._left_key].to_numpy(dtype=float)
             self._curve = self._pw.plot(
-                self._time, y, pen=pg.mkPen("#dddddd", width=1))
+                self._time, y, pen=pg.mkPen(TEXT, width=1))
             self._curve.setDownsampling(auto=True, method="peak")
             self._curve.setClipToView(True)
             pi.setLabel("left", self._left_key)
@@ -652,7 +647,7 @@ class MisclassificationPage(QObject):
                 discard_widget(w)
         self._editors = {}
         for row, var in enumerate(asch.all_variables()):
-            lab = self._muted(var.label)
+            lab = muted_label(var.label)
             editor = AnnotationValueEditor(var.name)
             self.annotation_grid.addWidget(lab, row, 0)
             self.annotation_grid.addWidget(editor, row, 1)
