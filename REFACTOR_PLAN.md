@@ -1,7 +1,7 @@
 # StrikeWorks clean-up and refactoring plan
 
-Status: **in progress** on branch `cleanup-2026-09` - phases A-H done
-(see the progress table in section 9). Each phase ends in a working app,
+Status: **done** on branch `cleanup-2026-09` - phases A-I (see the
+progress table in section 9; the bundle-size items wait for the next build). Each phase ends in a working app,
 so the work can stop after any of them.
 
 Numbers come from an audit of the source on 2026-09-25 (70 modules,
@@ -287,7 +287,8 @@ and the tests are what show nothing broke.
 | E | d928462 | template leftovers gone, `main.ui` trimmed, no star imports |
 | F | a4fa30c | `ml_widgets` split into `theme` / `layout` / `tables` / `cards` / `level_grouper`; `muted_label`, `ACCENT_BUTTON`, `CONSOLE_STYLE`, `scroll_page`, `scroll_area`; modules renamed per 2.7; `main.py` 825 -> 461 lines, start-up helpers in `startup.py` |
 | G | bfcbae0 | history and filler comments rewritten across the modules (module docstrings first); internal column names out of log messages; LibrarySelector's unused library picker removed; ROADMAP.md 2,223 -> ~90 lines (open work + "Hidden for now"); README rewritten |
-| H | this phase | one settings file, `%APPDATA%\StrikeWorks\settings.json` (app keys + `sensor_configs` / `annotation_variables` sections), read once from the three old home-folder files, which stay in place; recent datasets keep absolute, existing paths only. Silent `except Exception` handlers now report (report warnings, console, status bar) or catch the specific error; the running dataset is never overwritten when it can't be read (one shared merge); the training worker's pipe is closed |
+| H | 933d088 | one settings file, `%APPDATA%\StrikeWorks\settings.json` (app keys + `sensor_configs` / `annotation_variables` sections), read once from the three old home-folder files, which stay in place; recent datasets keep absolute, existing paths only. Silent `except Exception` handlers now report (report warnings, console, status bar) or catch the specific error; the running dataset is never overwritten when it can't be read (one shared merge); the training worker's pipe is closed |
+| I | this phase | processed sensor CSVs written at 10 significant figures (`raw_layout.CSV_FLOAT_FORMAT`): 30 -> 15 MB per RAPID recording, read back 35 % faster, largest change 5e-7 in the computed magnitude columns (time and raw channels exact); writing is ~0.7 s slower per recording. Start-up (building MainWindow) 3.4 s -> 1.4 s: Evaluate's model discovery and Analysis and reporting's figures now run when first shown |
 
 Decisions taken on the way:
 - **2.6 hidden pages are kept, not deleted** - they are hidden temporarily
@@ -300,6 +301,21 @@ Decisions taken on the way:
   `btn_biological`, ...): renaming them touches `main.ui`, the generated
   file and every lookup for no visible gain. Only modules, classes and
   attributes were renamed.
+- **6, 6 significant figures was not used**: it moves values by up to
+  0.005 and would lose the time step beyond 100 s. 10 significant figures
+  gives the same size saving without changing any recorded value.
+- **6, hidden pages are not built lazily**: they take 0.02 s together; the
+  start-up time was in two visible pages (above).
+- **6, bundle size is left for the next build**, since each change needs a
+  build and a smoke test to prove it. Measured in the current build
+  (548 MB `_internal`): sktime's test suites are only 3 MB, so excluding
+  them isn't worth the risk to its registry. The real sizes are
+  `cv2` 112 MB (`opencv-python-headless` would drop its GUI parts - a
+  package change), `llvmlite` 115 MB (needed by numba / MiniRocket) and
+  `PySide6` 102 MB, of which ~30 MB is unused (`Qt6Quick`, `Qt6Qml`,
+  `Qt6Pdf`, `opengl32sw.dll` - candidates for `excludes` / removal in
+  `build.py`, to be smoke-tested).
+- **6, the RAPID reader rewrite** (clarity only, it takes 0.1 s) is left.
 - **3, the app-wide stylesheet** (241 `setStyleSheet` calls) is not done:
   the repeated ones are now theme constants; the rest are one-offs, and a
   named-rule stylesheet is a visual change to check page by page.

@@ -50,6 +50,7 @@ import pandas as pd
 from scipy.interpolate import interp1d
 
 from . import rapid_functions as rf
+from .raw_layout import CSV_FLOAT_FORMAT
 
 G = 9.80665
 TERMINATOR = 0x0B
@@ -324,7 +325,8 @@ def process_eel(paths, out_dir, config):
     stem = imp_path.stem
     csv_dir = Path(out_dir) / "csv"
     csv_dir.mkdir(parents=True, exist_ok=True)
-    combined.to_csv(csv_dir / f"{stem}.csv", index=False)
+    combined.to_csv(csv_dir / f"{stem}.csv", index=False,
+                    float_format=CSV_FLOAT_FORMAT)
 
     file_info = rf.parse_filename_info(stem, config=config)
     rf.append_to_sensor_index({**file_info, **summary, "file": stem}, out_dir)

@@ -36,6 +36,11 @@ CSV_DIR = PROCESSED_DIR / "csv"
 WINDOW_DIR = PROCESSED_DIR / "nadir_window"
 INDEX_REL = PROCESSED_DIR / "index" / "global_sensor_index.csv"
 DATASET_REL = PROCESSED_DIR / "model_features.csv"
+
+#: processed sensor CSVs keep 10 significant figures: the time step and
+#: every channel's resolution survive exactly, and the files are half the
+#: size of pandas' full precision (and quicker to read back)
+CSV_FLOAT_FORMAT = "%.10g"
 # processed CSVs that aren't sensors: side files older versions wrote
 _NOT_SENSOR_SUFFIXES = ("_min", "_delineated")
 VIDEO_FOLDER_NAME = "VIDEO"

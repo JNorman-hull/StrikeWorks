@@ -26,6 +26,7 @@ from pathlib import Path
 from datetime import datetime
 
 from . import index_schema
+from .raw_layout import CSV_FLOAT_FORMAT
 
 # defaults, used when no SensorConfig is supplied
 FS = 2000
@@ -336,7 +337,7 @@ def process_imp_hig_direct(imp_filename, hig_filename, output_dir, config=None):
     
     # Save the combined data to CSV directory
     output_file = csv_dir / f"{base_filename}.csv"
-    combined_data.to_csv(output_file, index=False)
+    combined_data.to_csv(output_file, index=False, float_format=CSV_FLOAT_FORMAT)
     
     all_info = {**file_info, **summary_info, 'file': base_filename}
     append_to_sensor_index(all_info, output_dir)

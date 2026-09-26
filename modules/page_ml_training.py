@@ -53,7 +53,7 @@ class MLTrainingPage(QObject):
 
         # a deployment makes a new model evaluatable straight away
         self.state.deployed.connect(
-            lambda _p: self.tab_evaluate._reload_sources())
+            lambda _p: self.tab_evaluate.reload_sources())
 
     # ── cross-page navigation ────────────────────────────────────────────────
     def goto_evaluate(self):

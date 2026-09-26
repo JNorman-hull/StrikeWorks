@@ -31,7 +31,9 @@ from . import bsm_figures, bsm_io
 from .bsm_model import sensitivity_sweeps
 from .bsm_state import output_card_rows
 from .cards import MetaCard
-from .layout import apply_section_defaults, centred, scroll_page, Section
+from .layout import (
+    apply_section_defaults, centred, scroll_page, Section, when_visible,
+)
 from .theme import ACCENT_BUTTON
 
 _NODIALOG = QFileDialog.Option.DontUseNativeDialog
@@ -127,17 +129,25 @@ class BSMAnalysisPage(QWidget):
         return g
 
     def _draw_blank(self):
-        bsm_figures.draw_results_panels(self.fig_results, {}, dark=True)
-        bsm_figures.draw_sweep_panels(self.fig_sweeps, None, dark=True)
-        self.canvas_results.draw()
-        self.canvas_sweeps.draw()
+        self._draw_results({})
+        self._draw_sweeps(None)
 
-    # ── reactions ────────────────────────────────────────────────────────────
+    # Figures are drawn when their canvas is on screen: rendering both takes
+    # about a second, which would otherwise be spent at start-up.
     def _draw_results(self, results):
         """Both species' headline results (Calculator runs scaly and eel
         every time - BSMState.calculated_all)."""
-        bsm_figures.draw_results_panels(self.fig_results, results, dark=True)
-        self.canvas_results.draw()
+        def draw():
+            bsm_figures.draw_results_panels(self.fig_results, results, dark=True)
+            self.canvas_results.draw()
+        when_visible(self.canvas_results, draw, key="figure")
+
+    def _draw_sweeps(self, sweeps, title=None):
+        def draw():
+            bsm_figures.draw_sweep_panels(self.fig_sweeps, sweeps, dark=True,
+                                          title=title)
+            self.canvas_sweeps.draw()
+        when_visible(self.canvas_sweeps, draw, key="figure")
 
     def update_from_result(self, res):
         self.last_result = res
@@ -149,11 +159,10 @@ class BSMAnalysisPage(QWidget):
             self.sweeps = None
             self.status.emit(f"Sensitivity sweep failed: {e}", 6000)
             return
-        bsm_figures.draw_sweep_panels(
-            self.fig_sweeps, self.sweeps, dark=True,
+        self._draw_sweeps(
+            self.sweeps,
             title=bsm_figures.sweep_panels_title(res["params"]["species"],
                                                  res["params"]))
-        self.canvas_sweeps.draw()
         self.btn_report.setEnabled(True)
 
     def _update_table(self, res):

@@ -28,7 +28,9 @@ from PySide6.QtWidgets import (
 from . import ml_model_library, ml_train_figures, settings
 from .ml_tab_predict import _NumItem
 from .cards import MetaCard, RingCard
-from .layout import apply_section_defaults, hsplit, scroll_page, Section
+from .layout import (
+    apply_section_defaults, hsplit, scroll_page, Section, when_visible,
+)
 from .theme import CARD_H2, CARD_W2, MUTED
 
 FIG_MIN_W, FIG_MIN_H = 300, 250
@@ -55,10 +57,11 @@ class EvaluateTab:
             self.figures[name] = fig
             self.canvases[name] = canvas
 
+        self._frame = frame
         self._build(frame)
         if state is not None:
-            state.cv_finished.connect(self._reload_sources)
-        self._reload_sources()
+            state.cv_finished.connect(self.reload_sources)
+        self.reload_sources()
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
@@ -73,7 +76,7 @@ class EvaluateTab:
                                      QSizePolicy.Policy.Fixed)
         self.cmb_model.currentIndexChanged.connect(self._on_model_changed)
         btn_refresh = QPushButton("Refresh")
-        btn_refresh.clicked.connect(self._reload_sources)
+        btn_refresh.clicked.connect(self.reload_sources)
         btn_folder = QPushButton("Models folder…")
         btn_folder.clicked.connect(self._change_models_dir)
         self.btn_report = QPushButton("Export model report…")
@@ -211,7 +214,7 @@ class EvaluateTab:
         if path:
             self.models_dir = Path(path)
             self._custom_models_dir = True
-            self._reload_sources()
+            self.reload_sources()
 
     def follow_default_models_dir(self):
         """Settings' models folder changed - follow it, unless a folder
@@ -221,7 +224,13 @@ class EvaluateTab:
         new = Path(settings.get_models_dir())
         if new != self.models_dir:
             self.models_dir = new
-            self._reload_sources()
+            self.reload_sources()
+
+    def reload_sources(self):
+        """Re-list the models: now if the tab is on screen, otherwise when
+        it's next opened (reading every deployed model and drawing its
+        figures takes a second or more)."""
+        when_visible(self._frame, self._reload_sources, key="sources")
 
     def _reload_sources(self):
         """Session results first, then every deployed model on disk."""
