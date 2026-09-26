@@ -274,8 +274,10 @@ def study_design_section(window, formats=("png",), dpi=300):
         h.append(f"<h1 style='color:{dark};'>Study Design Report</h1>")
 
         h.append(f"<h2 style='color:{dark};'>Sampling precision</h2>")
-        if precision.lbl_result.text():
-            h.append(f"<p>{esc(precision.lbl_result.text())}</p>")
+        if precision.result_text():
+            h.append("<p>" + "<br>".join(
+                esc(line) for line in precision.result_text().splitlines())
+                + "</p>")
         t = precision.tbl_sweep
         rows = [[t.item(r, c).text() if t.item(r, c) else ""
                  for c in range(t.columnCount())]

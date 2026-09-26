@@ -18,8 +18,8 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
-    QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout,
+    QWidget,
 )
 
 from . import settings
@@ -27,9 +27,6 @@ from .cards import MetaCard, Spinner
 from .layout import apply_section_defaults, centred, scroll_page, Section
 from .theme import ACCENT, ACCENT_BUTTON, BAD, MUTED, OK
 
-
-# Train final model / Deploy model - a quarter of the 960 px column
-_BUTTON_WIDTH = 240
 
 
 class DeployTab:
@@ -39,9 +36,6 @@ class DeployTab:
         self.state = state
         self.window = window
         self.models_dir = self._default_models_dir()
-        # True once a folder is picked by hand; the default (session
-        # library / Settings) then stops overriding it
-        self._custom_models_dir = False
 
         self._build(frame)
         self._connect_state()
@@ -52,11 +46,8 @@ class DeployTab:
                 lambda _root: self.follow_default_models_dir())
 
     def follow_default_models_dir(self):
-        """Re-point at the default models folder - the session library's
-        own, or Settings' models folder with no library - after either
-        changes, unless a folder was picked here by hand."""
-        if self._custom_models_dir:
-            return
+        """Re-point at the models folder after the session library or
+        Settings' models folder changes."""
         new = self._default_models_dir()
         if new == self.models_dir:
             return
@@ -65,11 +56,9 @@ class DeployTab:
         self._refresh()
 
     def _default_models_dir(self):
-        """`<session library>/StrikeWorks_user_output/models/` when a
-        session library is selected, else the original app-root
-        `models/` folder - "Change models folder…" below still points
-        this anywhere; deploying was never meant to be library-locked,
-        only its *default* destination follows the session library."""
+        """Where models are deployed: `<session library>/
+        StrikeWorks_user_output/models/`, or Settings' models folder when
+        no session library is selected."""
         session_state = getattr(self.window, "session_state", None)
         out = session_state.output_dir() if session_state is not None else None
         return (out / "models") if out is not None else settings.get_models_dir()
@@ -91,20 +80,19 @@ class DeployTab:
         dv = QVBoxLayout(grp_deploy)
         dv.setSpacing(8)
 
-        # the buttons at a quarter of the column's width; what each step
-        # will do (and the models folder) are their tooltips
-        run_row = QHBoxLayout()
+        # buttons at their natural width, left-aligned; what each step will
+        # do (and the models folder) are their tooltips
+        left = Qt.AlignmentFlag.AlignLeft
         self.btn_final = QPushButton("Train final model")
         self.btn_final.setMinimumHeight(32)
-        self.btn_final.setFixedWidth(_BUTTON_WIDTH)
+        # the same side padding as the accent Deploy button
+        self.btn_final.setMinimumWidth(self.btn_final.sizeHint().width() + 28)
         self.btn_final.setEnabled(False)
         self.btn_final.clicked.connect(self._train_final)
+        dv.addWidget(self.btn_final, alignment=left)
         self.spinner = Spinner(size=24)
         self.spinner.setVisible(False)
-        run_row.addWidget(self.btn_final)
-        run_row.addWidget(self.spinner)
-        run_row.addStretch()
-        dv.addLayout(run_row)
+        dv.addWidget(self.spinner, alignment=left)
         self.lbl_final_status = QLabel("")
         self.lbl_final_status.setWordWrap(True)
         self.lbl_final_status.setStyleSheet(f"color:{MUTED};")
@@ -123,19 +111,12 @@ class DeployTab:
         ver_row.addStretch()
         dv.addLayout(ver_row)
 
-        deploy_row = QHBoxLayout()
         self.btn_deploy = QPushButton("Deploy model")
         self.btn_deploy.setMinimumHeight(32)
-        self.btn_deploy.setFixedWidth(_BUTTON_WIDTH)
         self.btn_deploy.setEnabled(False)
         self.btn_deploy.setStyleSheet(ACCENT_BUTTON)
         self.btn_deploy.clicked.connect(self._deploy)
-        deploy_row.addWidget(self.btn_deploy)
-        self.btn_models_dir = QPushButton("Models folder…")
-        self.btn_models_dir.clicked.connect(self._change_models_dir)
-        deploy_row.addWidget(self.btn_models_dir)
-        deploy_row.addStretch()
-        dv.addLayout(deploy_row)
+        dv.addWidget(self.btn_deploy, alignment=left)
         self.lbl_deploy_status = QLabel("")
         self.lbl_deploy_status.setWordWrap(True)
         self.lbl_deploy_status.setStyleSheet(f"color:{MUTED};")
@@ -169,8 +150,6 @@ class DeployTab:
         s = self.state
         self.btn_final.setEnabled(s.cv_done and not s.running)
         self.btn_deploy.setEnabled(s.final_done and not s.running)
-        self.btn_models_dir.setToolTip(
-            f"Models folder: {self.models_dir}\nClick to change it.")
         self.btn_deploy.setToolTip(
             f"Deploy the final model(s) to {self.models_dir}")
 
@@ -254,7 +233,7 @@ class DeployTab:
         self.lbl_final_status.setStyleSheet(f"color:{ACCENT};")
         self.lbl_final_status.setText(
             "Training the final deployment model on all training data… "
-            "(progress in the Cross-validate console)")
+            "(progress in the Train tab's console)")
 
     def _fill_final_card(self):
         """Deployment-model details, read from the run's final-model
@@ -306,7 +285,7 @@ class DeployTab:
     def _on_final_finished(self):
         s = self.state
         self.spinner.stop()
-        self.btn_final.setText("TRAIN FINAL MODEL")
+        self.btn_final.setText("Train final model")
         self.btn_final.setEnabled(True)
         self.btn_deploy.setEnabled(True)
         mc_m = (s.model_results("multiclass") or {}).get("metrics", {})
@@ -318,7 +297,7 @@ class DeployTab:
 
     def _on_final_failed(self, msg):
         self.spinner.stop()
-        self.btn_final.setText("TRAIN FINAL MODEL")
+        self.btn_final.setText("Train final model")
         self.btn_final.setEnabled(self.state.cv_done)
         self.lbl_final_status.setStyleSheet(f"color:{BAD};")
         first = msg.strip().splitlines()[-1] if msg.strip() else "Unknown error"
@@ -331,16 +310,6 @@ class DeployTab:
         dlg.exec()
 
     # ── deployment ───────────────────────────────────────────────────────────
-    def _change_models_dir(self):
-        path = QFileDialog.getExistingDirectory(
-            self.window, "Select models folder", str(self.models_dir))
-        if path:
-            self.models_dir = Path(path)
-            self._custom_models_dir = True
-            self.ed_version.setText(
-                self.state.suggest_version(self.models_dir))
-            self._refresh()
-
     def _deploy(self):
         s = self.state
         version = self.ed_version.text().strip()

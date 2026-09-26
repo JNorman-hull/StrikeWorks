@@ -24,9 +24,9 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from PySide6.QtCore import Qt
 
 from PySide6.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QPushButton,
-    QSizePolicy, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
-    QVBoxLayout,
+    QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel,
+    QPlainTextEdit, QPushButton, QSizePolicy, QSpinBox, QSplitter,
+    QTableWidget, QTableWidgetItem, QVBoxLayout,
 )
 
 from .bsm_state import LATEST_RESULT_PATH
@@ -37,6 +37,7 @@ from .wilson_calc import required_n, wilson_interval
 
 _N_MULTIPLIERS = (0.5, 1, 2, 4)
 _N_CURVE_POINTS = 60
+_INPUT_WIDTH = 80
 
 # the Study design report figure (cm)
 STUDY_DESIGN_SIZE_CM = (14.0, 10.0)
@@ -60,66 +61,12 @@ class PrecisionCalcTab:
         gv = QVBoxLayout(grp)
         gv.setSpacing(8)
 
-        form = QGridLayout()
-        form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(6)
-
-        form.addWidget(muted_label("Expected strike rate (%)"), 0, 0)
-        rate_row = QHBoxLayout()
-        self.spin_rate = QDoubleSpinBox()
-        self.spin_rate.setRange(0.0, 100.0)
-        self.spin_rate.setDecimals(1)
-        self.spin_rate.setValue(10.0)
-        self.spin_rate.valueChanged.connect(self._recalculate)
-        rate_row.addWidget(self.spin_rate)
-        self.btn_load_bsm = QPushButton("Load from Blade Strike Modelling")
-        self.btn_load_bsm.clicked.connect(self._load_from_bsm)
-        rate_row.addWidget(self.btn_load_bsm)
-        form.addLayout(rate_row, 0, 1)
-
-        form.addWidget(muted_label("Planned sample size (N)"), 1, 0)
-        self.spin_n = QSpinBox()
-        self.spin_n.setRange(1, 100000)
-        self.spin_n.setValue(50)
-        self.spin_n.valueChanged.connect(self._recalculate)
-        form.addWidget(self.spin_n, 1, 1)
-
-        form.addWidget(muted_label("Confidence level"), 2, 0)
-        self.cmb_confidence = QComboBox()
-        for pct in (90, 95, 99):
-            self.cmb_confidence.addItem(f"{pct}%", pct)
-        self.cmb_confidence.setCurrentIndex(1)
-        self.cmb_confidence.currentIndexChanged.connect(self._recalculate)
-        form.addWidget(self.cmb_confidence, 2, 1)
-
-        # the inverse question: how many sensors for a wanted precision
-        form.addWidget(muted_label("Target precision (± pp)"), 3, 0)
-        target_row = QHBoxLayout()
-        self.spin_target = QDoubleSpinBox()
-        self.spin_target.setRange(0.1, 50.0)
-        self.spin_target.setDecimals(1)
-        self.spin_target.setSingleStep(0.5)
-        self.spin_target.setValue(5.0)
-        self.spin_target.setToolTip(
-            "How close (± percentage points) the observed strike rate should "
-            "be expected to land - the sample size needed for it is shown "
-            "alongside.")
-        self.spin_target.valueChanged.connect(self._recalculate)
-        target_row.addWidget(self.spin_target)
-        self.lbl_required = QLabel("")
-        self.lbl_required.setStyleSheet(f"color:{TEXT};")
-        target_row.addWidget(self.lbl_required, stretch=1)
-        self.btn_use_required = QPushButton("Use as planned N")
-        self.btn_use_required.clicked.connect(self._use_required_n)
-        target_row.addWidget(self.btn_use_required)
-        form.addLayout(target_row, 3, 1)
-        form.setColumnStretch(1, 1)
-        gv.addLayout(form)
-
-        self.lbl_result = QLabel("")
-        self.lbl_result.setStyleSheet(f"color:{TEXT};font-weight:bold;")
-        self.lbl_result.setWordWrap(True)
-        gv.addWidget(self.lbl_result)
+        # the inputs at their natural size, the Notes box taking the rest
+        top = QHBoxLayout()
+        top.setSpacing(16)
+        top.addLayout(self._inputs())
+        top.addWidget(self._notes(), stretch=1)
+        gv.addLayout(top)
 
         self.tbl_sweep = QTableWidget(0, 4)
         self.tbl_sweep.setHorizontalHeaderLabels(
@@ -140,12 +87,87 @@ class PrecisionCalcTab:
         row.setChildrenCollapsible(False)
         row.addWidget(self.tbl_sweep)
         row.addWidget(self.canvas_precision)
-        row.setSizes([1, 1])
+        row.setSizes([1, 3])
         gv.addWidget(row, stretch=1)
 
         v.addWidget(grp)
         v.addStretch()
         apply_section_defaults(frame)
+
+    def _inputs(self):
+        form = QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(6)
+        left = Qt.AlignmentFlag.AlignLeft
+
+        form.addWidget(muted_label("Expected strike rate (%)"), 0, 0)
+        self.spin_rate = QDoubleSpinBox()
+        self.spin_rate.setRange(0.0, 100.0)
+        self.spin_rate.setDecimals(1)
+        self.spin_rate.setValue(10.0)
+        self.spin_rate.valueChanged.connect(self._recalculate)
+        form.addWidget(self.spin_rate, 0, 1)
+        self.btn_load_bsm = QPushButton("Load from Blade Strike Modelling")
+        self.btn_load_bsm.clicked.connect(self._load_from_bsm)
+        form.addWidget(self.btn_load_bsm, 0, 2, left)
+
+        form.addWidget(muted_label("Planned sample size (N)"), 1, 0)
+        self.spin_n = QSpinBox()
+        self.spin_n.setRange(1, 100000)
+        self.spin_n.setValue(50)
+        self.spin_n.valueChanged.connect(self._recalculate)
+        form.addWidget(self.spin_n, 1, 1)
+
+        form.addWidget(muted_label("Confidence level"), 2, 0)
+        self.cmb_confidence = QComboBox()
+        for pct in (90, 95, 99):
+            self.cmb_confidence.addItem(f"{pct}%", pct)
+        self.cmb_confidence.setCurrentIndex(1)
+        self.cmb_confidence.currentIndexChanged.connect(self._recalculate)
+        form.addWidget(self.cmb_confidence, 2, 1)
+
+        # the inverse question: how many sensors for a wanted precision
+        form.addWidget(muted_label("Target precision (± pp)"), 3, 0)
+        self.spin_target = QDoubleSpinBox()
+        self.spin_target.setRange(0.1, 50.0)
+        self.spin_target.setDecimals(1)
+        self.spin_target.setSingleStep(0.5)
+        self.spin_target.setValue(5.0)
+        self.spin_target.setToolTip(
+            "How close (± percentage points) the observed strike rate should "
+            "be expected to land; the sample size needed for it is shown "
+            "below.")
+        self.spin_target.valueChanged.connect(self._recalculate)
+        form.addWidget(self.spin_target, 3, 1)
+        self.btn_use_required = QPushButton("Use as planned N")
+        self.btn_use_required.clicked.connect(self._use_required_n)
+        form.addWidget(self.btn_use_required, 3, 2, left)
+        self.lbl_required = QLabel("")
+        self.lbl_required.setStyleSheet(f"color:{TEXT};")
+        form.addWidget(self.lbl_required, 4, 1, 1, 2)
+
+        for w in (self.spin_rate, self.spin_n, self.cmb_confidence,
+                  self.spin_target):
+            w.setFixedWidth(_INPUT_WIDTH)
+        return form
+
+    def _notes(self):
+        """The result as text that can be selected and copied."""
+        grp = Section("Notes")
+        nv = QVBoxLayout(grp)
+        self.txt_result = QPlainTextEdit()
+        self.txt_result.setReadOnly(True)
+        self.txt_result.setStyleSheet(f"color:{TEXT};font-weight:bold;")
+        self.txt_result.setToolTip("Select and copy (Ctrl+C) to paste it "
+                                   "elsewhere.")
+        self.txt_result.setMinimumWidth(240)
+        self.txt_result.setMaximumHeight(110)
+        nv.addWidget(self.txt_result)
+        return grp
+
+    def result_text(self):
+        """The Notes text: planned N, its interval and precision."""
+        return self.txt_result.toPlainText()
 
     # ── Blade Strike Modelling handoff ──────────────────────────────────────
     def _load_from_bsm(self):
@@ -175,18 +197,17 @@ class PrecisionCalcTab:
         n = self.spin_n.value()
         confidence = self.cmb_confidence.currentData()
 
-        result = wilson_interval(p, n, confidence)
-        lo, hi, half = result
-        self.lbl_result.setText(
-            f"N={n} at an assumed {p * 100:.1f}% strike rate → "
-            f"{confidence}% CI [{lo * 100:.1f}%, {hi * 100:.1f}%], "
+        lo, hi, half = wilson_interval(p, n, confidence)
+        self.txt_result.setPlainText(
+            f"N={n} at an assumed {p * 100:.1f}% strike rate\n"
+            f"{confidence}% CI [{lo * 100:.1f}%, {hi * 100:.1f}%],\n"
             f"precision ±{half * 100:.1f} percentage points.")
 
         target = self.spin_target.value()
         self._required_n = required_n(p, target / 100.0, confidence)
         self.lbl_required.setText(
-            f"→ N = {self._required_n} sensor(s) needed"
-            if self._required_n else "→ not reachable")
+            f"N = {self._required_n} sensor(s) needed"
+            if self._required_n else "Not reachable at this strike rate")
         self.btn_use_required.setEnabled(bool(self._required_n)
                                          and self._required_n != n)
 
@@ -214,13 +235,14 @@ class PrecisionCalcTab:
 
     def _draw_precision_curve(self, p, n, confidence, planned_half):
         self._curve = (p, n, confidence, planned_half)
-        self.draw_curve(self.fig_precision, dark=True)
+        self.draw_curve(self.fig_precision, dark=True, title=False)
         self.canvas_precision.draw()
 
-    def draw_curve(self, fig, dark=True):
+    def draw_curve(self, fig, dark=True, title=True):
         """Precision (±, percentage points) against sample size N, the
-        planned N marked - onto any figure: the page's own dark canvas,
-        or the Study design report's light 14 x 10 cm one."""
+        planned N marked - onto any figure: the page's own dark canvas
+        (no title; the Notes box gives it), or the Study design report's
+        light 14 x 10 cm one."""
         if self._curve is None:
             return
         p, n, confidence, planned_half = self._curve
@@ -241,8 +263,9 @@ class PrecisionCalcTab:
         style_legend(ax.legend(loc="upper right", fontsize=8), dark)
         ax.set_xlabel("Sample size N", fontsize=9)
         ax.set_ylabel("Precision ± (percentage points)", fontsize=9)
-        ax.set_title(f"Precision at {p * 100:.1f}% expected strike rate "
-                     f"({confidence}% CI)", fontsize=10, fontweight="bold")
+        if title:
+            ax.set_title(f"Precision at {p * 100:.1f}% expected strike rate "
+                         f"({confidence}% CI)", fontsize=10, fontweight="bold")
         ax.tick_params(labelsize=8)
         style_axes(fig, ax, dark)
         fig.tight_layout()
