@@ -1,8 +1,7 @@
 # StrikeWorks clean-up and refactoring plan
 
-Status: **done** on branch `cleanup-2026-09` - phases A-I (see the
-progress table in section 9; the bundle-size items wait for the next build). Each phase ends in a working app,
-so the work can stop after any of them.
+Status: **done** on branch `cleanup-2026-09`, phases A-I (progress table
+in section 9). The bundle-size items wait for the next build.
 
 Numbers come from an audit of the source on 2026-09-25 (70 modules,
 ~30,000 hand-written lines, plus the generated `ui_main.py` and
