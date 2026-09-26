@@ -4,55 +4,28 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Controller for the Annotate page (Annotation & Video Analysis).
+"""Annotate (Validate and annotate): the sensor list and filters on the
+left, the signal plot and the Validate / Annotations boxes on the right.
 
-Built on the same shape Inspect uses (`ml_tab_inspect.py`): a fixed-width
-browser on the left, a detail area filling the rest. The browser here is
-library -> deployment -> treatment -> sensor, mirroring Inspect's
-filter-combo pattern; the detail area is itself split half signal-plot /
-half annotation panel.
+A sensor's deployment and treatment are the folders its raw file sits in,
+`raw_sens_data/<deployment>/<treatment>/[Run n/]`, which need not match a
+planned deployment; a missing level shows as "(ungrouped)". Video is
+`<treatment>/VIDEO/<stem>_vid_*.mp4`, matched case-insensitively.
 
-A sensor's "deployment" and "treatment" are the two levels of subfolder
-under `raw_sens_data` its raw file lives under (the same folder Process
-scans) - `raw_sens_data/<deployment>/<treatment>/` - not the study-design
-deployment/treatment from Prepare > Study design, which need not exist yet
-when a recording is only reviewed. A folder missing one of these levels
-(files directly under the deployment, or no deployment folder at all)
-still works - it just buckets under "(ungrouped)" at whichever level is
-absent. Video lives inside the treatment folder, its own name matched
-case-insensitively: `raw_sens_data/<deployment>/<treatment>/VIDEO/
-<stem>_vid_*.mp4`.
+Saving a sensor also adds it to the library's running dataset,
+`processed_sens_data/model_features.csv` (`dataset_build.standardise`),
+replacing its block if it's already there; opening a library reads that
+file back, so review resumes where it stopped. Annotations are optional
+per sensor ("No annotations for this sensor").
 
-The nadir/ROI tool (left/right axis, ROI window, save + next, reset
-current) is ported from `page_validate.py` rather than imported wholesale:
-`page_validate.py` stays under Sensor Processing untouched, since it is the
-page slated to grow into the Delineation tool later, and the two pages
-temporarily overlap in what they do. The already-standalone
-`CsvLoadThread`/`NavViewBox`/`Spinner`/`decimate` are reused directly
-(the same reuse `ml_tab_inspect.py` already makes), the rest is rebuilt
-here because Annotate's save action does more than Validate's: it also
-appends the sensor to a running dataset.
-
-Dataset auto-build: the first sensor saved in a library starts
-`processed_sens_data/model_features.csv` (the same shape Dataset creation
-already produces - `dataset_build.py`'s `standardise`/`META_COLS`, reused
-directly); each further "Save + next" appends (or replaces, if re-saving a
-sensor already in it) that sensor's block. Opening a library reads this
-file back to know which sensors are already done, so review can resume
-where it left off. Annotation values are optional per sensor - a "No
-annotations for this sensor" tick lets a sensor through with none, so a
-dataset collected without annotations still works.
-
-Validation (validation_core.py - the same code as Simple mode's Validate
-step): "Auto process all" saves every sensor's detected window and flags
-the ones whose window shows a weak HIG peak for review; the list puts
-flagged-and-unreviewed sensors first (amber), user-validated green,
-auto-validated purple, bad red. Save + next records a human review (and
-whether the nadir was moved) and, while flagged sensors are still waiting,
-jumps to the next of them. "Save and export" binds every listed sensor's
-saved window, with its annotations, into one dataset (input data folder +
-the running dataset above) and hands it to Model prediction; "Import
-annotations CSV…" stamps a spreadsheet of annotations onto the index.
+Validation is validation_core.py, shared with Simple mode: "Auto process
+all" saves every sensor's detected window and flags weak HIG peaks for
+review; flagged-and-unreviewed sensors list first (amber), then
+user-validated (green), auto-validated (purple) and bad (red). Save + next
+records the review and moves to the next flagged sensor. "Save and export"
+binds every listed sensor's window and annotations into one dataset and
+hands it to Model prediction; "Import annotations CSV…" stamps a
+spreadsheet of annotations onto the index.
 """
 import subprocess
 from datetime import datetime
@@ -265,10 +238,8 @@ class AnnotationPage(QObject):
         lv.setContentsMargins(0, 0, 5, 0)
         lv.setSpacing(8)
 
-        self.lib_selector = LibrarySelector(sensor_list=True,
-                                            list_columns=["Video", "In dataset"],
-                                            session_state=self.session_state,
-                                            show_picker=False)
+        self.lib_selector = LibrarySelector(self.session_state, sensor_list=True,
+                                            list_columns=["Video", "In dataset"])
         lv.addWidget(self.lib_selector, stretch=1)
         # kept as aliases so the rest of this module's existing references
         # (chk_show_flags, tbl_sensors, lbl_progress) keep working unchanged
@@ -796,7 +767,7 @@ class AnnotationPage(QObject):
         self._set_loaded_enabled(True)
         self.status.emit(f"Loaded: {path.name}", 3000)
 
-    # ── plot (left/right axis, ported from page_validate.py) ────────────────
+    # ── plot (left/right axis) ─────────────────────────────────────────────
     def _channel(self, key):
         if key is None or self._df is None:
             return None

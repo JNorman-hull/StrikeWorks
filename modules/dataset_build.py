@@ -239,7 +239,7 @@ class ExtractThread(QThread):
             if self._selected_files and stem not in self._selected_files:
                 continue
             if valid is not None and stem not in valid:
-                self.log.emit(f"  SKIP {stem} - not in index or bad_sens != N")
+                self.log.emit(f"  SKIP {stem} - not in the index, or flagged bad")
                 n_skip += 1
                 continue
 

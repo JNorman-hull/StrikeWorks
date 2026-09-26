@@ -4,28 +4,22 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Simple mode - a guided, one-window walkthrough of Deploy > Process >
-Validate > Predict > Report, and the app's default landing experience -
-main.py opens it on launch, ahead of the full Advanced GUI.
-Spec: simple_spec/Home.png, Deploy.png, Validate.png, Predict.png.
+"""Simple mode: a guided, one-window walkthrough of Deploy > Process >
+Validate > Predict > Report, and the first thing the app shows (main.py
+opens it on launch). Layout per simple_spec/*.png.
 
-Every step runs on the same pieces Advanced mode uses - for the first
-three, literally the same widgets/code:
+Each step uses the same pieces as the full app:
 
-  Deploy    - deployment_editor.DeploymentEditor (also Advanced mode's
-              Create and edit deployment page).
-  Process   - inventory_widgets.FileInventory (also Advanced mode's Raw
-              data processing page): every recording labelled with the
-              deployment / treatment / run folder it sits in.
-  Validate  - validation_core (also Advanced mode's Annotate page): Auto
-              process all, the HIG-in-window flag that points a person at
-              the sensors worth a second look, user validation, Save and
-              export.
+  Deploy    - deployment_editor.DeploymentEditor (Create and edit
+              deployment).
+  Process   - inventory_widgets.FileInventory (Raw data processing).
+  Validate  - validation_core (Annotate): Auto process all, the weak-HIG
+              flag that points at the sensors worth a second look, user
+              validation, Save and export.
   Predict   - the shared PredictionState (window.ml_prediction_page.state).
   Report    - ml_figures / ml_report.
 
-The signal preview's nadir line is draggable - Auto process all handles the
-bulk case with no per-file review, then the flagged sensors (or any other)
+The nadir line on the signal preview can be dragged, so a flagged sensor
 can be corrected by hand and re-saved with Save + Next.
 """
 from pathlib import Path
@@ -77,14 +71,10 @@ _LIST_ITEMS = [
     ("Download", 1, 6),
 ]
 
-# pages that already show their own big logo - the small horizontal one
-# (fixed bottom-left, present on every other page) would just duplicate it
+# pages that show the big logo, so not the small bottom-left one
 _NO_SMALL_LOGO_PAGES = {0, 6}
 
-# the guidance line shown above Back/Next/Close, per stack page index -
-# spec text where the mockups (simple_spec/Home.png, Deploy.png,
-# Validate.png, Predict.png) give it, short consistent text of the same
-# kind for the three steps they don't cover
+# the guidance line above Back/Next/Close, per stack page index
 _GUIDANCE = {
     0: "Pressing next continues with blade strike prediction…",
     1: "Create a deployment and add data to continue…",
@@ -97,63 +87,27 @@ _GUIDANCE = {
 
 
 class SimpleModeDialog(QDialog):
-    """Pop-up wizard for Simple mode - the app's default landing
-    experience (main.py opens it automatically, right after MainWindow is
-    shown). Built once, reopened via `exec()` each time; "Development
-    toolkit" on its own Home page (`_go_development_toolkit`) is what
-    switches to the full Advanced GUI instead."""
+    """Simple mode's window. Built once and reopened with `exec()`;
+    "Development toolkit" (`_go_development_toolkit`) switches to the full
+    app."""
 
     def __init__(self, window):
         super().__init__(window)
         self.window = window
         self.setWindowTitle("StrikeWorks")
         self.setWindowIcon(QIcon(str(ICON_PATH)))
-        # resizable, not setFixedSize() - fixing it at exactly 1340x700
-        # forced every page's own layout to compress into that regardless
-        # of what its content actually needed, which is what was causing
-        # overlapping/clipped labels (worst on Deploy, now the tallest
-        # page - see its own left column, wrapped in a QScrollArea below
-        # for exactly this reason). resize() only sets the *initial* size
-        # and setMinimumSize() the floor the user can still shrink it to
-        # by hand - it can still grow if a page genuinely needs more.
-        #
-        # 700 content height doesn't actually fit a 1366x768 screen once
-        # the taskbar (~48px) and this window's own title bar (~32px) are
-        # accounted for - confirmed directly (a real screenshot showed
-        # Back/Next/Close and the logo clipped behind the taskbar), and
-        # the old minimum of 650 left almost no real headroom to shrink
-        # out of that state by hand. 640/560 both sit comfortably inside
-        # a 768-tall screen's usable work area; the real layout-driven
-        # minimum (every page's own content) is smaller still (~556x475
-        # measured directly), so 900x560 as an explicit floor is a chosen
-        # "don't get uncomfortably cramped" limit, not one forced by any
-        # page's content.
+        # resizable; 640 high fits a 1366x768 screen with the taskbar and
+        # title bar
         self.resize(1340, 640)
         self.setMinimumSize(900, 560)
-        # a hard ceiling too - confirmed directly (user testing) that the
-        # SetNoConstraint fix above didn't fully stop the jump-while-
-        # dragging-by-the-title-bar bug, narrowing it to specifically
-        # Deploy/Validate/Predict (the pages with the most dynamic child
-        # content: MetaCard.set_rows() rebuilding its grid, pyqtgraph's
-        # PlotWidget, RingCard). Whatever the exact trigger turns out to
-        # be, Windows' native interactive-move loop negotiates window
-        # size against Qt's minimum/maximum directly (WM_GETMINMAXINFO) -
-        # a QLayout's own SetConstraint has no say over that - so an
-        # explicit maximum is what actually stops it from being able to
-        # jump to some larger "natural" size mid-drag, regardless of
-        # which internal mechanism was asking for one.
+        # a maximum as well: while the window is dragged by its title bar,
+        # Windows sizes it against Qt's minimum/maximum, and without one
+        # it can jump to a page's larger natural size mid-drag
         self.setMaximumSize(1600, 900)
-        # this dialog, not MainWindow, is the app's first visible window
-        # now (main.py's __main__) - same missing-taskbar-button issue
-        # MainWindow itself had and for the same underlying reason (see
-        # win_utils.py), just triggered by MainWindow staying hidden as
-        # its owner rather than by FramelessWindowHint
+        # the app's first visible window, and its owner (MainWindow) is
+        # hidden, so it needs the taskbar fix (win_utils.py)
         win_utils.ensure_taskbar_button(self)
-        # window-modal, not exec()'s application-modal default: it only
-        # needs to block MainWindow, its owner. Application modality also
-        # input-blocked every other top-level window - which is what left
-        # the dev console (dev_console.py, deliberately parentless)
-        # visible but unclickable behind this wizard.
+        # window-modal, so the dev console stays usable
         self.setWindowModality(Qt.WindowModality.WindowModal)
 
         self._lib_root = window.session_state.library
@@ -187,26 +141,11 @@ class SimpleModeDialog(QDialog):
     # ── top-level layout ────────────────────────────────────────────────────
     def _build(self):
         outer = QVBoxLayout(self)
-        # a plain 5px border on every side - not the old 0px outer +
-        # top_bar's own (10, 6, 10, 0) margins, which existed to frame
-        # the heading text that's since been removed (DELETE THIS HEADING
-        # TEXT, Home.png) and left ~40px of dead space above the page
-        # list once that text was gone. About/Settings moved into the
-        # top of the right-hand column below instead of their own row -
-        # level with where the page list itself starts, not above it.
         outer.setContentsMargins(5, 5, 5, 5)
         outer.setSpacing(0)
-        # SetNoConstraint - otherwise this top-level layout can resize the
-        # whole dialog to fit whatever the *current* stack page's own
-        # size hint is, and Qt/Windows can apply that queued resize mid-
-        # drag during a native interactive title-bar move (which runs its
-        # own nested message loop, unlike anything a plain script-driven
-        # move()/resize() call ever triggers). Confirmed to only happen
-        # navigating away from Home - the one page with no Section/
-        # QScrollArea/PlotWidget of its own to have a "current page size
-        # hint" that could differ enough from the window's actual size to
-        # provoke it. This makes the window's size purely a function of
-        # resize()/the user's own dragging, never of which page is showing.
+        # SetNoConstraint: the window's size follows the user, not the
+        # current page's size hint (a queued resize could otherwise land
+        # mid-drag)
         outer.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
 
         body = QHBoxLayout()
@@ -228,8 +167,7 @@ class SimpleModeDialog(QDialog):
                 item.setFont(f)
             self.step_list.addItem(item)
         self.step_list.itemClicked.connect(self._on_step_clicked)
-        # size the container to exactly what the list needs - no leftover
-        # empty space below the last item, no wasted width either
+        # sized to exactly what the list needs
         fm = self.step_list.fontMetrics()
         width = max(fm.horizontalAdvance(("    " if i else "") + t)
                     for t, i, _p in _LIST_ITEMS) + 36
@@ -249,12 +187,8 @@ class SimpleModeDialog(QDialog):
         top_row = QHBoxLayout()
         top_row.addStretch()
         btn_about = QPushButton("About")
-        # autoDefault(True) is a QPushButton's own default - the first
-        # button added to a QDialog with no default button set otherwise
-        # picks it up automatically, which is what was reading as
-        # "stuck active" (most Windows styles draw the default button
-        # with a permanent highlighted border, not just while pressed).
-        # Neither About nor Settings should ever be Enter-triggered.
+        # not autoDefault: a dialog's first button otherwise becomes the
+        # Enter default and is drawn highlighted
         btn_about.setAutoDefault(False)
         btn_about.setDefault(False)
         btn_about.clicked.connect(self._show_about)
@@ -361,13 +295,9 @@ class SimpleModeDialog(QDialog):
             self._sync_step_highlight()
 
     def _confirm_unsaved_dataset(self):
-        """Whether it's safe to leave Validate for Predict without first
-        (re-)running Save and export - Predict otherwise runs against
-        whatever dataset CSV happened to be exported last, silently
-        stale against anything validated/flagged since. Returns "proceed"
-        (nothing outstanding), "save" (user chose Save and continue -
-        _go_next must not advance the page itself; _on_extract_done does,
-        once export actually finishes), or "cancel" (stay on Validate)."""
+        """Leaving Validate with changes not yet exported (Predict would
+        use the last export). Returns "proceed", "save" (Save and continue:
+        _on_extract_done moves on once the export finishes) or "cancel"."""
         if self._built_dataset_path is not None and not self._validate_dirty:
             return "proceed"
         box = QMessageBox(self.window)
@@ -388,12 +318,8 @@ class SimpleModeDialog(QDialog):
         return "cancel"
 
     def _confirm_leave_validate(self):
-        """Flagged sensors are the ones Auto process all itself couldn't
-        be sure about - the user may well only need to check those and
-        trust the rest, so this only counts flagged-and-unreviewed (not
-        every un-user-validated sensor) and only prompts when that count
-        is non-zero. True = proceed (nothing outstanding, or the user
-        said Yes); False = stay on Validate."""
+        """Asks before leaving Validate with flagged sensors unreviewed
+        (the rest can be trusted). True to go on, False to stay."""
         _auto, user_validated, flagged, _bad = self._validation_status()
         outstanding = [f for f in self._validate_files
                        if f["stem"] in flagged and f["stem"] not in user_validated]
@@ -487,20 +413,9 @@ class SimpleModeDialog(QDialog):
         return page
 
     def _go_development_toolkit(self):
-        """"Development toolkit" (Home.png) - the opt-in door to the full
-        Advanced GUI, reusing HomePage's own entry logic exactly
-        (expand_sidebar, no section panel opened) rather than duplicating
-        it. MainWindow is never shown by default any more (main.py) - set
-        its state *then* show it, so it appears already in Advanced mode
-        rather than flashing the (still-narrow) Home page first - and only
-        then close this wizard so it's what the user actually sees.
-
-        went_to_dev_toolkit records that this, specifically, is why the
-        wizard closed - MainWindow.openSimpleMode() reads it back so
-        main.py's own startup call can tell "chose Development toolkit"
-        (show MainWindow, already done above) from "closed any other way"
-        (Close button, window X - quit the whole app instead; see that
-        module's own comment)."""
+        """Open the full app in Advanced mode (the same entry as Home's
+        Advanced mode button), then close this window.
+        `went_to_dev_toolkit` tells main.py not to quit when it closes."""
         self.went_to_dev_toolkit = True
         self.window.home_page._go_advanced()
         self.window.show()
@@ -516,9 +431,7 @@ class SimpleModeDialog(QDialog):
         title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
         title.setWordWrap(True)
         v.addWidget(title)
-        # the same editor Advanced mode's Create and edit deployment hosts -
-        # library, status, sensor, deployment, treatments, Create/Update and
-        # the unsaved-changes prompt all live there (deployment_editor.py)
+        # the same editor as Create and edit deployment
         self.editor = DeploymentEditor(self.window, self.window.session_state)
         v.addWidget(self.editor, stretch=1)
         return page
@@ -534,10 +447,7 @@ class SimpleModeDialog(QDialog):
         title = QLabel("Process, validate and segment sensor data…")
         title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
         v.addWidget(title)
-        # shared with Advanced mode's Raw data processing page
-        # (inventory_widgets.py) - each recording carries the deployment,
-        # treatment and run of the folder it sits in, and is labelled with
-        # exactly those once processed
+        # the same inventory as Raw data processing
         self.inventory = FileInventory()
         v.addWidget(self.inventory, stretch=1)
         return page
@@ -559,12 +469,7 @@ class SimpleModeDialog(QDialog):
         title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
         v.addWidget(title)
 
-        # a fixed-width left pane, not a draggable QSplitter -
-        # setSizes([1, 2]) below only ever set an *initial* proportion,
-        # never a constraint, so the list kept growing wider than
-        # intended and had to be dragged back by hand every time
-        # (simple_spec/Validate.png shows no splitter handle - a plain
-        # fixed-width column instead)
+        # a fixed-width list column (no splitter, per simple_spec/Validate.png)
         split = QHBoxLayout()
         split.setContentsMargins(0, 0, 0, 0)
         split.setSpacing(10)
@@ -695,8 +600,7 @@ class SimpleModeDialog(QDialog):
             "HIG acc mag (g)", self._cur_validate_hig,
             (float(time[0]), float(time[-1])))
 
-    # -- process-validate step logic (validation_core.py - shared with
-    # Advanced mode's Annotate page) -------------------------------------
+    # -- validate step logic (validation_core.py, shared with Annotate) ----
     def _validate_index(self):
         return di.read_index(self._lib_root) if self._lib_root else None
 
@@ -720,9 +624,7 @@ class SimpleModeDialog(QDialog):
         bad = status[3]
         show_bad = self.chk_show_bad.isChecked()
 
-        # flagged-and-not-yet-user-validated first (what actually needs
-        # attention), then everything else in its normal order - stable
-        # sort keeps each group's own relative order unchanged
+        # flagged-and-unreviewed first, otherwise in the usual order
         ordered = sorted(self._validate_files,
                          key=lambda f: not vc.needs_review(f["stem"], status))
 
@@ -770,13 +672,12 @@ class SimpleModeDialog(QDialog):
         self._cur_validate_nadir_idx = vc.detect_nadir_idx(
             stem, df, self._cur_validate_time, self._cur_validate_pres,
             self._validate_index())
-        # the as-loaded nadir, before any dragging - compared against at
-        # save time to tell "human re-confirmed this" from "human moved
-        # it" (user adjusted, surfaced in the report)
+        # the nadir as loaded: Save compares against it to record whether
+        # the user moved it
         self._loaded_nadir_idx = self._cur_validate_nadir_idx
         self._draw_validate_plot()
-        # select it in the list too, for Jump/Auto-process consistency
-        # (_on_validate_current_changed sees it's already loaded)
+        # select it in the list too (_on_validate_current_changed sees
+        # it's already loaded)
         for i in range(self.validate_list.count()):
             if self.validate_list.item(i).text() == stem:
                 self.validate_list.setCurrentRow(i)
@@ -972,15 +873,11 @@ class SimpleModeDialog(QDialog):
             return
         self._built_dataset_path = path
         self._validate_dirty = False
-        # feed straight into the shared PredictionState (window.
-        # ml_prediction_page.state) - Advanced mode's Dataset creation
-        # wires its own dataset_ready the same way
+        # straight into the shared PredictionState
         self.window.ml_prediction_page.on_dataset_ready(
             df, f"Simple mode - {path.stem}")
         if self._advance_after_export:
-            # "Save and continue" on the unsaved-data prompt (_go_next) -
-            # the advance it deferred happens here, now that the export
-            # this needed has actually finished
+            # "Save and continue" (_go_next) moves on once the export is done
             self._advance_after_export = False
             self._refresh_predict_step()
             self.stack.setCurrentIndex(4)
@@ -988,12 +885,9 @@ class SimpleModeDialog(QDialog):
 
     # ── page 4: predict ──────────────────────────────────────────────────────
     def _build_predict_page(self):
-        """Centred, single-column layout (simple_spec/Predict.png) -
-        Dataset card, then Load/Run buttons, then status text, then the
-        two result rings side by side ("Predicted strikes" and "Strike
-        classes" - the per-region/class breakdown a multiclass run
-        produces, mirroring Advanced mode's own card_regions ring;
-        ml_tab_predict.py._refresh_cards)."""
+        """One centred column (simple_spec/Predict.png): the dataset card,
+        Load / Run, the status line, then the "Predicted strikes" and
+        "Strike classes" rings."""
         page = QWidget()
         v = QVBoxLayout(page)
         v.setSpacing(10)
@@ -1001,11 +895,7 @@ class SimpleModeDialog(QDialog):
         title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
         v.addWidget(title)
 
-        # equal stretch above/below - unequal (1 above, 2 below, as this
-        # briefly was) pins the content block near the top since most of
-        # any extra room the dialog is resized into only ever grows the
-        # larger side, reading as if the content itself had a fixed
-        # height/position rather than genuinely centring
+        # equal stretch above and below keeps the block centred
         v.addStretch(1)
 
         grp_ds = Section("Dataset")
@@ -1062,22 +952,10 @@ class SimpleModeDialog(QDialog):
         self.btn_run_predict.setEnabled(state.dataset_df is not None)
 
     def _auto_select_model(self, state):
-        """Defaults to the stable 'binary1'/'multiclass1' models in the
-        shared app-root models folder (settings.get_models_dir()) - the
-        one place both of the real, named production models actually
-        live - not "whatever finished training most recently" and not a
-        per-library deploy folder (Advanced mode's own Deploy tab writes
-        versioned models like binary1_0/binary1_1 into the *session
-        library's* StrikeWorks_user_output/models/, which is a different,
-        per-run destination Simple mode was never meant to follow). The
-        only way to deviate from the shared folder is a deliberate pin in
-        Adjustments (settings.get_default_model/get_default_mc_model),
-        which can point anywhere.
-
-        Always rescans rather than trusting `state.bin_candidates` already
-        being non-empty - some earlier load (construction time, or a demo
-        run switching libraries) may have pointed `state.models_dir`
-        somewhere else entirely."""
+        """Pick the models in the models folder: the one pinned in
+        Settings, else 'binary1' / 'multiclass1', else the newest. Rescans
+        each time, since an earlier load may have pointed `state.models_dir`
+        elsewhere."""
         models_dir = settings.get_models_dir()
         state.load_models_from_dir(models_dir)
 

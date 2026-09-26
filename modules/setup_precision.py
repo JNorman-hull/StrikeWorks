@@ -4,25 +4,15 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Study design tab - sampling precision, for a pragmatic choice of effort.
+"""Study design (Setup and deploy): sampling precision. Given a
+hypothesised strike rate and a planned sample size, shows the Wilson score
+interval (`wilson_calc.py`) that size would give, and how it changes over a
+range of sizes - "is N=50 enough, or plan for 100?".
 
-Deliberately one simple tool for now rather than a full study-planning
-suite: given a hypothesised strike rate and a planned sample size, show the
-Wilson score interval (`wilson_calc.py`) that size would achieve, plus how
-it changes at a spread of other sizes - enough to answer "is N=50 enough,
-or should I plan for 100?" without asking the user to understand the
-statistics. The deployment/treatment planning that used to live on this
-tab (site, machine, per-treatment conditions) moved to Setup and deploy >
-Create and edit deployment, which now owns writing the plan into the
-library.
-
-"Load from Blade Strike Modelling" (ROADMAP.md Chunk 5 task 5) reads
-`bsm_state.LATEST_RESULT_PATH` - the small JSON Calculator writes after
-every run - and fills the expected strike rate from the CEN estimate.
-Deliberately reads the file rather than taking a live BSMState reference:
-Setup and deploy stays decoupled from whether the BSM pages have even been
-visited this session, and "expected" strike rate for planning purposes is
-the a-priori CEN estimate, not an observed rate that does not exist yet.
+"Load from Blade Strike Modelling" fills the expected strike rate from the
+CEN estimate in `bsm_state.LATEST_RESULT_PATH`, the JSON Calculator writes
+after every run - so it works whether or not the BSM pages were opened
+this session.
 """
 import json
 
@@ -137,11 +127,9 @@ class PrecisionCalcTab:
         self.tbl_sweep.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.tbl_sweep.setMinimumHeight(160)
 
-        # figsize matches ml_figures.render_figures' own convention (the
-        # Predict page's "predicted blade strike rate" figure) so this
-        # section's exported report figure comes out the same size -
-        # Qt's canvas widget still controls the on-screen GUI size here,
-        # this only changes the pixel dimensions savefig() produces
+        # the same figsize as ml_figures.render_figures, so the exported
+        # figure matches the other report figures (on screen the canvas
+        # sets the size)
         self.fig_precision = Figure(figsize=(6.0, 4.2), dpi=100)
         self.canvas_precision = FigureCanvas(self.fig_precision)
         self.canvas_precision.setMinimumSize(220, 190)

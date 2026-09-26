@@ -4,43 +4,25 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Shared Library / Deployment / Treatment / Run selector.
-
-Before this module existed, Annotate and Export animations each carried
-their own copy of this logic (library combo, deployment scan, treatment
-combo, sensor-CSV listing), built by copy-paste. The copies silently
-diverged: Export animations' local exclusion list
-(`{"global_sensor_index.csv", "model_features.csv"}` /
-`("_nadir_window",)`) was missing the canonical `page_validate.py`
-exclusions (`_min`, `_delineated`), so `_min` output files started
-appearing in its sensor list where Annotate correctly filtered them out.
-
-`LibrarySelector` is the fix: one `QWidget`, one copy of the scan/filter
-logic, used identically by every page that needs to pick a library and
-list its sensors - Annotate, Export animations, and (raw data) Process.
-Process works from the raw folders rather than processed CSVs and
-has no per-sensor bad/done status, so it uses the picker alone
-(`sensor_list=False`, the default). Annotate and Export animations both
-opt into the sensor-list panel (`sensor_list=True`) - one "Show bad
-sensors" checkbox, one progress counter, one coloured table, with the same
-show/hide-when-unticked filtering and white/green/red/amber colouring
-everywhere it appears, driven by `populate_sensor_list()`.
+"""The Deployment / Treatment / Run filters used by Raw data processing,
+Annotate, Export animations and Model comparison, with an optional sensor
+list (Annotate, Export animations): a "Show bad sensors" box, a progress
+count and a table coloured by status (`populate_sensor_list()`).
 
 Where a recording sits under raw_sens_data - deployment / treatment / run -
-is `raw_layout.py`'s one definition; the Run filter is the third level of
-it (a file with no run folder above it is Run 1).
+is `raw_layout.py`'s one definition; a file with no run folder above it is
+Run 1.
 """
-import os
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QHBoxLayout,
-    QLabel, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QCheckBox, QComboBox, QHBoxLayout, QLabel,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from . import raw_layout, settings
+from . import raw_layout
 from .cards import Spinner
 from .layout import Section, when_visible
 from .tables import style_table
@@ -50,25 +32,12 @@ from .raw_layout import RAW_DIR, UNGROUPED
 ALL_DEPLOYMENTS = None   # combo data sentinel for "All deployments"/"All treatments"/"All runs"
 
 
-def _same_path(a, b) -> bool:
-    """Path equality that survives case/separator differences (a session
-    library remembered as C:\\users\\... vs the folder scan's C:\\Users\\...)."""
-    if not a or not b:
-        return False
-    return (os.path.normcase(os.path.normpath(str(a)))
-            == os.path.normcase(os.path.normpath(str(b))))
-
-
 def _run_sort_key(run):
     """Numeric runs in numeric order, anything else after them by name."""
     try:
         return (0, int(float(run)), "")
     except (TypeError, ValueError):
         return (1, 0, str(run))
-
-# canonical rules for what counts as a "sensor" CSV versus a derived/scratch
-# output - the single definition every page (Validate, this widget, and
-# hence Annotate/Export/Process) agrees on
 
 
 class _RawScanThread(QThread):
@@ -91,23 +60,12 @@ class _RawScanThread(QThread):
 
 
 class LibrarySelector(QWidget):
-    """Library / Deployment / Treatment picker, embeddable in any page.
+    """The Deployment / Treatment / Run filters for the session library
+    (chosen on Home), with an optional sensor list below them.
 
-    Library selection is app-wide now (Home / session_state.py, plus the
-    libraries folder itself in Adjustments) - `show_picker=False` (Process,
-    Annotate, Export animations) hides this widget's own library combo and
-    "Libraries…" button, leaving just the Deployment/Treatment filters and
-    a read-only "Library: X" label; the library still comes from
-    `session_state` via `set_library()` exactly as before, just with no
-    way to override it locally any more. `show_picker=True` (the default,
-    for standalone/legacy use) keeps the full three-combo panel.
-
-    Callers connect to `library_changed` (the library root itself switched
-    - reload anything keyed to the whole library, e.g. the deployment
-    index) and `filters_changed` (deployment/treatment changed, or the
-    library just changed too - re-list sensors); `library_changed` always
-    fires before `filters_changed` on a library switch, so a host's index/
-    dataset reload runs before it repopulates its sensor table.
+    Hosts connect to `library_changed` (reload anything keyed to the
+    library, such as the index) and `filters_changed` (re-list sensors).
+    On a library switch `library_changed` fires first.
     """
 
     library_changed = Signal()
@@ -115,10 +73,9 @@ class LibrarySelector(QWidget):
     selection_changed = Signal()       # tbl_sensors selection changed
     row_activated = Signal(int, int)   # row, column - tbl_sensors double-click
 
-    def __init__(self, parent=None, sensor_list=False, list_columns=(),
-                session_state=None, show_picker=True):
+    def __init__(self, session_state, parent=None, sensor_list=False,
+                 list_columns=()):
         super().__init__(parent)
-        self._lib_dir = settings.get_libraries_dir()
         self._lib_root = None
         # stem (upper) -> (deployment, treatment, run, raw file path)
         self._locations = {}
@@ -128,83 +85,43 @@ class LibrarySelector(QWidget):
         self._scan_from_sync = False
         self._list_columns = list(list_columns)
         self._cache = None           # last populate_sensor_list() call, for re-filtering
-        self._session_state = session_state
-        self._show_picker = show_picker
-        self._syncing = False        # True while set_library() is soft-syncing this
-                                      # picker to the session library - hosts check
-                                      # this to skip their own "Library: X" status
-                                      # message, which the session change already
-                                      # gets exactly once from wherever it originated
+        self._syncing = False
         self._build(sensor_list)
         self._connect()
-        start = session_state.library if session_state is not None else None
-        self._populate_libraries(select=start)
-        if session_state is not None:
-            session_state.library_changed.connect(self.set_library)
+        self._select_library(session_state.library)
+        session_state.library_changed.connect(self.set_library)
 
-    # ── session library soft-sync (session_state.py) ─────────────────────────
+    # ── the session library ─────────────────────────────────────────────────
     def set_library(self, path):
-        """Selects `path` in the library combo if it's one of the
-        libraries currently listed. `path=None` (New Session) clears this
-        picker's own selection too, rather than leaving it dangling on
-        whatever library it had before - a fresh session should read as
-        fresh everywhere it's reflected, not just on Home. Also how
-        `SessionState.library_changed` re-syncs this picker when the
-        session library changes elsewhere."""
+        """Follow the session library (`None` clears it)."""
         self._syncing = True
         try:
-            if path is None:
-                self.cmb_library.blockSignals(True)
-                self.cmb_library.setCurrentIndex(-1)
-                self.cmb_library.blockSignals(False)
-                self._on_library_changed()
-                return
-            self._populate_libraries(select=path)
+            self._select_library(path)
         finally:
             self._syncing = False
 
     @property
     def syncing(self):
-        """True while a soft-sync (`set_library()`, from the session
-        library changing elsewhere) is driving this picker, as opposed to
-        the user changing this page's own combo directly. Checked by host
-        pages before emitting their own "Library: X" status message, so
-        one session-wide library change doesn't produce one such message
-        per soft-synced page."""
+        """True while following a session library change - hosts skip their
+        own "Library: X" status message then, so one change isn't reported
+        once per page."""
         return self._syncing
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, sensor_list):
         v = QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
-        self.section = Section("Library" if self._show_picker else "Filters")
+        self.section = Section("Filters")
         fv = QVBoxLayout(self.section)
         fv.setSpacing(6)
-        # exposed so a host page can append its own controls into the same
-        # visual panel, above the sensor list if there is one
+        # a host page can add its own controls to the same box
         self.section_layout = fv
 
-        # cmb_library/btn_change_libs still exist and still drive every bit
-        # of internal scanning logic below even with show_picker=False -
-        # library selection just isn't done *here* any more (Home/session_
-        # state is the only place now), so the row is simply never added to
-        # the visible layout in that mode, in favour of a read-only label
-        self.cmb_library = QComboBox()
-        self.cmb_library.setMinimumWidth(140)
-        self.btn_change_libs = QPushButton("Libraries…")
-        if self._show_picker:
-            lib_row = QHBoxLayout()
-            lib_row.addWidget(self.cmb_library, stretch=1)
-            lib_row.addWidget(self.btn_change_libs)
-            fv.addLayout(lib_row)
-        else:
-            self.lbl_current_library = QLabel("No library selected.")
-            self.lbl_current_library.setStyleSheet(f"color:{MUTED};")
-            self.lbl_current_library.setWordWrap(True)
-            fv.addWidget(self.lbl_current_library)
+        self.lbl_current_library = muted_label("No library selected.", wrap=True)
+        fv.addWidget(self.lbl_current_library)
 
-        # shown while the library's raw folder is being scanned (in the
-        # background - a big OneDrive library can take a while)
+        # shown while the raw folder is scanned in the background (a big
+        # OneDrive library takes a while)
         loading_row = QHBoxLayout()
         self._spinner = Spinner(size=16)
         self._spinner.setVisible(False)
@@ -258,8 +175,6 @@ class LibrarySelector(QWidget):
         return r
 
     def _connect(self):
-        self.cmb_library.currentIndexChanged.connect(self._on_library_changed)
-        self.btn_change_libs.clicked.connect(self._change_libraries)
         self.cmb_deployment.currentIndexChanged.connect(self._rebuild_treatment_combo)
         self.cmb_deployment.currentIndexChanged.connect(
             lambda _i: self.filters_changed.emit())
@@ -275,16 +190,6 @@ class LibrarySelector(QWidget):
         return self._lib_root
 
     @property
-    def lib_dir(self):
-        return self._lib_dir
-
-    @property
-    def deployment_map(self):
-        """stem (upper) -> (deployment, treatment) - the two-level view
-        callers used before runs existed."""
-        return {s: (d, t) for s, (d, t, _r, _p) in self._locations.items()}
-
-    @property
     def locations(self):
         """stem (upper) -> (deployment, treatment, run, raw file path)."""
         return self._locations
@@ -298,61 +203,12 @@ class LibrarySelector(QWidget):
     def wanted_run(self):
         return self.cmb_run.currentData()
 
-    def _populate_libraries(self, select=None):
-        # signals stay blocked through setCurrentIndex too - _on_library_
-        # changed() is called explicitly, once, at the end regardless;
-        # without this, an index that actually changes fires it a second
-        # time via currentIndexChanged, doubling every status message and
-        # re-scan this triggers (very visible once several pages soft-
-        # sync to the same session library change at once)
-        #
-        # The libraries folder is re-read every time, not cached from
-        # construction: a cached copy is what left Raw data processing,
-        # Annotate and Export animations stuck on a library from the *old*
-        # folder after it was changed in Adjustments. And a session library
-        # this list can't find is never silently swapped for "the first
-        # library in the list" any more (that fallback is exactly what
-        # showed up as these pages not following Home) - it's added as its
-        # own entry instead, or with no session library, nothing is picked.
-        self._lib_dir = settings.get_libraries_dir()
-        self.cmb_library.blockSignals(True)
-        self.cmb_library.clear()
-        libs = settings.list_libraries()
-        for lib in libs:
-            self.cmb_library.addItem(lib.name, str(lib))
-        self.btn_change_libs.setToolTip(str(self._lib_dir))
-        idx = -1
-        if select:
-            idx = next((i for i in range(self.cmb_library.count())
-                        if _same_path(self.cmb_library.itemData(i), select)), -1)
-            if idx < 0 and Path(select).is_dir():
-                self.cmb_library.addItem(Path(select).name, str(select))
-                idx = self.cmb_library.count() - 1
-        elif self._session_state is None and libs:
-            idx = 0   # standalone picker with no session to follow
-        self.cmb_library.setCurrentIndex(idx)
-        self.cmb_library.blockSignals(False)
-        self._on_library_changed()
-
-    def _change_libraries(self):
-        chosen = QFileDialog.getExistingDirectory(
-            self, "Select libraries folder", str(self._lib_dir))
-        if not chosen:
-            return
-        self._lib_dir = settings.set_libraries_dir(chosen)
-        self._populate_libraries()
-
-    def _on_library_changed(self, *_args):
-        path = self.cmb_library.currentData()
-        self._lib_root = Path(path) if path else None
-        if not self._show_picker:
-            self.lbl_current_library.setText(
-                f"Library: {self._lib_root.name}" if self._lib_root
-                else "No library selected.")
-        # the library itself is known straight away; scanning its raw
-        # folder (and the host re-listing its sensors) waits until this
-        # page is actually on screen - a library switch costs a page that
-        # isn't being looked at nothing, however big the library
+    def _select_library(self, path):
+        self._lib_root = Path(path) if path and Path(path).is_dir() else None
+        self.lbl_current_library.setText(
+            f"Library: {self._lib_root.name}" if self._lib_root
+            else "No library selected.")
+        # the raw folder is only scanned once the page is on screen
         self._scan_from_sync = self._syncing
         self._scan_gen += 1
         self._tree = None

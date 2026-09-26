@@ -4,33 +4,23 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Controller for the Calculator page (Mathematical Blade Strike Modelling).
+"""Calculator (Mathematical blade strike modelling): the fish, pump and
+blade inputs (or a saved `bsm_config` file picked from the list) and
+Calculate.
 
-Inputs (fish, pump, blade profile - loaded from a saved `bsm_config` file
-by picking it, no separate Load step) and a Calculate button. Dual-species
-default (ROADMAP.md item 15): scaly and eel have genuinely different body
-dimensions, so the Fish section carries one Lf/Bf pair per species (eel
-defaults to 0.66 m / 0.08 m - a config file loaded via the combo above
-still only describes one species at a time, same shape the standalone
-Mathematical BSM scripts use, so it fills whichever species' fields match
-its own `species` field and leaves the other alone) with the rest of the
-fish/pump/blade inputs shared between them. Calculate always runs both,
-each into its own "Blade strike output" card - the figures and sweeps
-live on Analysis and reporting instead.
+Scaly and eel have different body dimensions, so Fish has one Lf/Bf pair
+per species (eel defaults to 0.66 m / 0.08 m); everything else is shared.
+A config file describes one species and fills that species' fields.
+Calculate runs both, each into its own "Blade strike output" card.
 
-"Observed strike data" is temporarily out of the visible UI (its widgets
-are still built - `read_inputs()`/`_validate()` reference them unchanged -
-just not attached to the layout) pending a decision on how to bring it
-back; `bsm_model.compute()` itself is untouched and still accepts it. It
-applies to both species' runs identically (the same deployment's observed
-strikes, not a per-species count).
+"Observed strike data" is built but hidden for now (ROADMAP.md, "Hidden
+for now"); `read_inputs()` still reads it and `bsm_model.compute()` still
+accepts it.
 
-Publishes both results through `BSMState.set_results()` (Model comparison/
-Predict's mortality panel react to it) and the scaly result through the
-older single-result `BSMState.set_result()` too, for Analysis and
-reporting's sweeps and this page's own `LATEST_RESULT_PATH` publish -
-unchanged single-result consumers that were never asked to become
-dual-species themselves (ROADMAP.md item 15's own scope boundary).
+Both results go to `BSMState.set_results()` (Model comparison, Predict's
+mortality panel). The scaly result also goes to `BSMState.set_result()`,
+which Analysis and reporting's sweeps and `LATEST_RESULT_PATH` (Study
+design's "Load from BSM") use.
 """
 import json
 from pathlib import Path
@@ -51,7 +41,7 @@ from .theme import ACCENT, ACCENT_BUTTON, MUTED, muted_label
 _EEL_LF_DEFAULT = 0.66
 _EEL_BF_DEFAULT = 0.08
 
-# shared across both species - only lf/bf are per-species now
+# shared by both species (only lf/bf are per species)
 _NUMERIC = ("wf", "alpha", "eel_vcrit", "n", "N", "Q", "r", "bh")
 
 
@@ -381,11 +371,8 @@ class CalculatorPage(QWidget):
 
     # ── run ──────────────────────────────────────────────────────────────────
     def calculate(self):
-        # dual-species default, and each species now has its own real body
-        # dimensions (lf/bf), not one shared pair - scaly still publishes
-        # through the older single-result API (LATEST_RESULT_PATH,
-        # Analysis and reporting's sweeps) since neither was asked to
-        # become dual-species itself (ROADMAP.md item 15's scope boundary).
+        # both species (each with its own Lf/Bf); scaly also goes to the
+        # single-result API (LATEST_RESULT_PATH, the sweeps)
         try:
             inputs = self.read_inputs()
             res_scaly = compute(inputs["scaly"])

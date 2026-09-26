@@ -8,8 +8,8 @@
 
 A study is planned before any sensor is wetted: a site, a deployment, the
 machine, and then one set of conditions per treatment (head, flow, BEP,
-RPM) with the number of runs that treatment gets. The Prepare page's Study
-design tab collects that and writes it into the library's
+RPM) with the number of runs that treatment gets. Create and edit
+deployment collects that and writes it into the library's
 ``global_sensor_index.csv`` - one row per treatment *per run* - so that
 processing can stamp a batch of sensors with the treatment and run they
 were recorded under, instead of that metadata being typed in per file.
@@ -18,7 +18,7 @@ Several deployments in one library
 ----------------------------------
 A library is not one site. Plan rows carry their own site, deployment ID,
 machine and type, so a library holds as many deployments as it needs;
-``deployments()`` lists them and the Study design tab edits one at a time.
+``deployments()`` lists them and Create and edit deployment edits one at a time.
 Saving replaces only the rows of the deployment being edited.
 
 Plan rows and sensor rows share one file
@@ -29,8 +29,8 @@ out of the way: ``sensor_rows()`` drops them, and every page that lists or
 counts sensors uses it. They are deliberately *not* dropped when a page
 rewrites the whole index - that would delete the plan.
 
-A library processed before any of this existed has no plan rows, but its
-sensor rows still carry whatever conditions were typed in. So
+A library processed without a plan has no plan rows, but its sensor rows
+still carry whatever conditions were typed in. So
 ``deployments()`` and ``treatments()`` fall back to reading those, and an
 existing library opens with its real deployments already filled in.
 
@@ -92,8 +92,8 @@ TREATMENT_COLUMNS = [c for c, _ in TREATMENT_FIELDS]
 #: which sensor configuration (sensor_config.py key) a deployment was
 #: planned for - held on its plan rows and stamped onto its sensors, so
 #: reopening a deployment restores its sensor and downstream stages can
-#: follow it. Not an index_schema column: the parser's own output stays
-#: exactly the MVP's, this only appears once a plan records one.
+#: follow it. Not an index_schema column, so the parser's output doesn't
+#: change; it only appears once a plan records one.
 SENSOR_CONFIG_COL = "sensor_config"
 
 #: every column a treatment carries onto a sensor when one is assigned

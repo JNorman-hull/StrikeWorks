@@ -4,12 +4,7 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Placeholder content for a page whose real build hasn't landed yet.
-
-One reusable builder rather than a near-identical controller file per new
-page - every stub page in the Chunk 5 restructure (see ROADMAP.md) uses
-this until its own task replaces it.
-"""
+"""Placeholder content for a page that isn't built yet (Data analysis)."""
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QLabel, QVBoxLayout
 

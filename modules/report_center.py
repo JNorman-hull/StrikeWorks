@@ -98,12 +98,9 @@ class ReportSection:
 
 
 def default_output_dir(window=None):
-    """`<session library>/StrikeWorks_user_output/Report_<timestamp>/`
-    when a session library is selected (`session_state.py`) - falls back
-    to `settings.get_output_dir()` (the Adjustments dialog's own setting
-    for it, itself defaulting to the app-root `output_data/`) when there
-    isn't one, so this still works with no library chosen (or in a
-    headless/test context with no `window`)."""
+    """`<session library>/StrikeWorks_user_output/Report_<timestamp>/`,
+    or under `settings.get_output_dir()` with no session library (or no
+    `window`)."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     session_state = getattr(window, "session_state", None)
     base = (session_state.output_dir() if session_state is not None else None) \
@@ -547,10 +544,8 @@ def _same_model_set(a, b):
 
 
 def with_partner_stage(entry, entries):
-    """The picked model plus the other stage trained/deployed with it -
-    picking "binary" in the report's model picker used to report on the
-    binary stage alone, leaving the multiclass (region) evaluation out of
-    the report entirely. Binary first."""
+    """The picked model plus the other stage trained or deployed with it,
+    so the report covers both binary and multiclass. Binary first."""
     if entry is None:
         return []
     out = [entry]
@@ -689,10 +684,8 @@ def prediction_section(window, formats=("png",), dpi=300):
 
 
 def biological_section(window, formats=("png",), dpi=300):
-    """Model comparison (renamed from Biological interpretation) - ML vs
-    Blade Strike Modelling per treatment. Mortality moved to Model
-    prediction > Predict (its own "Prediction configuration"/"Prediction
-    figures" - see ml_tab_predict.py), so it no longer appears here."""
+    """Model comparison: the model's strike rate against the BSM per
+    treatment, and the model-projected mortality when there is one."""
     bio = getattr(window, "model_comparison_page", None)
     bsm_state = getattr(bio, "bsm_state", None) if bio is not None else None
     available = bsm_state is not None and bsm_state.last_result is not None

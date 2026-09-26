@@ -8,16 +8,14 @@ Three rates are involved and they are not the same number:
     only around events, so it is sparse;
   * the output grid the combined CSV is written on (2000 Hz).
 
-Getting from the second to the third is the interpolation this parser has
-always done: the 100 Hz .imp channels are interpolated up onto the grid,
+From the second to the third: the 100 Hz .imp channels are interpolated
+up onto the grid,
 and each sparse .hig sample is written to its nearest grid point (gaps stay
 at zero rather than having signal invented across them).
 
 All of it arrives as arguments from the sensor configuration, so the same
-reader serves any RAPID-family device defined on the Prepare page. The
-defaults are the values this file used to hardcode, so calling it without a
-config behaves exactly as before - verified byte-for-byte against the
-pre-configuration version.
+reader serves any RAPID-family device defined in Sensor configuration.
+Without a config the RAPID defaults apply.
 """
 import struct
 import os
@@ -38,14 +36,13 @@ NADIR_SEARCH_SEC = 1.5
 
 # ── nadir detection ─────────────────────────────────────────────────────────
 # The passage nadir is the moment every downstream window is cut around, so
-# how it is found is a real choice. One method exists - the MVP's - but it
-# is dispatched through a registry, so a second (a pressure gradient, a
-# model-scored trace) is a function plus an entry here rather than surgery
-# on the parser. A method takes the combined frame, the peak-acceleration
-# index and the output rate, and returns (index, time, value, warnings).
+# how it is found matters. Methods are looked up by name, so another one is
+# a function plus an entry in NADIR_METHODS. A method takes the combined
+# frame, the peak-acceleration index and the output rate, and returns
+# (index, time, value, warnings).
 
 def nadir_pressure_min_near_peak(data, acc_max_index, fs):
-    """Lowest pressure within 1.5 s of the acceleration peak (the MVP's)."""
+    """Lowest pressure within 1.5 s of the acceleration peak."""
     warnings = []
     half = int(round(NADIR_SEARCH_SEC * float(fs)))
     window_start = max(0, acc_max_index - half)
@@ -67,7 +64,7 @@ DEFAULT_NADIR_METHOD = "pressure_min_near_peak"
 
 # ── computed channels ───────────────────────────────────────────────────────
 # Magnitude of each three-axis sensor. Which ones are written is a sensor
-# setting (Prepare > Sensor configuration); the maths lives here.
+# setting (Setup and deploy > Sensor configuration); the maths lives here.
 #   key -> (output column, axis columns, offset subtracted)
 MAGNITUDES = {
     "higacc": ("higacc_mag_g",
@@ -82,8 +79,7 @@ MAGNITUDES = {
 def magnitude(data, key):
     """The magnitude series for one three-axis sensor, or None.
 
-    inacc subtracts g, as the MVP did, so the channel reads as acceleration
-    above rest rather than including gravity.
+    inacc subtracts g, so the channel reads as acceleration above rest.
     """
     _name, axes, offset = MAGNITUDES[key]
     if any(a not in data.columns for a in axes):
@@ -241,8 +237,8 @@ def read_hig_raw(filename, fs=FS, packet_size=HIG_PACKET_SIZE):
 def process_imp_hig_direct(imp_filename, hig_filename, output_dir, config=None):
     """Parse one .imp/.hig pair and write the combined CSV.
 
-    `config` is the SensorConfig selected on Prepare. Without one the RAPID
-    defaults apply, which is what the MVP did.
+    `config` is the SensorConfig selected in Sensor configuration; without
+    one the RAPID defaults apply.
     """
     if config is not None:
         clock = float(config.timebase_hz) or FS

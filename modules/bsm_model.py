@@ -4,15 +4,9 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""CEN 2025 blade strike mortality calculation - pure port of the old MVP
-app's `bsm/core/model.py` (ROADMAP.md Chunk 5 task 5). NumPy/SciPy only, no
-GUI deps, unchanged maths - every formula, constant and regime break is as
-found there.
-
-The one change: the observed-strike confidence interval used to be
-computed inline; it's now `wilson_calc.wilson_interval()`, the same
-function Setup and deploy > Study design uses for sample-size planning -
-one Wilson-interval implementation for the app rather than two.
+"""CEN 2025 blade strike collision and mortality calculation (NumPy/SciPy
+only, no GUI). The observed-strike confidence interval is
+`wilson_calc.wilson_interval()`, the same one Study design uses.
 """
 import numpy as np
 from scipy.interpolate import CubicSpline

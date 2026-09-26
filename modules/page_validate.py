@@ -4,19 +4,12 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Behaviour for the Validate & segment page.
+"""Segmentation (Sensor processing; hidden for now - see ROADMAP.md,
+"Hidden for now"): per-sensor nadir validation and ROI window saving,
+bound to widgets in main.ui. Annotate does this job in the visible app.
 
-Direct port of the MVP's ``bsm/pages/nadir_validation.py``. The channel set,
-nadir detection, ROI window maths, saved-window filename, and the columns
-written back into ``global_sensor_index.csv`` are unchanged.
-
-Only two things differ, and neither changes behaviour:
-  * the widgets come from ``main.ui`` instead of being built in code
-  * the library picker is the same QTreeView used on the Raw data processing
-    page, rather than the MVP's flat QListWidget
-
-The widgets live in main.ui (edit them in Qt Designer); this module only binds
-behaviour to them.
+It writes the same saved-window files and ``global_sensor_index.csv``
+columns as Annotate.
 """
 from pathlib import Path
 
@@ -49,7 +42,7 @@ _INDEX_REL = di.INDEX_REL
 _WIN_DIR = raw_layout.WINDOW_DIR
 
 # The ROI window is this page's own decision; the rate the processed CSVs
-# are written at belongs to the sensor (Prepare page), so _FS is only the
+# are written at belongs to the sensor (Sensor configuration), so _FS is only the
 # fallback used when no configuration can be read.
 _FS = 2000        # Hz
 _WIN_SEC = 0.2    # seconds - default ROI window width (centered on nadir)
@@ -154,8 +147,7 @@ class ValidatePage(QObject):
     def _configure_widgets(self):
         u = self.ui
 
-        # library selection is app-wide now (Home / session_state) - this
-        # box just shows which one is active, rather than picking it
+        # the library is chosen on Home; this box only shows it
         u.tree_val_library.setVisible(False)
         u.btn_val_change_libraries.setVisible(False)
         self.lbl_library = QLabel("No library selected.")

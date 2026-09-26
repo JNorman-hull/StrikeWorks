@@ -4,28 +4,19 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Controller for the Analysis and reporting page (was "Sensitivity
-analysis" - ROADMAP.md Chunk 5 task 5 follow-up).
+"""Analysis and reporting (Mathematical blade strike modelling).
 
-Everything Calculator no longer shows a figure for lives here, and this
-page now also owns export - the standalone Reporting page was folded in:
+  - Figures: the headline results as one 4-panel figure ((a) scaly
+    collision, (b) scaly mortality, (c) eel collision, (d) eel mortality)
+    and the sensitivity sweeps as another ((a)/(b) collision probability
+    vs shaft speed / relative fish velocity, (c)/(d) mortality vs the
+    same), one line per flow rate Q.
+  - The Results table and "Blade strike output" card Calculator shows.
+  - "Generate report...": CSV, every figure as PNG and an HTML report
+    (equations, tables, figures) in one folder.
 
-  - One "Figures" box with the two figures the BSM report uses: the
-    headline results as one 4-panel figure ((a) scaly collision,
-    (b) scaly mortality, (c) eel collision, (d) eel mortality) and the
-    sensitivity sweeps as another ((a)/(b) collision probability vs shaft
-    speed / relative fish velocity, (c)/(d) mortality probability vs the
-    same two), one line per flow rate Q in every sweep panel - in the
-    style of the standalone `/Scripts/Mathematical BSM/Project` scripts
-    (`cen_2025_..._CUSTOM.py`'s Q_LEVELS fan-out).
-  - The same Results table and "Blade strike output" card Calculator
-    shows.
-  - One "Generate report..." button - CSV + every figure as PNG + an HTML
-    report (equations, tables, figures) in one folder.
-
-Reacts to `BSMState.calculated` rather than Calculator calling this page
-directly, so it's populated whether Calculator ran on this visit or the
-state already held a result from an earlier one.
+Follows `BSMState.calculated`, so it shows the latest result however it
+was produced.
 """
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas

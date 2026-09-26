@@ -4,29 +4,22 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Raw data processing (Sensor processing).
+"""Raw data processing (Sensor processing), built from the same pieces as
+Simple mode's Process step:
 
-Rebuilt around the pieces Simple mode's Process step uses:
-
-  Filters        - the shared LibrarySelector (library_widgets.py) with
-                   the session library, narrowed by Deployment / Treatment
-                   / Run - the same filter box Annotate and Export
-                   animations show.
-  Summary cards  - recordings found, processed, validated, flagged bad,
-                   for whatever the filters select.
+  Filters        - the shared LibrarySelector, narrowed by Deployment /
+                   Treatment / Run.
+  Summary cards  - recordings found, processed, validated and flagged bad
+                   for the current filters.
   File inventory - inventory_widgets.FileInventory: every recording with
-                   the deployment, treatment and run of the folder it sits
-                   in, Process selected, and the console log. Each
-                   processed recording is labelled from its own folder, so
-                   one batch can span several treatments and runs.
+                   the deployment, treatment and run of its folder, Process
+                   selected, and the console log. Each recording is
+                   labelled from its own folder, so one batch can span
+                   several treatments and runs.
 
-The old per-batch treatment/run pickers and the Metadata tab are gone: a
-recording's labels come from its folder, and a deployment's details are
-edited in one place - Create and edit deployment, whose Update relabels
-already-processed sensors.
-
-Processing itself is processing.py; the file extensions, filename pattern
-and parser come from the active sensor configuration.
+A deployment's details are edited in Create and edit deployment, whose
+Update relabels sensors already processed. The file extensions, filename
+pattern and parser come from the active sensor configuration.
 """
 from pathlib import Path
 
@@ -42,16 +35,7 @@ from . import validation_core as vc
 from .inventory_widgets import FileInventory
 from .library_widgets import LibrarySelector
 from .layout import Section, when_visible
-from .theme import BAD, INFO, MUTED, OK, PINK, WARN
-
-# theme colours kept under their old names (StatCard is imported elsewhere)
-_ACCENT = PINK
-_OK = OK
-_WARN = WARN
-_BAD = BAD
-_INFO = INFO
-_MUTED = MUTED
-
+from .theme import BAD, INFO, MUTED, OK, WARN
 
 class StatCard(QFrame):
     """Small themed summary tile."""
@@ -64,11 +48,10 @@ class StatCard(QFrame):
         v = QVBoxLayout(self)
         v.setContentsMargins(12, 8, 12, 8)
         v.setSpacing(2)
-        # title and detail at the app's standard text size (they used to be
-        # scaled down to 10px); the value is the standard font, bolder and
+        # title and detail at the standard text size; the value bolder and
         # a few points larger
         self._title = QLabel(title)
-        self._title.setStyleSheet(f"color:{_MUTED};")
+        self._title.setStyleSheet(f"color:{MUTED};")
         self._value = QLabel("-")
         f = QFont(self._title.font())
         f.setPointSize(max(f.pointSize(), 9) + 5)
@@ -76,7 +59,7 @@ class StatCard(QFrame):
         self._value.setFont(f)
         self._value.setStyleSheet("color:rgb(221,221,221);")
         self._detail = QLabel("")
-        self._detail.setStyleSheet(f"color:{_MUTED};")
+        self._detail.setStyleSheet(f"color:{MUTED};")
         self._detail.setWordWrap(True)
         v.addWidget(self._title)
         v.addWidget(self._value)
@@ -93,8 +76,7 @@ class StatCard(QFrame):
 
 # ═════════════════════════════════════════════════════════════════════════════
 class ProcessPage(QObject):
-    """Builds Raw data processing into `ui.content_process` (the Designer
-    tab widget that used to live there is hidden - see module docstring)."""
+    """Builds Raw data processing into `ui.content_process`."""
 
     status = Signal(str, int)
 
@@ -133,8 +115,7 @@ class ProcessPage(QObject):
         left.setFixedWidth(300)
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 0, 0)
-        self.lib_selector = LibrarySelector(session_state=self.session_state,
-                                            show_picker=False)
+        self.lib_selector = LibrarySelector(self.session_state)
         btn_rescan = QPushButton("Rescan folders")
         btn_rescan.setToolTip("Pick up files added to the library's raw "
                               "folders since it was opened.")
@@ -222,11 +203,11 @@ class ProcessPage(QObject):
             return
         n_complete = sum(1 for f in files if f["complete"])
         self.card_recordings.set(
-            n, f"{n_complete}/{n} complete", _OK if n_complete == n else _WARN)
+            n, f"{n_complete}/{n} complete", OK if n_complete == n else WARN)
         processed = [f["stem"] for f in files if f["processed"]]
         n_proc = len(processed)
         self.card_processed.set(f"{n_proc}/{n}", f"{n - n_proc} unprocessed",
-                                _OK if n_proc == n else _INFO)
+                                OK if n_proc == n else INFO)
 
         index_df = di.read_index(self._root) if self._root else None
         status = vc.validation_status(index_df)
@@ -235,6 +216,6 @@ class ProcessPage(QObject):
             f"{c['auto']}/{n_proc}" if n_proc else "-",
             f"{c['flagged']} flagged, {c['flagged_reviewed']} reviewed, "
             f"{c['user']} user-validated",
-            _OK if n_proc and c["auto"] == n_proc else _INFO)
+            OK if n_proc and c["auto"] == n_proc else INFO)
         self.card_bad.set(c["bad"], "bad_sens = Y",
-                          _BAD if c["bad"] else _OK)
+                          BAD if c["bad"] else OK)

@@ -10,16 +10,16 @@ and Advanced mode's Raw data processing page.
 Lists every raw recording under a folder (a whole deployment in Simple
 mode; whatever the Deployment/Treatment/Run filters select in Advanced
 mode) with its sensor/date/time parsed from the filename, whether all of
-its files are present, whether it has been processed - and, new, the
+its files are present, whether it has been processed, and the
 Deployment, Treatment and Run it sits under (raw_layout.locate). Because
 every file carries its own labels, a batch spanning several treatments or
 runs is processed in one go and each recording is stamped with the right
 conditions afterwards (deployment_index.stamp_by_location), instead of the
 whole batch getting whatever one treatment/run picker said.
 
-Processing itself is processing.py's `ProcessThread` (the ported MVP
-reader, chosen by the sensor configuration) - unchanged. Its log lines
-stream into the console pane underneath the table.
+Processing itself is processing.py's `ProcessThread`, running the reader
+the sensor configuration names; its log streams into the console below
+the table.
 """
 from collections import Counter
 from datetime import datetime

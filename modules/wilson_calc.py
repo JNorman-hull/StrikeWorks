@@ -4,15 +4,9 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Wilson score interval for a binomial proportion.
-
-Same formula the old MVP app uses to bound its observed strike/contact
-probability (`bsm/core/model.py`'s `wilson_lo`/`wilson_hi`, inside the full
-CEN 2025 geometric model), lifted out here as a small standalone function -
-Setup and deploy > Study design uses it for sample-size *planning* rather
-than analysing an already-collected passage: `p` there is a hypothesised
-strike rate rather than an observed one, but the interval math is the same
-either way, so the caller decides what `p` means.
+"""Wilson score interval for a binomial proportion - used by the BSM's
+observed strike rate, Study design's planning (where `p` is a hypothesised
+rate) and Model comparison.
 """
 import math
 

@@ -10,9 +10,8 @@ Evaluates either a model trained in this session or any model already
 deployed in the models folder (discovered by ``ml_model_library``), so a
 previously deployed model can be reviewed without retraining it.
 
-Shows performance cards, the CV mean±SD table, the evaluation figures
-ported from the pipeline scripts, the misclassification (error-analysis)
-table and performance stratification, and exports a complete model report.
+Shows performance cards, the CV mean±SD table, the evaluation figures and
+performance stratification, and exports a complete model report.
 """
 from pathlib import Path
 

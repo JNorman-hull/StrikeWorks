@@ -7,12 +7,11 @@
 """Sensor configurations - one source of truth for how a device's raw files
 are named, paired, parsed and brought onto a common time base.
 
-Everything the rest of the app used to hardcode for the RAPID sensor lives
-here as data: the timestamp clock, the output rate, the files that make one
-recording with their packet sizes and native rates, the channel list and the
-parser. Pages read the *selected* configuration rather than module constants,
-so choosing a different sensor on the Prepare page changes raw import and the
-rate the processed signals are assumed to be at.
+A configuration is data: the timestamp clock, the output rate, the files
+that make one recording with their packet sizes and native rates, the
+channel list and the parser. Pages read the *selected* configuration, so
+choosing a different sensor in Setup and deploy > Sensor configuration
+changes raw import and the rate the processed signals are assumed to be at.
 
 Rates
 -----
@@ -31,8 +30,7 @@ Three different rates matter, and conflating them is the easy mistake:
     The uniform grid the processed CSV is written on - 2000 Hz for RAPID.
 
 A file's ``method`` says how it gets onto that grid. The 100 Hz .imp
-channels are interpolated up to 2000 Hz - that is the interpolation the
-RAPID processing has always done. The .hig channels are already at 2000 Hz
+channels are interpolated up to 2000 Hz. The .hig channels are already at 2000 Hz
 but arrive in bursts around events (about 29% of a typical run, with gaps
 of up to 13 seconds), so they are *standardised*: each recorded sample goes
 into its own slot and every slot the device did not write is set to 0. The
@@ -45,13 +43,14 @@ Computed channels
 ``magnitudes`` lists which three-axis sensors get a magnitude column -
 ``higacc_mag_g``, ``inacc_mag_ms`` (minus g) and ``rot_mag_degs``. All
 three by default. ``nadir_method`` names the passage-nadir detector in
-``rapid_functions.NADIR_METHODS``; one method exists today.
+``rapid_functions.NADIR_METHODS``.
 
 Adding a sensor
 ---------------
 Two ways, neither of which needs a code change to the pages:
 
-1. In the app: Prepare > Sensor configuration > New / Duplicate, then Save.
+1. In the app: Setup and deploy > Sensor configuration > New / Duplicate,
+   then Save.
    User configurations are written to the JSON file returned by
    ``config_path()`` and are read back on the next start.
 
@@ -88,9 +87,9 @@ RAPID_CHANNELS = [
     "pressure_kpa",
 ]
 
-# filename pattern: SENSOR-MMDDHHMMSS  e.g. B61-0703140718. Not exposed on
-# the Prepare page - RAPID and its successors name files the same way - but
-# a device that does not can have this edited in the JSON store.
+# filename pattern: SENSOR-MMDDHHMMSS  e.g. B61-0703140718. Not shown in
+# Sensor configuration (RAPID-family devices all name files this way); a
+# device that doesn't can have it edited in the JSON store.
 RAPID_FNAME_PATTERN = r"^([A-Za-z0-9]{2,4})-(\d{4})(\d{6})$"
 
 # EEL tag: the last ten digits are MMDDhhmmss and everything before them is
@@ -104,7 +103,7 @@ NADIR_SEARCH_SEC = 1.5
 
 # Three-axis sensors that can have a magnitude channel computed from them.
 # The maths is in rapid_functions.MAGNITUDES; these are the keys and how
-# they read on the Prepare page.
+# they read in Sensor configuration.
 MAGNITUDE_KEYS = ["higacc", "inacc", "rot"]
 MAGNITUDE_LABELS = {
     "higacc": "High-g acceleration magnitude (g)",
@@ -113,7 +112,7 @@ MAGNITUDE_LABELS = {
 }
 
 # Nadir detectors, by name. The callables live in rapid_functions so the
-# parser can be loaded on its own; this is the list the Prepare page shows
+# parser can be loaded on its own; this is the list Sensor configuration shows
 # and the default a new configuration takes.
 NADIR_METHOD_LABELS = {
     "pressure_min_near_peak":
@@ -401,10 +400,8 @@ _rapid_module = None
 def _load_rapid_module():
     """Import rapid_functions, once, on first use.
 
-    Imported lazily rather than at module load so the Prepare page does not
-    drag scipy into a session that never processes anything - and as a
-    package member rather than by path, so the parser can use the app's
-    index schema.
+    Imported on first use so a session that never processes anything
+    doesn't load scipy.
     """
     global _rapid_module
     if _rapid_module is None:
@@ -429,8 +426,8 @@ def _parse_eel(paths, out_dir, config):
 def _parse_unconfigured(paths, out_dir, config):
     raise NotImplementedError(
         f"'{config.name}' has no parser yet. Write its reader, register it "
-        "in modules/sensor_config.py under PARSERS, and select it on the "
-        "Prepare page.")
+        "in modules/sensor_config.py under PARSERS, and select it in "
+        "Sensor configuration.")
 
 
 #: parser name -> callable(paths, out_dir, config) -> (DataFrame, summary)

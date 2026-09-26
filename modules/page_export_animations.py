@@ -4,39 +4,24 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Controller for Export animations (Validate and annotate).
+"""Export animations (Validate and annotate): burns a synced sensor-graph
+overlay into the high-speed video, frame by frame (the logic is
+`video_sync.py`).
 
-Ports `Scripts/Time series video sync/video_sync.py` (pure logic lives in
-`modules/video_sync.py`, GUI-free) - a synced sensor-graph overlay burned
-into the high-speed video, frame by frame. Same page skeleton as Annotate
-(library -> deployment -> treatment -> sensor/video browser on the left),
-but:
-  * the Annotations box is replaced by Text inputs - the overlay's text
-    lines (pump, shaft speed, camera, sensor), typed in rather than the
-    original script's hardcoded strings
-  * the Notes box is replaced by Code options - the sync frame, real fps,
-    graph window/zoom, and whether to draw the text overlay at all
-  * the Signal container shows the plotted sensor signal until a video has
-    been processed, then swaps to a play/pause video player for it
-  * single sensor at a time, and there's no ROI/nadir-window saving - this
-    page produces a video, not a training window
+The same browser as Annotate on the left; on the right, the signal plot
+(with Video preview / Process / Save) above the Sensor sync inputs: the
+overlay text lines (pump, shaft speed, camera, sensor) and the render
+options (sync frame, real fps, graph window and zoom, text on/off).
 
-Sync point: the original script anchored on a `frames.txt`-supplied row
-index into a combined dataset external to the sensor itself; here the
-sensor's own processed CSV already carries its nadir time (the same
-`pres_min.time.` index column Annotate and Validate read), so only the
-*video frame number* the nadir appears at needs entering - that pairing
-can't be automated without watching the footage.
+Sync point: the processed CSV already holds the nadir time
+(`pres_min.time.`), so only the video frame the nadir appears at needs
+entering.
 
-`processed_video/` is one folder at the app root, not per-library (a
-video's sync config doesn't belong to any one library's folder tree any
-more than a deployed model does) - `_load_config`/`_save_config` read and
-write a `<stem>_sync_config.json` there alongside the synced output, so
-reopening a sensor already exported restores the frame/text/option values
-that produced it rather than starting blank. "Process" renders the video
-(slow - runs off the GUI thread via `_VideoSyncWorker`) and always saves
-its config alongside it, so the two never drift apart; "Save" persists an
-in-progress edit without paying for a render.
+Configs and output go to `processed_video/` at the app root:
+`<stem>_sync_config.json` beside the synced video, so reopening a sensor
+restores the values that produced it. "Process" renders off the GUI thread
+(`_VideoSyncWorker`) and saves the config with it; "Save" keeps an edit
+without rendering.
 """
 import json
 import os
@@ -199,19 +184,14 @@ class ExportAnimationsPage(QObject):
         apply_section_defaults(frame)
 
     def _build_browser(self):
-        """Left column: just the sensor picker now - the sync inputs box
-        that used to sit below it (Text/Code options/Graph channels) moved
-        into the space Video preview freed up on the right (see
-        _build_detail()) once Video preview became a pop-out window."""
+        """Left column: the sensor picker."""
         left = QWidget()
         left.setMinimumWidth(360)
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 5, 0)
         lv.setSpacing(8)
-        self.lib_selector = LibrarySelector(sensor_list=True,
-                                            list_columns=["Video", "Synced"],
-                                            session_state=self.session_state,
-                                            show_picker=False)
+        self.lib_selector = LibrarySelector(self.session_state, sensor_list=True,
+                                            list_columns=["Video", "Synced"])
         lv.addWidget(self.lib_selector, stretch=1)
         self.tbl_sensors = self.lib_selector.tbl_sensors
         self.lbl_loading = QLabel("")
@@ -220,16 +200,10 @@ class ExportAnimationsPage(QObject):
         return left
 
     def _build_detail(self):
-        """Right column: Signal (the sensor plot, plus the Video preview/
-        Process/Save actions - moved in from their own row) and Sensor
-        sync inputs (moved in from the left column) as two stacked rows,
-        the sync inputs at their full height. Video preview itself is a pop-out
-        window (_build_video_preview_dialog()) rather than embedded here -
-        opening it and the Signal plot stay visible together on screen,
-        since matching a nadir point to a video frame means looking at
-        both at once. The whole column is wrapped in a QScrollArea so a
-        short window scrolls it instead of squeezing both rows down
-        further."""
+        """Right column: Signal (the plot and the Video preview / Process /
+        Save actions) above Sensor sync inputs, scrolling in a short
+        window. Video preview is its own window so it and the plot can be
+        watched together while matching the nadir to a frame."""
         outer = QWidget()
         outer_v = QVBoxLayout(outer)
         outer_v.setContentsMargins(0, 0, 0, 0)
@@ -308,9 +282,6 @@ class ExportAnimationsPage(QObject):
         reset_row.addWidget(self.btn_reset_nadir)
         sv.addLayout(reset_row)
 
-        # Video preview/Process/Save/Cancel - moved in from their own row
-        # below the signal/video split, now that Video preview itself is
-        # a pop-out window rather than a row sharing this space
         act = QHBoxLayout()
         self.btn_video_preview = QPushButton("Video preview")
         self.btn_video_preview.clicked.connect(self._open_video_preview)
@@ -390,10 +361,7 @@ class ExportAnimationsPage(QObject):
         dlg.activateWindow()
 
     def _build_sync_inputs(self):
-        """Text inputs (overlay text) and Code options (sync/render
-        settings), merged into one box in the space the height-capped
-        sensor picker frees up above it - previously two separate boxes
-        side by side."""
+        """The overlay text and the sync / render options, in one box."""
         grp = Section("Sensor sync inputs")
         gv = QVBoxLayout(grp)
         gv.setSpacing(10)
@@ -535,8 +503,7 @@ class ExportAnimationsPage(QObject):
         opt_row.addStretch()
         gv.addLayout(opt_row)
 
-        # the two channels the export always used before this existed -
-        # same default, just editable now
+        # default channels
         for column, label, color in (
                 ("pressure_kpa", "Pressure (kPa)", "black"),
                 ("higacc_mag_g", "Acceleration magnitude (g)", "red")):

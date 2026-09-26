@@ -39,8 +39,8 @@ class DeployTab:
         self.state = state
         self.window = window
         self.models_dir = self._default_models_dir()
-        # True once "Change models folder…" picked one by hand - from then
-        # on the default (session library / Settings) no longer overrides it
+        # True once a folder is picked by hand; the default (session
+        # library / Settings) then stops overriding it
         self._custom_models_dir = False
 
         self._build(frame)

@@ -18,7 +18,7 @@ from .theme import (
 )
 
 
-# ── ring card (ported from the MVP, dark theme) ──────────────────────────────
+# ── ring card ────────────────────────────────────────────────────────────────
 class RingCard(QFrame):
     """Card with a donut ring; fixed height, expands horizontally.
 

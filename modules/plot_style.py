@@ -4,40 +4,25 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Shared styling and static-image export for every live pyqtgraph plot.
-
-Exactly three live (pyqtgraph, as opposed to the matplotlib report figures)
-plots exist app-wide: Sensor processing > Segmentation (`page_validate.py`),
-Validate and annotate > Annotate (`page_annotate.py`), and Model prediction
-> Inspect (`ml_tab_inspect.py`). They already share one construction
-pattern (`pg.PlotWidget(viewBox=_NavViewBox())`, an optional right-axis
-ViewBox for a second channel) - this module is the "same settings
-everywhere" piece from ROADMAP.md Chunk 5 task 2: consistent margins on
-every side, and one PNG(300dpi)/SVG export flow, kept in one place so a
-future style change lands on all three plots at once rather than three
-separately-maintained copies.
+"""Shared styling and static-image export for the live pyqtgraph plots
+(Annotate, Export animations, Misclassification analysis, Model
+prediction > Inspect, Segmentation).
 
 Margins
 -------
-pyqtgraph only reserves outer space on a side that has a *visible* axis -
-left/bottom always do (ticks, labels), but with no top axis and the right
-axis hidden until a second channel is chosen, a curve can end up flush
-against the plot's top and right edges. `reserve_top_margin` and
-`set_right_axis_active` fix this by keeping the right axis always shown
-(blank when unused, real values when a second channel is plotted) instead
-of the hideAxis()/showAxis() toggle each page used to do directly, and by
-reserving a matching blank strip at the top permanently.
+pyqtgraph only reserves space on a side with a *visible* axis, so with no
+top axis and the right axis hidden a curve can sit flush against the top
+and right edges. `reserve_top_margin` and `set_right_axis_active` keep the
+right axis always shown (blank until a second channel is plotted) and
+reserve a matching blank strip at the top.
 
 Export
 ------
-The live plots stay themed for the dark UI; export re-renders the
-currently visible window with matplotlib for a fixed, print-style look
-regardless of on-screen colours: white background, black axes, the left
-(primary) channel drawn black, the right (secondary) channel drawn red -
-mirrors the app's own convention of a light primary trace against a red
-secondary one. `add_export_button` wires a small toolbar button with a
-PNG (300 dpi) / SVG menu; the caller supplies `get_export_data()`, called
-at click time, returning None if there is nothing to export yet.
+Export redraws the visible window with matplotlib in a print style: white
+background, black axes, the left channel black and the right channel red.
+`add_export_button` adds a toolbar button with PNG (300 dpi) / SVG; the
+caller supplies `get_export_data()`, which returns None when there is
+nothing to export yet.
 """
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure

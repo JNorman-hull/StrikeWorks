@@ -690,8 +690,8 @@ class DeploymentEditor(QWidget):
         self.lbl_hint.setStyleSheet(f"color:{colour};")
 
     def _refresh_files_found(self):
-        """How many recordings the loaded deployment's folder holds - one
-        walk, on load/save only (it used to run on every keystroke)."""
+        """How many recordings the loaded deployment's folder holds (one
+        folder walk, so only on load and save)."""
         folder = self.deployment_dir()
         if folder is None or not folder.exists():
             self.lbl_files_found.setText("")

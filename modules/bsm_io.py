@@ -4,10 +4,9 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""CSV/PNG export helpers for blade strike modelling results - port of the
-old MVP app's `bsm/io.py`, unchanged. Shared by Analysis and reporting and the
-central report (report_center.py) so there is one export routine per shape
-rather than one per page - including the two fixed-size report figures.
+"""CSV and PNG export for blade strike modelling results, shared by
+Analysis and reporting and the central report (report_center.py),
+including the two fixed-size report figures.
 """
 import csv
 from pathlib import Path

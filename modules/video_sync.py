@@ -4,34 +4,21 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Pure video/sensor sync logic - port of `video_sync.py` (Scripts/Time
-series video sync), adapted for Export animations (ROADMAP.md Chunk 5
-task 4).
+"""Video / sensor sync for Export animations (no Qt).
 
-Sync logic (unchanged from the original script)
--------------------------------------------------
+Sync logic
+----------
   nadir_frame : encoded video frame number of the sync point (typed in by
-                the user - StrikeWorks has no automatic video/sensor
-                alignment, the same as the original script's `frames.txt`).
-  nadir_time_s: the sensor time (seconds) the sync point corresponds to -
-                read straight from the processed sensor CSV's pressure
-                minimum, rather than an external `labeled_data_with_types`
-                row index the way the original script needed.
+                the user; there is no automatic alignment).
+  nadir_time_s: the sensor time (seconds) of the sync point - the
+                processed CSV's pressure minimum.
 
   For any encoded frame N: current_t = nadir_time_s + (N - nadir_frame) / real_fps
 
-Differences from the original script
--------------------------------------
-- No `frames.txt`/external combined dataset: the nadir time comes directly
-  from the sensor's own processed CSV, matching how Annotate and Validate
-  already find a nadir.
-- Every constant the script hardcoded (real_fps, data_hz, graph window,
-  zoom, pressure row offset, whether to draw the text overlay, an optional
-  logo) is a parameter here, driven by Export animations' Code options box
-  instead of editing the script.
-- GUI-free: `process_video()` takes an optional `progress_cb(frame, total)`
-  so a QThread worker (`page_export_animations.py`'s `_VideoSyncWorker`)
-  can report progress without this module depending on Qt at all.
+real_fps, data_hz, the graph window and zoom, the pressure row offset,
+the text overlay and an optional logo are all parameters (Export
+animations' render options). `process_video()` takes an optional
+`progress_cb(frame, total)` for the worker thread's progress.
 """
 import os
 from pathlib import Path
@@ -67,14 +54,13 @@ DEFAULT_CHANNELS = [
 #: has no room left to be readable (3 rows of 3 at the grid layout's cap)
 MAX_CHANNELS = 9
 
-#: fraction of the output frame's height the graph strip gets when there
-#: is a video crop above it - was a hardcoded quarter (// 4); still the
-#: default, just overridable now (SyncOptions.graph_frac)
+#: fraction of the output frame's height the graph strip gets below the
+#: video crop (SyncOptions.graph_frac)
 DEFAULT_GRAPH_FRAC = 0.25
 
 
 class SyncOptions:
-    """Every tunable the original script hardcoded as a module constant."""
+    """Every render setting."""
 
     def __init__(self, real_fps=1000, data_hz=2000, graph_window_s=0.3,
                 zoom=1.0, pressure_row_offset=20, video_nudge_px=0,
@@ -90,24 +76,16 @@ class SyncOptions:
         self.add_labels = add_labels
         self.logo_path = logo_path
         self.logo_opacity = logo_opacity
-        # which signal(s) the rolling graph strip plots, one panel each -
-        # was hardcoded to pressure + acceleration magnitude; any numeric
-        # column in the sensor's processed CSV works now (e.g. the raw
-        # higacc_x/y/z axes instead of the combined magnitude)
+        # the columns the graph strip plots, one panel each (any numeric
+        # column of the processed CSV)
         self.channels = channels or DEFAULT_CHANNELS
-        # "row": panels side by side (the original layout, fits under a
-        # video crop). "grid": up to 3 rows of 3 - only really usable
-        # with no_video, where the panels get the whole frame to work
-        # with instead of a quarter-height strip
+        # "row": panels side by side, under the video. "grid": up to 3 rows
+        # of 3, for no_video, where the panels get the whole frame
         self.layout = layout
-        # skip the video crop entirely and let the graph panels fill the
-        # whole output frame - a pure sensor-signal animation rather than
-        # a video overlay, for when there's no camera footage worth
-        # keeping (or none at all)
+        # no video: the panels fill the frame (a signal-only animation)
         self.no_video = no_video
-        # how much of the output frame's height the graph strip claims
-        # when there IS a video crop above it (ignored when no_video) -
-        # was always exactly a quarter; now the user's own call
+        # the graph strip's share of the frame height under the video
+        # (ignored when no_video)
         self.graph_frac = graph_frac
 
 

@@ -313,12 +313,10 @@ def write_index(lib_root, index_df):
 
 
 class AutoProcessThread(QThread):
-    """Auto process all's per-sensor loop, off the GUI thread - reading and
-    writing 70+ sensors' CSVs over a library that can be OneDrive-synced
-    used to freeze the app for as long as it took. Plain data in (the
-    sensor files, the index), the updated index out; sensors already
-    validated are left exactly as they are, so it never overrides a
-    human's review."""
+    """Auto process all's per-sensor loop, off the GUI thread (a library
+    on OneDrive makes it slow). Takes the sensor files and the index,
+    returns the updated index; sensors a person already validated are left
+    as they are."""
 
     progress = Signal(int, int)          # n done so far, total
     done = Signal(object, int)           # updated index_df, n newly validated
@@ -395,9 +393,9 @@ def join_annotations(df, index_df):
     return df
 
 
-# the MVP-era annotation spreadsheet's own column names/values (e.g. the
-# demo pack's annotations CSV) -> the app's native annotation variables
-# (annotation_schema DEFAULT_VARIABLES)
+# older annotation spreadsheets' column names and values (e.g. the demo
+# pack's annotations CSV) -> the app's annotation variables
+# (annotation_schema.DEFAULT_VARIABLES)
 _LEGACY_ANNOTATION_COLS = {
     "passage_type": "overall_passage_type",
     "leading_type": "leading_edge_type",

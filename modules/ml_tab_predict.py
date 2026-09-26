@@ -224,12 +224,10 @@ class PredictTab:
         self.lbl_override_note.setVisible(False)
         gv.addWidget(self.lbl_override_note)
 
-        # ── mortality inputs (moved here from Biological interpretation /
-        # Model comparison - the BSM run this reads is independent of the
-        # model prediction above). Dual-species default: both scaly and
-        # eel are always shown together, not picked one at a time - only
-        # eel's critical velocity is still a real input (scaly's own
-        # regression derives its floor by itself). ─────────────────────
+        # ── mortality inputs: from the BSM run, independent of the
+        # prediction above. Scaly and eel are shown together; only eel's
+        # critical velocity is an input (scaly's regression sets its own
+        # floor). ────────────────────────────────────────────────────────
         mort_row = QHBoxLayout()
         self.cmb_mortality_treatment = QComboBox()
         self.cmb_mortality_treatment.addItem("None", None)
@@ -744,13 +742,10 @@ class PredictTab:
         if self._goto_inspect:
             self._goto_inspect("low_conf")
 
-    # ── mortality (BSM, moved here from Biological interpretation / Model
-    # comparison - independent of the model prediction above). Dual-
-    # species default: scaly and eel are both recomputed from their own
-    # independent BSM run (BSMState.results, see bsm_state.py/page_bsm_
-    # calculator.py) every time, not one run relabelled twice - each
-    # species' own Pco/vstrike exposure is genuinely different (Leff_m/
-    # Leff_t depend on species), not just its mortality regression. ────
+    # ── mortality (BSM) ─────────────────────────────────────────────────────
+    # Scaly and eel each come from their own BSM run (BSMState.results):
+    # collision exposure differs by species (Leff_m / Leff_t), not just the
+    # mortality regression.
     def _on_bsm_results(self, results):
         # the first BSM run this page ever sees sets the spinbox to that
         # run's own eel_vcrit (whatever the Calculator's config actually

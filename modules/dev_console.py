@@ -4,32 +4,14 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Dev mode - a pop-out console window that mirrors everything the app
-prints (every page's status handler already does `print(f"[status] ...")`,
-plus the demo runners' `[demo] ...` lines and worker/subprocess chatter) so
-a walkthrough has a live scrollback log to watch instead of whatever
-terminal happened to launch the app - or nothing at all for a built .exe.
+"""Dev mode: a console window showing everything the app prints (the
+pages' `[status]` lines, the demos' `[demo]` lines, worker output) - the
+only log a windowed build has. It also runs the demos (dev_runner.py).
 
-It also hosts the demos (dev_runner.py): pick Simple or Advanced, Run,
-Stop. They live here rather than in Adjustments so the controls and the log
-are one window that stays usable for the whole run - Adjustments can be
-closed and the app watched while it is driven.
-
-Toggled from Adjustments ("Dev mode"); the toggle is persisted
-(settings.get_dev_mode/set_dev_mode). Installing/uninstalling only swaps
-sys.stdout/sys.stderr for a tee that also still writes to the original
-stream - nothing else in the app needs to know dev mode exists.
-
-Two things that used to leave this window blank or unreachable:
-
-  * A windowed build (StrikeWorks.spec, console=False) has no stdout/
-    stderr at all - both are None. The tee used to call None.write, which
-    made every print() in the app raise, so nothing ever reached the log.
-    It now only forwards to a real stream when there is one.
-  * Simple mode (shown at launch) used exec()'s default application
-    modality, which input-blocked every other window - this one included.
-    It is window-modal now (page_simple_mode.py); this window also has no
-    Qt parent, so no window-modal dialog anywhere can block it.
+Turned on from Settings ("Dev mode", remembered between sessions).
+Installing swaps sys.stdout/sys.stderr for a tee that still writes to the
+original stream when there is one (a windowed build has none - both are
+None). The window has no Qt parent, so no window-modal dialog blocks it.
 """
 import sys
 from datetime import datetime
@@ -78,12 +60,10 @@ class _StreamTee(QObject):
 
 
 class DevConsole(QDialog):
-    """Non-modal pop-out log window + demo controls. One instance, held by
-    MainWindow (`self.dev_console`) - deliberately built with NO Qt parent:
-    a window-modal dialog (Adjustments, Simple mode) blocks its parent's
-    whole window group on Windows, and a parent here would put the console
-    inside that group. `app_window` is kept only as a reference (for the
-    demos), never as a parent."""
+    """The log window and demo controls; one instance, `MainWindow.
+    dev_console`. It has no Qt parent: a window-modal dialog (Settings,
+    Simple mode) blocks its parent's whole window group on Windows.
+    `app_window` is only a reference, for the demos."""
 
     def __init__(self, app_window=None):
         super().__init__(None)

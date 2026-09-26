@@ -16,9 +16,9 @@ nothing is duplicated per tab:
     run           -> run_started / run_finished / run_failed
     select record -> selection_changed (Inspect updates its visualisation)
 
-The prediction itself runs the ported ``modules/predict_worker.py`` in a
-subprocess via a worker QThread (same architecture as the MVP), so the
-model stack is never imported into the GUI process.
+The prediction itself runs ``modules/predict_worker.py`` in a subprocess
+(watched by a QThread), so the model stack is never imported into the GUI
+process.
 """
 import json
 import subprocess
@@ -71,7 +71,7 @@ STRIKE_TYPES = {"leading_edge", "other"}
 _DEFAULT_LOW_CONF = 0.70
 
 
-# ── worker thread (ported from the MVP's _WorkerThread) ──────────────────────
+# ── worker thread ────────────────────────────────────────────────────────────
 class _WorkerThread(QThread):
     finished_ok = Signal(str)
     failed      = Signal(str)
@@ -191,7 +191,9 @@ class PredictionState(QObject):
     # ── models ───────────────────────────────────────────────────────────────
     @staticmethod
     def _metrics_for(model_path):
-        """Find the metrics JSON beside a model joblib (MVP rules)."""
+        """Find the metrics JSON beside a model joblib: `<stem>performance_
+        metrics.json`, then `performance_metrics.json`, then any
+        `*metrics*.json`."""
         p = Path(model_path)
         cand = p.parent / (p.stem + "performance_metrics.json")
         if cand.exists():
@@ -204,7 +206,7 @@ class PredictionState(QObject):
         return hits[0] if hits else None
 
     def load_models_from_dir(self, d):
-        """Auto-discover binary*.joblib / multiclass*.joblib as in the MVP.
+        """Find the binary*.joblib / multiclass*.joblib models in `d`.
 
         When a folder holds several variants (binary1_1, binary1_2, ...) the
         alphabetically-first of each is selected by default - `bin_candidates`
@@ -510,10 +512,7 @@ class PredictionState(QObject):
         """Launch the worker subprocess. Emits run_started immediately and
         run_finished / run_failed later on the GUI thread.
 
-        There is no persistent compatibility panel any more - pressing Run
-        is what triggers `validate()`, and a failure surfaces every failed
-        check right here rather than requiring the user to have found and
-        read a checklist beforehand."""
+        Runs `validate()` first; a failure reports every failed check."""
         if self.running:
             return
         self.status.emit(

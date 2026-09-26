@@ -6,7 +6,7 @@
 # ///////////////////////////////////////////////////////////////
 """Subprocess worker: loads models, runs predictions, writes results to CSV.
 
-Port of the MVP's ``bsm/predict_worker.py``. Two-stage pipeline:
+Two-stage pipeline:
   1. binary model      -> strike vs no-contact (overall strike rate)
   2. multiclass model  -> for each predicted strike, which pump region (class)
 
@@ -21,14 +21,14 @@ Usage:
         [--threshold <float>]
 
 --mc-model/--mc-metrics are optional; if omitted only the binary stage runs.
---threshold overrides the deployed optimal_threshold (explicit user choice
-only - the GUI passes it exclusively when the user ticks the override box).
+--threshold overrides the deployed optimal_threshold (the GUI passes it
+only when the override box is ticked).
 
-Outputs (unchanged from the MVP, plus a richer run_meta.json):
+Outputs:
     predictions.csv     per-recording predictions
     summary.csv         treatment-level summary with Wilson CIs
     region_summary.csv  tidy treatment x class table (multiclass only)
-    run_meta.json       class_names (as before) + run/provenance metadata
+    run_meta.json       class_names + run/provenance metadata
 """
 import argparse
 import json

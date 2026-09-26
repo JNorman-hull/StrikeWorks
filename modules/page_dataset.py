@@ -4,30 +4,20 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Behaviour for the Dataset creation page.
-
-Port of the MVP's ``bsm/pages/feature_prep.py`` (Model Feature Preparation),
-reduced to the two creation methods that are still wanted:
+"""Dataset creation (hidden for now - see ROADMAP.md, "Hidden for now";
+Annotate's "Save and export" builds the dataset instead).
 
   Create from unsegmented (auto)
-      MVP "Quick" option. Uses ``pres_min.time.`` from the global index,
-      slices half the analysis window either side of the nadir out of the
-      full sensor CSV and standardises to the window's row count.
+      Takes ``pres_min.time.`` from the global index, slices half the
+      analysis window either side of the nadir out of the full sensor CSV
+      and standardises it to the window's row count.
 
   Create from segmented
-      MVP "Bind nadir windows" option. Binds the saved window files the
-      Validate page wrote into ``processed_sens_data/nadir_window``, keeping
-      only sensors present in the index with ``bad_sens == N``.
+      Binds the saved window files in ``processed_sens_data/nadir_window``,
+      keeping only sensors in the index with ``bad_sens == N``.
 
-The window stays 200 ms; the number of rows that becomes follows the rate
-the selected sensor writes at (Prepare page) - 400 rows for RAPID at
-2000 Hz, 1200 for a 6000 Hz device.
-
-The MVP's third method (segmented ROI from ``*_delineated.csv``) is dropped.
-
-Extraction maths, the row standardisation, the meta columns carried over
-from the index, the annotation join and the three-panel summary figure are
-unchanged from the MVP.
+The window is 200 ms; its row count follows the selected sensor's output
+rate (400 rows for RAPID at 2000 Hz).
 """
 from pathlib import Path
 
@@ -121,10 +111,8 @@ class DatasetPage(QObject):
         gv.addWidget(BindTrainingData(start_dir=lambda: self._root
                                       or settings.get_libraries_dir()))
 
-        # Advanced dataset options is just this box now: creating/annotating
-        # a dataset is Validate and annotate's job (Save and export), so the
-        # library/filter/console/create/annotate/figure boxes built in
-        # main.ui are hidden rather than offered a second time here
+        # only Bind training data is offered: building a dataset is
+        # Annotate's Save and export, so main.ui's other boxes are hidden
         grid = self.ui.grid_dataset
         for w in (self.ui.grp_ds_library, self.ui.grp_ds_filter,
                   self.ui.grp_ds_console, self.ui.grp_ds_create,
@@ -138,8 +126,7 @@ class DatasetPage(QObject):
 
     def _configure_widgets(self):
         u = self.ui
-        # library selection is app-wide now (Home / session_state) - this
-        # box just shows which one is active, rather than picking it
+        # the library is chosen on Home; this box only shows it
         u.tree_ds_library.setVisible(False)
         u.btn_ds_change_libraries.setVisible(False)
         self.lbl_library = QLabel("No library selected.")

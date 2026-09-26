@@ -4,30 +4,13 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""The session-wide library selection (Home page).
+"""The session library, shared by every page (set on Home), in the same
+shared-object pattern as `BSMState`, `PredictionState` and
+`TrainingState`. Pages with library filters follow `library_changed`.
 
-Before this existed, every page that needed a library (Process, Annotate,
-Export animations - each via their own `LibrarySelector`; Initiate
-deployment, Validate, Dataset, Biological via their own bespoke pickers)
-had entirely independent selection state - picking a library on one had no
-effect on any other. `SessionState` is a single shared "which library is
-this session working in" value, following the same shared-object pattern
-`BSMState`/`PredictionState`/`TrainingState` already use in this app.
-
-Soft sync, deliberately (2026-08-31 design decision): existing pickers stay
-as they are and simply *default* to the session library, rather than being
-torn out for one single picker everywhere - that unification is a planned
-follow-up, not this pass. `LibrarySelector.__init__`'s optional
-`session_state` argument is the wiring: it seeds the combo from
-`session_state.library` and re-syncs whenever `library_changed` fires, but
-the combo remains independently changeable per page as it always was.
-
-Output location: `output_dir()` is `<library>/StrikeWorks_user_output/` -
-the unified per-library destination for reports, deployed models, and
-synced video. This does not restrict *loading* those things - the model/
-training-data pickers throughout the app remain free file/folder browsers,
-so a model or a bound multi-library training set can still be loaded from
-anywhere; only the *default write location* for new output changes.
+`output_dir()` is `<library>/StrikeWorks_user_output/`, the default place
+for reports, deployed models and synced video. Loading is unaffected:
+models and training data can still be loaded from anywhere.
 """
 from pathlib import Path
 

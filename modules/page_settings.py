@@ -4,46 +4,23 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Adjustments - the app's folder settings, in one place.
+"""Settings: the app's folders, plus a few defaults (all in `settings.py`,
+all optional).
 
-`btn_adjustments` already existed in main.ui (the gear-icon pop-out
-settings panel's top row - Adjustments/About/More) but was never wired to
-anything. This is its content: a plain modal dialog rather than a new
-page or a restructured settings panel - "a simple pop-out window for the
-basic settings" is exactly what a QDialog already gives for free, without
-touching main.ui further.
+  Libraries folder      - the folder holding every library (which library
+                          is used is chosen on Home).
+  Models folder         - where Model prediction, Evaluate and Deploy look
+                          first; a model can still be loaded from anywhere.
+  Default output folder - for reports and exports when no session library
+                          is selected (otherwise the library's
+                          StrikeWorks_user_output/).
+  Default input data folder - where exported datasets are written.
+  Default model (Simple mode) - the model Simple mode's Predict step uses;
+                          unset means 'binary1' / 'multiclass1', else the
+                          newest.
+  Dev mode              - the dev console and its demos.
 
-Three folder settings, all in `settings.py`, all optional (every one of
-them already has a working default before this dialog exists):
-
-  Libraries folder   - the folder *containing* every library (was
-                        changed via a "Libraries…" button on Home and on
-                        every LibrarySelector/bespoke page picker - all
-                        dropped in favour of this one central place;
-                        selecting *which* library within it stays on
-                        Home, the only place library selection happens
-                        any more app-wide).
-  Models folder       - default for Model prediction/Evaluate discovery
-                        and Deploy's own default before a session library
-                        is selected. Loading a model from anywhere else
-                        is still a free browse wherever that already
-                        existed - this only changes the starting point.
-  Default output folder - fallback for reports/exports when no session
-                        library is selected (StrikeWorks_user_output/
-                        under the library takes over once one is).
-
-A fourth, different in kind - not a folder, and not required the way the
-three above are (each already has a working default; this one's default
-*is* "unset"):
-
-  Default model (Simple mode) - which deployed model Simple mode's
-                        Predict step uses automatically, no picker shown
-                        there. Unset (the normal state) means "most
-                        recently deployed" instead of a pinned choice.
-
-Changing the libraries folder here needs Home's own combo re-read
-afterwards, since library discovery lives there - `main.py` calls
-`window.home_page._refresh_library_combo()` after this dialog closes.
+After it closes, `main.py` has Home re-read the libraries folder.
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -57,19 +34,14 @@ from .theme import MUTED, TEXT
 
 
 class SettingsDialog(QDialog):
-    """Modal-to-its-parent folder-settings dialog, opened from the gear
-    icon's Adjustments button."""
+    """Opened from the settings panel's Settings button."""
 
     def __init__(self, window):
         super().__init__(window)
         self.window = window
         self.setWindowTitle("Settings")
         self.setMinimumWidth(520)
-        # window-modal, not the exec()-default application-modal - this
-        # should only block MainWindow, not an unrelated top-level window
-        # like the dev console, which needs to stay interactive with
-        # Adjustments open (that's the whole point of the "Show console"
-        # button living here)
+        # window-modal, so the dev console (opened from here) stays usable
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self._build()
 
@@ -134,8 +106,8 @@ class SettingsDialog(QDialog):
         gv.setSpacing(6)
         self.ed_input_data = self._folder_field(
             gv, settings.get_input_data_dir(), "default input data folder",
-            "Where Simple mode's Save and export (and the dev demo "
-            "runner) write exported model-ready datasets by default.")
+            "Where Save and export writes model-ready datasets by "
+            "default.")
         v.addWidget(grp_input)
 
         self._dev_mode_row(v)
@@ -151,9 +123,7 @@ class SettingsDialog(QDialog):
         apply_section_defaults(self)
 
     def _folder_field(self, gv, current, caption, tip):
-        """One folder path + Browse, inside a caller-supplied Section
-        layout. The description that used to sit as an always-visible
-        label under the row is now the Browse button's tooltip."""
+        """A folder path and Browse (with `tip` as its tooltip)."""
         row = QHBoxLayout()
         ed = QLineEdit(str(current))
         ed.setReadOnly(True)

@@ -4,21 +4,15 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Home page - session library selection, New session, and a resume
-summary of what's already been done for the selected library.
+"""Home: the session library, New session, and a summary of what has been
+done in that library so far.
 
-Design (2026-08-31, see ROADMAP.md): `SessionState` is the single shared
-"which library" value; this page is where the user sets it. Every other
-page's own library picker (Process, Annotate, Export animations) soft-
-syncs to it - starts here, still independently changeable per page. A
-single unified picker replacing all of those is a planned follow-up, not
-this pass.
+`SessionState` holds the session library; this page sets it and every
+page with library filters follows it.
 
-The resume summary reads straight from the library's own files
-(`deployment_index.py`, `model_features.csv`, the library's
-`StrikeWorks_user_output/` folder) rather than reaching into other pages'
-in-memory state - decoupled, and correct even before those pages have
-been visited this session.
+The summary reads the library's own files (`deployment_index.py`,
+`model_features.csv`, `StrikeWorks_user_output/`), so it's right before
+any other page has been opened.
 """
 
 

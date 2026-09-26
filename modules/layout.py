@@ -153,12 +153,12 @@ def when_visible(widget, fn, key="default"):
 # anything not listed defaults to open. Set a title to False here to have that
 # panel start collapsed.
 SECTION_DEFAULTS = {
-    # Prepare - Sensor configuration
+    # Setup and deploy - Sensor configuration
     "Session sensor": True,
     "Rates and raw files": True,
     "Channels": True,
     "Parser": True,
-    # Prepare - Study design
+    # Setup and deploy - Study design
     "Deployment": True,
     "Treatments": True,
     "Save to library": True,

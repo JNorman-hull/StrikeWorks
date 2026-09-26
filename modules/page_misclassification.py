@@ -4,36 +4,25 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Controller for Misclassification analysis (Model training).
+"""Misclassification analysis (Model training): a model picker, the
+recordings its cross-validation got wrong (`{kind}_cv_predictions.csv`,
+loaded by `ml_model_library.discover_models()`), a signal plot and a
+Labels box (Annotate's `AnnotationValueEditor` / `VariableListDialog`).
 
-Inspect used as the base again: a model picker, a list of the files its
-cross-validation got wrong (from the deployment package's
-`{kind}_cv_predictions.csv` - `ml_model_library.discover_models()` already
-loads these, the same data Evaluate's error-analysis table reads), a signal
-plot, and a Labels box reusing `AnnotationValueEditor`/`VariableListDialog`
-verbatim from Annotate - the same "pick or add one value for one recording"
-shape, not a second implementation.
+Corrections go to `<dataset>_corrected.csv` beside the training dataset
+(created from it on the first correction); every row of a recording shares
+one value per variable, as in `deployment_index.set_row_values`. Once it
+exists the corrected file is what's read back, so corrections build up
+across recordings and sessions.
 
-A correction is written to a `_corrected` copy of the training dataset
-sitting beside the original (`<name>_corrected.csv`, first correction
-copies the original there) - all of a file's rows in the long-format
-dataset share one annotation value per variable, so the write is a masked
-update exactly like `deployment_index.set_row_values`. The corrected CSV,
-once it exists, is what gets read back on every subsequent visit, so
-corrections accumulate across files and sessions.
+The training dataset: in memory for a model trained this session
+(`TrainingState.dataset_df`), otherwise the path recorded in the model
+package's `train_config.json`.
 
-The training dataset itself isn't shipped with a deployed model - for a
-session-trained model it's already in memory (`TrainingState.dataset_df`);
-for a deployed one, `train_config.json` in its `BladeStrikeModel_v<v>/`
-package records the exact path it was trained from (`ml_train_state.py`'s
-`build_config()` writes it, `ml_model_library.export_model_report()`
-already copies it into every deployment package).
-
-Leaving the page after making at least one correction (`MainWindow.
-navigate_to`, whichever button was actually clicked) is redirected to
-Model training > Train with the corrected dataset loaded, after a
-notice that the model should be retrained before its next deployment -
-`notify_and_load_into_training()` is main.py's hook for this.
+Leaving the page with corrections made goes to Model training > Train with
+the corrected dataset loaded, after a note that the model needs
+retraining (`notify_and_load_into_training()`, called by
+`MainWindow.navigate_to`).
 """
 import subprocess
 from datetime import datetime
@@ -65,10 +54,9 @@ from .plot_style import (
     set_right_axis_active,
 )
 
-# StrikeWorks' own annotation_schema names vs. the MVP-legacy names the
-# training pipeline still recognises (ml_state.ANNOTATION_COLUMNS,
-# ml_train_state.leading_type_column()) - a dataset built either way is
-# readable here.
+# annotation_schema names and the older names the training pipeline also
+# accepts (ml_state.ANNOTATION_COLUMNS, ml_train_state.leading_type_column()),
+# so a dataset using either reads here.
 _LEGACY_ALIASES = {
     "overall_passage_type": "passage_type",
     "leading_edge_type": "leading_type",
@@ -83,9 +71,8 @@ _NON_CHANNEL_COLS = {"file", "time_s", "treatment", "deployment"}
 
 
 class _VideoIndexThread(QThread):
-    """raw_layout.video_index off the GUI thread - it walks every library's raw
-    folder, which on OneDrive used to add a second or more to app startup
-    and grows with every library added."""
+    """raw_layout.video_index off the GUI thread: it walks every library's
+    raw folder, which on OneDrive takes a second or more."""
     done = Signal(object)
 
     def __init__(self, lib_dir):

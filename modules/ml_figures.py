@@ -4,15 +4,12 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Prediction figures, ported from the MVP prediction page.
-
-Factored to draw onto any matplotlib Figure. Two presentations:
+"""Prediction figures, drawn onto any matplotlib Figure. Two presentations:
 
   dark=True   in-app canvases, matching the StrikeWorks theme. Empty
               figures still draw their expected axes (labels, limits,
               grid) so the panels read as live plots awaiting data.
-  dark=False  publication styling on white - used for every exported
-              figure (Report tab / Export analysis).
+  dark=False  publication styling on white, for every exported figure.
 """
 import numpy as np
 

@@ -4,15 +4,9 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Blade strike modelling figures - port of the old MVP app's
-`bsm/plotting.py`, redrawn with the shared in-app dark theme
-(`ml_figures.style_axes`/`fg_colour`/`style_legend`) instead of its own
-white-on-navy styling, so these plots read as part of the same app as
-every other evaluation figure rather than a second visual language.
-
-dark=True (the default here - these only ever appear on in-app canvases,
-unlike ml_figures' report-vs-canvas split) gives the themed presentation;
-dark=False is available for anything exported to a light-background report.
+"""Blade strike modelling figures, in the same style as the app's other
+figures (`ml_figures.style_axes` and friends). `dark=True` (the default) is
+the in-app look; `dark=False` is for exported, light-background reports.
 """
 import textwrap
 import warnings
@@ -38,10 +32,8 @@ def _bar_style(ax, dark, ylabel, fontsize=9):
 
 
 def _label_bars(ax, bars, values, dark=True, fontsize=8, tops=None):
-    """Prints each bar's own value (%) just above it - every BSM output
-    plot shows its actual numbers now, not just a shape to eyeball. A bar
-    reaching the top of the 0-100 axis gets its label just inside the bar
-    instead, so it can't run into the title above."""
+    """Each bar's value (%) just above it; a bar reaching the top of the
+    0-100 axis gets its label just inside instead, clear of the title."""
     fg = fg_colour(dark)
     # `tops`: where each label sits, when a bar carries an error bar - above
     # its upper whisker rather than on it

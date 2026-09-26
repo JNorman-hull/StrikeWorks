@@ -4,25 +4,15 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""HTML report builder for a Blade Strike Modelling result.
+"""HTML report for a blade strike modelling result, built from
+`ml_report.py`'s HTML pieces so it matches the other reports. Equations are
+shown as plain text with the numbers substituted (no MathJax, so the report
+works offline).
 
-Deliberately does NOT adopt the old MVP app's `bsm/report/builder.py`
-wholesale (a MathJax-rendered document, its own external CDN dependency
-and visual language) - this reuses `ml_report.py`'s generic HTML building
-blocks (`_kv_table`/`_data_table`/`_img_tag`/`wrap_html_document`/`_DARK`)
-so a BSM report still looks like the same family of document as a
-prediction report, with every equation shown as plain substituted-numbers
-text rather than typeset LaTeX. What DID change (2026-09-01, in response
-to "not fully featured... include more of the actual methodology, like
-the previous html reporter"): every derivation step the old reporter
-showed is here now, not just the tip-point summary - blade profile,
-effective fish length (both species' own derivation), pump kinematics,
-strike velocity/collision probability/mortality integrand at hub/mid-
-span/tip, the full mutilation-ratio regime table, and the empirical/
-observed comparison section. `build_bsm_report_html()` also now takes an
-optional second species' result and reports both scaly and eel in one
-document (dual-species default, ROADMAP.md item 15) rather than whichever
-one happened to be primary.
+Covers every derivation step: blade profile, effective fish length, pump
+kinematics, strike velocity, collision probability and the mortality
+integrand at hub / mid-span / tip, the mutilation-ratio regime table and
+the observed comparison. Scaly and eel can be reported together.
 """
 import numpy as np
 from datetime import datetime
@@ -263,8 +253,7 @@ def _empirical_section(res):
 
 
 def _species_section(res):
-    """One species' full methodology walkthrough - every step the old
-    MVP reporter showed, in the app's own (non-MathJax) HTML style."""
+    """One species' full methodology walkthrough."""
     p = res["params"]
     h = [f"<h2 style='color:{_DARK};'>{_species_label(p['species'])}</h2>"]
 
@@ -321,12 +310,10 @@ def _species_section(res):
 
 def build_bsm_report_html(res, res_other=None, image_paths=None,
                           embed_images=True, captions=None, widths_cm=None):
-    """Full methodology report for one BSM result, or both species in one
-    document when `res_other` (the other species' own independent
-    `bsm_model.compute()` result - dual-species default, ROADMAP.md item
-    15) is supplied. `image_paths` - figures (e.g. the Sensitivity page's
-    Pco/Pm bars) embedded at the end, shared across both species since
-    they aren't species-specific themselves."""
+    """Full methodology report for one BSM result, or both species when
+    `res_other` (the other species' `bsm_model.compute()` result) is
+    given. `image_paths`: figures embedded at the end, shared by both
+    species."""
     h = ["<div style='font-family:Segoe UI, Arial, sans-serif;"
          "color:#1e293b;font-size:13px;'>"]
     h.append(f"<h1 style='color:{_DARK};'>Blade Strike Modelling Report</h1>")

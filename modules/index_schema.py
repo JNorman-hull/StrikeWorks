@@ -6,15 +6,10 @@
 # ///////////////////////////////////////////////////////////////
 """The columns of ``global_sensor_index.csv``, defined in one place.
 
-This used to live in each library as ``config/index_config.txt``, which
-meant a library without that file could not be processed at all - the
-parser raised and the run failed. The schema is the app's, not the
-library's, so it is here: a library needs no configuration to be usable.
-
-The list below is a faithful transcription of the MVP's index_config.txt,
-so an index written now lines up column for column with one written before.
-(The original listed ``site`` twice; the duplicate collapsed to one column
-and is not repeated here.)
+The schema belongs to the app, so a library needs no configuration file
+of its own. The column order matches indexes written by earlier versions
+(from a library's ``config/index_config.txt``), so old and new indexes
+line up column for column.
 
 Each entry is (column, default). A default of None means the value comes
 from the parser's summary for that recording - keyed by ``source``, which
@@ -35,7 +30,7 @@ SCHEMA = [
     ("duration.mm.ss.", None, "duration[mm:ss]"),
     ("bad_sens", "N", None),
 
-    # deployment - written by Prepare > Study design and Process
+    # deployment - written by Create and edit deployment and processing
     ("site", "NA", None),
     ("deployment_id", "NA", None),
     ("pump_turbine", "NA", None),
@@ -49,7 +44,7 @@ SCHEMA = [
     ("deployment_info", "N", None),
     ("deployment_config", "NA", None),
 
-    # delineation / normalisation, from the MVP pipeline
+    # delineation / normalisation
     ("roi_config", "NA", None),
     ("delineated", "N", None),
     ("trimmed", "N", None),

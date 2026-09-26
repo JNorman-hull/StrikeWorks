@@ -36,8 +36,9 @@ class ProcessThread(QThread):
             try:
                 _, summary = parse(f["paths"], self._out_dir, self._config)
                 msg = summary.get("messages", "")
-                bad = summary.get("bad_sens", "N")
-                self.log.emit(f"   Done.  bad_sens={bad}  {msg}")
+                flag = ("  Flagged bad." if summary.get("bad_sens", "N") == "Y"
+                        else "")
+                self.log.emit(f"   Done.{flag}  {msg}")
                 self.processed.emit(f["stem"])
                 n_ok += 1
             except Exception as e:

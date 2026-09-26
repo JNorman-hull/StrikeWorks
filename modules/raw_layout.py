@@ -102,12 +102,9 @@ class RawTree:
       files      stem (upper) -> [every file of that recording]
       videos     stem (upper) -> [<stem>_vid_*.mp4 clips, from any VIDEO folder]
 
-    Built by `scan_tree` - a single os.walk, which on a OneDrive-synced
-    library is the difference between a library opening in a second and in
-    most of a minute: the pages used to rglob the tree once each and then
-    list every sensor's VIDEO folder separately, thousands of directory
-    listings for a big library. Plain data, so it can be built off the GUI
-    thread."""
+    Built by `scan_tree` in a single os.walk (one walk rather than a
+    listing per folder matters on OneDrive). Plain data, so it can be
+    built off the GUI thread."""
 
     def __init__(self):
         self.locations = {}

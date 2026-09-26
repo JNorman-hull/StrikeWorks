@@ -6,11 +6,8 @@
 # ///////////////////////////////////////////////////////////////
 """Export and report - the one place every StrikeWorks report is built.
 
-A pop-up dialog (opened from the pinned "Export and report" sidebar
-button - see `page_ml_prediction.py.open_report()`), not a page or a tab -
-"Report" used to be the third tab of Model Prediction, but a report is
-something you generate and dismiss, not somewhere you live, so it moved
-out to match Adjustments' own "simple pop-out window" shape.
+A dialog opened from the "Export and report" button at the bottom of the
+sidebar (`page_ml_prediction.open_report()`).
 
 Hosts the central reporting hub (`report_center.py`): a checklist of every
 report a page in the app can produce - BSM maths, Study design, Raw data
@@ -22,15 +19,14 @@ HTML format. Four actions:
                               result in the user's default web browser.
   Export full report        - same assembly, written to disk under the
                               session library's output folder (or the
-                              Adjustments default) and left there.
+                              Settings default) and left there.
   Export all                - every *available* section (not just
                               checked), same as above - the quickest way to
                               get everything there is.
   Export StrikeWorks analysis - the self-contained prediction package
                               (report + tables + PNG/SVG figures +
-                              provenance.json) `ml_report.export_analysis`
-                              already builds - StrikeWorks' own analysis
-                              specifically, not the multi-page hub above.
+                              provenance.json) from
+                              `ml_report.export_analysis`.
 
 Figure output settings (file formats, DPI) sit underneath and thread
 through to every section that renders its own figure (the `formats=`/
@@ -272,11 +268,9 @@ class ReportDialog(QDialog):
 
     # ── report assembly ─────────────────────────────────────────────────────
     def _assemble(self, checked):
-        # re-check availability right before writing anything - state may
-        # have moved since the checklist was last drawn (a run finishing,
-        # a model deployed elsewhere); `_refresh_checklist()` unchecks
-        # anything that's no longer available, so the post-refresh checked
-        # set is always exactly what's both wanted and buildable
+        # state may have changed since the checklist was drawn (a run
+        # finished, a model deployed); refreshing unchecks anything that's
+        # no longer available
         self._refresh_checklist()
         checked = self._checked_keys()
         if not checked:

@@ -4,30 +4,23 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Controller for the Model comparison page (renamed from Biological
-interpretation - ROADMAP.md Chunk 5 task 5's final piece; the mortality
-box that used to live here moved to Model prediction > Predict, see
-ml_tab_predict.py).
+"""Model comparison (Model prediction).
 
-Comparison: each treatment's data-driven (ML model) strike rate against
-the mathematical (BSM) collision-probability estimate, as a figure and a
-table, plus manual Video observed / Model 1 counts that fold into the same
-figure as their own bars (Wilson 95% CI).
+Collision: each treatment's strike rate from the model against the BSM
+collision probability, as a figure and a table, plus manual Video observed
+and Model 1 counts shown as their own bars (Wilson 95 % CI).
 
-Mortality: the current model's predicted strike rate put through each
-species' BSM injury model (bsm_model.mortality_from_strike_rate - the same
-formula as the BSM's own observed-counts mortality) - the model-projected
-mortality - against the BSM's own mortality and any video-observed
-mortality, as its own figure (half the collision figure's width) and
-table columns. Only the current model gets a projected mortality - the
-manual Model 1 counts have no BSM run behind them.
+Mortality: the current model's strike rate put through each species' BSM
+injury model (`bsm_model.mortality_from_strike_rate`, the same formula as
+the BSM's observed-counts mortality) - the model-projected mortality -
+against the BSM's own mortality and any video-observed mortality, as a
+figure half the collision figure's width and extra table columns. The
+manual Model 1 counts get no projected mortality (no BSM run behind them).
 
-Layout: the Filters box (the same Deployment / Treatment / Run filters as
-Raw data processing) and the three input boxes down the left, the figure
-over the table on the right. The filters narrow the prediction run's
-per-recording results, and each treatment's strike rate and CI are
-recomputed from just those recordings - so one deployment, treatment or
-run can be compared on its own.
+Layout: Filters (the same Deployment / Treatment / Run filters as Raw data
+processing) and the three input boxes on the left, figures over the table
+on the right. The filters narrow the prediction's per-recording results
+and each treatment's strike rate and CI are recomputed from those.
 """
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -135,8 +128,7 @@ class ModelComparisonPage(QWidget):
         lv.setContentsMargins(0, 0, 4, 0)
         lv.setSpacing(8)
 
-        self.lib_selector = LibrarySelector(session_state=self.session_state,
-                                            show_picker=False)
+        self.lib_selector = LibrarySelector(self.session_state)
         btn_rescan = QPushButton("Rescan folders")
         btn_rescan.setToolTip("Pick up deployments, treatments or runs added "
                               "to the library's raw folders since it was "

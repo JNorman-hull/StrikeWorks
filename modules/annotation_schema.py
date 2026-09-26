@@ -4,26 +4,17 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Annotation variables - what the Annotate page lets a user record about a
-recording, and the known values each one offers.
+"""Annotation variables: what Annotate lets a user record about a
+recording, and the known values of each.
 
-Mirrors ``sensor_config.py``'s pattern: a small dataclass, a JSON store in
-the user's home folder, a ``notifier`` the page follows. Nothing here reads
-or writes ``global_sensor_index.csv`` directly - that is
-``deployment_index.set_row_values`` - this module only tracks which
-columns exist and what values are known for each.
+A small dataclass, a JSON store in the user's home folder and a
+``notifier`` the page follows, as in ``sensor_config.py``. The values
+themselves go onto the sensor's index row (``deployment_index.
+set_row_values``); this module only tracks which columns exist.
 
-Defaults are today's four annotation columns, unchanged, so nothing already
-built around them needs to change:
-
-  * ``modules/page_dataset.py`` - ``_LABEL_COLS``, the external annotation
-    CSV join (``sens_file`` -> ``file``)
-  * ``modules/ml_state.py`` - ``ANNOTATION_COLUMNS``, ground-truth detection
-    at prediction time
-
-Annotate writes the same column names directly onto the sensor's index row
-instead of via a separate CSV, but a dataset already carrying these columns
-from the old workflow is read identically either way.
+The default columns are the ones the dataset build (``page_dataset.
+_LABEL_COLS``) and prediction (``ml_state.ANNOTATION_COLUMNS``) read, so a
+dataset annotated from an external CSV reads the same way.
 """
 import json
 from dataclasses import asdict, dataclass, field
@@ -55,10 +46,9 @@ class AnnotationVariable:
                   values=list(data.get("values", [])))
 
 
-# The four columns the MVP's model_labels.csv workflow already uses
-# (modules/page_dataset.py:_LABEL_COLS), with the value sets already implied
-# elsewhere in the app (modules/page_dataset.py:_STRIKE_TYPES/_REGION_ORDER)
-# offered as a starting point rather than an empty list.
+# The default columns (page_dataset._LABEL_COLS), each starting with the
+# values the dataset build expects (page_dataset._STRIKE_TYPES /
+# _REGION_ORDER).
 DEFAULT_VARIABLES = [
     AnnotationVariable(
         name="overall_passage_type", label="Overall passage type",

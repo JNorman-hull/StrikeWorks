@@ -1,6 +1,6 @@
 # StrikeWorks clean-up and refactoring plan
 
-Status: **in progress** on branch `cleanup-2026-09` - phases A-F done
+Status: **in progress** on branch `cleanup-2026-09` - phases A-G done
 (see the progress table in section 9). Each phase ends in a working app,
 so the work can stop after any of them.
 
@@ -285,7 +285,8 @@ and the tests are what show nothing broke.
 | C | 275e534 | 35 unused functions/classes removed |
 | D | a8780ce | `plot_widgets`, `dataset_build`, `processing`, `raw_layout` paths; one report wrapper. The Evaluate model-package export and Simple mode's analysis export stay separate deliverables |
 | E | d928462 | template leftovers gone, `main.ui` trimmed, no star imports |
-| F | this phase | `ml_widgets` split into `theme` / `layout` / `tables` / `cards` / `level_grouper`; `muted_label`, `ACCENT_BUTTON`, `CONSOLE_STYLE`, `scroll_page`, `scroll_area`; modules renamed per 2.7; `main.py` 825 -> 461 lines, start-up helpers in `startup.py` |
+| F | a4fa30c | `ml_widgets` split into `theme` / `layout` / `tables` / `cards` / `level_grouper`; `muted_label`, `ACCENT_BUTTON`, `CONSOLE_STYLE`, `scroll_page`, `scroll_area`; modules renamed per 2.7; `main.py` 825 -> 461 lines, start-up helpers in `startup.py` |
+| G | this phase | history and filler comments rewritten across the modules (module docstrings first); internal column names out of log messages; LibrarySelector's unused library picker removed; ROADMAP.md 2,223 -> ~90 lines (open work + "Hidden for now"); README rewritten |
 
 Decisions taken on the way:
 - **2.6 hidden pages are kept, not deleted** - they are hidden temporarily
