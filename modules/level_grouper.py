@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 from .layout import discard_widget
-from .theme import MUTED, TEXT
+from .theme import style
 
 
 # ── level grouping ───────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ class LevelGrouper(QWidget):
         v.addLayout(self._grid)
 
         self.lbl_summary = QLabel("")
-        self.lbl_summary.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_summary, role="muted")
         self.lbl_summary.setWordWrap(True)
         v.addWidget(self.lbl_summary)
 
@@ -98,7 +98,7 @@ class LevelGrouper(QWidget):
             for i, g in enumerate(self._groups):
                 row = QHBoxLayout()
                 lab = QLabel(f"Class {i + 1}")
-                lab.setStyleSheet(f"color:{MUTED};")
+                style(lab, role="muted")
                 lab.setMinimumWidth(56)
                 ed = QLineEdit(g["name"])
                 ed.setPlaceholderText("class name")
@@ -120,7 +120,7 @@ class LevelGrouper(QWidget):
             for r, (key, display, count) in enumerate(self._levels):
                 lab = QLabel(f"{display}   (n={count})" if count is not None
                              else str(display))
-                lab.setStyleSheet(f"color:{TEXT};")
+                style(lab)
                 cmb = QComboBox()
                 for i, g in enumerate(self._groups):
                     cmb.addItem(g["name"] or f"Class {i + 1}", i)

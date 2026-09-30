@@ -27,7 +27,7 @@ import math
 from datetime import datetime
 from pathlib import Path
 
-from . import ml_figures
+from . import ml_figures, severity
 
 _DARK  = "#1e3a5f"
 _MUTED = "#64748b"
@@ -203,6 +203,27 @@ def build_report_html(state, image_paths=None, embed_images=False,
         ])
     h.append(_data_table(headers, rows))
 
+    # ── strike severity (measured HIG peak) ──────────────────────────────────
+    if severity.available(s.summary):
+        sev = meta.get("severity") or {}
+        h.append(f"<h2 style='color:{_DARK};'>Strike severity (HIG peak)</h2>")
+        h.append("<p style='margin:4px 0;color:#1e293b;'>Measured, not "
+                 "predicted: each recording's peak high-g acceleration "
+                 f"magnitude ({_esc(sev.get('hig_channel', 'higacc_mag_g'))}) "
+                 "over its window, counted over 95, 200 and 400 g. Only a "
+                 "peak over 400 g is a severe strike - the model flags "
+                 "contacts of any size, so a high predicted strike rate with "
+                 "few severe strikes means mostly low-magnitude contacts.</p>")
+        rows = [[r["treatment"], int(r["n"])] + severity.table_values(r)
+                for _, r in s.summary.iterrows()]
+        h.append(_data_table(["Treatment", "N"] + severity.TABLE_HEADERS, rows))
+        bands = severity.band_counts(s.predictions)
+        if bands:
+            total = sum(c for _l, c in bands) or 1
+            h.append(_data_table(["HIG peak", "Recordings", "Share"],
+                                 [[label, c, f"{c / total * 100:.1f}%"]
+                                  for label, c in bands]))
+
     # ── strike classification (multiclass) ───────────────────────────────────
     if mc_run and s.region_summary is not None and len(s.region_summary):
         h.append(f"<h2 style='color:{_DARK};'>Strike classification</h2>")
@@ -227,6 +248,7 @@ def build_report_html(state, image_paths=None, embed_images=False,
 
     # ── figures ──────────────────────────────────────────────────────────────
     figs = [p for p in (image_paths.get("predicted_strike_rate"),
+                        image_paths.get("strike_severity"),
                         image_paths.get("predicted_strike_region")) if p]
     if figs:
         h.append(f"<h2 style='color:{_DARK};'>Figures</h2>")
@@ -343,6 +365,8 @@ def export_analysis(state, parent_dir, processing_review=None):
         state.predictions.to_csv(out / "predictions_per_file.csv", index=False)
     if state.region_summary is not None:
         state.region_summary.to_csv(out / "region_summary.csv", index=False)
+    if state.severity_summary is not None:
+        state.severity_summary.to_csv(out / "severity_summary.csv", index=False)
 
     # figures (PNG for the report + SVG vector versions)
     figs = ml_figures.render_figures(state, out, formats=("png", "svg"))

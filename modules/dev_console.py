@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from .layout import Section
-from .theme import ACCENT, ACCENT_BUTTON, BAD, MUTED, OK, TEXT
+from .theme import style
 
 
 class _StreamTee(QObject):
@@ -82,12 +82,12 @@ class DevConsole(QDialog):
         v.setSpacing(8)
 
         title = QLabel("Dev console")
-        title.setStyleSheet(f"color:{TEXT};font-size:14px;font-weight:bold;")
+        style(title, role="heading")
         v.addWidget(title)
         subtitle = QLabel(
             "Live app output - every status message plus worker/prediction "
             "output, while Dev mode is on.")
-        subtitle.setStyleSheet(f"color:{MUTED};font-size:11px;")
+        style(subtitle, role="note")
         subtitle.setWordWrap(True)
         v.addWidget(subtitle)
 
@@ -108,7 +108,7 @@ class DevConsole(QDialog):
             "folder and build a 'StrikeWorks_demo' library there.")
         dv.addWidget(self.cmb_demo, stretch=1)
         self.btn_run = QPushButton("Run demo")
-        self.btn_run.setStyleSheet(ACCENT_BUTTON)
+        style(self.btn_run, role="primary")
         self.btn_run.clicked.connect(self._run_demo)
         dv.addWidget(self.btn_run)
         self.btn_stop = QPushButton("Stop")
@@ -214,7 +214,7 @@ class DevConsole(QDialog):
         self.btn_run.setText("Running…")
         self.btn_stop.setEnabled(True)
         self.cmb_demo.setEnabled(False)
-        self.lbl_demo.setStyleSheet(f"color:{ACCENT};")
+        style(self.lbl_demo, tone="accent")
         self.lbl_demo.setText("Demo running - Stop cancels at the next step.")
         self._runner.run()
 
@@ -230,7 +230,7 @@ class DevConsole(QDialog):
         self.btn_stop.setEnabled(False)
         self.cmb_demo.setEnabled(True)
         self.chk_on_top.setChecked(False)
-        self.lbl_demo.setStyleSheet(f"color:{OK if ok else BAD};")
+        style(self.lbl_demo, tone="ok" if ok else "bad")
         self.lbl_demo.setText(message)
         self.bring_up()
 

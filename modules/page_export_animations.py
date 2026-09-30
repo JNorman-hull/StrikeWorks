@@ -46,7 +46,7 @@ from . import sensor_config, video_sync
 from .library_widgets import LibrarySelector
 from .session_state import OUTPUT_DIR_NAME
 from .layout import apply_section_defaults, scroll_area, Section, when_visible
-from .theme import ACCENT_BUTTON, MUTED, TEXT, muted_label
+from .theme import NADIR, REGION_EDGE, REGION_FILL, TRACE, muted_label, style
 from .page_annotate import LOSSLESSCUT_EXE, LOSSLESSCUT_MISSING
 from .plot_widgets import CsvLoadThread, NavViewBox, find_col
 from .plot_style import reserve_top_margin, set_right_axis_active
@@ -195,7 +195,7 @@ class ExportAnimationsPage(QObject):
         lv.addWidget(self.lib_selector, stretch=1)
         self.tbl_sensors = self.lib_selector.tbl_sensors
         self.lbl_loading = QLabel("")
-        self.lbl_loading.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_loading, role="muted")
         lv.addWidget(self.lbl_loading)
         return left
 
@@ -211,7 +211,7 @@ class ExportAnimationsPage(QObject):
         outer_v.addWidget(scroll)
 
         detail = QWidget()
-        detail.setStyleSheet("background:transparent;")
+        style(detail, role="bare")
         scroll.setWidget(detail)
         dv = QVBoxLayout(detail)
         dv.setContentsMargins(5, 0, 0, 0)
@@ -234,7 +234,7 @@ class ExportAnimationsPage(QObject):
         sv.setSpacing(6)
 
         self.lbl_video_info = QLabel("No matching video.")
-        self.lbl_video_info.setStyleSheet(f"color:{TEXT};font-weight:bold;")
+        style(self.lbl_video_info, role="strong")
         sv.addWidget(self.lbl_video_info)
 
         self._pw = pg.PlotWidget(viewBox=NavViewBox())
@@ -254,8 +254,8 @@ class ExportAnimationsPage(QObject):
         # cover (video duration, centred on the nadir), so the Video
         # preview row's current frame can be eyeballed against this plot
         self._video_region = pg.LinearRegionItem(
-            movable=False, brush=pg.mkBrush(120, 170, 255, 35),
-            pen=pg.mkPen(120, 170, 255, 90))
+            movable=False, brush=pg.mkBrush(*REGION_FILL),
+            pen=pg.mkPen(*REGION_EDGE))
         self._video_region.setVisible(False)
         pi.addItem(self._video_region)
 
@@ -267,7 +267,7 @@ class ExportAnimationsPage(QObject):
         # Validate remains the place that edits the index itself
         self._nadir_line = pg.InfiniteLine(
             angle=90, movable=True,
-            pen=pg.mkPen(color=(255, 220, 0), width=3),
+            pen=pg.mkPen(color=NADIR, width=3),
             label="Nadir",
             labelOpts={"position": 0.92, "color": (180, 150, 0)})
         self._nadir_line.sigPositionChanged.connect(self._on_nadir_line_moved)
@@ -287,7 +287,7 @@ class ExportAnimationsPage(QObject):
         self.btn_video_preview.clicked.connect(self._open_video_preview)
         act.addWidget(self.btn_video_preview)
         self.btn_process = QPushButton("Process")
-        self.btn_process.setStyleSheet(ACCENT_BUTTON)
+        style(self.btn_process, role="primary")
         act.addWidget(self.btn_process)
         self.btn_save = QPushButton("Save")
         act.addWidget(self.btn_save)
@@ -298,7 +298,7 @@ class ExportAnimationsPage(QObject):
         sv.addLayout(act)
 
         self.lbl_progress = QLabel("")
-        self.lbl_progress.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_progress, role="muted")
         self.lbl_progress.setWordWrap(True)
         sv.addWidget(self.lbl_progress)
         return grp
@@ -323,15 +323,14 @@ class ExportAnimationsPage(QObject):
 
         self.lbl_scrub_frame = QLabel("No video to preview.")
         self.lbl_scrub_frame.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_scrub_frame.setStyleSheet(
-            f"color:{MUTED};background-color:#15181d;border-radius:5px;")
+        style(self.lbl_scrub_frame, role="placeholder")
         self.lbl_scrub_frame.setMinimumHeight(160)
         self.lbl_scrub_frame.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         gv.addWidget(self.lbl_scrub_frame, stretch=1)
 
         self.lbl_scrub_info = QLabel("")
-        self.lbl_scrub_info.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_scrub_info, role="muted")
         gv.addWidget(self.lbl_scrub_info)
 
         scrub_row = QHBoxLayout()
@@ -442,7 +441,7 @@ class ExportAnimationsPage(QObject):
 
         logo_row = QHBoxLayout()
         self.lbl_logo_path = QLabel("No overlay image")
-        self.lbl_logo_path.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_logo_path, role="muted")
         self.lbl_logo_path.setWordWrap(True)
         logo_row.addWidget(self.lbl_logo_path, stretch=1)
         self.btn_choose_logo = QPushButton("Browse…")
@@ -590,7 +589,7 @@ class ExportAnimationsPage(QObject):
     @staticmethod
     def _muted_header(text):
         lab = QLabel(text)
-        lab.setStyleSheet(f"color:{TEXT};font-weight:bold;")
+        style(lab, role="strong")
         return lab
 
     def _connect(self):
@@ -844,7 +843,7 @@ class ExportAnimationsPage(QObject):
             self._video_region.setVisible(False)
             return
         y = self._df["pressure_kpa"].to_numpy(dtype=float)
-        self._curve = self._pw.plot(self._time, y, pen=pg.mkPen(TEXT, width=1))
+        self._curve = self._pw.plot(self._time, y, pen=pg.mkPen(TRACE, width=1))
         self._curve.setDownsampling(auto=True, method="peak")
         self._curve.setClipToView(True)
         pi.enableAutoRange("y", True)

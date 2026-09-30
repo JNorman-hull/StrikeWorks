@@ -36,7 +36,7 @@ from .bsm_model import compute
 from .bsm_state import LATEST_RESULT_PATH, build_latest_payload, output_card_rows
 from .cards import MetaCard
 from .layout import apply_section_defaults, scroll_area, Section
-from .theme import ACCENT, ACCENT_BUTTON, MUTED, muted_label
+from .theme import muted_label, style
 
 _EEL_LF_DEFAULT = 0.66
 _EEL_BF_DEFAULT = 0.08
@@ -67,7 +67,7 @@ class CalculatorPage(QWidget):
 
         scroll = scroll_area()
         left = QWidget()
-        left.setStyleSheet("background:transparent;")
+        style(left, role="bare")
         lv = QVBoxLayout(left)
         lv.setSpacing(10)
         lv.addWidget(self._config_group())
@@ -274,7 +274,7 @@ class CalculatorPage(QWidget):
         row = QHBoxLayout()
         self.btn_calc = QPushButton("Calculate")
         self.btn_calc.setMinimumHeight(30)
-        self.btn_calc.setStyleSheet(ACCENT_BUTTON)
+        style(self.btn_calc, role="primary")
         self.btn_calc.clicked.connect(self.calculate)
         row.addStretch()
         row.addWidget(self.btn_calc)
@@ -291,7 +291,7 @@ class CalculatorPage(QWidget):
         row.addWidget(self.card_output_eel, stretch=1)
         v.addLayout(row)
         self.wilson_lbl = QLabel("")
-        self.wilson_lbl.setStyleSheet(f"color:{ACCENT};")
+        style(self.wilson_lbl, tone="accent")
         self.wilson_lbl.setWordWrap(True)
         v.addWidget(self.wilson_lbl)
         return g
@@ -299,7 +299,7 @@ class CalculatorPage(QWidget):
     @staticmethod
     def _bold_muted(text):
         lab = QLabel(text)
-        lab.setStyleSheet(f"color:{MUTED};font-weight:bold;")
+        style(lab, role="subheading")
         return lab
 
     # ── validation ───────────────────────────────────────────────────────────

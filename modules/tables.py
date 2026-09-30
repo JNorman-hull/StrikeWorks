@@ -8,7 +8,6 @@
 """
 from PySide6.QtCore import QEvent, QObject
 from PySide6.QtWidgets import QHeaderView, QTableWidget
-from .theme import BORDER, CARD_BG
 
 
 def style_table(tbl: QTableWidget, row_numbers=True, columns=True):
@@ -29,9 +28,6 @@ def style_table(tbl: QTableWidget, row_numbers=True, columns=True):
     wide sortable results table, where auto-fit matters more than manual
     dragging) and only pick up the background/border/row treatment here.
     """
-    tbl.setStyleSheet(
-        f"QTableWidget{{background-color:{CARD_BG};"
-        f"border:1px solid {BORDER};border-radius:5px;}}")
     tbl.verticalHeader().setVisible(row_numbers)
     tbl.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
     if columns:

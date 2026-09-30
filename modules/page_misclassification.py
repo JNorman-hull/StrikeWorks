@@ -45,7 +45,7 @@ from .annotation_widgets import AnnotationValueEditor, VariableListDialog
 from .layout import (
     apply_section_defaults, discard_widget, Section, when_visible,
 )
-from .theme import MUTED, OK, TEXT, muted_label
+from .theme import TRACE, TRACE2, muted_label, style
 from .page_annotate import LOSSLESSCUT_EXE, LOSSLESSCUT_MISSING
 from .raw_layout import video_index
 from .plot_widgets import NavViewBox
@@ -201,7 +201,7 @@ class MisclassificationPage(QObject):
         sel_row.addWidget(self.btn_refresh)
         gv.addLayout(sel_row)
         self.lbl_source = QLabel("")
-        self.lbl_source.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_source, role="muted")
         self.lbl_source.setWordWrap(True)
         gv.addWidget(self.lbl_source)
         lv.addWidget(grp)
@@ -266,7 +266,7 @@ class MisclassificationPage(QObject):
 
         self.lbl_signal_note = QLabel(
             "Select a misclassified file to view its signal.")
-        self.lbl_signal_note.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_signal_note, role="muted")
         self.lbl_signal_note.setWordWrap(True)
         sv.addWidget(self.lbl_signal_note)
         v.addWidget(grp, stretch=1)
@@ -292,7 +292,7 @@ class MisclassificationPage(QObject):
         gv.addLayout(act)
 
         self.lbl_detail_status = QLabel("")
-        self.lbl_detail_status.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_detail_status, role="muted")
         self.lbl_detail_status.setWordWrap(True)
         gv.addWidget(self.lbl_detail_status)
         return grp
@@ -569,7 +569,7 @@ class MisclassificationPage(QObject):
         if self._left_key and self._left_key in sig.columns:
             y = sig[self._left_key].to_numpy(dtype=float)
             self._curve = self._pw.plot(
-                self._time, y, pen=pg.mkPen(TEXT, width=1))
+                self._time, y, pen=pg.mkPen(TRACE, width=1))
             self._curve.setDownsampling(auto=True, method="peak")
             self._curve.setClipToView(True)
             pi.setLabel("left", self._left_key)
@@ -578,7 +578,7 @@ class MisclassificationPage(QObject):
             set_right_axis_active(pi, True)
             pi.setLabel("right", self._right_key)
             self._right_curve = pg.PlotCurveItem(
-                pen=pg.mkPen("#ff5555", width=1))
+                pen=pg.mkPen(TRACE2, width=1))
             self._vb2.addItem(self._right_curve)
             self._right_curve.setData(
                 self._time, sig[self._right_key].to_numpy(dtype=float))
@@ -726,7 +726,7 @@ class MisclassificationPage(QObject):
             f"Correction saved for {self._cur_stem} to "
             f"{corrected_path.name}", 5000)
         self.lbl_detail_status.setText(f"Saved to {corrected_path}")
-        self.lbl_detail_status.setStyleSheet(f"color:{OK};")
+        style(self.lbl_detail_status, tone="ok")
 
     # ── leaving the page (main.py's navigate_to hook) ───────────────────────
     def has_changes(self):

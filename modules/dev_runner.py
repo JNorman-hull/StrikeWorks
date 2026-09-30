@@ -637,7 +637,7 @@ class SimpleDemoRunner(_RunnerBase):
         left = len(vc.outstanding_flagged(stems, status))
         counter = dlg.lbl_validated_count.text().splitlines()[0]
         fails += not self._check(
-            left == 0 and counter == f"Flagged, to review: 0 of {n}",
+            left == 0 and counter == f"Flagged for review: 0/{len(stems)} sensors",
             f"no flags left to review (counter reads '{counter}')")
         fails += not self._check(
             vc.all_validated(stems, status),

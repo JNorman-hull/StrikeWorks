@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QGraphicsDropShadowEffect, QPushButton, QSizeGrip
 
 from widgets import CustomGrip
 
+from .theme import set_flag
 from .ui_config import UIConfig
 
 
@@ -78,17 +79,10 @@ class UIFunctions:
             return
         width = self.ui.extraLeftBox.width()
         width_right = self.ui.extraRightBox.width()
-        color = UIConfig.BTN_LEFT_BOX_COLOR
         btn = getattr(self, "_panel_btn", None) or self.ui.btn_sensor
-        style = btn.styleSheet()
-        if width == 0:
-            btn.setStyleSheet(style + color)
-            if width_right != 0:
-                right = self.ui.settingsTopBtn.styleSheet()
-                self.ui.settingsTopBtn.setStyleSheet(
-                    right.replace(UIConfig.BTN_RIGHT_BOX_COLOR, ""))
-        else:
-            btn.setStyleSheet(style.replace(color, ""))
+        set_flag(btn, "boxOwner", width == 0)
+        if width == 0 and width_right != 0:
+            set_flag(self.ui.settingsTopBtn, "boxOwner", False)
         UIFunctions.start_box_animation(self, width, width_right, "left")
 
     def toggleRightBox(self, enable):
@@ -96,16 +90,10 @@ class UIFunctions:
             return
         width = self.ui.extraRightBox.width()
         width_left = self.ui.extraLeftBox.width()
-        color = UIConfig.BTN_RIGHT_BOX_COLOR
-        style = self.ui.settingsTopBtn.styleSheet()
-        if width == 0:
-            self.ui.settingsTopBtn.setStyleSheet(style + color)
-            if width_left != 0:
-                panel_btn = getattr(self, "_panel_btn", None) or self.ui.btn_sensor
-                panel_btn.setStyleSheet(
-                    panel_btn.styleSheet().replace(UIConfig.BTN_LEFT_BOX_COLOR, ""))
-        else:
-            self.ui.settingsTopBtn.setStyleSheet(style.replace(color, ""))
+        set_flag(self.ui.settingsTopBtn, "boxOwner", width == 0)
+        if width == 0 and width_left != 0:
+            panel_btn = getattr(self, "_panel_btn", None) or self.ui.btn_sensor
+            set_flag(panel_btn, "boxOwner", False)
         UIFunctions.start_box_animation(self, width_left, width, "right")
 
     def start_box_animation(self, left_box_width, right_box_width, direction):
@@ -124,24 +112,18 @@ class UIFunctions:
             self.group.addAnimation(anim)
         self.group.start()
 
-    # ── selected-menu highlight ─────────────────────────────────────────────
-    def selectMenu(style):
-        return style + UIConfig.MENU_SELECTED_STYLESHEET
-
-    def deselectMenu(style):
-        return style.replace(UIConfig.MENU_SELECTED_STYLESHEET, "")
-
+    # ── selected-menu highlight (the "selected" property, app.qss) ─────────
     def resetStyle(self, keep):
         """Clear the highlight from every sidebar button but `keep`."""
         for w in self.ui.topMenu.findChildren(QPushButton):
             if w.objectName() != keep:
-                w.setStyleSheet(UIFunctions.deselectMenu(w.styleSheet()))
+                set_flag(w, "selected", False)
 
     def resetPanelStyle(self, keep):
         """Clear the highlight from every section-panel button but `keep`."""
         for w in self.ui.extraTopMenu.findChildren(QPushButton):
             if w.objectName() != keep:
-                w.setStyleSheet(UIFunctions.deselectMenu(w.styleSheet()))
+                set_flag(w, "selected", False)
 
     # ── window frame set-up ─────────────────────────────────────────────────
     def uiDefinitions(self):

@@ -26,7 +26,7 @@ from . import raw_layout
 from .cards import Spinner
 from .layout import Section, when_visible
 from .tables import style_table
-from .theme import BAD, MUTED, OK, WARN, muted_label
+from .theme import BAD, OK, WARN, muted_label, style
 from .raw_layout import RAW_DIR, UNGROUPED
 
 ALL_DEPLOYMENTS = None   # combo data sentinel for "All deployments"/"All treatments"/"All runs"
@@ -128,7 +128,7 @@ class LibrarySelector(QWidget):
         self._spinner.setVisible(False)
         loading_row.addWidget(self._spinner)
         self.lbl_loading = QLabel("")
-        self.lbl_loading.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_loading, role="muted")
         loading_row.addWidget(self.lbl_loading, stretch=1)
         fv.addLayout(loading_row)
 
@@ -150,7 +150,7 @@ class LibrarySelector(QWidget):
         v.addWidget(self.chk_show_flags)
 
         self.lbl_progress = QLabel("")
-        self.lbl_progress.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_progress, role="muted")
         # wraps, so a long counter line can't set the whole column's width
         self.lbl_progress.setWordWrap(True)
         v.addWidget(self.lbl_progress)

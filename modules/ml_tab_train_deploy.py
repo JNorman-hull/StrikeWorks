@@ -25,8 +25,7 @@ from PySide6.QtWidgets import (
 from . import settings
 from .cards import MetaCard, Spinner
 from .layout import apply_section_defaults, centred, scroll_page, Section
-from .theme import ACCENT, ACCENT_BUTTON, BAD, MUTED, OK
-
+from .theme import style
 
 
 class DeployTab:
@@ -95,14 +94,14 @@ class DeployTab:
         dv.addWidget(self.spinner, alignment=left)
         self.lbl_final_status = QLabel("")
         self.lbl_final_status.setWordWrap(True)
-        self.lbl_final_status.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_final_status, role="muted")
         dv.addWidget(self.lbl_final_status)
         self.card_final = MetaCard("Deployment model")
         dv.addWidget(self.card_final)
 
         ver_row = QHBoxLayout()
         lab_v = QLabel("Model version")
-        lab_v.setStyleSheet(f"color:{MUTED};")
+        style(lab_v, role="muted")
         self.ed_version = QLineEdit()
         self.ed_version.setFixedWidth(90)
         self.ed_version.setToolTip("major_minor, e.g. 1_2 → binary1_2.joblib")
@@ -114,12 +113,12 @@ class DeployTab:
         self.btn_deploy = QPushButton("Deploy model")
         self.btn_deploy.setMinimumHeight(32)
         self.btn_deploy.setEnabled(False)
-        self.btn_deploy.setStyleSheet(ACCENT_BUTTON)
+        style(self.btn_deploy, role="primary")
         self.btn_deploy.clicked.connect(self._deploy)
         dv.addWidget(self.btn_deploy, alignment=left)
         self.lbl_deploy_status = QLabel("")
         self.lbl_deploy_status.setWordWrap(True)
-        self.lbl_deploy_status.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_deploy_status, role="muted")
         self.lbl_deploy_status.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
         dv.addWidget(self.lbl_deploy_status)
@@ -230,7 +229,7 @@ class DeployTab:
         self.btn_final.setEnabled(False)
         self.btn_final.setText("Training…")
         self.spinner.start()
-        self.lbl_final_status.setStyleSheet(f"color:{ACCENT};")
+        style(self.lbl_final_status, tone="accent")
         self.lbl_final_status.setText(
             "Training the final deployment model on all training data… "
             "(progress in the Train tab's console)")
@@ -289,7 +288,7 @@ class DeployTab:
         self.btn_final.setEnabled(True)
         self.btn_deploy.setEnabled(True)
         mc_m = (s.model_results("multiclass") or {}).get("metrics", {})
-        self.lbl_final_status.setStyleSheet(f"color:{OK};")
+        style(self.lbl_final_status, tone="ok")
         self.lbl_final_status.setText(
             "Final models trained" if mc_m else "Final model trained")
         self._fill_final_card()
@@ -299,7 +298,7 @@ class DeployTab:
         self.spinner.stop()
         self.btn_final.setText("Train final model")
         self.btn_final.setEnabled(self.state.cv_done)
-        self.lbl_final_status.setStyleSheet(f"color:{BAD};")
+        style(self.lbl_final_status, tone="bad")
         first = msg.strip().splitlines()[-1] if msg.strip() else "Unknown error"
         self.lbl_final_status.setText(f"✗ Final training failed: {first}")
         dlg = QMessageBox(self.window)
@@ -323,7 +322,7 @@ class DeployTab:
             QMessageBox.critical(self.window, "Deploy model", str(e))
             return
         names = ", ".join(p.name for p in deployed)
-        self.lbl_deploy_status.setStyleSheet(f"color:{OK};")
+        style(self.lbl_deploy_status, tone="ok")
         self.lbl_deploy_status.setText(
             f"Deployed {names}\n"
             f"Package: {pkg}\n"

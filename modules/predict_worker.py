@@ -28,6 +28,13 @@ Outputs:
     predictions.csv     per-recording predictions
     summary.csv         treatment-level summary with Wilson CIs
     region_summary.csv  tidy treatment x class table (multiclass only)
+    severity_summary.csv  treatment x HIG threshold table (when the dataset
+                        has the high-g accelerometer channels)
+
+Severity is measured, not predicted: each recording's peak high-g
+acceleration magnitude over its window (`hig_peak_g`), banded at 95, 200
+and 400 g. Only a peak over 400 g is a severe strike - the model flags
+contacts of any size, so this says how hard they were.
     run_meta.json       class_names + run/provenance metadata
 """
 import argparse
@@ -84,6 +91,34 @@ _META_COLS = [
     "overall_passage_type", "leading_edge_type", "other_type",
     "concentric_pump_region",
 ]
+
+
+# HIG severity bands: over 95, 200 and 400 g; only over 400 g is severe
+SEVERITY_THRESHOLDS_G = (95, 200, 400)
+SEVERE_G = 400
+SEVERITY_BANDS = ("<=95 g", "95-200 g", "200-400 g", ">400 g")
+
+
+def _hig_peaks(df, file_meta):
+    """Each recording's peak HIG acceleration magnitude (g) over its window,
+    aligned to `file_meta`; (None, None) when the dataset has no HIG."""
+    if "higacc_mag_g" in df.columns:
+        mag, source = df["higacc_mag_g"].astype(float), "higacc_mag_g"
+    elif all(c in df.columns for c in ("higacc_x_g", "higacc_y_g", "higacc_z_g")):
+        mag = np.sqrt(df["higacc_x_g"].astype(float) ** 2
+                      + df["higacc_y_g"].astype(float) ** 2
+                      + df["higacc_z_g"].astype(float) ** 2)
+        source = "higacc_x_g/higacc_y_g/higacc_z_g"
+    else:
+        return None, None
+    peaks = mag.groupby(df["file"]).max()
+    return file_meta["file"].map(peaks).astype(float).values, source
+
+
+def _severity_band(peaks):
+    """The band label for each peak: <=95 g, 95-200 g, 200-400 g, >400 g."""
+    idx = np.digitize(peaks, SEVERITY_THRESHOLDS_G, right=True)
+    return np.array(SEVERITY_BANDS, dtype=object)[idx]
 
 
 def _pad(ts, target):
@@ -211,8 +246,16 @@ def main():
         for i, cn in enumerate(class_names):
             results[f"prob_{cn}"] = mc_probs[:, i].round(4)
 
+    # ---- HIG severity (measured, independent of the model) ----
+    peaks, hig_source = _hig_peaks(df, file_meta)
+    if peaks is not None:
+        results["hig_peak_g"] = np.round(peaks, 1)
+        results["severity"] = _severity_band(peaks)
+        results["severe_strike"] = (peaks > SEVERE_G).astype(int)
+
     # ---- per-treatment summary ----
     summary_rows = []
+    severity_rows = []
     groups = results.groupby("treatment") if "treatment" in results.columns \
         else [("All data", results)]
     for tx, grp in groups:
@@ -234,6 +277,20 @@ def main():
         strikes = grp[grp["predicted_strike"] == 1]
         for cn in class_names:
             row[f"n_{cn}"] = int((strikes["predicted_region"] == cn).sum())
+        if peaks is not None:
+            for g in SEVERITY_THRESHOLDS_G:
+                n_over = int((grp["hig_peak_g"] > g).sum())
+                row[f"n_over_{g}g"] = n_over
+                p_over, lo_over, hi_over = _wilson_ci(n_over, n)
+                severity_rows.append(dict(
+                    treatment=str(tx), threshold_g=g, n=n, n_over=n_over,
+                    rate=round(p_over, 6), ci_lo=round(lo_over, 6),
+                    ci_hi=round(hi_over, 6), severe=g == SEVERE_G))
+            sev_rate, sev_lo, sev_hi = _wilson_ci(row[f"n_over_{SEVERE_G}g"], n)
+            row["severe_rate"] = round(sev_rate, 6)
+            row["severe_ci_lo"] = round(sev_lo, 6)
+            row["severe_ci_hi"] = round(sev_hi, 6)
+            row["n_strike_severe"] = int(strikes["severe_strike"].sum())
         summary_rows.append(row)
 
     summary = pd.DataFrame(summary_rows)
@@ -253,6 +310,9 @@ def main():
                 ))
         pd.DataFrame(region_rows).to_csv(out_dir / "region_summary.csv", index=False)
 
+    if severity_rows:
+        pd.DataFrame(severity_rows).to_csv(out_dir / "severity_summary.csv",
+                                           index=False)
     results.to_csv(out_dir / "predictions.csv", index=False)
     summary.to_csv(out_dir / "summary.csv",     index=False)
 
@@ -281,6 +341,16 @@ def main():
         "mc_channels":        list(mc_channels) if mc_channels else None,
         "bin_max_sequence_length": int(bin_max_len),
         "mc_max_sequence_length":  int(mc_max_len) if mc_max_len else None,
+        "severity": None if peaks is None else {
+            "thresholds_g": list(SEVERITY_THRESHOLDS_G),
+            "severe_g": SEVERE_G,
+            "hig_channel": hig_source,
+            "n_severe": int(results["severe_strike"].sum()),
+            "severe_rate": (round(float(results["severe_strike"].mean()), 6)
+                            if n_files else 0.0),
+            "n_strike_severe": int(results.loc[results["predicted_strike"] == 1,
+                                               "severe_strike"].sum()),
+        },
         "python_version":     sys.version.split()[0],
         "package_versions":   _package_versions(),
     }

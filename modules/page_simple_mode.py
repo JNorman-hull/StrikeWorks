@@ -31,7 +31,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QIcon, QPixmap
+from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QLayout,
     QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSizePolicy,
@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import deployment_index as di
-from . import ml_figures, ml_report, settings, win_utils
+from . import ml_figures, ml_report, settings, severity, theme, win_utils
 from . import validation_core as vc
 from .deployment_editor import DeploymentEditor
 from .edition import simple_only
@@ -47,11 +47,11 @@ from .inventory_widgets import FileInventory
 from .cards import MetaCard, RingCard, Spinner
 from .layout import Section
 from .theme import (
-    ACCENT, ACCENT_BUTTON, BAD, MUTED, OK, PALETTE, PINK, TEXT, WARN,
-    muted_label,
+    ACCENT, BAD, NADIR, OK, PALETTE, PINK, REGION_EDGE, REGION_FILL, TEXT,
+    TRACE, TRACE2, WARN, muted_label, style,
 )
 from .plot_style import add_export_button, build_export_data
-from .startup import ICON_PATH
+from .startup import ICON_PATH, brandmark
 
 _WIN_SEC = vc.WIN_SEC
 _IMAGES_DIR = Path(__file__).parent.parent / "images" / "images"
@@ -168,10 +168,14 @@ class SimpleModeDialog(QDialog):
                 item.setFont(f)
             self.step_list.addItem(item)
         self.step_list.itemClicked.connect(self._on_step_clicked)
-        # sized to exactly what the list needs
-        fm = self.step_list.fontMetrics()
-        width = max(fm.horizontalAdvance(("    " if i else "") + t)
-                    for t, i, _p in _LIST_ITEMS) + 36
+        # sized to exactly what the list needs, in the stylesheet's font
+        # (polished first) and each item's own (the headings are bold)
+        self.step_list.ensurePolished()
+        width = max(QFontMetrics(self.step_list.item(r).font()
+                                 if self.step_list.item(r).font().bold()
+                                 else self.step_list.font()).horizontalAdvance(
+                        self.step_list.item(r).text())
+                    for r in range(self.step_list.count())) + 36
         self.step_list.setFixedWidth(width)
         height = (sum(self.step_list.sizeHintForRow(i)
                       for i in range(self.step_list.count()))
@@ -218,7 +222,7 @@ class SimpleModeDialog(QDialog):
         guidance_row.setContentsMargins(10, 0, 10, 0)
         guidance_row.addStretch()
         self.lbl_guidance = QLabel("")
-        self.lbl_guidance.setStyleSheet(f"color:{MUTED};font-style:italic;")
+        style(self.lbl_guidance, role="hint")
         guidance_row.addWidget(self.lbl_guidance)
         outer.addLayout(guidance_row)
 
@@ -388,7 +392,7 @@ class SimpleModeDialog(QDialog):
             logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
             v.addWidget(logo)
         subtitle = QLabel("Deploy. Process. Predict.")
-        subtitle.setStyleSheet(f"color:{MUTED};font-size:28px;font-style:italic;")
+        style(subtitle, role="tagline")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v.addWidget(subtitle)
 
@@ -396,14 +400,12 @@ class SimpleModeDialog(QDialog):
         btn_row.addStretch()
         btn_blade_strike = QPushButton("Blade strike\n(next)")
         btn_blade_strike.setMinimumSize(140, 44)
-        btn_blade_strike.setStyleSheet(ACCENT_BUTTON)
+        style(btn_blade_strike, role="primary")
         btn_blade_strike.clicked.connect(self._go_next)
         btn_row.addWidget(btn_blade_strike)
         self.btn_dev_toolkit = QPushButton("Development\ntoolkit")
         self.btn_dev_toolkit.setMinimumSize(140, 44)
-        self.btn_dev_toolkit.setStyleSheet(
-            f"QPushButton{{background-color:{BAD};color:#ffffff;"
-            "border-radius:5px;font-weight:bold;}")
+        style(self.btn_dev_toolkit, role="alternative")
         self.btn_dev_toolkit.clicked.connect(self._go_development_toolkit)
         # the Simple edition has no way into the full app
         self.btn_dev_toolkit.setVisible(not simple_only())
@@ -413,6 +415,13 @@ class SimpleModeDialog(QDialog):
         v.addLayout(btn_row)
 
         v.addStretch()
+        # the University brandmark, centred below, in the Hull theme (its
+        # Ink Blue version needs the theme's white background)
+        if theme.NAME == "hull":
+            mark = brandmark(90)
+            if mark is not None:
+                v.addWidget(mark)
+                v.addSpacing(10)
         return page
 
     def _go_development_toolkit(self):
@@ -434,7 +443,7 @@ class SimpleModeDialog(QDialog):
         v.setSpacing(10)
         title = QLabel("Build a sensor deployment by adding a test site, "
                        "treatment condition and sensor files…")
-        title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
+        style(title, role="strong")
         title.setWordWrap(True)
         v.addWidget(title)
         # the same editor as Create and edit deployment
@@ -451,7 +460,7 @@ class SimpleModeDialog(QDialog):
         v = QVBoxLayout(page)
         v.setSpacing(8)
         title = QLabel("Process, validate and segment sensor data…")
-        title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
+        style(title, role="strong")
         v.addWidget(title)
         # the same inventory as Raw data processing
         self.inventory = FileInventory()
@@ -472,7 +481,7 @@ class SimpleModeDialog(QDialog):
         v = QVBoxLayout(page)
         v.setSpacing(8)
         title = QLabel("Process, validate and segment sensor data…")
-        title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
+        style(title, role="strong")
         v.addWidget(title)
 
         # a fixed-width list column (no splitter, per simple_spec/Validate.png)
@@ -492,7 +501,7 @@ class SimpleModeDialog(QDialog):
 
         mark_row = QHBoxLayout()
         self.btn_mark = QPushButton("Mark bad")
-        self.btn_mark.setStyleSheet(f"color:{BAD};font-weight:bold;")
+        style(self.btn_mark, role="strong", tone="bad")
         self.btn_mark.clicked.connect(self._mark_good_bad)
         mark_row.addWidget(self.btn_mark)
         self.chk_show_bad = QCheckBox("Show bad")
@@ -501,10 +510,10 @@ class SimpleModeDialog(QDialog):
         lv.addLayout(mark_row)
 
         self.lbl_validated_count = QLabel("")
-        self.lbl_validated_count.setStyleSheet(f"color:{TEXT};")
+        style(self.lbl_validated_count)
         lv.addWidget(self.lbl_validated_count)
         lbl_legend = QLabel(vc.legend_html(OK, WARN, BAD, ACCENT, TEXT))
-        lbl_legend.setStyleSheet(f"color:{MUTED};")
+        style(lbl_legend, role="muted")
         lbl_legend.setWordWrap(True)
         lv.addWidget(lbl_legend)
 
@@ -539,12 +548,12 @@ class SimpleModeDialog(QDialog):
         pi.getAxis("right").setLabel("HIG acc mag (g)")
         pi.vb.sigResized.connect(self._sync_vb2_validate)
         self._validate_region = pg.LinearRegionItem(
-            movable=False, brush=pg.mkBrush(120, 170, 255, 35),
-            pen=pg.mkPen(120, 170, 255, 90))
+            movable=False, brush=pg.mkBrush(*REGION_FILL),
+            pen=pg.mkPen(*REGION_EDGE))
         pi.addItem(self._validate_region)
         self._validate_nadir_line = pg.InfiniteLine(
             angle=90, movable=True,
-            pen=pg.mkPen(color=(255, 220, 0), width=2), label="Nadir",
+            pen=pg.mkPen(color=NADIR, width=2), label="Nadir",
             labelOpts={"position": 0.92, "color": (180, 150, 0)})
         self._validate_nadir_line.sigPositionChanged.connect(
             self._on_validate_nadir_moved)
@@ -560,7 +569,7 @@ class SimpleModeDialog(QDialog):
         auto_col.setSpacing(2)
         auto_row = QHBoxLayout()
         self.btn_auto_process_all = QPushButton("Auto process all")
-        self.btn_auto_process_all.setStyleSheet(f"color:{OK};font-weight:bold;")
+        style(self.btn_auto_process_all, role="strong", tone="ok")
         self.btn_auto_process_all.clicked.connect(self._auto_process_all)
         auto_row.addWidget(self.btn_auto_process_all)
         self._auto_spinner = Spinner(size=20)
@@ -577,11 +586,11 @@ class SimpleModeDialog(QDialog):
         bottom.addWidget(self.cmb_window)
         self._fill_validate_window_combo()
         self.lbl_all_validated = QLabel("")
-        self.lbl_all_validated.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_all_validated, role="muted")
         bottom.addWidget(self.lbl_all_validated)
         bottom.addStretch()
         self.btn_save_export = QPushButton("Save and export")
-        self.btn_save_export.setStyleSheet(f"color:{BAD};font-weight:bold;")
+        style(self.btn_save_export, role="strong", tone="bad")
         self.btn_save_export.clicked.connect(self._save_and_export)
         bottom.addWidget(self.btn_save_export)
         v.addLayout(bottom)
@@ -744,10 +753,10 @@ class SimpleModeDialog(QDialog):
         time = self._cur_validate_time
         if self._cur_validate_pres is not None:
             self._validate_curve = self._pw_validate.plot(
-                time, self._cur_validate_pres, pen=pg.mkPen(TEXT, width=1))
+                time, self._cur_validate_pres, pen=pg.mkPen(TRACE, width=1))
         if self._cur_validate_hig is not None:
             self._validate_curve2 = pg.PlotCurveItem(
-                pen=pg.mkPen("#ff5555", width=1))
+                pen=pg.mkPen(TRACE2, width=1))
             self._vb2_validate.addItem(self._validate_curve2)
             self._validate_curve2.setData(time, self._cur_validate_hig)
             self._vb2_validate.enableAutoRange("y", True)
@@ -898,7 +907,7 @@ class SimpleModeDialog(QDialog):
         v = QVBoxLayout(page)
         v.setSpacing(10)
         title = QLabel("Predict blade strike from sensor data…")
-        title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
+        style(title, role="strong")
         v.addWidget(title)
 
         # equal stretch above and below keeps the block centred
@@ -929,12 +938,12 @@ class SimpleModeDialog(QDialog):
         v.addLayout(btn_row)
 
         self.lbl_predict_status = QLabel("")
-        self.lbl_predict_status.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_predict_status, role="muted")
         self.lbl_predict_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v.addWidget(self.lbl_predict_status)
 
         self.lbl_predict_done = QLabel("")
-        self.lbl_predict_done.setStyleSheet(f"color:{OK};font-weight:bold;")
+        style(self.lbl_predict_done, role="strong", tone="ok")
         self.lbl_predict_done.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v.addWidget(self.lbl_predict_done)
 
@@ -945,6 +954,11 @@ class SimpleModeDialog(QDialog):
         cards_row.addWidget(self.card_predicted_strikes)
         self.card_strike_classes = RingCard("Strike classes")
         cards_row.addWidget(self.card_strike_classes)
+        self.card_severity = RingCard("Severity (HIG peak)")
+        self.card_severity.setToolTip(
+            "Each recording's peak high-g acceleration - only over 400 g is "
+            "a severe strike. Measured, not predicted.")
+        cards_row.addWidget(self.card_severity)
         cards_row.addStretch()
         v.addLayout(cards_row)
 
@@ -1008,7 +1022,7 @@ class SimpleModeDialog(QDialog):
         state = self.window.ml_prediction_page.state
         self.btn_run_predict.setEnabled(False)
         self.lbl_predict_status.setText("Running…")
-        self.lbl_predict_status.setStyleSheet(f"color:{ACCENT};")
+        style(self.lbl_predict_status, tone="accent")
         state.run_prediction()
 
     def _on_predict_finished(self):
@@ -1016,7 +1030,7 @@ class SimpleModeDialog(QDialog):
         self.btn_run_predict.setEnabled(True)
         meta = state.run_meta
         n = meta.get("n_files", 0)
-        self.lbl_predict_status.setStyleSheet(f"color:{OK};")
+        style(self.lbl_predict_status, tone="ok")
         self.lbl_predict_status.setText(f"Predicting {n} recordings… done.")
         self.lbl_predict_done.setText("Blade strike predicted")
         df = state.summary
@@ -1040,9 +1054,16 @@ class SimpleModeDialog(QDialog):
         else:
             self.card_strike_classes.clear()
 
+        bands = severity.band_counts(state.predictions)
+        self.card_severity.setVisible(bool(bands))
+        if bands:
+            self.card_severity.set_segments([
+                (label, count, colour) for (label, count), colour in
+                zip(bands, (PALETTE[0], PALETTE[3], PALETTE[2], PINK))])
+
     def _on_predict_failed(self, msg):
         self.btn_run_predict.setEnabled(True)
-        self.lbl_predict_status.setStyleSheet(f"color:{BAD};")
+        style(self.lbl_predict_status, tone="bad")
         self.lbl_predict_status.setText(f"Prediction failed: {msg.splitlines()[-1]}")
 
     # ── page 5: report ───────────────────────────────────────────────────────
@@ -1051,7 +1072,7 @@ class SimpleModeDialog(QDialog):
         v = QVBoxLayout(page)
         v.setSpacing(10)
         title = QLabel("Report blade strike from sensor data…")
-        title.setStyleSheet(f"color:{TEXT};font-weight:bold;")
+        style(title, role="strong")
         v.addWidget(title)
 
         self.tbl_report = QTableWidget(0, 0)
@@ -1079,8 +1100,10 @@ class SimpleModeDialog(QDialog):
                        and df is not None
                        and all(f"n_{cn}" in df.columns for cn in state.class_names)
                        else [])
+        measured = severity.available(df)
         headers = (["Treatment", "N", "Strikes", "No strike", "Strike rate",
-                    "95% CI", "Mean prob", "Mean conf"] + list(class_names))
+                    "95% CI", "Mean prob", "Mean conf"] + list(class_names)
+                   + (severity.TABLE_HEADERS if measured else []))
         self.tbl_report.setColumnCount(len(headers))
         self.tbl_report.setHorizontalHeaderLabels(headers)
         self.tbl_report.setRowCount(0 if df is None else len(df))
@@ -1098,6 +1121,8 @@ class SimpleModeDialog(QDialog):
                     nc = int(r[f"n_{cn}"])
                     pct = nc / n_strike * 100 if n_strike else 0
                     vals.append(f"{nc} ({pct:.0f}%)")
+                if measured:
+                    vals += severity.table_values(r)
                 for col, val in enumerate(vals):
                     self.tbl_report.setItem(row, col, QTableWidgetItem(val))
         self.tbl_report.resizeColumnsToContents()
@@ -1124,8 +1149,7 @@ class SimpleModeDialog(QDialog):
             logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
             v.addWidget(logo)
         title = QLabel("Finished!")
-        title.setStyleSheet(f"color:{TEXT};font-size:20px;font-style:italic;"
-                            "font-weight:bold;")
+        style(title, role="display")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v.addWidget(title)
         btn_download = QPushButton("Download StrikeWorks report")

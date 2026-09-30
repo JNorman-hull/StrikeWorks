@@ -315,9 +315,13 @@ Decisions taken on the way:
   `Qt6Pdf`, `opengl32sw.dll` - candidates for `excludes` / removal in
   `build.py`, to be smoke-tested).
 - **6, the RAPID reader rewrite** (clarity only, it takes 0.1 s) is left.
-- **3, the app-wide stylesheet** (241 `setStyleSheet` calls) is not done:
-  the repeated ones are now theme constants; the rest are one-offs, and a
-  named-rule stylesheet is a visual change to check page by page.
+- **3, the app-wide stylesheet** was done after phase I, with the
+  University of Hull theme: one `themes/app.qss` for every window (it had
+  only covered the main window - dialogs mixed native styling with dark-
+  theme text colours), `@name` colours from the active palette, widgets
+  tagged by role and tone (`theme.style()`), sidebar highlights as
+  properties. The per-widget `setStyleSheet` calls are gone apart from
+  the sidebar icons.
 
 ## 10. Not changing
 

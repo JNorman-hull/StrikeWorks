@@ -8,7 +8,7 @@
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QLabel, QVBoxLayout
 
-from .theme import MUTED, TEXT
+from .theme import style
 
 
 class StubPage(QObject):
@@ -21,11 +21,11 @@ class StubPage(QObject):
         v.setSpacing(4)
 
         lbl_title = QLabel(title)
-        lbl_title.setStyleSheet(f"color:{TEXT};font-size:16px;font-weight:bold;")
+        style(lbl_title, role="title")
         v.addWidget(lbl_title)
 
         lbl_note = QLabel(note)
-        lbl_note.setStyleSheet(f"color:{MUTED};")
+        style(lbl_note, role="muted")
         lbl_note.setWordWrap(True)
         v.addWidget(lbl_note)
         v.addStretch()

@@ -221,6 +221,17 @@ def set_default_mc_model(path):
     _set("default_mc_model", None if path is None else str(Path(path)))
 
 
+# ── appearance ───────────────────────────────────────────────────────────────
+def get_theme() -> str:
+    """The theme's key in theme.THEMES ("strikeworks" unless changed)."""
+    return _load().get("theme") or "strikeworks"
+
+
+def set_theme(name):
+    """Takes effect the next time the app starts."""
+    _set("theme", name)
+
+
 # ── session ──────────────────────────────────────────────────────────────────
 def get_last_library():
     """Last session's library, or None if unset or gone."""

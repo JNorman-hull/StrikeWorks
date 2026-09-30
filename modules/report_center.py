@@ -682,6 +682,8 @@ def prediction_section(window, formats=("png",), dpi=300):
             tables["predictions_per_file"] = state.predictions
         if state.region_summary is not None:
             tables["region_summary"] = state.region_summary
+        if state.severity_summary is not None:
+            tables["severity_summary"] = state.severity_summary
         return {"html": html, "tables": tables, "warnings": problems}
 
     return ReportSection("prediction", "Model prediction", available, reason,

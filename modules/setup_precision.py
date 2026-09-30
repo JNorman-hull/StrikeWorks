@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 from .bsm_state import LATEST_RESULT_PATH
 from .ml_figures import fg_colour, style_axes, style_legend, _grid
 from .layout import apply_section_defaults, scroll_page, Section
-from .theme import TEXT, muted_label
+from .theme import INFO, WARN, muted_label, style
 from .wilson_calc import required_n, wilson_interval
 
 _N_MULTIPLIERS = (0.5, 1, 2, 4)
@@ -143,7 +143,7 @@ class PrecisionCalcTab:
         self.btn_use_required.clicked.connect(self._use_required_n)
         form.addWidget(self.btn_use_required, 3, 2, left)
         self.lbl_required = QLabel("")
-        self.lbl_required.setStyleSheet(f"color:{TEXT};")
+        style(self.lbl_required)
         form.addWidget(self.lbl_required, 4, 1, 1, 2)
 
         for w in (self.spin_rate, self.spin_n, self.cmb_confidence,
@@ -157,7 +157,7 @@ class PrecisionCalcTab:
         nv = QVBoxLayout(grp)
         self.txt_result = QPlainTextEdit()
         self.txt_result.setReadOnly(True)
-        self.txt_result.setStyleSheet(f"color:{TEXT};font-weight:bold;")
+        style(self.txt_result, role="strong")
         self.txt_result.setToolTip("Select and copy (Ctrl+C) to paste it "
                                    "elsewhere.")
         self.txt_result.setMinimumWidth(240)
@@ -256,8 +256,8 @@ class PrecisionCalcTab:
         ax = fig.add_subplot(111)
         fg = fg_colour(dark)
         _grid(ax, dark)
-        ax.plot(n_vals, half_vals, color="#568af2", linewidth=1.5, zorder=2)
-        ax.scatter([n], [planned_half * 100], s=50, color="#f59e0b",
+        ax.plot(n_vals, half_vals, color=INFO, linewidth=1.5, zorder=2)
+        ax.scatter([n], [planned_half * 100], s=50, color=WARN,
                   edgecolor=fg, linewidth=0.8, zorder=4,
                   label=f"Planned N={n}")
         style_legend(ax.legend(loc="upper right", fontsize=8), dark)

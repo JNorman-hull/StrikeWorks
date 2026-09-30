@@ -41,7 +41,7 @@ from .cards import MetaCard
 from .layout import (
     apply_section_defaults, discard_widget, scroll_page, Section,
 )
-from .theme import ACCENT_BUTTON, BAD, MUTED, OK, TEXT, WARN, muted_label
+from .theme import muted_label, style
 
 
 class SensorTab:
@@ -110,7 +110,7 @@ class SensorTab:
         act.setSpacing(6)
         self.btn_save = QPushButton("Save sensor")
         self.btn_save.setMinimumHeight(30)
-        self.btn_save.setStyleSheet(ACCENT_BUTTON)
+        style(self.btn_save, role="primary")
         self.btn_save.clicked.connect(self._save)
         self.btn_revert = QPushButton("Discard changes")
         self.btn_revert.clicked.connect(self._revert)
@@ -123,7 +123,7 @@ class SensorTab:
         sv.addLayout(act)
 
         self.lbl_file = QLabel("")
-        self.lbl_file.setStyleSheet(f"color:{MUTED};font-size:10px;")
+        style(self.lbl_file, role="note")
         self.lbl_file.setWordWrap(True)
         self.lbl_file.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -176,7 +176,7 @@ class SensorTab:
                 ("File", "Packet (bytes)", "Native rate (Hz)",
                  "Onto the output grid")):
             lab = muted_label(text)
-            lab.setStyleSheet(f"color:{MUTED};font-size:10px;")
+            style(lab, role="note")
             header.addWidget(lab, 0, col)
         self.sources_layout = header
         holder = QWidget()
@@ -201,7 +201,7 @@ class SensorTab:
         av.addWidget(src_note)
 
         self.lbl_rates = QLabel("")
-        self.lbl_rates.setStyleSheet(f"color:{TEXT};font-weight:bold;")
+        style(self.lbl_rates, role="strong")
         self.lbl_rates.setWordWrap(True)
         av.addWidget(self.lbl_rates)
         v.addWidget(grp_acq)
@@ -489,20 +489,20 @@ class SensorTab:
 
         if problems:
             self.lbl_state.setText("• " + "<br>• ".join(problems))
-            self.lbl_state.setStyleSheet(f"color:{BAD};")
+            style(self.lbl_state, tone="bad")
         elif self._dirty:
             self.lbl_state.setText("Unsaved changes.")
-            self.lbl_state.setStyleSheet(f"color:{WARN};")
+            style(self.lbl_state, tone="warn")
         elif cfg.key == sensor_config.active_key():
             self.lbl_state.setText(
                 "Selected - raw import, validation and dataset creation use "
                 "this sensor.")
-            self.lbl_state.setStyleSheet(f"color:{OK};")
+            style(self.lbl_state, tone="ok")
         else:
             self.lbl_state.setText(
                 f"Not the session sensor (that is "
                 f"'{sensor_config.active().name}'). Save to switch to it.")
-            self.lbl_state.setStyleSheet(f"color:{MUTED};")
+            style(self.lbl_state, role="muted")
 
         self.btn_save.setEnabled(not problems)
         self.btn_revert.setEnabled(self._dirty)

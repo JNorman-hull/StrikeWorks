@@ -147,15 +147,21 @@ def status_counts(stems, status):
 
 
 def counts_text(stems, status):
-    """The list's counter. "Flagged, to review" counts down as flagged
-    sensors are reviewed (Save + Next) - the flag the list shows is
-    "flagged and not reviewed yet", so that's the number that clears."""
+    """The list's counter, every line out of all the sensors listed.
+    "Flagged for review" is the sensors still flagged and not reviewed -
+    it counts down as they're reviewed (Save + Next); once anything has
+    been flagged, the next line shows how many of those were reviewed."""
     c = status_counts(stems, status)
     left = c["flagged"] - c["flagged_reviewed"]
-    return (f"Flagged, to review: {left} of {c['flagged']}\n"
-            f"Reviewed by you: {c['user']}/{c['total']}\n"
-            f"Auto-validated: {c['auto']}/{c['total']}"
-            + (f"\n({c['bad']} bad)" if c["bad"] else ""))
+    lines = [f"Flagged for review: {left}/{c['total']} sensors"]
+    if c["flagged"]:
+        lines.append(f"Flagged sensors reviewed: {c['flagged_reviewed']}/"
+                     f"{c['flagged']}")
+    lines += [f"Reviewed by you: {c['user']}/{c['total']}",
+              f"Auto-validated: {c['auto']}/{c['total']}"]
+    if c["bad"]:
+        lines.append(f"({c['bad']} bad)")
+    return "\n".join(lines)
 
 
 def legend_html(ok, warn, bad, accent, plain, columns=1):

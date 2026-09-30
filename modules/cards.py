@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 from .layout import discard_widget
 from .theme import (
-    ACCENT, BORDER, CARD_BG, CARD_H, CARD_W, EMPTY, MUTED, PINK, TEXT,
+    ACCENT, BORDER, CARD_BG, CARD_H, CARD_W, EMPTY, MUTED, PINK, TEXT, style,
 )
 
 
@@ -197,17 +197,13 @@ class MetaCard(QFrame):
     def __init__(self, title="", parent=None):
         super().__init__(parent)
         self.setObjectName("metaCard")
-        self.setStyleSheet(
-            f"#metaCard{{background-color:{CARD_BG};border-radius:6px;"
-            f"border:1px solid {BORDER};}}")
 
         v = QVBoxLayout(self)
         v.setContentsMargins(12, 10, 12, 10)
         v.setSpacing(4)
 
         self._title = QLabel(title)
-        self._title.setStyleSheet(
-            f"color:{TEXT};font-weight:bold;border:none;")
+        style(self._title, role="strong")
         self._title.setVisible(bool(title))
         v.addWidget(self._title)
 
@@ -236,10 +232,10 @@ class MetaCard(QFrame):
 
         for i, (label, value) in enumerate(rows):
             lab = QLabel(label)
-            lab.setStyleSheet(f"color:{MUTED};border:none;")
+            style(lab, role="muted")
             lab.setAlignment(Qt.AlignmentFlag.AlignTop)
             val = QLabel(self._fmt(value))
-            val.setStyleSheet(f"color:{TEXT};border:none;")
+            style(val)
             val.setWordWrap(True)
             val.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse)

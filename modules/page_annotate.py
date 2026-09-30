@@ -56,7 +56,8 @@ from .layout import (
     when_visible,
 )
 from .theme import (
-    ACCENT, ACCENT_BUTTON, BAD, MUTED, OK, TEXT, WARN, muted_label,
+    ACCENT, BAD, NADIR, OK, REGION_EDGE, REGION_FILL, TEXT, TRACE, TRACE2,
+    WARN, muted_label, style,
 )
 from .dataset_build import META_COLS, standardise
 from .plot_style import (
@@ -227,12 +228,12 @@ class AnnotationPage(QObject):
         grp_gen = Section("Dataset report")
         gv = QVBoxLayout(grp_gen)
         self.lbl_report_status = QLabel("")
-        self.lbl_report_status.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_report_status, role="muted")
         self.lbl_report_status.setWordWrap(True)
         gv.addWidget(self.lbl_report_status)
         self.btn_generate_report = QPushButton("Generate dataset report")
         self.btn_generate_report.setMinimumHeight(30)
-        self.btn_generate_report.setStyleSheet(ACCENT_BUTTON)
+        style(self.btn_generate_report, role="primary")
         self.btn_generate_report.clicked.connect(self._generate_report)
         gv.addWidget(self.btn_generate_report)
         v.addWidget(grp_gen)
@@ -256,7 +257,7 @@ class AnnotationPage(QObject):
         self.lbl_progress = self.lib_selector.lbl_progress
 
         self.lbl_loading = QLabel("")
-        self.lbl_loading.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_loading, role="muted")
         lv.addWidget(self.lbl_loading)
 
         grp_val = Section("Validate")
@@ -264,7 +265,7 @@ class AnnotationPage(QObject):
         gv.setSpacing(4)
         auto_row = QHBoxLayout()
         self.btn_auto_process = QPushButton("Auto process all")
-        self.btn_auto_process.setStyleSheet(f"color:{OK};font-weight:bold;")
+        style(self.btn_auto_process, role="strong", tone="ok")
         self.btn_auto_process.setToolTip(
             "Accept every listed sensor's detected nadir and save its window "
             "- sensors whose window shows a weak HIG peak are flagged for "
@@ -282,7 +283,7 @@ class AnnotationPage(QObject):
         lbl_legend = QLabel(vc.legend_html(OK, WARN, BAD, ACCENT, TEXT,
                                            columns=2))
         lbl_legend.setToolTip(vc.legend_html(OK, WARN, BAD, ACCENT, TEXT))
-        lbl_legend.setStyleSheet(f"color:{MUTED};")
+        style(lbl_legend, role="muted")
         lbl_legend.setWordWrap(True)
         gv.addWidget(lbl_legend)
 
@@ -307,7 +308,7 @@ class AnnotationPage(QObject):
             "training and/or blade strike prediction (appending it to the "
             "dataset when it's annotated), and moves on to the next sensor "
             "in the list.")
-        self.btn_save_next.setStyleSheet(ACCENT_BUTTON)
+        style(self.btn_save_next, role="primary")
         self.btn_save_next.clicked.connect(self._save_and_next)
         self.btn_reset = QPushButton("Reset sensor")
         self.btn_reset.setToolTip("Reload this sensor's file without saving.")
@@ -317,12 +318,12 @@ class AnnotationPage(QObject):
         act.addStretch()
         gv.addLayout(act)
         self.lbl_validate_status = QLabel("")
-        self.lbl_validate_status.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_validate_status, role="muted")
         self.lbl_validate_status.setWordWrap(True)
         gv.addWidget(self.lbl_validate_status)
         ds_row = QHBoxLayout()
         self.btn_save_export = QPushButton("Save and export")
-        self.btn_save_export.setStyleSheet(f"color:{BAD};font-weight:bold;")
+        style(self.btn_save_export, role="strong", tone="bad")
         self.btn_save_export.setToolTip(
             "Bind every listed sensor's saved window, with its annotations, "
             "into one dataset - written to the input data folder and the "
@@ -396,13 +397,13 @@ class AnnotationPage(QObject):
 
         self._nadir_line = pg.InfiniteLine(
             angle=90, movable=True,
-            pen=pg.mkPen(color=(255, 220, 0), width=3),
+            pen=pg.mkPen(color=NADIR, width=3),
             label="Nadir",
             labelOpts={"position": 0.92, "color": (180, 150, 0)})
         self._nadir_line.sigPositionChanged.connect(self._on_nadir_moved)
         self._region = pg.LinearRegionItem(
-            movable=False, brush=pg.mkBrush(0, 100, 255, 40),
-            pen=pg.mkPen(0, 100, 255, 80))
+            movable=False, brush=pg.mkBrush(*REGION_FILL),
+            pen=pg.mkPen(*REGION_EDGE))
         pi.addItem(self._region)
         pi.addItem(self._nadir_line)
 
@@ -436,7 +437,7 @@ class AnnotationPage(QObject):
         gv.addLayout(btn_row)
 
         self.lbl_annotation_status = QLabel("")
-        self.lbl_annotation_status.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_annotation_status, role="muted")
         self.lbl_annotation_status.setWordWrap(True)
         gv.addWidget(self.lbl_annotation_status)
         gv.addStretch()
@@ -626,7 +627,7 @@ class AnnotationPage(QObject):
         self.lbl_report_status.setText(
             f"{in_dataset} of {total} sensor(s) in the dataset. Updates "
             "live as you annotate.")
-        self.lbl_report_status.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_report_status, role="muted")
 
     def _generate_report(self):
         df = self._library_sensor_rows()
@@ -685,7 +686,7 @@ class AnnotationPage(QObject):
             return
 
         self.lbl_report_status.setText(f"Report written to {out_path}")
-        self.lbl_report_status.setStyleSheet(f"color:{OK};")
+        style(self.lbl_report_status, tone="ok")
         self.status.emit(f"Dataset report saved to {out_path}", 5000)
 
     def _on_row_selected(self):
@@ -800,7 +801,7 @@ class AnnotationPage(QObject):
         y = self._channel(self._left_key)
         if y is not None:
             self._curve = self._pw.plot(
-                self._time, y, pen=pg.mkPen(TEXT, width=1))
+                self._time, y, pen=pg.mkPen(TRACE, width=1))
             self._curve.setDownsampling(auto=True, method="peak")
             self._curve.setClipToView(True)
         pi.setLabel("left", CHANNELS[self._left_key][1])
@@ -816,7 +817,7 @@ class AnnotationPage(QObject):
             return
         set_right_axis_active(pi, True)
         pi.setLabel("right", CHANNELS[self._right_key][1])
-        self._right_curve = pg.PlotCurveItem(pen=pg.mkPen("#ff5555", width=1))
+        self._right_curve = pg.PlotCurveItem(pen=pg.mkPen(TRACE2, width=1))
         self._vb2.addItem(self._right_curve)
         self._update_right_data()
         self._sync_vb2()

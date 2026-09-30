@@ -4,49 +4,195 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Colours and sizes shared by every page (the app's dark theme),
-plus small helpers for the recurring muted label and accent button.
+"""The app's themes: one palette per theme, the app stylesheet built from
+it (themes/app.qss), and the colours the code draws with directly (list
+items, plots, figures).
+
+The theme is chosen in Settings and read once, at start-up; a change
+applies the next time the app starts.
+
+Widgets get their look from the stylesheet, not from colours of their
+own: `style(widget, role=..., tone=...)` tags a widget with a role (a kind
+of text or button - see the list in app.qss) and/or a tone (a status
+colour: ok, warn, bad, accent, info, highlight, muted).
 """
+import re
+from pathlib import Path
+
 from PySide6.QtWidgets import QLabel
 
-# theme colours (match the PyDracula palette used by the app)
-CARD_BG = "#21252b"          # rgb(33,37,43)
-BORDER  = "#2c313a"          # rgb(44,49,58)
-TEXT    = "#dddddd"
-MUTED   = "#8a95aa"
-ACCENT  = "#bd93f9"          # purple
-PINK    = "#ff79c6"
-OK      = "#22c55e"
-WARN    = "#f59e0b"
-BAD     = "#ef4444"
-INFO    = "#568af2"
-EMPTY   = "#3a4150"
+from . import settings
 
-# category palette for ring segments / stacked bars
-PALETTE = [INFO, PINK, WARN, OK, ACCENT, "#00bcd4"]
+_QSS = Path(__file__).parent.parent / "themes" / "app.qss"
+
+STRIKEWORKS = {
+    "label": "StrikeWorks (dark)",
+    # content
+    "bg": "#282c34", "border": "#2c313a", "card": "#21252b", "grid": "#2c313c",
+    "text": "#dddddd", "muted": "#8a95aa", "disabled_text": "#717e95",
+    "placeholder": "#15181d", "empty": "#3a4150", "session_box": "#ffffff",
+    # sidebar, section panel, title and status bars
+    "sidebar": "#21252b", "sidebar_text": "#dddddd", "sidebar_subtle": "#717e95",
+    "sidebar_caption": "#bd93f9", "sidebar_hover": "#282c34",
+    "sidebar_selected": "#282c34", "sidebar_panel": "#2c313a",
+    "sidebar_line": "#2c313a", "sidebar_toggle": "#252930",
+    "titlebar": "#21252b", "titlebar_hover": "#2c3139", "titlebar_pressed": "#171a1e",
+    "statusbar": "#2c313a",
+    # accents
+    "accent": "#bd93f9", "accent_hover": "#c4a1f9", "accent_pressed": "#b48dee",
+    "on_accent": "#ffffff", "accent_text": "#bd93f9",
+    "highlight": "#ff79c6", "on_highlight": "#ffffff", "highlight_text": "#ff79c6",
+    "selection": "#bd93f9", "on_selection": "#dddddd", "link": "#ffaaff",
+    "tooltip_bg": "rgba(33, 37, 43, 180)", "tooltip_text": "#ffffff",
+    # tables
+    "header": "#21252b", "header_text": "#dddddd",
+    # inputs
+    "input": "#21252b", "input_border": "#21252b", "input_hover": "#404758",
+    "input_focus": "#5b657c", "field": "#1b1d23",
+    "combo_divider": "rgba(39, 44, 54, 150)", "combo_button": "transparent",
+    "popup": "#21252b", "popup_text": "#ff79c6", "popup_selection": "#272c36",
+    "track": "#343b48", "track_end": "#373f4d", "track_hover": "#373e4c",
+    "handle": "#bd93f9",
+    "indicator": "#2c313c", "indicator_border": "#343b48",
+    "indicator_hover": "#3a4251", "indicator_checked": "#343b48",
+    "radio_checked": "#5e6a82",
+    # buttons
+    "button": "#343b48", "button_text": "#dddddd", "button_hover": "#394150",
+    "button_hover_border": "#3d4656", "button_pressed": "#232831",
+    "button_pressed_border": "#2b323d",
+    "primary": "#bd93f9", "on_primary": "#ffffff", "primary_hover": "#bd93f9",
+    "alternative": "#ef4444", "on_alternative": "#ffffff",
+    "console": "#1b1e23", "console_text": "#d4d4d4",
+    # status
+    "ok": "#22c55e", "warn": "#f59e0b", "bad": "#ef4444", "info": "#568af2",
+    # drawing: ring segments, figures, signal plots
+    "palette": ["#568af2", "#ff79c6", "#f59e0b", "#22c55e", "#bd93f9", "#00bcd4"],
+    "figure_palette": ["#2196F3", "#E91E63", "#FF9800", "#4CAF50", "#9C27B0",
+                       "#00BCD4"],
+    "screen_bg": "#21252b", "screen_axes": "#1b1e23", "screen_fg": "#c8cdd6",
+    "screen_grid": "#3a4150", "plot_fg": "#c8cdd6",
+    "trace": "#dddddd", "trace2": "#ff5555", "nadir": "#ffdc00",
+    "region_fill": (120, 170, 255, 35), "region_edge": (120, 170, 255, 90),
+    "dark": True,
+}
+
+# University of Hull brand palette (brand.hull.ac.uk): the Core, low
+# intensity look - white, Ink Blue in support, Mid and Light Blue
+# alongside, Chartreuse and the secondary colours as accents - with the
+# brand's 80/60/40/20/10 % tints for UI detail. Status text uses darker
+# shades of the palette's hues so it passes WCAG AA on white.
+INK, MID, LIGHT, CHARTREUSE = "#0e1647", "#274fe9", "#96d8f1", "#dcf488"
+PINK_2, GREEN_2, ORANGE_2, LAVENDER_2 = "#e6b2db", "#90dcba", "#eabc77", "#a99fee"
+HULL = {
+    "label": "University of Hull",
+    "bg": "#ffffff", "border": "#cfd0da", "card": "#f5fbfe", "grid": "#e7e8ed",
+    "text": INK, "muted": "#6e7391", "disabled_text": "#9fa2b5",
+    "placeholder": "#e7e8ed", "empty": "#e7e8ed", "session_box": "#cfd0da",
+    "sidebar": INK, "sidebar_text": "#ffffff", "sidebar_subtle": LIGHT,
+    "sidebar_caption": LIGHT, "sidebar_hover": "#323963",
+    "sidebar_selected": "#262d59", "sidebar_panel": "#1a2250",
+    "sidebar_line": "#262d59", "sidebar_toggle": "#0a1036",
+    "titlebar": INK, "titlebar_hover": "#323963", "titlebar_pressed": "#0a1036",
+    "statusbar": INK,
+    "accent": MID, "accent_hover": "#5272ed", "accent_pressed": "#1e3fc0",
+    "on_accent": "#ffffff", "accent_text": MID,
+    "highlight": CHARTREUSE, "on_highlight": INK, "highlight_text": "#9c2f7a",
+    "selection": LIGHT, "on_selection": INK, "link": MID,
+    "tooltip_bg": INK, "tooltip_text": "#ffffff",
+    "header": INK, "header_text": "#ffffff",
+    "input": "#ffffff", "input_border": "#cfd0da", "input_hover": "#9fa2b5",
+    "input_focus": MID, "field": "#ffffff",
+    "combo_divider": "#cfd0da", "combo_button": INK,
+    "popup": "#ffffff", "popup_text": INK, "popup_selection": "#d5eff9",
+    "track": "#e7e8ed", "track_end": "#cfd0da", "track_hover": "#cfd0da",
+    "handle": "#9fa2b5",
+    "indicator": "#ffffff", "indicator_border": "#9fa2b5",
+    "indicator_hover": "#6e7391", "indicator_checked": MID,
+    "radio_checked": MID,
+    "button": "#e7e8ed", "button_text": INK, "button_hover": "#cfd0da",
+    "button_hover_border": "#cfd0da", "button_pressed": "#b7b9c8",
+    "button_pressed_border": "#b7b9c8",
+    "primary": CHARTREUSE, "on_primary": INK, "primary_hover": "#c3d980",
+    "alternative": MID, "on_alternative": "#ffffff",
+    "console": INK, "console_text": "#ffffff",
+    "ok": "#1e7a50", "warn": "#9a5b00", "bad": "#c0282f", "info": MID,
+    "palette": [MID, PINK_2, ORANGE_2, GREEN_2, LAVENDER_2, LIGHT],
+    "figure_palette": [MID, PINK_2, ORANGE_2, GREEN_2, LAVENDER_2, INK],
+    "screen_bg": "#ffffff", "screen_axes": "#ffffff", "screen_fg": INK,
+    "screen_grid": LIGHT, "plot_fg": INK,
+    "trace": INK, "trace2": MID, "nadir": "#9a5b00",
+    "region_fill": (150, 216, 241, 70), "region_edge": (39, 79, 233, 110),
+    "dark": False,
+}
+
+THEMES = {"strikeworks": STRIKEWORKS, "hull": HULL}
+NAME = settings.get_theme() if settings.get_theme() in THEMES else "strikeworks"
+P = THEMES[NAME]
+
+# the colours code draws with directly
+CARD_BG = P["card"]
+BORDER = P["border"]
+TEXT = P["text"]
+MUTED = P["muted"]
+ACCENT = P["accent"]
+PINK = P["highlight_text"]
+OK = P["ok"]
+WARN = P["warn"]
+BAD = P["bad"]
+INFO = P["info"]
+EMPTY = P["empty"]
+PALETTE = list(P["palette"])      # ring segments / stacked bars
+
+# the live signal plots (pyqtgraph)
+TRACE = P["trace"]                # the main channel
+TRACE2 = P["trace2"]              # the second channel, on the right axis
+NADIR = P["nadir"]                # the nadir line
+REGION_FILL = P["region_fill"]    # the ROI / sync window
+REGION_EDGE = P["region_edge"]
 
 # Minimum widths only - every card expands to share the row, so a page
 # never forces a horizontal scrollbar at a sensible window size.
 CARD_W, CARD_H   = 205, 124
 CARD_W2, CARD_H2 = 112, 112
 
-# the filled purple button each page uses for its main action
-ACCENT_BUTTON = (
-    f"QPushButton{{background-color:{ACCENT};color:#ffffff;"
-    "border-radius:5px;padding:4px 14px;font-weight:bold;}"
-    f"QPushButton:disabled{{background-color:{EMPTY};color:{MUTED};}}")
+
+def stylesheet():
+    """The app stylesheet, with every @token filled from the palette."""
+    def token(m):
+        value = P[m.group(1)]
+        return value if isinstance(value, str) else f"rgba{tuple(value)}"
+    return re.sub(r"@([a-z_0-9]+)", token, _QSS.read_text(encoding="utf-8"))
 
 
-# the read-only log boxes (processing, training, dataset build)
-CONSOLE_STYLE = (
-    "QPlainTextEdit{background:#1b1e23;color:#d4d4d4;"
-    f"border:1px solid {BORDER};border-radius:4px;"
-    "font-family:Consolas,monospace;font-size:9pt;}")
+def apply(app):
+    app.setStyleSheet(stylesheet())
+
+
+def _repolish(widget):
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
+    widget.update()
+
+
+def style(widget, role=None, tone=None):
+    """Set `widget`'s role and tone (None clears either) - like replacing
+    its stylesheet, the previous look is dropped."""
+    widget.setProperty("role", role or "")
+    widget.setProperty("tone", tone or "")
+    _repolish(widget)
+    return widget
+
+
+def set_flag(widget, name, on):
+    """A true/false property the stylesheet selects on (the sidebar's
+    "selected" and "boxOwner")."""
+    widget.setProperty(name, bool(on))
+    _repolish(widget)
 
 
 def muted_label(text, wrap=False):
     """A QLabel in the muted (secondary) text colour."""
     lab = QLabel(text)
-    lab.setStyleSheet(f"color:{MUTED};")
+    style(lab, role="muted")
     lab.setWordWrap(wrap)
     return lab

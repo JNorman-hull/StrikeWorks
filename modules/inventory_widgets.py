@@ -38,7 +38,7 @@ from . import raw_layout, sensor_config
 from .cards import Spinner
 from .layout import Section
 from .tables import fill_table_width, style_table
-from .theme import ACCENT, ACCENT_BUTTON, BAD, CONSOLE_STYLE, MUTED, OK, WARN
+from .theme import BAD, OK, WARN, style
 
 
 COLUMNS = ["Filename", "Sensor", "Date", "Time", "Deployment", "Treatment",
@@ -171,11 +171,11 @@ class FileInventory(QWidget):
         self._spinner.setVisible(False)
         sel_row.addWidget(self._spinner)
         self.lbl_counts = QLabel("")
-        self.lbl_counts.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_counts, role="muted")
         sel_row.addWidget(self.lbl_counts)
         sel_row.addStretch()
         self.btn_process = QPushButton("Process selected")
-        self.btn_process.setStyleSheet(ACCENT_BUTTON)
+        style(self.btn_process, role="primary")
         self.btn_process.setEnabled(False)
         self.btn_process.clicked.connect(self.process_selected)
         sel_row.addWidget(self.btn_process)
@@ -188,10 +188,10 @@ class FileInventory(QWidget):
         self.console.setReadOnly(True)
         self.console.setMaximumBlockCount(5000)
         self.console.setFont(QFont("Consolas", 9))
-        self.console.setStyleSheet(CONSOLE_STYLE)
+        style(self.console, role="console")
         lv.addWidget(self.console, stretch=1)
         self.lbl_status = QLabel("")
-        self.lbl_status.setStyleSheet(f"color:{OK};font-weight:bold;")
+        style(self.lbl_status, role="strong", tone="ok")
         self.lbl_status.setWordWrap(True)
         lv.addWidget(self.lbl_status)
         self.log_section = grp_log
@@ -330,7 +330,7 @@ class FileInventory(QWidget):
         complete = [f for f in files if f["complete"]]
         skipped = len(files) - len(complete)
         if not complete:
-            self.lbl_status.setStyleSheet(f"color:{WARN};font-weight:bold;")
+            style(self.lbl_status, role="strong", tone="warn")
             self.lbl_status.setText("No complete recordings selected.")
             return None
         cfg = sensor_config.active()
@@ -349,7 +349,7 @@ class FileInventory(QWidget):
 
         self._batch = complete
         self._batch_done = []
-        self.lbl_status.setStyleSheet(f"color:{ACCENT};font-weight:bold;")
+        style(self.lbl_status, role="strong", tone="accent")
         self.lbl_status.setText("Processing…")
         self.btn_process.setEnabled(False)
         self._thread = ProcessThread(complete, out_dir, self._lib_root, cfg)
@@ -370,8 +370,7 @@ class FileInventory(QWidget):
                          "treatment and run of the folder each came from.")
         except Exception as e:
             self.log(f"\nCould not label the batch: {e}")
-        self.lbl_status.setStyleSheet(
-            f"color:{OK if code == 0 else WARN};font-weight:bold;")
+        style(self.lbl_status, role="strong", tone="ok" if code == 0 else "warn")
         self.lbl_status.setText(
             "All sensors processed" if code == 0
             else "Processing finished with errors")

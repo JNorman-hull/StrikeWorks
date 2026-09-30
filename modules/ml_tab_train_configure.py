@@ -34,10 +34,7 @@ from .ml_train_state import GROUPING_PRESETS
 from .cards import MetaCard, Spinner
 from .layout import apply_section_defaults, hsplit, scroll_page, Section
 from .level_grouper import LevelGrouper
-from .theme import (
-    ACCENT, BAD, CONSOLE_STYLE, EMPTY, MUTED, OK, PALETTE, TEXT, WARN,
-    muted_label,
-)
+from .theme import EMPTY, MUTED, PALETTE, TEXT, muted_label, style
 
 _PREVIEW_ROWS = 200
 
@@ -133,7 +130,7 @@ class TrainTab:
         self.card_dataset = MetaCard("TRAINING DATASET")
         dv.addWidget(self.card_dataset)
         self.lbl_compat = QLabel("")
-        self.lbl_compat.setStyleSheet(f"color:{OK};")
+        style(self.lbl_compat, tone="ok")
         dv.addWidget(self.lbl_compat)
         # several datasets stacked into one - loaded straight away
         self.bind_widget = BindTrainingData()
@@ -156,15 +153,14 @@ class TrainTab:
         fv.setSpacing(4)
         lab = QLabel("Include records (by target value). The resulting "
                      "training population is recorded in the model provenance.")
-        lab.setStyleSheet(f"color:{MUTED};")
+        style(lab, role="muted")
         lab.setWordWrap(True)
         fv.addWidget(lab)
         self.include_box = QVBoxLayout()
         self.include_box.setSpacing(2)
         fv.addLayout(self.include_box)
         self.lbl_population = QLabel("")
-        self.lbl_population.setStyleSheet(
-            f"color:{TEXT};font-weight:bold;")
+        style(self.lbl_population, role="strong")
         fv.addWidget(self.lbl_population)
         fv.addStretch()
 
@@ -192,7 +188,7 @@ class TrainTab:
         tv.addLayout(tr)
 
         self.lbl_positive = QLabel("")
-        self.lbl_positive.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_positive, role="muted")
         self.lbl_positive.setWordWrap(True)
         tv.addWidget(self.lbl_positive)
 
@@ -225,7 +221,7 @@ class TrainTab:
         tv.addWidget(self.grouper)
 
         self.lbl_derived = QLabel("")
-        self.lbl_derived.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_derived, role="muted")
         self.lbl_derived.setWordWrap(True)
         tv.addWidget(self.lbl_derived)
 
@@ -254,8 +250,7 @@ class TrainTab:
         self.chan_grid.setVerticalSpacing(2)
         cv.addLayout(self.chan_grid)
         self.lbl_chan_count = QLabel("")
-        self.lbl_chan_count.setStyleSheet(
-            f"color:{TEXT};font-weight:bold;")
+        style(self.lbl_chan_count, role="strong")
         cv.addWidget(self.lbl_chan_count)
         cv.addStretch()
 
@@ -283,8 +278,7 @@ class TrainTab:
         self.cmb_trunc.addItem("Truncate to target length", "truncate")
         sv.addWidget(self.cmb_trunc, 3, 1)
         self.lbl_tensor = QLabel("")
-        self.lbl_tensor.setStyleSheet(
-            f"color:{TEXT};font-weight:bold;")
+        style(self.lbl_tensor, role="strong")
         sv.addWidget(self.lbl_tensor, 4, 0, 1, 2)
         v.addWidget(hsplit(grp_chan, grp_seq))
 
@@ -340,11 +334,11 @@ class TrainTab:
         bv.addWidget(self.rb_w_none)
         bv.addWidget(self.rb_w_balanced)
         self.lbl_weights = QLabel("")
-        self.lbl_weights.setStyleSheet(f"color:{TEXT};")
+        style(self.lbl_weights)
         bv.addWidget(self.lbl_weights)
         lab = QLabel("Minority-class observations are weighted"
                      )
-        lab.setStyleSheet(f"color:{MUTED};")
+        style(lab, role="muted")
         lab.setWordWrap(True)
         bv.addWidget(lab)
         bv.addStretch()
@@ -414,7 +408,7 @@ class TrainTab:
         self.lbl_status = QLabel(
             "")
         self.lbl_status.setWordWrap(True)
-        self.lbl_status.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_status, role="muted")
         gv.addWidget(self.lbl_status)
 
         self.card_bin = MetaCard("Binary OOF")
@@ -444,7 +438,7 @@ class TrainTab:
         self.console.setReadOnly(True)
         self.console.setMaximumBlockCount(5000)
         self.console.setMinimumHeight(280)
-        self.console.setStyleSheet(CONSOLE_STYLE)
+        style(self.console, role="console")
         cv.addWidget(self.console, stretch=1)
         v.addWidget(hsplit((grp_run, 2), (grp_console, 3)))
         v.addStretch()
@@ -743,8 +737,7 @@ class TrainTab:
         self.lbl_compat.setText(
             "Dataset ok" if ok
             else "Dataset incorrect")
-        self.lbl_compat.setStyleSheet(
-            f"color:{OK if ok else WARN};")
+        style(self.lbl_compat, tone="ok" if ok else "warn")
 
     def _refresh_target(self):
         s = self.state
@@ -869,11 +862,11 @@ class TrainTab:
         blockers = [c for c in s.checks if c[0] == "fail"]
         if blockers:
             state, label, detail = blockers[0]
-            self.lbl_status.setStyleSheet(f"color:{BAD};")
+            style(self.lbl_status, tone="bad")
             self.lbl_status.setText(
                 f"✗ {label}: {detail}" if detail else f"✗ {label}")
         elif not s.cv_done:
-            self.lbl_status.setStyleSheet(f"color:{MUTED};")
+            style(self.lbl_status, role="muted")
             self.lbl_status.setText(
                 "")
 
@@ -893,7 +886,7 @@ class TrainTab:
         self.progress.setValue(0)
         self._elapsed.start()
         self._tick.start()
-        self.lbl_status.setStyleSheet(f"color:{ACCENT};")
+        style(self.lbl_status, tone="accent")
         self.lbl_status.setText("Training binary strike model")
 
     def _on_final_started(self):
@@ -901,7 +894,7 @@ class TrainTab:
         self.spinner.start()
         self._elapsed.start()
         self._tick.start()
-        self.lbl_status.setStyleSheet(f"color:{ACCENT};")
+        style(self.lbl_status, tone="accent")
         self.lbl_status.setText("Training final deployment model")
 
     def _on_line(self, ln):
@@ -939,7 +932,7 @@ class TrainTab:
         self.progress.setValue(self.progress.maximum())
         s = self.state
         secs = self._elapsed.elapsed() / 1000
-        self.lbl_status.setStyleSheet(f"color:{OK};")
+        style(self.lbl_status, tone="ok")
         self.lbl_status.setText(f"Cross-validation complete ({secs:.0f} s).")
         self._fill_performance()
         self.btn_evaluate.setVisible(True)
@@ -948,7 +941,7 @@ class TrainTab:
     def _on_failed(self, msg):
         self._stop_run_ui()
         self.progress.setVisible(False)
-        self.lbl_status.setStyleSheet(f"color:{BAD};")
+        style(self.lbl_status, tone="bad")
         first = msg.strip().splitlines()[-1] if msg.strip() else "Unknown error"
         self.lbl_status.setText(f"✗ Training failed: {first}")
         dlg = QMessageBox(self.window)

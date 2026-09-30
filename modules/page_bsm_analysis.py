@@ -34,7 +34,7 @@ from .cards import MetaCard
 from .layout import (
     apply_section_defaults, centred, scroll_page, Section, when_visible,
 )
-from .theme import ACCENT_BUTTON
+from .theme import style
 
 _NODIALOG = QFileDialog.Option.DontUseNativeDialog
 
@@ -71,7 +71,7 @@ class BSMAnalysisPage(QWidget):
 
         self.btn_report = QPushButton("Generate report...")
         self.btn_report.setEnabled(False)
-        self.btn_report.setStyleSheet(ACCENT_BUTTON)
+        style(self.btn_report, role="primary")
         self.btn_report.clicked.connect(self._generate_report)
         report_row = QHBoxLayout()
         report_row.addStretch()

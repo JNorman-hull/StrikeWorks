@@ -37,7 +37,7 @@ from .bsm_model import mortality_from_strike_rate
 from .library_widgets import LibrarySelector
 from .ml_model_library import model_display_name
 from .layout import apply_section_defaults, scroll_page, Section
-from .theme import TEXT, muted_label
+from .theme import muted_label, style
 from .wilson_calc import wilson_interval
 
 # the report's comparison figures: 12 x 10 cm up to three bars, 16 x 10 above
@@ -221,7 +221,7 @@ class ModelComparisonPage(QWidget):
         form.addWidget(self.spin_manual_mort, 1, 3)
         gv.addLayout(form)
         self.lbl_manual = QLabel("")
-        self.lbl_manual.setStyleSheet(f"color:{TEXT};")
+        style(self.lbl_manual)
         self.lbl_manual.setWordWrap(True)
         gv.addWidget(self.lbl_manual)
         return g
@@ -254,7 +254,7 @@ class ModelComparisonPage(QWidget):
         form.addWidget(self.spin_model1_strike, 0, 3)
         gv.addLayout(form)
         self.lbl_model1 = QLabel("")
-        self.lbl_model1.setStyleSheet(f"color:{TEXT};")
+        style(self.lbl_model1)
         self.lbl_model1.setWordWrap(True)
         gv.addWidget(self.lbl_model1)
         return g
@@ -276,7 +276,7 @@ class ModelComparisonPage(QWidget):
 
         def value_label():
             lab = QLabel("Not calculated")
-            lab.setStyleSheet(f"color:{TEXT};")
+            style(lab)
             return lab
 
         self.lbl_scaly_value = value_label()

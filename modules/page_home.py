@@ -27,7 +27,7 @@ from . import deployment_index as di
 from . import raw_layout, settings
 from .cards import MetaCard
 from .layout import apply_section_defaults, on_show, Section
-from .theme import ACCENT, MUTED
+from .theme import style
 from .session_state import OUTPUT_DIR_NAME
 
 _LOGO_RESOURCE = ":/images/images/images/PyDracula_vertical.png"
@@ -58,7 +58,7 @@ class HomePage(QObject):
         # the stub background image fights with real content - a plain
         # dark background matches every other page instead; the same
         # image comes back below as a real (not stretched) logo
-        frame.setStyleSheet("background:transparent;")
+        style(frame, role="bare")
         outer = QVBoxLayout(frame)
         outer.setContentsMargins(24, 24, 24, 24)
         outer.setSpacing(0)
@@ -91,8 +91,6 @@ class HomePage(QObject):
         col = QWidget()
         col.setObjectName("homeSessionBox")
         col.setMaximumWidth(_CARD_WIDTH)
-        col.setStyleSheet(
-            "#homeSessionBox{border:1px solid #ffffff;border-radius:10px;}")
         v = QVBoxLayout(col)
         v.setContentsMargins(20, 20, 20, 20)
         v.setSpacing(12)
@@ -105,19 +103,19 @@ class HomePage(QObject):
         gv.addWidget(self.cmb_library)
 
         self.lbl_library_path = QLabel("No library selected.")
-        self.lbl_library_path.setStyleSheet(f"color:{MUTED};font-size:11px;")
+        style(self.lbl_library_path, role="note")
         self.lbl_library_path.setWordWrap(True)
         gv.addWidget(self.lbl_library_path)
 
         action_row = QHBoxLayout()
         self.btn_new_library = QPushButton("New library")
         self.btn_new_library.setFlat(True)
-        self.btn_new_library.setStyleSheet(f"color:{ACCENT};text-align:left;")
+        style(self.btn_new_library, role="link")
         action_row.addWidget(self.btn_new_library)
         action_row.addStretch()
         self.btn_new_session = QPushButton("New session")
         self.btn_new_session.setFlat(True)
-        self.btn_new_session.setStyleSheet(f"color:{ACCENT};text-align:right;")
+        style(self.btn_new_session, role="link")
         action_row.addWidget(self.btn_new_session)
         gv.addLayout(action_row)
         v.addWidget(grp)

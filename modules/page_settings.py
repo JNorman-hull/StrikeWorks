@@ -24,13 +24,14 @@ After it closes, `main.py` has Home re-read the libraries folder.
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QVBoxLayout,
+    QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QVBoxLayout,
 )
 
 from . import settings
 from .layout import apply_section_defaults, Section
-from .theme import MUTED, TEXT
+from . import theme
+from .theme import style
 
 
 class SettingsDialog(QDialog):
@@ -51,10 +52,10 @@ class SettingsDialog(QDialog):
         v.setSpacing(12)
 
         title = QLabel("Settings")
-        title.setStyleSheet(f"color:{TEXT};font-size:16px;font-weight:bold;")
+        style(title, role="title")
         v.addWidget(title)
         subtitle = QLabel("Folder locations used across the app.")
-        subtitle.setStyleSheet(f"color:{MUTED};")
+        style(subtitle, role="muted")
         v.addWidget(subtitle)
 
         grp_lib = Section("Libraries folder")
@@ -110,6 +111,7 @@ class SettingsDialog(QDialog):
             "default.")
         v.addWidget(grp_input)
 
+        self._appearance_row(v)
         self._dev_mode_row(v)
 
         v.addStretch()
@@ -154,7 +156,7 @@ class SettingsDialog(QDialog):
     def _model_field(self, gv, label_text, getter, setter, glob_pattern, tip):
         row = QHBoxLayout()
         lbl = QLabel(label_text)
-        lbl.setStyleSheet(f"color:{MUTED};font-size:11px;")
+        style(lbl, role="note")
         row.addWidget(lbl)
         current = getter()
         ed = QLineEdit(str(current) if current else "")
@@ -187,6 +189,29 @@ class SettingsDialog(QDialog):
         ed.setText("")
         setter(None)
 
+    def _appearance_row(self, v):
+        grp = Section("Appearance")
+        gv = QHBoxLayout(grp)
+        gv.addWidget(QLabel("Theme"))
+        self.cmb_theme = QComboBox()
+        for key, palette in theme.THEMES.items():
+            self.cmb_theme.addItem(palette["label"], key)
+        self.cmb_theme.setCurrentIndex(
+            max(0, self.cmb_theme.findData(settings.get_theme())))
+        self.cmb_theme.currentIndexChanged.connect(self._theme_chosen)
+        gv.addWidget(self.cmb_theme)
+        self.lbl_theme = QLabel("")
+        style(self.lbl_theme, role="note")
+        gv.addWidget(self.lbl_theme, stretch=1)
+        v.addWidget(grp)
+
+    def _theme_chosen(self, _index):
+        key = self.cmb_theme.currentData()
+        settings.set_theme(key)
+        self.lbl_theme.setText(
+            "" if key == theme.NAME
+            else "Takes effect the next time StrikeWorks starts.")
+
     def _dev_mode_row(self, v):
         grp = Section("Dev mode")
         gv = QVBoxLayout(grp)
@@ -215,7 +240,7 @@ class SettingsDialog(QDialog):
         note = QLabel("The demos (Simple / Advanced) run from the dev "
                       "console itself - open it, close this window, and "
                       "watch the app being driven.")
-        note.setStyleSheet(f"color:{MUTED};font-size:11px;")
+        style(note, role="note")
         note.setWordWrap(True)
         gv.addWidget(note)
 

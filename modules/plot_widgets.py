@@ -15,7 +15,7 @@ import pyqtgraph as pg
 
 from PySide6.QtCore import Qt, QThread, Signal
 
-from .theme import CARD_BG
+from . import theme
 
 # display channels -> (column name, axis label)
 CHANNELS = {
@@ -31,8 +31,8 @@ MAX_RIGHT_PTS = 8000   # points kept for a right-axis overlay (see decimate)
 def configure_pyqtgraph():
     """The dark theme and antialiasing every plot uses - once, before the
     first plot widget is built."""
-    pg.setConfigOptions(antialias=True, background=CARD_BG,
-                        foreground="#c8cdd6")
+    pg.setConfigOptions(antialias=True, background=theme.P["screen_bg"],
+                        foreground=theme.P["plot_fg"])
 
 
 def find_col(df, candidates, keyword=None):

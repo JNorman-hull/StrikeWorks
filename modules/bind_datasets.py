@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import settings
-from .theme import MUTED
+from .theme import style
 
 
 def bind_csvs(paths):
@@ -55,7 +55,7 @@ class BindTrainingData(QWidget):
             "Combine several datasets - e.g. one model_features.csv per "
             "library - into one training set. Rows are stacked; columns not "
             "shared by every file are kept and left blank where missing.")
-        title.setStyleSheet(f"color:{MUTED};")
+        style(title, role="muted")
         v.addWidget(title)
 
         self.list_files = QListWidget()
@@ -78,7 +78,7 @@ class BindTrainingData(QWidget):
         v.addLayout(row)
 
         self.lbl_status = QLabel("")
-        self.lbl_status.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_status, role="muted")
         self.lbl_status.setWordWrap(True)
         v.addWidget(self.lbl_status)
         self._refresh()

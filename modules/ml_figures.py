@@ -6,54 +6,59 @@
 # ///////////////////////////////////////////////////////////////
 """Prediction figures, drawn onto any matplotlib Figure. Two presentations:
 
-  dark=True   in-app canvases, matching the StrikeWorks theme. Empty
-              figures still draw their expected axes (labels, limits,
-              grid) so the panels read as live plots awaiting data.
+  dark=True   the on-screen look, in the theme's canvas colours (dark for
+              the StrikeWorks theme, white for the University of Hull
+              one). Empty figures still draw their expected axes (labels,
+              limits, grid) so the panels read as live plots awaiting data.
   dark=False  publication styling on white, for every exported figure.
+
+Both use the theme's figure palette.
 """
 import numpy as np
 
+from . import theme
+
 _BLUES   = ["#4a86c8", "#2e5d9f", "#6fa8dc", "#1e3a5f", "#9fc5e8"]
-_PALETTE = ["#2196F3", "#E91E63", "#FF9800", "#4CAF50", "#9C27B0", "#00BCD4"]
+_PALETTE = list(theme.P["figure_palette"])
 _MUTED   = "#94a3b8"
 
-# in-app dark theme (matches the PyDracula palette)
-DARK_BG   = "#21252b"
-DARK_AX   = "#1b1e23"
-DARK_FG   = "#c8cdd6"
-DARK_GRID = "#3a4150"
+# the on-screen look (dark=True)
+SCREEN_BG   = theme.P["screen_bg"]
+SCREEN_AX   = theme.P["screen_axes"]
+SCREEN_FG   = theme.P["screen_fg"]
+SCREEN_GRID = theme.P["screen_grid"]
 
 
 def fg_colour(dark):
-    return DARK_FG if dark else "black"
+    return SCREEN_FG if dark else "black"
 
 
 def style_axes(fig, ax, dark):
-    """Apply the in-app dark theme to a figure/axes pair."""
+    """Give a figure/axes pair the on-screen look."""
     if not dark:
         return
-    fig.patch.set_facecolor(DARK_BG)
-    ax.set_facecolor(DARK_AX)
+    fig.patch.set_facecolor(SCREEN_BG)
+    ax.set_facecolor(SCREEN_AX)
     for spine in ax.spines.values():
-        spine.set_color(DARK_GRID)
-    ax.tick_params(colors=DARK_FG, labelcolor=DARK_FG)
-    ax.xaxis.label.set_color(DARK_FG)
-    ax.yaxis.label.set_color(DARK_FG)
-    ax.title.set_color(DARK_FG)
+        spine.set_color(SCREEN_GRID)
+    ax.tick_params(colors=SCREEN_FG, labelcolor=SCREEN_FG)
+    ax.xaxis.label.set_color(SCREEN_FG)
+    ax.yaxis.label.set_color(SCREEN_FG)
+    ax.title.set_color(SCREEN_FG)
 
 
 def style_legend(leg, dark):
     if leg is None or not dark:
         return
-    leg.get_frame().set_facecolor(DARK_BG)
-    leg.get_frame().set_edgecolor(DARK_GRID)
+    leg.get_frame().set_facecolor(SCREEN_BG)
+    leg.get_frame().set_edgecolor(SCREEN_GRID)
     for text in leg.get_texts():
-        text.set_color(DARK_FG)
+        text.set_color(SCREEN_FG)
 
 
 def _grid(ax, dark):
     ax.set_axisbelow(True)
-    ax.yaxis.grid(True, color=DARK_GRID if dark else "grey",
+    ax.yaxis.grid(True, color=SCREEN_GRID if dark else "grey",
                   linewidth=0.5, alpha=0.8 if dark else 0.5)
 
 
@@ -117,6 +122,54 @@ def draw_strike_rate(fig, summary, dark=False):
                        ha="right", fontsize=8)
     ax.set_ylim(0, min(100, rates.max() + hi.max() * 1.5 + 10)
                 if len(rates) else 10)
+    style_axes(fig, ax, dark)
+    fig.tight_layout()
+
+
+def draw_severity(fig, severity_summary, dark=False, measured=True):
+    """Strike severity by treatment: the share of recordings whose HIG
+    peak passed 95, 200 and 400 g, with Wilson 95% CIs - only > 400 g is
+    a severe strike. `measured=False` says the dataset had no HIG."""
+    fig.clear()
+    ax = fig.add_subplot(111)
+    fg = fg_colour(dark)
+    ax.set_ylabel("Recordings over the threshold (%)", fontsize=9)
+    ax.set_xlabel("Treatment", fontsize=9)
+    ax.set_title("Strike severity (HIG peak)",
+                 fontsize=10, fontweight="bold")
+    _grid(ax, dark)
+
+    if severity_summary is None or not len(severity_summary):
+        ax.set_ylim(0, 100)
+        ax.set_xticks([])
+        _awaiting(ax, "Awaiting prediction run" if measured
+                  else "No HIG channel in this dataset")
+        style_axes(fig, ax, dark)
+        fig.tight_layout()
+        return
+
+    treatments = list(dict.fromkeys(severity_summary["treatment"]))
+    thresholds = sorted(severity_summary["threshold_g"].unique())
+    x = np.arange(len(treatments))
+    width = 0.8 / len(thresholds)
+    colours = [_PALETTE[0], _PALETTE[2], _PALETTE[1]]
+    for j, g in enumerate(thresholds):
+        rows = (severity_summary[severity_summary["threshold_g"] == g]
+                .set_index("treatment").reindex(treatments))
+        rate = rows["rate"].values * 100
+        err = [rate - rows["ci_lo"].values * 100, rows["ci_hi"].values * 100 - rate]
+        severe = bool(rows["severe"].iloc[0])
+        label = f"> {g} g" + (" (severe)" if severe else "")
+        pos = x + (j - (len(thresholds) - 1) / 2) * width
+        ax.bar(pos, rate, width=width * 0.95, color=colours[j % len(colours)],
+               edgecolor=fg, linewidth=1.4 if severe else 0.6,
+               hatch="//" if severe else None, alpha=0.9, label=label)
+        ax.errorbar(pos, rate, yerr=err, fmt="none", ecolor=fg,
+                    capsize=3, linewidth=1)
+    ax.set_xticks(x)
+    ax.set_xticklabels(treatments, rotation=30, ha="right", fontsize=8)
+    ax.set_ylim(0, 105)
+    style_legend(ax.legend(fontsize=7, loc="upper right"), dark)
     style_axes(fig, ax, dark)
     fig.tight_layout()
 
@@ -186,6 +239,15 @@ def render_figures(state, out_dir, formats=("png",), dpi=300):
         p = out_dir / f"predicted_strike_rate.{fmt}"
         fig.savefig(p, dpi=dpi, bbox_inches="tight")
         out["predicted_strike_rate"].append(p)
+
+    if getattr(state, "severity_summary", None) is not None:
+        fig_sev = Figure(figsize=(6.0, 4.2), dpi=100)
+        draw_severity(fig_sev, state.severity_summary)
+        out["strike_severity"] = []
+        for fmt in formats:
+            p = out_dir / f"strike_severity.{fmt}"
+            fig_sev.savefig(p, dpi=dpi, bbox_inches="tight")
+            out["strike_severity"].append(p)
 
     if state.class_names and state.run_meta.get("mode") == "multiclass":
         fig2 = Figure(figsize=(6.0, 4.2), dpi=100)

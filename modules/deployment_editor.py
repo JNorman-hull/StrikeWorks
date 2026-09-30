@@ -52,7 +52,7 @@ from . import raw_layout, sensor_config, settings
 from .cards import MetaCard
 from .layout import scroll_area, Section
 from .tables import style_table
-from .theme import ACCENT, MUTED, OK, WARN, muted_label
+from .theme import muted_label, style
 
 NEW_DEPLOYMENT = "__new__"
 _TMP_SUFFIX = ".__renaming__"
@@ -210,20 +210,20 @@ class DeploymentEditor(QWidget):
         self.cmb_library.currentIndexChanged.connect(self._on_library_combo_changed)
         libv.addWidget(self.cmb_library)
         self.lbl_library_path = QLabel("No library selected.")
-        self.lbl_library_path.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_library_path, role="muted")
         self.lbl_library_path.setWordWrap(True)
         libv.addWidget(self.lbl_library_path)
         lib_actions = QHBoxLayout()
         btn_new_library = QPushButton("New library")
         btn_new_library.setFlat(True)
-        btn_new_library.setStyleSheet(f"color:{ACCENT};text-align:left;")
+        style(btn_new_library, role="link")
         btn_new_library.clicked.connect(
             lambda: self._main.home_page._new_library(parent=self.window()))
         lib_actions.addWidget(btn_new_library)
         lib_actions.addStretch()
         btn_new_session = QPushButton("New session")
         btn_new_session.setFlat(True)
-        btn_new_session.setStyleSheet(f"color:{ACCENT};text-align:right;")
+        style(btn_new_session, role="link")
         btn_new_session.clicked.connect(
             lambda: self._main.home_page._new_session(parent=self.window()))
         lib_actions.addWidget(btn_new_session)
@@ -290,7 +290,7 @@ class DeploymentEditor(QWidget):
         add_row.addWidget(self.btn_add_treatment)
         add_row.addStretch()
         self.lbl_treatment_summary = QLabel("")
-        self.lbl_treatment_summary.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_treatment_summary, role="muted")
         add_row.addWidget(self.lbl_treatment_summary)
         rv.addLayout(add_row)
 
@@ -319,7 +319,7 @@ class DeploymentEditor(QWidget):
         self.lbl_hint.setWordWrap(True)
         rv.addWidget(self.lbl_hint)
         self.lbl_files_found = QLabel("")
-        self.lbl_files_found.setStyleSheet(f"color:{OK};")
+        style(self.lbl_files_found, tone="ok")
         rv.addWidget(self.lbl_files_found)
         # the Treatments box ends where the left column's last box does
         # (_match_treatments_height) instead of running on down the page
@@ -666,18 +666,18 @@ class DeploymentEditor(QWidget):
         self.btn_update.setEnabled(can_update)
 
         if problems and (dirty or self._loaded_ident is not None):
-            self._set_hint("• " + "<br>• ".join(problems), WARN)
+            self._set_hint("• " + "<br>• ".join(problems), "warn")
         elif renaming_onto or (self._loaded_ident is None and folder_exists):
             self._set_hint(f"A deployment folder called '{ident}' already "
                            "exists - pick it from the Deployment list to "
-                           "edit it.", WARN)
+                           "edit it.", "warn")
         elif dirty and self._loaded_ident is not None:
-            self._set_hint("Unsaved changes - press Update to save them.", WARN)
+            self._set_hint("Unsaved changes - press Update to save them.", "warn")
         elif self._loaded_ident is not None and not folder_exists:
             self._set_hint("Planned, but its folders haven't been built "
-                           "yet - Create & open data folder builds them.", MUTED)
+                           "yet - Create & open data folder builds them.", "muted")
         else:
-            self._set_hint("", MUTED)
+            self._set_hint("", "muted")
 
         values = self.treatment_table.all_values()
         n_runs = sum(int(v.get("runs", 1) or 1) for v in values)
@@ -685,9 +685,9 @@ class DeploymentEditor(QWidget):
             f"{len(values)} treatment(s), {n_runs} run(s)" if values else "")
         self.state_changed.emit()
 
-    def _set_hint(self, text, colour):
+    def _set_hint(self, text, tone):
         self.lbl_hint.setText(text)
-        self.lbl_hint.setStyleSheet(f"color:{colour};")
+        style(self.lbl_hint, tone=tone)
 
     def _refresh_files_found(self):
         """How many recordings the loaded deployment's folder holds (one

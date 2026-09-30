@@ -32,10 +32,19 @@ class ValidationRules(unittest.TestCase):
 
     def test_counter_counts_down(self):
         stems = ["a", "b", "c"]
+        # nothing flagged yet: out of every sensor, never "0 of 0"
+        none = vc.counts_text(stems, _status())
+        self.assertEqual(none.splitlines()[0], "Flagged for review: 0/3 sensors")
+        self.assertNotIn("Flagged sensors reviewed", none)
         before = vc.counts_text(stems, _status(auto="abc", flagged="ab"))
         after = vc.counts_text(stems, _status(auto="abc", user="a", flagged="ab"))
-        self.assertTrue(before.startswith("Flagged, to review: 2 of 2"))
-        self.assertTrue(after.startswith("Flagged, to review: 1 of 2"))
+        done = vc.counts_text(stems, _status(auto="abc", user="ab", flagged="ab"))
+        self.assertEqual(before.splitlines()[:2], [
+            "Flagged for review: 2/3 sensors", "Flagged sensors reviewed: 0/2"])
+        self.assertEqual(after.splitlines()[:2], [
+            "Flagged for review: 1/3 sensors", "Flagged sensors reviewed: 1/2"])
+        self.assertEqual(done.splitlines()[:2], [
+            "Flagged for review: 0/3 sensors", "Flagged sensors reviewed: 2/2"])
 
     def test_next_after_save(self):
         order = ["f1", "f2", "f3", "p1", "p2"]         # flagged first

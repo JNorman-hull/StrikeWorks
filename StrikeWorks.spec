@@ -35,6 +35,8 @@ datas = [
     # `datas` (which only ever reaches _internal/, never next to the
     # .exe) matches exactly how those lookups resolve.
     ("images", "images"),
+    # the app stylesheet (modules/theme.py fills in the active palette)
+    ("themes", "themes"),
     ("icon.ico", "."),
     # models/ and input_data/BSM_config/ are NOT listed here - both are
     # looked up via settings.app_root(), which resolves to

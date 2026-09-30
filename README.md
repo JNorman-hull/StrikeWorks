@@ -86,6 +86,18 @@ input_data and output_data folders), or `%APPDATA%\StrikeWorks\` when
 running from source. The `STRIKEWORKS_SETTINGS` environment variable
 overrides the location.
 
+### Themes
+
+Settings > Appearance chooses the theme, applied the next time the app
+starts: **StrikeWorks (dark)**, or **University of Hull** (the brand's
+Core, low-intensity look: white pages, Ink Blue sidebar, Chartreuse and
+Mid Blue accents, brand colours in charts; its brandmark in About and on
+Simple mode's welcome page). Every window is styled by one stylesheet,
+`themes/app.qss`, whose `@name` colours `modules/theme.py` fills from the
+active palette; widgets take a look with `theme.style(widget, role=...,
+tone=...)` rather than stylesheets of their own. A new theme is a new
+palette in `theme.THEMES`.
+
 ### Models
 
 Model training runs `modules/train_worker.py` in a subprocess: a binary
@@ -94,6 +106,16 @@ Deploy writes `binary<v>.joblib`, `multiclass<v>.joblib` and a
 `BladeStrikeModel_v<v>/` package into the models folder (Settings), where
 Model prediction finds them. Prediction runs `modules/predict_worker.py` in
 a subprocess, so the model stack never loads into the GUI.
+
+Alongside the model's verdict, prediction measures **strike severity**:
+each recording's peak high-g acceleration magnitude (`higacc_mag_g`) over
+its window, counted over 95, 200 and 400 g. Only a peak over 400 g is a
+severe strike - the model flags contacts of any size, so severity shows
+how many of its strikes were hard hits. It appears in the Predict results
+(cards, treatment table, figure), Inspect (per recording, with severe and
+"strike, ≤ 400 g" filters), Simple mode and the reports
+(`severity_summary.csv`; `hig_peak_g`, `severity`, `severe_strike` in
+`predictions.csv`). The thresholds are in `modules/severity.py`.
 
 ### Demos
 

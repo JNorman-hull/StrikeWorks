@@ -35,7 +35,7 @@ from . import validation_core as vc
 from .inventory_widgets import FileInventory
 from .library_widgets import LibrarySelector
 from .layout import Section, when_visible
-from .theme import BAD, INFO, MUTED, OK, WARN
+from .theme import style
 
 class StatCard(QFrame):
     """Small themed summary tile."""
@@ -43,31 +43,28 @@ class StatCard(QFrame):
     def __init__(self, title, parent=None):
         super().__init__(parent)
         self.setObjectName("statCard")
-        self.setStyleSheet(
-            "#statCard{background-color:rgb(33,37,43);border-radius:5px;}")
         v = QVBoxLayout(self)
         v.setContentsMargins(12, 8, 12, 8)
         v.setSpacing(2)
         # title and detail at the standard text size; the value bolder and
         # a few points larger
         self._title = QLabel(title)
-        self._title.setStyleSheet(f"color:{MUTED};")
+        style(self._title, role="muted")
         self._value = QLabel("-")
         f = QFont(self._title.font())
         f.setPointSize(max(f.pointSize(), 9) + 5)
         f.setBold(True)
         self._value.setFont(f)
-        self._value.setStyleSheet("color:rgb(221,221,221);")
         self._detail = QLabel("")
-        self._detail.setStyleSheet(f"color:{MUTED};")
+        style(self._detail, role="muted")
         self._detail.setWordWrap(True)
         v.addWidget(self._title)
         v.addWidget(self._value)
         v.addWidget(self._detail)
 
-    def set(self, value, detail="", colour=None):
+    def set(self, value, detail="", tone=None):
         self._value.setText(str(value))
-        self._value.setStyleSheet(f"color:{colour or 'rgb(221,221,221)'};")
+        style(self._value, tone=tone)
         self._detail.setText(detail)
 
     def clear(self):
@@ -203,11 +200,11 @@ class ProcessPage(QObject):
             return
         n_complete = sum(1 for f in files if f["complete"])
         self.card_recordings.set(
-            n, f"{n_complete}/{n} complete", OK if n_complete == n else WARN)
+            n, f"{n_complete}/{n} complete", "ok" if n_complete == n else "warn")
         processed = [f["stem"] for f in files if f["processed"]]
         n_proc = len(processed)
         self.card_processed.set(f"{n_proc}/{n}", f"{n - n_proc} unprocessed",
-                                OK if n_proc == n else INFO)
+                                "ok" if n_proc == n else "info")
 
         index_df = di.read_index(self._root) if self._root else None
         status = vc.validation_status(index_df)
@@ -216,6 +213,6 @@ class ProcessPage(QObject):
             f"{c['auto']}/{n_proc}" if n_proc else "-",
             f"{c['flagged']} flagged, {c['flagged_reviewed']} reviewed, "
             f"{c['user']} user-validated",
-            OK if n_proc and c["auto"] == n_proc else INFO)
-        self.card_bad.set(c["bad"], "bad_sens = Y",
-                          BAD if c["bad"] else OK)
+            "ok" if n_proc and c["auto"] == n_proc else "info")
+        self.card_bad.set(c["bad"], "marked bad",
+                          "bad" if c["bad"] else "ok")

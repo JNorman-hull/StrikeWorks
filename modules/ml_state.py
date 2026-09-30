@@ -179,6 +179,7 @@ class PredictionState(QObject):
         self.predictions    = None      # per-recording DataFrame
         self.summary        = None      # treatment-level DataFrame
         self.region_summary = None
+        self.severity_summary = None    # treatment x HIG threshold (severity.py)
         self.run_meta       = {}
 
         # selection
@@ -600,6 +601,8 @@ class PredictionState(QObject):
         self.summary     = pd.read_csv(out_dir / "summary.csv")
         region = out_dir / "region_summary.csv"
         self.region_summary = pd.read_csv(region) if region.exists() else None
+        sev = out_dir / "severity_summary.csv"
+        self.severity_summary = pd.read_csv(sev) if sev.exists() else None
         meta = out_dir / "run_meta.json"
         try:
             with open(meta, encoding="utf-8") as f:

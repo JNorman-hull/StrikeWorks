@@ -31,7 +31,7 @@ from .cards import MetaCard, RingCard
 from .layout import (
     apply_section_defaults, hsplit, scroll_page, Section, when_visible,
 )
-from .theme import CARD_H2, CARD_W2, MUTED
+from .theme import CARD_H2, CARD_W2, style
 
 FIG_MIN_W, FIG_MIN_H = 300, 250
 
@@ -70,7 +70,7 @@ class EvaluateTab:
         # ── model source ────────────────────────────────────────────────────
         sel_row = QHBoxLayout()
         lab_sel = QLabel("Model")
-        lab_sel.setStyleSheet(f"color:{MUTED};")
+        style(lab_sel, role="muted")
         self.cmb_model = QComboBox()
         self.cmb_model.setSizePolicy(QSizePolicy.Policy.Expanding,
                                      QSizePolicy.Policy.Fixed)
@@ -89,7 +89,7 @@ class EvaluateTab:
         v.addLayout(sel_row)
 
         self.lbl_source = QLabel("")
-        self.lbl_source.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_source, role="muted")
         self.lbl_source.setWordWrap(True)
         v.addWidget(self.lbl_source)
 

@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
     QApplication, QFrame, QMainWindow, QPushButton, QTableWidget, QVBoxLayout,
 )
 
-from modules import settings, startup, table_copy, win_utils
+from modules import settings, startup, table_copy, theme, win_utils
 from modules.bsm_state import BSMState
 from modules.dev_console import DevConsole
 from modules.layout import when_visible
@@ -64,6 +64,7 @@ from modules.page_validate import ValidatePage
 from modules.plot_widgets import configure_pyqtgraph
 from modules.session_state import SessionState
 from modules.tables import style_table
+from modules.theme import set_flag
 from modules.ui_config import UIConfig
 from modules.ui_functions import UIFunctions
 from modules.ui_main import Ui_MainWindow
@@ -142,6 +143,8 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        # the theme's stylesheet, for every window the app opens
+        theme.apply(QApplication.instance())
         self.ui = ui = Ui_MainWindow()
         ui.setupUi(self)
         self.setWindowTitle("StrikeWorks")
@@ -311,8 +314,7 @@ class MainWindow(QMainWindow):
 
     # ── menu highlight and section panel ────────────────────────────────────
     def setSelected(self, btn):
-        clean = UIFunctions.deselectMenu(btn.styleSheet())
-        btn.setStyleSheet(UIFunctions.selectMenu(clean))
+        set_flag(btn, "selected", True)
 
     def _section_for_button(self, btn_name):
         for mode, (_label, names, _top) in self._PANEL_SECTIONS.items():
@@ -332,11 +334,9 @@ class MainWindow(QMainWindow):
     def _swap_panel_ownership(self, mode):
         """Switch the open panel to `mode`, moving the "owns the panel"
         highlight to the new section's button without closing it."""
-        color = UIConfig.BTN_LEFT_BOX_COLOR
-        old_btn = self._panel_btn
-        old_btn.setStyleSheet(old_btn.styleSheet().replace(color, ''))
+        set_flag(self._panel_btn, "boxOwner", False)
         self._configure_panel(mode)
-        self._panel_btn.setStyleSheet(self._panel_btn.styleSheet() + color)
+        set_flag(self._panel_btn, "boxOwner", True)
 
     def openPanel(self, mode):
         if self.ui.extraLeftBox.width() > 0 and self._panel_mode != mode:

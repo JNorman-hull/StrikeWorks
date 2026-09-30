@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
 
 from . import ml_report, report_center
 from .layout import apply_section_defaults, Section
-from .theme import ACCENT_BUTTON, MUTED, muted_label
+from .theme import muted_label, style
 
 # (key, title) in the order report_center.all_sections() builds them
 _SECTION_TITLES = [
@@ -138,7 +138,7 @@ class ReportDialog(QDialog):
         self.btn_preview = QPushButton("Preview report")
         self.btn_preview.clicked.connect(self._preview_report)
         self.btn_export_full = QPushButton("Export full report")
-        self.btn_export_full.setStyleSheet(ACCENT_BUTTON)
+        style(self.btn_export_full, role="primary")
         self.btn_export_full.clicked.connect(self._export_full_report)
         self.btn_export_all = QPushButton("Export all")
         self.btn_export_all.clicked.connect(self._export_all)
@@ -154,7 +154,7 @@ class ReportDialog(QDialog):
 
         self.lbl_status = QLabel("")
         self.lbl_status.setWordWrap(True)
-        self.lbl_status.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_status, role="muted")
         v.addWidget(self.lbl_status)
         v.addStretch()
 

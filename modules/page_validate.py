@@ -28,7 +28,9 @@ from . import sensor_config
 from . import raw_layout
 from .cards import Spinner
 from .layout import when_visible
-from .theme import MUTED, OK, TEXT
+from .theme import (
+    NADIR, OK, REGION_EDGE, REGION_FILL, TEXT, TRACE, TRACE2, style,
+)
 from .plot_widgets import (
     CHANNEL_ORDER, CHANNELS, MAX_RIGHT_PTS, CsvLoadThread, NavViewBox,
     decimate, find_col,
@@ -122,7 +124,7 @@ class ValidatePage(QObject):
         # nadir InfiniteLine - yellow, draggable
         self._nadir_line = pg.InfiniteLine(
             angle=90, movable=True,
-            pen=pg.mkPen(color=(255, 220, 0), width=3),
+            pen=pg.mkPen(color=NADIR, width=3),
             label="Nadir",
             labelOpts={"position": 0.92, "color": (180, 150, 0)},
         )
@@ -131,8 +133,8 @@ class ValidatePage(QObject):
         # window region - translucent blue, not resizable by user
         self._region = pg.LinearRegionItem(
             movable=False,
-            brush=pg.mkBrush(0, 100, 255, 40),
-            pen=pg.mkPen(0, 100, 255, 80),
+            brush=pg.mkBrush(*REGION_FILL),
+            pen=pg.mkPen(*REGION_EDGE),
         )
         pi.addItem(self._region)
         pi.addItem(self._nadir_line)
@@ -151,7 +153,7 @@ class ValidatePage(QObject):
         u.tree_val_library.setVisible(False)
         u.btn_val_change_libraries.setVisible(False)
         self.lbl_library = QLabel("No library selected.")
-        self.lbl_library.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_library, role="muted")
         self.lbl_library.setWordWrap(True)
         u.grp_val_library.layout().insertWidget(0, self.lbl_library)
 
@@ -417,7 +419,7 @@ class ValidatePage(QObject):
         y = self._channel(self._left_key)
         if y is not None:
             self._curve = self._pw.plot(self._time, y,
-                                        pen=pg.mkPen("#dddddd", width=1))
+                                        pen=pg.mkPen(TRACE, width=1))
             self._curve.setDownsampling(auto=True, method="peak")
             self._curve.setClipToView(True)
         pi.setLabel("left", CHANNELS[self._left_key][1])
@@ -437,7 +439,7 @@ class ValidatePage(QObject):
         set_right_axis_active(pi, True)
         pi.setLabel("right", CHANNELS[self._right_key][1])
         self._right_curve = pg.PlotCurveItem(
-            pen=pg.mkPen("#ff5555", width=1))
+            pen=pg.mkPen(TRACE2, width=1))
         self._vb2.addItem(self._right_curve)
         self._update_right_data()
         self._sync_vb2()

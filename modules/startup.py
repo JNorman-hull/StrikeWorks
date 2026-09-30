@@ -10,9 +10,10 @@ default data folders and the Windows taskbar identity.
 import platform
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
-from PySide6.QtWidgets import QSplashScreen
+from PySide6.QtSvg import QSvgRenderer
+from PySide6.QtWidgets import QLabel, QSplashScreen
 
 from . import settings
 from .theme import CARD_BG, MUTED, TEXT
@@ -22,6 +23,9 @@ from .theme import CARD_BG, MUTED, TEXT
 # sit in _internal/)
 ICON_PATH = Path(__file__).parent.parent / "icon.ico"
 _LOGO_PATH = Path(__file__).parent.parent / "images" / "images" / "PyDracula_vertical.png"
+# the University's Primary Brandmark, Ink Blue (positive) version: for white
+# or light backgrounds only, never recoloured, at least 60 px wide
+BRANDMARK_PATH = Path(__file__).parent.parent / "images" / "images" / "uoh_brandmark.svg"
 
 
 def build_splash():
@@ -64,6 +68,25 @@ def build_splash():
         int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom),
         QColor(MUTED))
     return splash
+
+
+def brandmark(width=120):
+    """A QLabel showing the University brandmark `width` px wide (60 px
+    at least), or None if the file is missing."""
+    renderer = QSvgRenderer(str(BRANDMARK_PATH))
+    if not renderer.isValid():
+        return None
+    width = max(60, width)
+    size = renderer.defaultSize()
+    pix = QPixmap(QSize(width, round(width * size.height() / size.width())))
+    pix.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pix)
+    renderer.render(painter)
+    painter.end()
+    label = QLabel()
+    label.setPixmap(pix)
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    return label
 
 
 def ensure_default_folders():

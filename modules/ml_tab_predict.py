@@ -22,20 +22,16 @@ from PySide6.QtCore import Qt, QElapsedTimer, QTimer
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout,
     QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton, QSizePolicy,
-    QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout,
-    QWidget,
+    QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
-from . import bsm_figures, ml_figures, settings
+from . import bsm_figures, ml_figures, settings, severity
 from .bsm_model import (
     default_vcrit, recompute_mortality, recompute_mortality_at_vcrit,
 )
 from .cards import MetaCard, RingCard, Spinner
 from .layout import apply_section_defaults, hsplit, scroll_page, Section
-from .theme import (
-    ACCENT, BAD, CARD_H2, CARD_W2, MUTED, OK, PALETTE, PINK, TEXT, WARN,
-    muted_label,
-)
+from .theme import CARD_H2, CARD_W2, PALETTE, PINK, muted_label, style
 
 FIG_MIN_W, FIG_MIN_H = 320, 300
 _VCRIT_MIN, _VCRIT_MAX, _VCRIT_STEP = 2.0, 10.0, 0.25
@@ -87,7 +83,10 @@ class PredictTab:
         self.canvas_mc = FigureCanvas(self.fig_mc)
         self.fig_vcrit = Figure(figsize=(4.3, 3.4), dpi=100)
         self.canvas_vcrit = FigureCanvas(self.fig_vcrit)
-        for c in (self.canvas_bin, self.canvas_mc, self.canvas_vcrit):
+        self.fig_sev = Figure(figsize=(4.3, 3.4), dpi=100)
+        self.canvas_sev = FigureCanvas(self.fig_sev)
+        for c in (self.canvas_bin, self.canvas_sev, self.canvas_mc,
+                  self.canvas_vcrit):
             c.setMinimumSize(FIG_MIN_W, FIG_MIN_H)
             c.setSizePolicy(QSizePolicy.Policy.Expanding,
                             QSizePolicy.Policy.Expanding)
@@ -122,6 +121,7 @@ class PredictTab:
         tabs.addTab(tab2, "Results")
 
         ml_figures.draw_strike_rate(self.fig_bin, None, dark=True)
+        ml_figures.draw_severity(self.fig_sev, None, dark=True)
         ml_figures.draw_region(self.fig_mc, None, [], dark=True)
 
         apply_section_defaults(frame)
@@ -149,13 +149,13 @@ class PredictTab:
 
         sel_row = QHBoxLayout()
         lab_bin_sel = QLabel("Binary")
-        lab_bin_sel.setStyleSheet(f"color:{MUTED};")
+        style(lab_bin_sel, role="muted")
         self.cmb_bin_model = QComboBox()
         self.cmb_bin_model.currentIndexChanged.connect(self._on_bin_model_picked)
         sel_row.addWidget(lab_bin_sel)
         sel_row.addWidget(self.cmb_bin_model, stretch=1)
         lab_mc_sel = QLabel("Multiclass")
-        lab_mc_sel.setStyleSheet(f"color:{MUTED};")
+        style(lab_mc_sel, role="muted")
         self.cmb_mc_model = QComboBox()
         self.cmb_mc_model.currentIndexChanged.connect(self._on_mc_model_picked)
         sel_row.addWidget(lab_mc_sel)
@@ -166,7 +166,7 @@ class PredictTab:
         self.btn_models = QPushButton("Change models folder…")
         self.btn_models.clicked.connect(self._change_models_folder)
         self.lbl_models_dir = QLabel("")
-        self.lbl_models_dir.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_models_dir, role="muted")
         self.lbl_models_dir.setWordWrap(True)
         mdl_btn_row.addWidget(self.btn_models)
         mdl_btn_row.addWidget(self.lbl_models_dir, stretch=1)
@@ -193,7 +193,7 @@ class PredictTab:
 
         mode_row = QHBoxLayout()
         lab_mode = QLabel("Model mode")
-        lab_mode.setStyleSheet(f"color:{MUTED};")
+        style(lab_mode, role="muted")
         self.cmb_mode = QComboBox()
         self.cmb_mode.currentIndexChanged.connect(self._on_mode_changed)
         mode_row.addWidget(lab_mode)
@@ -201,7 +201,7 @@ class PredictTab:
         gv.addLayout(mode_row)
 
         self.lbl_thresh = QLabel("Decision threshold: -")
-        self.lbl_thresh.setStyleSheet(f"color:{TEXT};")
+        style(self.lbl_thresh)
         gv.addWidget(self.lbl_thresh)
 
         th_row = QHBoxLayout()
@@ -220,7 +220,7 @@ class PredictTab:
 
         self.lbl_override_note = QLabel(
             "⚠ You are overriding the deployed model threshold.")
-        self.lbl_override_note.setStyleSheet(f"color:{WARN};")
+        style(self.lbl_override_note, tone="warn")
         self.lbl_override_note.setVisible(False)
         gv.addWidget(self.lbl_override_note)
 
@@ -250,7 +250,7 @@ class PredictTab:
         mort_row.addStretch()
         gv.addLayout(mort_row)
         self.lbl_mortality = QLabel("")
-        self.lbl_mortality.setStyleSheet(f"color:{TEXT};font-weight:bold;")
+        style(self.lbl_mortality, role="strong")
         self.lbl_mortality.setWordWrap(True)
         gv.addWidget(self.lbl_mortality)
 
@@ -272,7 +272,7 @@ class PredictTab:
 
         self.lbl_run_status = QLabel("")
         self.lbl_run_status.setWordWrap(True)
-        self.lbl_run_status.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_run_status, role="muted")
         self.lbl_run_status.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
         rv.addWidget(self.lbl_run_status)
@@ -300,9 +300,20 @@ class PredictTab:
         self.card_rate       = RingCard("Strike rate", w=170)
         self.card_conf       = RingCard("Mean confidence", w=170)
         self.card_regions    = RingCard("Strike classes", w=170)
+        # measured severity (HIG peak) beside the model's verdict
+        self.card_severity   = MetaCard("Severity (HIG peak)")
+        self.card_severe     = RingCard("Severe strikes (> 400 g)", w=170)
+        self.card_severity.setToolTip(
+            "Each recording's peak high-g acceleration: at or below 95 g, "
+            "95-200 g, 200-400 g, or over 400 g - only over 400 g is a "
+            "severe strike. Measured, not predicted: the model flags "
+            "contacts of any size.")
+        self.card_severe.setToolTip(
+            "Share of recordings whose HIG peak passed 400 g.")
         for i, c in enumerate((self.card_recordings, self.card_strikes,
                                self.card_rate, self.card_conf,
-                               self.card_regions)):
+                               self.card_regions, self.card_severity,
+                               self.card_severe)):
             grid.addWidget(c, i // 3, i % 3)
         sv.addLayout(grid)
         sv.addStretch()
@@ -327,13 +338,14 @@ class PredictTab:
         # ── row 5: figures ──────────────────────────────────────────────────
         grp_figs = Section("Prediction figures")
         fv = QVBoxLayout(grp_figs)
-        figs_split = QSplitter(Qt.Orientation.Horizontal)
-        figs_split.setChildrenCollapsible(False)
-        figs_split.addWidget(self.canvas_bin)
-        figs_split.addWidget(self.canvas_mc)
-        figs_split.addWidget(self.canvas_vcrit)
-        figs_split.setSizes([1000, 1000, 1000])
-        fv.addWidget(figs_split)
+        # two rows: the model's strike rate and the measured severity, then
+        # strike location and mortality
+        figs = QGridLayout()
+        figs.setSpacing(8)
+        for i, canvas in enumerate((self.canvas_bin, self.canvas_sev,
+                                    self.canvas_mc, self.canvas_vcrit)):
+            figs.addWidget(canvas, i // 2, i % 2)
+        fv.addLayout(figs)
         v.addWidget(grp_figs)
 
         v.addStretch()
@@ -572,7 +584,7 @@ class PredictTab:
         self.spinner.start()
         self._elapsed.start()
         self._tick.start()
-        self.lbl_run_status.setStyleSheet(f"color:{ACCENT};")
+        style(self.lbl_run_status, tone="accent")
         self.lbl_run_status.setText(f"Predicting {n} recordings…")
 
     def _update_elapsed(self):
@@ -595,12 +607,15 @@ class PredictTab:
         k = meta.get("n_strike", 0)
         rate = meta.get("strike_rate", 0.0) * 100
         secs = self._elapsed.elapsed() / 1000
-        self.lbl_run_status.setStyleSheet(f"color:{OK};")
+        style(self.lbl_run_status, tone="ok")
+        severity_ = meta.get("severity") or {}
+        severe_line = (f"\n{severity_['n_severe']} severe (HIG peak > "
+                       f"{severity_['severe_g']} g)" if severity_ else "")
         self.lbl_run_status.setText(
             f"Prediction complete ({secs:.1f} s)\n"
             f"{n} recordings processed\n"
             f"{k} strikes detected\n"
-            f"{rate:.1f}% predicted strike rate")
+            f"{rate:.1f}% predicted strike rate" + severe_line)
 
         # low-confidence shortcut into Inspect
         if s.predictions is not None and "confidence" in s.predictions.columns:
@@ -617,6 +632,9 @@ class PredictTab:
         self._populate_table()
         ml_figures.draw_strike_rate(self.fig_bin, s.summary, dark=True)
         self.canvas_bin.draw()
+        ml_figures.draw_severity(self.fig_sev, s.severity_summary, dark=True,
+                                 measured=severity.available(s.summary))
+        self.canvas_sev.draw()
         mc_run = s.run_meta.get("mode") == "multiclass"
         ml_figures.draw_region(self.fig_mc, s.summary,
                                s.class_names if mc_run else [], dark=True)
@@ -627,7 +645,7 @@ class PredictTab:
 
     def _on_run_failed(self, msg):
         self._stop_run_ui()
-        self.lbl_run_status.setStyleSheet(f"color:{BAD};")
+        style(self.lbl_run_status, tone="bad")
         msg = msg.strip() or "Unknown error"
         if msg.startswith("Prediction is not ready"):
             # a pre-flight compatibility failure - short, already itemised
@@ -651,8 +669,9 @@ class PredictTab:
         df = s.summary
         if df is None or not len(df):
             for c in (self.card_recordings, self.card_strikes, self.card_rate,
-                      self.card_conf, self.card_regions):
+                      self.card_conf, self.card_regions, self.card_severe):
                 c.clear()
+            self.card_severity.set_rows([])
             return
 
         n_total  = int(df["n"].sum())
@@ -687,6 +706,15 @@ class PredictTab:
         else:
             self.card_regions.clear()
 
+        measured = severity.available(df)
+        self.card_severity.setVisible(measured)
+        self.card_severe.setVisible(measured)
+        if measured:
+            self.card_severity.set_rows(severity.band_rows(s.predictions))
+            n_severe = int(df[f"n_over_{severity.SEVERE_G}g"].sum())
+            share = n_severe / n_total if n_total else 0.0
+            self.card_severe.set_value(share, f"{share * 100:.1f}%")
+
     # ── results table ────────────────────────────────────────────────────────
     def _populate_table(self):
         s = self.state
@@ -696,9 +724,11 @@ class PredictTab:
                                         and all(f"n_{cn}" in df.columns
                                                 for cn in s.class_names)) else []
 
+        measured = severity.available(df)
         headers = (["Treatment", "N", "Strikes", "No strike", "Strike rate",
                     "95% CI", "Mean prob", "Mean conf"]
-                   + list(class_names))
+                   + list(class_names)
+                   + (severity.TABLE_HEADERS if measured else []))
 
         self.tbl.setSortingEnabled(False)
         self.tbl.clear()
@@ -726,6 +756,11 @@ class PredictTab:
                 nc = int(r[f"n_{cn}"])
                 pct = nc / n_strike * 100 if n_strike else 0
                 items.append(_NumItem(f"{nc} ({pct:.0f}%)", nc))
+            if measured:
+                sort_keys = [int(r[f"n_over_{g}g"]) for g in severity.THRESHOLDS_G]
+                sort_keys += [float(r["severe_ci_lo"]), int(r["n_strike_severe"])]
+                items += [_NumItem(text, key) for text, key in
+                          zip(severity.table_values(r), sort_keys)]
 
             for col, item in enumerate(items):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)

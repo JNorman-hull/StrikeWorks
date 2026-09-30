@@ -15,18 +15,16 @@ themselves are the ones each project asks users to cite.
 import platform
 import sys
 from importlib import metadata
-from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
 from .layout import centred, scroll_area
-from .theme import ACCENT, BORDER, CARD_BG, MUTED, TEXT
+from .startup import brandmark
+from .theme import ACCENT, MUTED, style
 
-_IMAGES_DIR = Path(__file__).parent.parent / "images" / "images"
 _COLUMN_WIDTH = 760
 PYDRACULA_URL = "https://github.com/Wanderson-Magalhaes/Modern_GUI_PyDracula_PySide6_or_PyQt6"
 
@@ -123,28 +121,23 @@ class AboutDialog(QDialog):
 
         centre = Qt.AlignmentFlag.AlignHCenter
         title = QLabel("StrikeWorks")
-        title.setStyleSheet("font-size:22px;font-weight:bold;")
+        style(title, role="app-title")
         title.setAlignment(centre)
         v.addWidget(title)
         desc = QLabel(DESCRIPTION)
         desc.setWordWrap(True)
-        desc.setStyleSheet("font-size:13px;")
+        style(desc, role="lead")
         desc.setAlignment(centre)
         v.addWidget(desc)
 
-        # the logo is black on white - it keeps its own white panel rather
-        # than being recoloured for the dark theme
-        logo_path = _IMAGES_DIR / "UOH_logo.png"
-        pix = QPixmap(str(logo_path)) if logo_path.exists() else QPixmap()
-        if not pix.isNull():
+        # the Ink Blue brandmark belongs on white, so it keeps its own white
+        # panel in the dark theme (the brand forbids recolouring it)
+        logo = brandmark(110)
+        if logo is not None:
             panel = QFrame()
             panel.setObjectName("uohPanel")
-            panel.setStyleSheet("#uohPanel{background:#ffffff;border-radius:6px;}")
             pv = QHBoxLayout(panel)
-            pv.setContentsMargins(12, 8, 12, 8)
-            logo = QLabel()
-            logo.setPixmap(pix.scaledToWidth(
-                240, Qt.TransformationMode.SmoothTransformation))
+            pv.setContentsMargins(16, 12, 16, 12)
             pv.addWidget(logo)
             row = QHBoxLayout()
             row.addStretch()
@@ -152,7 +145,7 @@ class AboutDialog(QDialog):
             row.addStretch()
             v.addLayout(row)
         copyright_ = QLabel("Copyright © University of Hull (2026)")
-        copyright_.setStyleSheet("font-weight:bold;")
+        style(copyright_, role="strong")
         copyright_.setAlignment(centre)
         v.addWidget(copyright_)
 
@@ -197,8 +190,7 @@ class AboutDialog(QDialog):
     @staticmethod
     def _heading(text):
         lab = QLabel(text)
-        lab.setStyleSheet("font-size:14px;font-weight:bold;"
-                          f"border-bottom:1px solid {BORDER};padding-bottom:3px;")
+        style(lab, role="section-title")
         lab.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         return lab
 
@@ -211,6 +203,5 @@ class AboutDialog(QDialog):
         lab.setTextFormat(Qt.TextFormat.RichText)
         lab.setOpenExternalLinks(True)
         lab.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
-        lab.setStyleSheet(f"color:{TEXT};background:{CARD_BG};border:1px solid "
-                          f"{BORDER};border-radius:5px;padding:8px;")
+        style(lab, role="panel")
         return lab

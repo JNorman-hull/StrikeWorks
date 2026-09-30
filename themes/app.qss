@@ -1,0 +1,400 @@
+/* StrikeWorks - the one app stylesheet. modules/theme.py fills in every
+   @-name from the active theme's palette and applies it to the whole app.
+   Widgets pick up a look by role or tone (theme.style()); the sidebar and
+   section-panel highlights are the "selected" and "boxOwner" properties. */
+
+QWidget {
+	color: @text;
+	font: 10pt "Segoe UI";
+}
+
+/* Tooltip */
+QToolTip {
+	color: @tooltip_text;
+	background-color: @tooltip_bg;
+	background-image: none;
+	border: none;
+	border-left: 2px solid @highlight;
+	text-align: left;
+	padding-left: 8px;
+	margin: 0px;
+}
+
+/* Dialogs and other top-level windows */
+QDialog { background-color: @bg; }
+
+/* ////////////////////////////////////////////////////////////////////
+   Main window */
+#bgApp {
+	background-color: @bg;
+	border: 1px solid @border;
+}
+
+/* Left menu */
+#leftMenuBg { background-color: @sidebar; }
+#leftMenuBg QWidget, #extraLeftBox QWidget, #contentTopBg QWidget, #bottomBar QWidget { color: @sidebar_text; }
+#topLogo {
+	background-color: @sidebar;
+	background-image: url(:/images/images/images/PyDracula.png);
+	background-position: centered;
+	background-repeat: no-repeat;
+}
+#titleLeftApp { font: 63 12pt "Segoe UI Semibold"; }
+#titleLeftDescription { font: 8pt "Segoe UI"; color: @sidebar_caption; }
+
+#topMenu .QPushButton, #bottomMenu .QPushButton, #extraTopMenu .QPushButton, #contentSettings .QPushButton {
+	background-position: left center;
+	background-repeat: no-repeat;
+	border: none;
+	border-left: 22px solid transparent;
+	background-color: transparent;
+	text-align: left;
+	padding-left: 44px;
+}
+#bottomMenu .QPushButton { border-left: 20px solid transparent; }
+#topMenu .QPushButton:hover, #bottomMenu .QPushButton:hover,
+#extraTopMenu .QPushButton:hover, #contentSettings .QPushButton:hover {
+	background-color: @sidebar_hover;
+}
+#topMenu .QPushButton:pressed, #bottomMenu .QPushButton:pressed,
+#extraTopMenu .QPushButton:pressed, #contentSettings .QPushButton:pressed {
+	background-color: @accent;
+	color: @on_accent;
+}
+/* the active page's menu entry */
+#topMenu .QPushButton[selected="true"], #bottomMenu .QPushButton[selected="true"],
+#extraTopMenu .QPushButton[selected="true"] {
+	border-left: 22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 @highlight, stop:0.5 rgba(85, 170, 255, 0));
+	background-color: @sidebar_selected;
+}
+/* the section button whose panel is open */
+#topMenu .QPushButton[boxOwner="true"] { background-color: @sidebar_panel; }
+#settingsTopBtn[boxOwner="true"] { background-color: @highlight; }
+#leftMenuFrame { border-top: 3px solid @sidebar_line; }
+
+/* Toggle button */
+#toggleButton {
+	background-position: left center;
+	background-repeat: no-repeat;
+	border: none;
+	border-left: 20px solid transparent;
+	background-color: @sidebar_toggle;
+	text-align: left;
+	padding-left: 44px;
+	color: @sidebar_subtle;
+}
+#toggleButton:hover { background-color: @sidebar_hover; }
+#toggleButton:pressed { background-color: @accent; }
+
+#titleRightInfo { padding-left: 10px; }
+
+/* Section panel */
+#extraLeftBox { background-color: @sidebar_panel; }
+#extraTopBg { background-color: @accent; }
+#extraIcon {
+	background-position: center;
+	background-repeat: no-repeat;
+	background-image: url(:/icons/images/icons/icon_settings.png);
+}
+#extraLabel { color: @on_accent; }
+#extraCloseColumnBtn { background-color: rgba(255, 255, 255, 0); border: none; border-radius: 5px; }
+#extraCloseColumnBtn:hover { background-color: @accent_hover; border-style: solid; border-radius: 4px; }
+#extraCloseColumnBtn:pressed { background-color: @accent_pressed; border-style: solid; border-radius: 4px; }
+#extraContent { border-top: 3px solid @sidebar_line; }
+
+/* Title bar and content */
+#contentTopBg { background-color: @titlebar; }
+#contentBottom { border-top: 3px solid @border; }
+#rightButtons .QPushButton { background-color: rgba(255, 255, 255, 0); border: none; border-radius: 5px; }
+#rightButtons .QPushButton:hover { background-color: @titlebar_hover; border-style: solid; border-radius: 4px; }
+#rightButtons .QPushButton:pressed { background-color: @titlebar_pressed; border-style: solid; border-radius: 4px; }
+
+/* Settings panel (right) */
+#extraRightBox { background-color: @sidebar_panel; }
+#themeSettingsTopDetail { background-color: @accent; }
+
+/* Bottom bar */
+#bottomBar { background-color: @statusbar; }
+#bottomBar QLabel { font-size: 11px; color: @sidebar_subtle; padding-left: 10px; padding-right: 10px; padding-bottom: 2px; }
+
+/* ////////////////////////////////////////////////////////////////////
+   Tables (every table is a card - tables.style_table) */
+QTableWidget {
+	background-color: @card;
+	border: 1px solid @border;
+	border-radius: 5px;
+	padding: 10px;
+	gridline-color: @grid;
+}
+QTableWidget::item {
+	border-color: @grid;
+	padding-left: 5px;
+	padding-right: 5px;
+	gridline-color: @grid;
+}
+QTableWidget::item:selected { background-color: @selection; color: @on_selection; }
+QHeaderView::section {
+	background-color: @header;
+	color: @header_text;
+	max-width: 30px;
+	border: none;
+	border-bottom: 1px solid @grid;
+	border-right: 1px solid @grid;
+}
+QTableWidget::horizontalHeader { background-color: @header; }
+QHeaderView::section:horizontal {
+	border: 1px solid @header;
+	background-color: @header;
+	padding: 3px;
+	border-top-left-radius: 7px;
+	border-top-right-radius: 7px;
+}
+QHeaderView::section:vertical { border: 1px solid @grid; }
+QTableCornerButton::section { background-color: @header; border: none; }
+
+/* Lists and trees */
+QListWidget, QListView, QTreeWidget, QTreeView {
+	background-color: @field;
+	border: 1px solid @border;
+	border-radius: 5px;
+}
+QListWidget::item:selected, QListView::item:selected,
+QTreeWidget::item:selected, QTreeView::item:selected {
+	background-color: @selection;
+	color: @on_selection;
+}
+
+/* ////////////////////////////////////////////////////////////////////
+   Inputs */
+QLineEdit {
+	background-color: @input;
+	border-radius: 5px;
+	border: 2px solid @input_border;
+	padding-left: 10px;
+	selection-color: @on_highlight;
+	selection-background-color: @highlight;
+}
+QLineEdit:hover { border: 2px solid @input_hover; }
+QLineEdit:focus { border: 2px solid @input_focus; }
+
+QPlainTextEdit {
+	background-color: @field;
+	border-radius: 5px;
+	padding: 10px;
+	selection-color: @on_highlight;
+	selection-background-color: @highlight;
+}
+QPlainTextEdit QScrollBar:vertical { width: 8px; }
+QPlainTextEdit QScrollBar:horizontal { height: 8px; }
+QPlainTextEdit:hover { border: 2px solid @input_hover; }
+QPlainTextEdit:focus { border: 2px solid @input_focus; }
+
+QComboBox {
+	background-color: @field;
+	border-radius: 5px;
+	border: 2px solid @input_border;
+	padding: 5px;
+	padding-left: 10px;
+}
+QComboBox:hover { border: 2px solid @input_hover; }
+QComboBox::drop-down {
+	subcontrol-origin: padding;
+	subcontrol-position: top right;
+	width: 25px;
+	border-left-width: 3px;
+	border-left-color: @combo_divider;
+	border-left-style: solid;
+	border-top-right-radius: 3px;
+	border-bottom-right-radius: 3px;
+	background-color: @combo_button;
+	background-image: url(:/icons/images/icons/cil-arrow-bottom.png);
+	background-position: center;
+	background-repeat: no-repeat;
+}
+QComboBox QAbstractItemView {
+	color: @popup_text;
+	background-color: @popup;
+	padding: 10px;
+	selection-background-color: @popup_selection;
+}
+
+/* ////////////////////////////////////////////////////////////////////
+   Scroll bars */
+QScrollBar:horizontal {
+	border: none;
+	background: @track;
+	height: 8px;
+	margin: 0px 21px 0 21px;
+	border-radius: 0px;
+}
+QScrollBar::handle:horizontal { background: @handle; min-width: 25px; border-radius: 4px; }
+QScrollBar::add-line:horizontal {
+	border: none;
+	background: @track_end;
+	width: 20px;
+	border-top-right-radius: 4px;
+	border-bottom-right-radius: 4px;
+	subcontrol-position: right;
+	subcontrol-origin: margin;
+}
+QScrollBar::sub-line:horizontal {
+	border: none;
+	background: @track_end;
+	width: 20px;
+	border-top-left-radius: 4px;
+	border-bottom-left-radius: 4px;
+	subcontrol-position: left;
+	subcontrol-origin: margin;
+}
+QScrollBar::up-arrow:horizontal, QScrollBar::down-arrow:horizontal { background: none; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }
+QScrollBar:vertical {
+	border: none;
+	background: @track;
+	width: 8px;
+	margin: 21px 0 21px 0;
+	border-radius: 0px;
+}
+QScrollBar::handle:vertical { background: @handle; min-height: 25px; border-radius: 4px; }
+QScrollBar::add-line:vertical {
+	border: none;
+	background: @track_end;
+	height: 20px;
+	border-bottom-left-radius: 4px;
+	border-bottom-right-radius: 4px;
+	subcontrol-position: bottom;
+	subcontrol-origin: margin;
+}
+QScrollBar::sub-line:vertical {
+	border: none;
+	background: @track_end;
+	height: 20px;
+	border-top-left-radius: 4px;
+	border-top-right-radius: 4px;
+	subcontrol-position: top;
+	subcontrol-origin: margin;
+}
+QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical { background: none; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+
+/* ////////////////////////////////////////////////////////////////////
+   Check boxes, radio buttons, sliders */
+QCheckBox::indicator, QRadioButton::indicator {
+	border: 3px solid @indicator_border;
+	width: 15px;
+	height: 15px;
+	border-radius: 10px;
+	background: @indicator;
+}
+QCheckBox::indicator:hover, QRadioButton::indicator:hover { border: 3px solid @indicator_hover; }
+QCheckBox::indicator:checked {
+	background: 3px solid @indicator_checked;
+	border: 3px solid @indicator_checked;
+	background-image: url(:/icons/images/icons/cil-check-alt.png);
+}
+QRadioButton::indicator:checked {
+	background: 3px solid @radio_checked;
+	border: 3px solid @indicator_border;
+}
+
+QSlider::groove:horizontal, QSlider::groove:vertical {
+	border-radius: 5px;
+	margin: 0px;
+	background-color: @track;
+}
+QSlider::groove:horizontal { height: 10px; }
+QSlider::groove:vertical { width: 10px; }
+QSlider::groove:horizontal:hover, QSlider::groove:vertical:hover { background-color: @track_hover; }
+QSlider::handle:horizontal, QSlider::handle:vertical {
+	background-color: @accent;
+	border: none;
+	height: 10px;
+	width: 10px;
+	margin: 0px;
+	border-radius: 5px;
+}
+QSlider::handle:horizontal:hover, QSlider::handle:vertical:hover { background-color: @accent_hover; }
+QSlider::handle:horizontal:pressed, QSlider::handle:vertical:pressed { background-color: @highlight; }
+
+QCommandLinkButton { color: @link; border-radius: 5px; padding: 5px; }
+QCommandLinkButton:hover { color: @link; background-color: @button_hover; }
+QCommandLinkButton:pressed { color: @accent; background-color: @button_pressed; }
+
+/* ////////////////////////////////////////////////////////////////////
+   Buttons (content pages and dialogs; the sidebar's are above) */
+QPushButton {
+	border: 2px solid @button;
+	border-radius: 5px;
+	background-color: @button;
+	color: @button_text;
+	padding: 4px 10px;
+}
+QPushButton:hover { background-color: @button_hover; border: 2px solid @button_hover_border; }
+QPushButton:pressed { background-color: @button_pressed; border: 2px solid @button_pressed_border; }
+QPushButton:disabled { color: @disabled_text; }
+
+/* the main action on a page */
+QPushButton[role="primary"] {
+	background-color: @primary;
+	border: 2px solid @primary;
+	color: @on_primary;
+	font-weight: bold;
+	padding: 4px 14px;
+}
+QPushButton[role="primary"]:hover { background-color: @primary_hover; border: 2px solid @primary_hover; }
+QPushButton[role="primary"]:disabled { background-color: @empty; border: 2px solid @empty; color: @muted; }
+/* the other big choice beside a primary button */
+QPushButton[role="alternative"] {
+	background-color: @alternative;
+	border: 2px solid @alternative;
+	color: @on_alternative;
+	font-weight: bold;
+}
+/* a text-only link-style button */
+QPushButton[role="link"] { background: transparent; border: none; color: @accent; padding: 2px; }
+QPushButton[role="link"]:hover { text-decoration: underline; }
+
+/* ////////////////////////////////////////////////////////////////////
+   Text roles (theme.style(widget, role=...)) */
+*[role="muted"] { color: @muted; }
+*[role="note"] { color: @muted; font-size: 11px; }
+*[role="hint"] { color: @muted; font-style: italic; }
+*[role="strong"] { font-weight: bold; }
+*[role="subheading"] { color: @muted; font-weight: bold; }
+*[role="heading"] { font-size: 14px; font-weight: bold; }
+*[role="section-title"] { font-size: 14px; font-weight: bold; border-bottom: 1px solid @border; padding-bottom: 3px; }
+*[role="title"] { font-size: 16px; font-weight: bold; }
+*[role="value"] { font-size: 16px; font-weight: bold; }
+*[role="display"] { font-size: 20px; font-weight: bold; font-style: italic; }
+*[role="app-title"] { font-size: 22px; font-weight: bold; }
+*[role="lead"] { font-size: 13px; }
+*[role="tagline"] { color: @muted; font-size: 28px; font-style: italic; }
+*[role="panel"] { background: @card; border: 1px solid @border; border-radius: 5px; padding: 8px; }
+*[role="placeholder"] { color: @muted; background-color: @placeholder; border-radius: 5px; }
+*[role="bare"] { background: transparent; }
+QScrollArea[role="bare"] { border: none; background: transparent; }
+QPlainTextEdit[role="console"] {
+	background: @console;
+	color: @console_text;
+	border: 1px solid @border;
+	border-radius: 4px;
+	font-family: Consolas, monospace;
+	font-size: 9pt;
+}
+
+/* Status tones (theme.style(widget, tone=...)) - after the roles, so a
+   tone's colour wins */
+*[tone="muted"] { color: @muted; }
+*[tone="ok"] { color: @ok; }
+*[tone="warn"] { color: @warn; }
+*[tone="bad"] { color: @bad; }
+*[tone="accent"] { color: @accent_text; }
+*[tone="info"] { color: @info; }
+*[tone="highlight"] { color: @highlight_text; }
+
+/* ////////////////////////////////////////////////////////////////////
+   Named boxes */
+#metaCard, #statCard { background-color: @card; border-radius: 6px; border: 1px solid @border; }
+#metaCard QLabel, #statCard QLabel { border: none; background: transparent; }
+#homeSessionBox { border: 1px solid @session_box; border-radius: 10px; }
+#uohPanel { background: #ffffff; border-radius: 6px; }

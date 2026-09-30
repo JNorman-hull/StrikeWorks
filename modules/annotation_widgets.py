@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import annotation_schema as asch
-from .theme import MUTED
+from .theme import style
 
 _BLANK = "-"   # em dash: "no value entered"
 
@@ -114,7 +114,7 @@ class _ValueListDialog(QDialog):
         note = QLabel(
             "Double-click to rename. Removing a value only changes what "
             "the picker offers - recordings already carrying it keep it.")
-        note.setStyleSheet(f"color:{MUTED};")
+        style(note, role="muted")
         note.setWordWrap(True)
         v.addWidget(note)
 
@@ -205,7 +205,7 @@ class VariableListDialog(QDialog):
             "Double-click to rename a variable's display label. Removing a "
             "variable stops it being offered here - recordings already "
             "carrying its column keep that data.")
-        note.setStyleSheet(f"color:{MUTED};")
+        style(note, role="muted")
         note.setWordWrap(True)
         v.addWidget(note)
 

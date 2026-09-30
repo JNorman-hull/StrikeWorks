@@ -30,7 +30,10 @@ from .ml_state import annotation_column, is_strike_value
 from .ml_tab_predict import _NumItem
 from .cards import ProbBars
 from .layout import apply_section_defaults, Section
-from .theme import BAD, INFO, MUTED, OK, PALETTE, PINK, TEXT, WARN
+from .theme import (
+    BAD, INFO, NADIR, OK, PALETTE, PINK, REGION_EDGE, REGION_FILL, TRACE,
+    TRACE2, WARN, style,
+)
 from .plot_widgets import CsvLoadThread, NavViewBox
 from .plot_style import (
     add_export_button, build_export_data, reserve_top_margin,
@@ -45,6 +48,8 @@ _FILTER_STRIKES   = "strikes"
 _FILTER_NO_STRIKE = "no_strikes"
 _FILTER_LOW_CONF  = "low_conf"
 _FILTER_MISCLASS  = "misclass"
+_FILTER_SEVERE    = "severe"          # HIG peak over 400 g
+_FILTER_MILD      = "strike_not_severe"   # predicted strike, peak <= 400 g
 
 
 class InspectTab:
@@ -124,7 +129,7 @@ class InspectTab:
         fv.addWidget(self.ed_search)
 
         self.lbl_count = QLabel("No prediction run yet.")
-        self.lbl_count.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_count, role="muted")
         fv.addWidget(self.lbl_count)
         lv.addWidget(grp_filter)
 
@@ -161,19 +166,17 @@ class InspectTab:
         sv = QVBoxLayout(grp_sel)
         sv.setSpacing(3)
         self.lbl_rec = QLabel("No prediction selected")
-        self.lbl_rec.setStyleSheet(
-            f"color:{TEXT};font-weight:bold;")
+        style(self.lbl_rec, role="strong")
         self.lbl_tx = QLabel("")
-        self.lbl_tx.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_tx, role="muted")
         self.lbl_verdict = QLabel("")
-        self.lbl_verdict.setStyleSheet(
-            f"color:{PINK};font-weight:bold;font-size:16px;")
+        style(self.lbl_verdict, role="value", tone="highlight")
         self.lbl_prob = QLabel("")
-        self.lbl_prob.setStyleSheet(f"color:{TEXT};")
+        style(self.lbl_prob)
         self.lbl_region = QLabel("")
-        self.lbl_region.setStyleSheet(f"color:{TEXT};")
+        style(self.lbl_region)
         self.lbl_gt = QLabel("")
-        self.lbl_gt.setStyleSheet(f"color:{TEXT};")
+        style(self.lbl_gt)
         self.lbl_gt.setWordWrap(True)
         self.lbl_gt.setTextFormat(Qt.TextFormat.RichText)
         for w in (self.lbl_rec, self.lbl_tx, self.lbl_verdict,
@@ -204,11 +207,11 @@ class InspectTab:
             "sensor file from the library, with the model window marked.")
         self.cmb_view.currentIndexChanged.connect(self._refresh_signal)
         lab_l = QLabel("Left axis")
-        lab_l.setStyleSheet(f"color:{MUTED};")
+        style(lab_l, role="muted")
         self.cmb_left = QComboBox()
         self.cmb_left.currentIndexChanged.connect(self._refresh_signal)
         lab_r = QLabel("Right axis")
-        lab_r.setStyleSheet(f"color:{MUTED};")
+        style(lab_r, role="muted")
         self.cmb_right = QComboBox()
         self.cmb_right.currentIndexChanged.connect(self._refresh_signal)
         self.btn_reset_view = QPushButton("Reset view")
@@ -244,7 +247,7 @@ class InspectTab:
         self.lbl_sig_note = QLabel(
             "This is the exact segmented window supplied to the model. "
             "Drag to box-zoom, wheel to pan, Shift+wheel to pan vertically.")
-        self.lbl_sig_note.setStyleSheet(f"color:{MUTED};")
+        style(self.lbl_sig_note, role="muted")
         self.lbl_sig_note.setWordWrap(True)
         gv.addWidget(self.lbl_sig_note)
         rv.addWidget(grp_sig, stretch=1)
@@ -281,6 +284,9 @@ class InspectTab:
         if self._have_ground_truth():
             self.cmb_filter.addItem("Misclassified (vs ground truth)",
                                     _FILTER_MISCLASS)
+        if s.predictions is not None and "severe_strike" in s.predictions.columns:
+            self.cmb_filter.addItem("Severe (HIG peak > 400 g)", _FILTER_SEVERE)
+            self.cmb_filter.addItem("Strikes, HIG peak ≤ 400 g", _FILTER_MILD)
         idx = self.cmb_filter.findData(current)
         self.cmb_filter.setCurrentIndex(idx if idx >= 0 else 0)
         self.cmb_filter.blockSignals(False)
@@ -382,6 +388,10 @@ class InspectTab:
             out = out[out["predicted_strike"] == 0]
         elif mode == _FILTER_LOW_CONF:
             out = out[out["confidence"] < s.low_conf_threshold]
+        elif mode == _FILTER_SEVERE:
+            out = out[out["severe_strike"] == 1]
+        elif mode == _FILTER_MILD:
+            out = out[(out["predicted_strike"] == 1) & (out["severe_strike"] == 0)]
         elif mode == _FILTER_MISCLASS:
             col = annotation_column(out)
             if col is not None:
@@ -419,12 +429,18 @@ class InspectTab:
             df.columns if df is not None else [])
         have_gt = self._have_ground_truth()
 
-        headers = ["Recording", "Treatment", "Prediction", "P(strike)",
-                   "Confidence"]
+        have_sev = df is not None and "hig_peak_g" in df.columns
+        headers = ["Recording", "Treatment", "Prediction"]
+        if have_sev:
+            headers += ["HIG peak (g)", "Severity"]
+        headers += ["P(strike)", "Confidence"]
         if have_mc:
             headers += ["Region", "Region conf"]
         if have_gt:
             headers += ["Ground truth", "Match"]
+
+        conf_col = headers.index("Confidence")
+        sev_col = headers.index("Severity") if have_sev else -1
 
         self._updating_table = True
         self.tbl.setSortingEnabled(False)
@@ -448,6 +464,13 @@ class InspectTab:
                 QTableWidgetItem(str(r["file"])),
                 QTableWidgetItem(str(r.get("treatment", "-"))),
                 QTableWidgetItem("Strike" if is_strike else "No strike"),
+            ]
+            if have_sev:
+                peak = r.get("hig_peak_g")
+                items.append(_NumItem(f"{peak:.0f}" if pd.notna(peak) else "-",
+                                      float(peak) if pd.notna(peak) else -1.0))
+                items.append(QTableWidgetItem(str(r.get("severity", "-"))))
+            items += [
                 _NumItem(f"{r['probability_strike']:.3f}",
                          float(r["probability_strike"])),
                 _NumItem(f"{r['confidence']:.3f}", float(r["confidence"])),
@@ -475,11 +498,14 @@ class InspectTab:
 
             items[0].setData(Qt.ItemDataRole.UserRole, str(r["file"]))
             low = float(r["confidence"]) < s.low_conf_threshold
+            severe = have_sev and int(r.get("severe_strike", 0)) == 1
             for col, item in enumerate(items):
                 if col >= 2:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if low and col == 4:
+                if low and col == conf_col:
                     item.setForeground(pg.mkColor(WARN))
+                if severe and col == sev_col:
+                    item.setForeground(pg.mkColor(BAD))
                 self.tbl.setItem(row, col, item)
 
         self.tbl.setSortingEnabled(True)
@@ -537,12 +563,13 @@ class InspectTab:
         self.lbl_rec.setText(f"Recording: {row['file']}")
         self.lbl_tx.setText(f"Treatment: {row.get('treatment', '-')}")
         self.lbl_verdict.setText("STRIKE" if is_strike else "NO STRIKE")
-        self.lbl_verdict.setStyleSheet(
-            f"color:{PINK if is_strike else INFO};"
-            "font-weight:bold;font-size:16px;")
+        style(self.lbl_verdict, role="value", tone="highlight" if is_strike else "info")
+        peak = row.get("hig_peak_g")
         self.lbl_prob.setText(
             f"Strike probability: {row['probability_strike']:.3f}    "
-            f"Confidence: {row['confidence']:.3f}")
+            f"Confidence: {row['confidence']:.3f}"
+            + (f"    HIG peak: {peak:.0f} g ({row.get('severity', '-')})"
+               if pd.notna(peak) else ""))
 
         region = row.get("predicted_region")
         rc = row.get("region_confidence")
@@ -707,7 +734,7 @@ class InspectTab:
         if left and left in sig.columns:
             y = sig[left].to_numpy(dtype=float)
             self._left_curve = self._pw.plot(
-                t, y, pen=pg.mkPen(TEXT, width=1))
+                t, y, pen=pg.mkPen(TRACE, width=1))
             self._left_curve.setDownsampling(auto=True, method="peak")
             self._left_curve.setClipToView(True)
             pi.setLabel("left", left)
@@ -718,7 +745,7 @@ class InspectTab:
             set_right_axis_active(pi, True)
             pi.setLabel("right", right)
             self._right_curve = pg.PlotCurveItem(
-                pen=pg.mkPen("#ff5555", width=1))
+                pen=pg.mkPen(TRACE2, width=1))
             self._vb2.addItem(self._right_curve)
             right_y = sig[right].to_numpy(dtype=float)
             self._right_curve.setData(t, right_y)
@@ -731,8 +758,8 @@ class InspectTab:
         if sig is not window_sig and len(w_t):
             self._window_region = pg.LinearRegionItem(
                 values=[float(w_t[0]), float(w_t[-1])], movable=False,
-                brush=pg.mkBrush(85, 170, 255, 35),
-                pen=pg.mkPen(85, 170, 255, 90))
+                brush=pg.mkBrush(*REGION_FILL),
+                pen=pg.mkPen(*REGION_EDGE))
             pi.addItem(self._window_region)
 
         # event indication: pressure nadir inside the model window
@@ -742,7 +769,7 @@ class InspectTab:
                 t_nadir = float(w_t[int(np.nanargmin(pres))])
                 self._nadir_line = pg.InfiniteLine(
                     pos=t_nadir, angle=90, movable=False,
-                    pen=pg.mkPen(color=(255, 220, 0), width=2),
+                    pen=pg.mkPen(color=NADIR, width=2),
                     label="Nadir",
                     labelOpts={"position": 0.92, "color": (200, 170, 0)})
                 pi.addItem(self._nadir_line)

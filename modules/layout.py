@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
     QGroupBox, QHBoxLayout, QScrollArea, QSplitter, QVBoxLayout, QWidget,
 )
 
+from .theme import style
+
 
 def discard_widget(w):
     """Throw away a child widget that has just been taken out of a layout.
@@ -76,7 +78,7 @@ def scroll_area(widget=None):
     """A borderless scroll area that resizes `widget` to its width."""
     scroll = QScrollArea()
     scroll.setWidgetResizable(True)
-    scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
+    style(scroll, role="bare")
     if widget is not None:
         scroll.setWidget(widget)
     return scroll
@@ -88,7 +90,7 @@ def scroll_page(frame):
     outer = QVBoxLayout(frame)
     outer.setContentsMargins(0, 0, 0, 0)
     body = QWidget()
-    body.setStyleSheet("background:transparent;")
+    style(body, role="bare")
     outer.addWidget(scroll_area(body))
     v = QVBoxLayout(body)
     v.setContentsMargins(4, 6, 4, 6)
