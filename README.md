@@ -175,6 +175,14 @@ dataset, and with `-Demos` runs both demos on a fresh copy of the folder.
 `dist/StrikeWorks` for handing over - refusing, with a list, if the folder
 holds anything the build didn't put there.
 
+**Simple edition.** `build.py --simple` builds a second, separate app into
+`dist/StrikeWorks_Simple`: Simple mode only, with the development toolkit
+(the full app) locked - no Development toolkit button, and only the Simple
+demo in the Dev console. The lock is a start-up hook compiled into the exe
+(`tools/simple_edition_hook.py`, `modules/edition.py`); from source,
+`set STRIKEWORKS_EDITION=simple` shows the same thing. Test and zip it with
+`tools\smoke_test.ps1 -Simple -Demos` and `build.py --simple --zip-only`.
+
 ### The UI file
 
 The layout lives in `main.ui` (Qt Designer:

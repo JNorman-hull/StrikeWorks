@@ -42,6 +42,7 @@ from . import deployment_index as di
 from . import ml_figures, ml_report, settings, win_utils
 from . import validation_core as vc
 from .deployment_editor import DeploymentEditor
+from .edition import simple_only
 from .inventory_widgets import FileInventory
 from .cards import MetaCard, RingCard, Spinner
 from .layout import Section
@@ -398,13 +399,15 @@ class SimpleModeDialog(QDialog):
         btn_blade_strike.setStyleSheet(ACCENT_BUTTON)
         btn_blade_strike.clicked.connect(self._go_next)
         btn_row.addWidget(btn_blade_strike)
-        btn_dev_toolkit = QPushButton("Development\ntoolkit")
-        btn_dev_toolkit.setMinimumSize(140, 44)
-        btn_dev_toolkit.setStyleSheet(
+        self.btn_dev_toolkit = QPushButton("Development\ntoolkit")
+        self.btn_dev_toolkit.setMinimumSize(140, 44)
+        self.btn_dev_toolkit.setStyleSheet(
             f"QPushButton{{background-color:{BAD};color:#ffffff;"
             "border-radius:5px;font-weight:bold;}")
-        btn_dev_toolkit.clicked.connect(self._go_development_toolkit)
-        btn_row.addWidget(btn_dev_toolkit)
+        self.btn_dev_toolkit.clicked.connect(self._go_development_toolkit)
+        # the Simple edition has no way into the full app
+        self.btn_dev_toolkit.setVisible(not simple_only())
+        btn_row.addWidget(self.btn_dev_toolkit)
         btn_row.addStretch()
         v.addSpacing(20)
         v.addLayout(btn_row)
@@ -415,7 +418,10 @@ class SimpleModeDialog(QDialog):
     def _go_development_toolkit(self):
         """Open the full app in Advanced mode (the same entry as Home's
         Advanced mode button), then close this window.
-        `went_to_dev_toolkit` tells main.py not to quit when it closes."""
+        `went_to_dev_toolkit` tells main.py not to quit when it closes.
+        Does nothing in the Simple edition."""
+        if simple_only():
+            return
         self.went_to_dev_toolkit = True
         self.window.home_page._go_advanced()
         self.window.show()

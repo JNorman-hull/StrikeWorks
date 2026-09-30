@@ -7,32 +7,39 @@
 #   4. (-Demos) on a copy of the whole folder, as a colleague would get it:
 #      the Simple demo, then the Advanced demo, from the demo pack's raw
 #      files to the reports - using only the copy's own folders
+#   -Simple tests the Simple edition (dist\StrikeWorks_Simple) instead: its
+#      demos are Simple only, and it must refuse the Advanced demo even when
+#      the environment asks for the full edition
 #
 # Usage (from the repo root):
 #   powershell -File tools\smoke_test.ps1
 #   powershell -File tools\smoke_test.ps1 -Demos
+#   powershell -File tools\smoke_test.ps1 -Simple -Demos
 #   powershell -File tools\smoke_test.ps1 -Dataset <dataset.csv> -TrainConfig <run>\train_config.json
 param(
     [string]$Dataset = "",
     [string]$TrainConfig = "",
-    [switch]$Demos
+    [switch]$Demos,
+    [switch]$Simple
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$dist = Join-Path $root "dist\StrikeWorks"
+$dist = Join-Path $root $(if ($Simple) { "dist\StrikeWorks_Simple" } else { "dist\StrikeWorks" })
 $exe = Join-Path $dist "StrikeWorks.exe"
 if (-not $Dataset) { $Dataset = Join-Path $dist "input_data\Pumpflow_2024_datatset1_only.csv" }
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ("strikeworks_smoke_" + [guid]::NewGuid().ToString("N").Substring(0, 8))
 New-Item -ItemType Directory -Force $work | Out-Null
 $failed = $false
 
-function Start-App($path, $arguments, $settingsFile) {
+function Start-App($path, $arguments, $settingsFile, $edition = "") {
     $psi = New-Object System.Diagnostics.ProcessStartInfo $path
     $psi.Arguments = $arguments
     $psi.UseShellExecute = $false
     $psi.EnvironmentVariables["QT_QPA_PLATFORM"] = "offscreen"
     if ($settingsFile) { $psi.EnvironmentVariables["STRIKEWORKS_SETTINGS"] = $settingsFile }
     else { $psi.EnvironmentVariables.Remove("STRIKEWORKS_SETTINGS") }
+    if ($edition) { $psi.EnvironmentVariables["STRIKEWORKS_EDITION"] = $edition }
+    else { $psi.EnvironmentVariables.Remove("STRIKEWORKS_EDITION") }
     return [System.Diagnostics.Process]::Start($psi)
 }
 
@@ -68,13 +75,26 @@ if ($TrainConfig) {
     else { "   FAIL - exit $($t.ExitCode)"; Get-Content (Join-Path $work "train_err.txt") -Tail 5; $failed = $true }
 }
 
+if ($Simple) {
+    "3b. Simple edition lock (the Advanced demo, asking for the full edition)"
+    $env:STRIKEWORKS_EDITION = "full"
+    $env:STRIKEWORKS_SETTINGS = Join-Path $work "settings.json"
+    $env:QT_QPA_PLATFORM = "offscreen"
+    $lock = Start-Process -FilePath $exe -ArgumentList @("--demo", "advanced") -Wait -PassThru `
+        -NoNewWindow -RedirectStandardError (Join-Path $work "lock_err.txt")
+    Remove-Item Env:STRIKEWORKS_EDITION, Env:STRIKEWORKS_SETTINGS, Env:QT_QPA_PLATFORM
+    if ($lock.ExitCode -eq 2) { "   OK - refused: $(Get-Content (Join-Path $work 'lock_err.txt'))" }
+    else { "   FAIL - exit $($lock.ExitCode) (expected 2, refused)"; $failed = $true }
+}
+
 if ($Demos) {
     "4. Demos on a fresh copy of the folder"
     $copy = Join-Path $work "StrikeWorks"
     robocopy $dist $copy /E /NFL /NDL /NJH /NJS /NP | Out-Null
     $copyExe = Join-Path $copy "StrikeWorks.exe"
     $reports = Join-Path $copy "libraries\StrikeWorks_demo\StrikeWorks_user_output"
-    foreach ($mode in "simple", "advanced") {
+    $modes = if ($Simple) { @("simple") } else { @("simple", "advanced") }
+    foreach ($mode in $modes) {
         $log = Join-Path $work "demo_$mode.log"
         $start = Get-Date
         # no STRIKEWORKS_SETTINGS: the copy uses its own settings.json

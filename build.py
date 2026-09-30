@@ -6,6 +6,8 @@
 #
 # ///////////////////////////////////////////////////////////////
 """Builds the packaged app into dist/StrikeWorks without touching its data.
+With --simple, builds the Simple edition - Simple mode only, the
+development toolkit locked - into dist/StrikeWorks_Simple instead.
 
 PyInstaller empties its output folder before every build, and the packaged
 app keeps its data folders (libraries, input_data, output_data, models)
@@ -26,10 +28,11 @@ by using the built app is listed, never deleted. --zip-only zips the
 current build without rebuilding (after tools/smoke_test.ps1, say).
 
 Usage:
-    python build.py
-    python build.py --zip
-    python build.py --zip-only
+    python build.py [--simple]
+    python build.py [--simple] --zip
+    python build.py [--simple] --zip-only
 """
+import os
 import shutil
 import subprocess
 import sys
@@ -37,8 +40,13 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-DIST = ROOT / "dist" / "StrikeWorks"
-STAGING = ROOT / "build" / "staging"
+SIMPLE = "--simple" in sys.argv[1:]
+NAME = "StrikeWorks_Simple" if SIMPLE else "StrikeWorks"
+DIST = ROOT / "dist" / NAME
+# each edition has its own PyInstaller folders, so neither reuses the
+# other's analysis
+STAGING = ROOT / "build" / ("staging_simple" if SIMPLE else "staging")
+WORK = ROOT / "build" / ("work_simple" if SIMPLE else "StrikeWorks")
 EXE = "StrikeWorks.exe"
 BUNDLE = "_internal"
 
@@ -134,7 +142,7 @@ def _not_shipped():
 
 
 def _zip():
-    name = DIST.parent / f"StrikeWorks_{date.today():%Y%m%d}"
+    name = DIST.parent / f"{NAME}_{date.today():%Y%m%d}"
     print(f"Zipping {DIST} ...")
     archive = shutil.make_archive(str(name), "zip", DIST.parent, DIST.name)
     print(f"Ready to hand over: {archive}")
@@ -152,10 +160,14 @@ def main():
     if zip_only:
         _zip()
         return
+    env = dict(os.environ)
+    env.pop("STRIKEWORKS_EDITION", None)
+    if SIMPLE:
+        env["STRIKEWORKS_EDITION"] = "simple"
     subprocess.run(
         [sys.executable, "-m", "PyInstaller", "StrikeWorks.spec",
-         "--noconfirm", "--distpath", str(STAGING)],
-        cwd=ROOT, check=True)
+         "--noconfirm", "--distpath", str(STAGING), "--workpath", str(WORK)],
+        cwd=ROOT, check=True, env=env)
     print(f"\nUpdating {DIST} (data folders are left as they are)...")
     _swap_in_program(STAGING / "StrikeWorks")
     _place_shipped_data()

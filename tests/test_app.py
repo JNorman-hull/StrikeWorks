@@ -62,5 +62,36 @@ class AppStarts(unittest.TestCase):
         self.assertEqual(strays, [])
 
 
+class SimpleEdition(unittest.TestCase):
+    """build.py --simple: Simple mode only, no way into the full app."""
+
+    def test_the_full_app_is_locked(self):
+        import os
+        from unittest import mock
+        qt_app()
+        isolate()
+        with mock.patch.dict(os.environ, {"STRIKEWORKS_EDITION": "simple"}):
+            _main, window = main_window()
+            dialog = window.simple_mode_dialog
+            dialog.show()
+            pump(100)
+            self.assertFalse(dialog.btn_dev_toolkit.isVisible())
+            dialog._go_development_toolkit()
+            pump(100)
+            self.assertFalse(window.isVisible())
+            self.assertFalse(dialog.went_to_dev_toolkit)
+            demos = [window.dev_console.cmb_demo.itemData(i)
+                     for i in range(window.dev_console.cmb_demo.count())]
+            self.assertEqual(demos, ["simple"])
+            from modules.dev_runner import run_headless
+            passed, message = run_headless(window, "advanced")
+            self.assertFalse(passed)
+            self.assertIn("isn't available", message)
+            dialog.hide()
+        # the full edition keeps its way in
+        _main, window = main_window()
+        self.assertFalse(window.simple_mode_dialog.btn_dev_toolkit.isHidden())
+
+
 if __name__ == "__main__":
     unittest.main()

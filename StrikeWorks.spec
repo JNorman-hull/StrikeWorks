@@ -16,9 +16,17 @@ launch, which would defeat that cache and slow down every single
 prediction/training run (the worker subprocess is its own launch of this
 same exe) rather than just app startup.
 """
+import os
+
 from PyInstaller.utils.hooks import (
     collect_data_files, collect_submodules, copy_metadata,
 )
+
+# build.py --simple sets this: the Simple edition gets a start-up hook that
+# locks it to Simple mode (modules/edition.py)
+runtime_hooks = []
+if os.environ.get("STRIKEWORKS_EDITION") == "simple":
+    runtime_hooks.append(os.path.join(SPECPATH, "tools", "simple_edition_hook.py"))
 
 datas = [
     # images/ is looked up __file__-relative by the modules that use it
@@ -74,7 +82,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=runtime_hooks,
     excludes=[],
     noarchive=False,
     # sktime's mtype/estimator registries are populated by

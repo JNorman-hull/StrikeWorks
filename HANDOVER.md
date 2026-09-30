@@ -6,6 +6,7 @@
 |---|---|---|
 | Source, tests, docs, default models, BSM presets, example datasets | GitHub `JNorman-hull/StrikeWorks`, branch `main` | `README.md` (how it works, how to build), `ROADMAP.md` (open work, hidden pages), `REFACTOR_PLAN.md` (the September 2026 clean-up) |
 | The packaged app | `dist/StrikeWorks_<date>.zip` (made by `build.py --zip`) | Self-contained: unzip anywhere and run `StrikeWorks.exe` |
+| The Simple edition | `dist/StrikeWorks_Simple_<date>.zip` (made by `build.py --simple --zip`) | The same, locked to Simple mode - for users who should only process, validate and predict |
 | Demo pack source | `libraries/Testbed` (42 MB, not in git) | The raw recordings and annotations the demos start from; the build copies it to `libraries/demo_data` |
 | RAPID sensor recordings | OneDrive: `FSE Hull International Fisheries Institute - Documents\REDEEM 2.0\HS_JOSH_NORMAN\RAPID_libraries` | The real libraries; not in git or the build |
 | LosslessCut (video review) | https://github.com/mifi/lossless-cut | Not in git or the build (900 MB); see README, "Development" |
@@ -34,6 +35,10 @@ settings in `settings.json` beside the exe.
 The same check runs unattended from the repo: `powershell -File
 tools\smoke_test.ps1 -Demos` (on a temporary copy of `dist\StrikeWorks`).
 
+The Simple edition is checked the same way (steps 1-3; there is no
+Development toolkit button and no Advanced demo), or with `powershell
+-File tools\smoke_test.ps1 -Simple -Demos`.
+
 ## Shelving checklist
 
 1. **Push `main` and tag it.**
@@ -51,8 +56,9 @@ tools\smoke_test.ps1 -Demos` (on a temporary copy of `dist\StrikeWorks`).
    git commit -m "Demo pack"
    ```
    or hand `libraries/Testbed` over alongside the zip.
-3. **Publish the zip**: attach `dist/StrikeWorks_<date>.zip` to the `v1.0`
-   GitHub release, or put it on the shared OneDrive.
+3. **Publish the zips**: attach `dist/StrikeWorks_<date>.zip` and
+   `dist/StrikeWorks_Simple_<date>.zip` to the `v1.0` GitHub release, or
+   put them on the shared OneDrive.
 4. **Give access**: add your colleague to the GitHub repository and share
    the RAPID_libraries OneDrive folder.
 5. **Tidy your own machine** (none of this is part of the handover; delete
@@ -86,4 +92,5 @@ py -3.13 -m venv .venv
   `build_ui.py` as a before-launch step (it regenerates `modules/ui_main.py`
   from `main.ui`).
 - New release: `build.py`, then `tools\smoke_test.ps1 -Demos`, then
-  `build.py --zip-only`.
+  `build.py --zip-only`; for the Simple edition the same with `--simple`
+  (`smoke_test.ps1 -Simple -Demos`).

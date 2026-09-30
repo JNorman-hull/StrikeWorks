@@ -93,9 +93,12 @@ class DevConsole(QDialog):
 
         grp_demo = Section("Demo")
         dv = QHBoxLayout(grp_demo)
+        from .dev_runner import available_demos
+        labels = {"simple": "Simple mode (no training)",
+                  "advanced": "Advanced (full workflow, trains a model)"}
         self.cmb_demo = QComboBox()
-        self.cmb_demo.addItem("Simple mode (no training)", "simple")
-        self.cmb_demo.addItem("Advanced (full workflow, trains a model)", "advanced")
+        for mode in available_demos():
+            self.cmb_demo.addItem(labels[mode], mode)
         self.cmb_demo.setToolTip(
             "Simple drives Simple mode's own wizard exactly as clicking "
             "through it would. Advanced drives the full app's pages: blade "

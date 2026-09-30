@@ -60,6 +60,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from . import deployment_index as di
 from . import raw_layout, report_center, sensor_config, settings
+from .edition import simple_only
 
 DEMO_LIBRARY_NAME = "StrikeWorks_demo"
 _FALLBACK_ANNOTATIONS = (settings.app_root() / "input_data"
@@ -859,9 +860,17 @@ class AdvancedDemoRunner(_RunnerBase):
 RUNNERS = {"simple": SimpleDemoRunner, "advanced": AdvancedDemoRunner}
 
 
+def available_demos():
+    """The demos this edition offers - the Simple edition only has Simple
+    mode, so only its demo."""
+    return ["simple"] if simple_only() else list(RUNNERS)
+
+
 def run_headless(window, mode):
     """Run one demo to the end, for `StrikeWorks --demo <mode>` and the
     tests. Returns (passed, message)."""
+    if mode not in available_demos():
+        return False, f"the {mode} demo isn't available in this edition"
     result = {}
     runner = RUNNERS[mode](window)
     runner.finished.connect(lambda ok, msg: result.update(ok=ok, msg=msg))

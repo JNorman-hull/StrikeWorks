@@ -446,10 +446,10 @@ def _run_demo(mode, log_path=None):
     """`StrikeWorks --demo simple|advanced [--log <file>]`: run one demo
     to the end, unattended, and exit 0 if it passed - checks a build from
     raw files to a report (tools/smoke_test.ps1 -Demos)."""
-    from modules.dev_runner import RUNNERS, run_headless
-    if mode not in RUNNERS:
-        print(f"Unknown demo: {mode} (choose {', '.join(RUNNERS)})",
-              file=sys.stderr)
+    from modules.dev_runner import available_demos, run_headless
+    if mode not in available_demos():
+        print(f"No '{mode}' demo in this edition (choose "
+              f"{', '.join(available_demos())})", file=sys.stderr)
         return 2
     if log_path:
         sys.stdout = sys.stderr = open(log_path, "w", encoding="utf-8",
