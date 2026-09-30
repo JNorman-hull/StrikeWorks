@@ -46,7 +46,7 @@ from .layout import (
     apply_section_defaults, discard_widget, Section, when_visible,
 )
 from .theme import MUTED, OK, TEXT, muted_label
-from .page_annotate import LOSSLESSCUT_EXE
+from .page_annotate import LOSSLESSCUT_EXE, LOSSLESSCUT_MISSING
 from .raw_layout import video_index
 from .plot_widgets import NavViewBox
 from .plot_style import (
@@ -423,7 +423,7 @@ class MisclassificationPage(QObject):
             return
         if not LOSSLESSCUT_EXE.exists():
             QMessageBox.warning(self.window, "LosslessCut missing",
-                                f"Missing: {LOSSLESSCUT_EXE}")
+                                LOSSLESSCUT_MISSING)
             return
         video_path = matches[0]
         if len(matches) > 1:

@@ -75,9 +75,15 @@ _NOTES_COL = "notes"
 _FS = 2000
 _WIN_SEC = 0.2
 
-# video review opens clips in LosslessCut (not shipped - 900 MB): from the
-# repo root from source, beside StrikeWorks.exe once packaged
-LOSSLESSCUT_EXE = settings.app_root() / "exteneral_software" / "LosslessCut.exe"
+# video review opens clips in LosslessCut (not shipped - 900 MB): in
+# external_software/ at the repo root from source, beside StrikeWorks.exe
+# once packaged (the build puts a readme there saying what to copy in)
+LOSSLESSCUT_EXE = settings.app_root() / "external_software" / "LosslessCut.exe"
+LOSSLESSCUT_MISSING = (
+    "Video review opens clips in LosslessCut, which isn't installed.\n\n"
+    f"Copy LosslessCut.exe and all the files that come with it into\n"
+    f"{LOSSLESSCUT_EXE.parent}\n\n"
+    "(readme.txt in that folder has the download link).")
 
 
 class _ReviewedOnly(Exception):
@@ -949,7 +955,7 @@ class AnnotationPage(QObject):
             return
         if not LOSSLESSCUT_EXE.exists():
             QMessageBox.warning(self.window, "LosslessCut missing",
-                                f"Missing: {LOSSLESSCUT_EXE}")
+                                LOSSLESSCUT_MISSING)
             return
         video_path = matches[0]
         if len(matches) > 1:

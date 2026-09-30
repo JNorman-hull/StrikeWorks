@@ -9,7 +9,7 @@
 | The Simple edition | `dist/StrikeWorks_Simple_<date>.zip` (made by `build.py --simple --zip`) | The same, locked to Simple mode - for users who should only process, validate and predict |
 | Demo pack source | `libraries/Testbed` (42 MB, not in git) | The raw recordings and annotations the demos start from; the build copies it to `libraries/demo_data` |
 | RAPID sensor recordings | OneDrive: `FSE Hull International Fisheries Institute - Documents\REDEEM 2.0\HS_JOSH_NORMAN\RAPID_libraries` | The real libraries; not in git or the build |
-| LosslessCut (video review) | https://github.com/mifi/lossless-cut | Not in git or the build (900 MB); see README, "Development" |
+| LosslessCut (video review) | https://github.com/mifi/lossless-cut | Not in git or the build (900 MB); copy it into `external_software/` beside `StrikeWorks.exe` (its readme.txt says how) |
 
 ## Checking the packaged app (about 10 minutes)
 

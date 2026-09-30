@@ -19,8 +19,9 @@ deletes whatever was made with the built app. Instead:
      dist/StrikeWorks. Nothing else there is deleted.
   3. What ships with the app is copied in, overwriting only files of the
      same name: the default models, the BSM presets, an example model
-     dataset (input_data) and the demo pack (libraries/demo_data, from
-     the repo's libraries/Testbed).
+     dataset (input_data), the demo pack (libraries/demo_data, from the
+     repo's libraries/Testbed) and - full edition only - an
+     external_software folder whose readme says where LosslessCut goes.
 
 With --zip, the folder is also zipped for handing over - but only when it
 holds nothing except what ships (checked before building); anything made
@@ -113,7 +114,9 @@ def _place_shipped_data():
                         dirs_exist_ok=True)
     else:
         print(f"  no demo pack: {DEMO_PACK} not found")
-    for name in ("libraries", "output_data"):
+    # video review (LosslessCut) is only in the full app
+    folders = ("libraries", "output_data") + (() if SIMPLE else ("external_software",))
+    for name in folders:
         (DIST / name).mkdir(parents=True, exist_ok=True)
         readme = ROOT / name / "readme.txt"
         if readme.exists() and not (DIST / name / "readme.txt").exists():
@@ -126,8 +129,11 @@ def _not_shipped():
     settings)."""
     if not DIST.exists():
         return []
+    # external_software isn't checked inside: LosslessCut put there is
+    # meant to ship
     shipped = {
-        None: {EXE, BUNDLE, "libraries", "models", "input_data", "output_data"},
+        None: {EXE, BUNDLE, "libraries", "models", "input_data", "output_data",
+               "external_software"},
         "libraries": {"readme.txt", "demo_data"},
         "output_data": {"readme.txt"},
         "input_data": {"BSM_config", *EXAMPLE_DATASETS},

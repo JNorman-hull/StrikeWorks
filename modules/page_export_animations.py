@@ -47,7 +47,7 @@ from .library_widgets import LibrarySelector
 from .session_state import OUTPUT_DIR_NAME
 from .layout import apply_section_defaults, scroll_area, Section, when_visible
 from .theme import ACCENT_BUTTON, MUTED, TEXT, muted_label
-from .page_annotate import LOSSLESSCUT_EXE
+from .page_annotate import LOSSLESSCUT_EXE, LOSSLESSCUT_MISSING
 from .plot_widgets import CsvLoadThread, NavViewBox, find_col
 from .plot_style import reserve_top_margin, set_right_axis_active
 
@@ -689,7 +689,7 @@ class ExportAnimationsPage(QObject):
             return
         if not LOSSLESSCUT_EXE.exists():
             QMessageBox.warning(self.window, "LosslessCut missing",
-                                f"Missing: {LOSSLESSCUT_EXE}")
+                                LOSSLESSCUT_MISSING)
             return
         video_path = matches[0]
         if len(matches) > 1:

@@ -28,4 +28,7 @@ strikeworks_dev_log.txt
 
 # local copies
 /format-specification.html
-exteneral_software/
+
+# LosslessCut (video review), installed locally - only its readme is tracked
+/external_software/*
+!/external_software/readme.txt

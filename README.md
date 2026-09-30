@@ -137,9 +137,10 @@ built and tested with. Run the app:
 ```
 
 Video review (Annotate, Export animations, Misclassification analysis)
-opens clips in LosslessCut, which isn't in the repo or the build (900 MB):
-put it at `exteneral_software/LosslessCut.exe` in the repo, or beside
-`StrikeWorks.exe` in a packaged copy.
+opens clips in LosslessCut, which isn't in the repo or the build (900 MB).
+Copy LosslessCut.exe and the files that come with it into
+`external_software/` - in the repo, or beside `StrikeWorks.exe` in a
+packaged copy, where the build puts that folder with a readme saying so.
 
 ### Tests
 
