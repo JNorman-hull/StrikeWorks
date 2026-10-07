@@ -40,7 +40,6 @@ class UIFunctions:
         else:
             self._maximized = False
             self.showNormal()
-            self.resize(self.width() + 1, self.height() + 1)
             self.ui.appMargins.setContentsMargins(10, 10, 10, 10)
             self.ui.maximizeRestoreAppBtn.setToolTip("Maximize")
             self.ui.maximizeRestoreAppBtn.setIcon(
@@ -127,12 +126,13 @@ class UIFunctions:
 
     # ── window frame set-up ─────────────────────────────────────────────────
     def uiDefinitions(self):
-        def double_click_maximize(event):
-            if event.type() == QEvent.MouseButtonDblClick:
-                QTimer.singleShot(250, lambda: UIFunctions.maximize_restore(self))
-        self.ui.titleRightInfo.mouseDoubleClickEvent = double_click_maximize
-
         if UIConfig.ENABLE_CUSTOM_TITLE_BAR:
+            def double_click_maximize(event):
+                if event.type() == QEvent.MouseButtonDblClick:
+                    QTimer.singleShot(
+                        250, lambda: UIFunctions.maximize_restore(self))
+            self.ui.titleRightInfo.mouseDoubleClickEvent = double_click_maximize
+
             # OR'd onto the existing flags: FramelessWindowHint alone drops
             # the Qt.Window type, and Windows then gives the window no
             # taskbar button
@@ -140,6 +140,8 @@ class UIFunctions:
             self.setAttribute(Qt.WA_TranslucentBackground)
 
             def move_window(event):
+                if event.buttons() != Qt.LeftButton:
+                    return
                 if getattr(self, "_maximized", False):
                     UIFunctions.maximize_restore(self)
                 if event.buttons() == Qt.LeftButton:
@@ -159,12 +161,14 @@ class UIFunctions:
             self.ui.closeAppBtn.hide()
             self.ui.frame_size_grip.hide()
 
-        self.shadow = QGraphicsDropShadowEffect(self)
-        self.shadow.setBlurRadius(17)
-        self.shadow.setXOffset(0)
-        self.shadow.setYOffset(0)
-        self.shadow.setColor(QColor(0, 0, 0, 150))
-        self.ui.bgApp.setGraphicsEffect(self.shadow)
+        if UIConfig.ENABLE_CUSTOM_TITLE_BAR:
+            # the frameless window's own shadow, in its 10 px margin
+            self.shadow = QGraphicsDropShadowEffect(self)
+            self.shadow.setBlurRadius(17)
+            self.shadow.setXOffset(0)
+            self.shadow.setYOffset(0)
+            self.shadow.setColor(QColor(0, 0, 0, 150))
+            self.ui.bgApp.setGraphicsEffect(self.shadow)
 
         self.sizegrip = QSizeGrip(self.ui.frame_size_grip)
         self.sizegrip.setStyleSheet("width: 20px; height: 20px; margin 0px; padding: 0px;")

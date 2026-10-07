@@ -91,12 +91,25 @@ overrides the location.
 Settings > Appearance chooses the theme, applied the next time the app
 starts: **StrikeWorks (dark)**, or **University of Hull** (the brand's
 Core, low-intensity look: white pages, Ink Blue sidebar, Chartreuse and
-Mid Blue accents, brand colours in charts; its brandmark in About and on
-Simple mode's welcome page; the StrikeWorks logo outlined for white,
-`PyDracula_vertical_white.png`). The University of Hull logo sits at the
-foot of the sidebar above Simple mode (white; the collapsed sidebar shows
-its shield) and on Simple mode's Download page, in either theme
-(`startup.uoh_logo_pixmap`). Every window is styled by one stylesheet,
+Mid Blue accents, brand colours in charts; the StrikeWorks logo outlined
+for white, `PyDracula_vertical_white.png`). The University brandmark
+(`images/images/uoh_brandmark.svg`) is the one University logo, in the same
+places in both themes - the loading splash, Simple mode's welcome and
+Download pages, About, and the foot of the sidebar above Simple mode - Ink
+Blue on light backgrounds, white on dark (`startup.brandmark`,
+`startup.Brandmark`).
+
+### Windows
+
+Both windows use the standard Windows frame (minimise, maximise, snap,
+resize; `UIConfig.ENABLE_CUSTOM_TITLE_BAR` brings back the template's own
+title bar). Each opens sized and centred within the screen's work area -
+the screen less the taskbar (`win_utils.fit_to_screen`) - and every page
+(and every Simple mode step) sits in a scroll area, so a small screen
+scrolls a page rather than pushing the window past its edge. Figures are
+redrawn once a resize is over - on releasing a splitter handle or the
+window's edge - and stretched until then (`modules/canvas.py`), so
+dragging stays smooth on pages with several figures. Every window is styled by one stylesheet,
 `themes/app.qss`, whose `@name` colours `modules/theme.py` fills from the
 active palette; widgets take a look with `theme.style(widget, role=...,
 tone=...)` rather than stylesheets of their own. A new theme is a new

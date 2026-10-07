@@ -10,13 +10,13 @@ splash, the default data folders and the Windows taskbar identity.
 import platform
 from pathlib import Path
 
-from PySide6.QtCore import QRect, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPixmap
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QLabel, QSplashScreen
+from PySide6.QtWidgets import QLabel, QSizePolicy, QSplashScreen, QWidget
 
 from . import settings, theme
-from .theme import CARD_BG, MUTED, TEXT
+from .theme import CARD_BG, MUTED
 
 # relative to this file rather than the working directory, so it still
 # resolves when the exe is launched from a shortcut (frozen, both files
@@ -27,73 +27,45 @@ _IMAGES = Path(__file__).parent.parent / "images" / "images"
 # University of Hull theme, the original on the dark theme
 LOGO_PATH = _IMAGES / ("PyDracula_vertical_white.png" if theme.NAME == "hull"
                        else "PyDracula_vertical.png")
-# the University's Primary Brandmark, Ink Blue (positive) version: for white
-# or light backgrounds only, never recoloured, at least 60 px wide
+# the University's Primary Brandmark - the one University logo the app
+# shows: Ink Blue (positive) on light backgrounds, white (negative) on dark,
+# at least 60 px wide
 BRANDMARK_PATH = _IMAGES / "uoh_brandmark.svg"
-# the University logo, black on transparent; white (its reverse) on a dark
-# background
-UOH_LOGO_PATH = _IMAGES / "UOH_logo.png"
 
 
 def build_splash():
     """The loading splash shown while MainWindow builds its pages: the
-    logo and tagline centred above a "Loading application..." message."""
-    pix = QPixmap(420, 480)
-    pix.fill(QColor(CARD_BG))
-    painter = QPainter(pix)
-
+    StrikeWorks logo, the University brandmark under it, and room for the
+    "Loading application..." message - no bigger than they need."""
+    logo_w, mark_w, pad, gap, message_h = 200, 70, 22, 16, 36
     logo = QPixmap(str(LOGO_PATH)) if LOGO_PATH.exists() else QPixmap()
     if not logo.isNull():
-        logo = logo.scaledToWidth(220, Qt.TransformationMode.SmoothTransformation)
-
-    font = QFont()
-    font.setPointSize(13)
-    font.setItalic(True)
-    painter.setFont(font)
-    tagline = "Deploy. Process. Predict."
-    tagline_h = painter.fontMetrics().height()
-
-    usable_h = pix.height() - 60      # room for the loading message
-    spacing = 20
-    logo_h = 0 if logo.isNull() else logo.height()
-    block_h = logo_h + (spacing if logo_h else 0) + tagline_h
-    top = max(20, (usable_h - block_h) // 2)
-    if logo_h:
-        painter.drawPixmap((pix.width() - logo.width()) // 2, top, logo)
-        top += logo_h + spacing
-
-    painter.setPen(QColor(TEXT))
-    painter.drawText(0, top, pix.width(), tagline_h,
-                     int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop),
-                     tagline)
+        logo = logo.scaledToWidth(logo_w, Qt.TransformationMode.SmoothTransformation)
+    mark = brandmark_pixmap(mark_w, reverse=theme.P["dark"])
+    width = max(logo.width(), mark.width()) + 2 * pad
+    height = (pad + logo.height() + (gap if not logo.isNull() else 0)
+              + mark.height() + message_h)
+    pix = QPixmap(width, height)
+    pix.fill(QColor(CARD_BG))
+    painter = QPainter(pix)
+    top = pad
+    if not logo.isNull():
+        painter.drawPixmap((width - logo.width()) // 2, top, logo)
+        top += logo.height() + gap
+    if not mark.isNull():
+        painter.drawPixmap((width - mark.width()) // 2, top, mark)
     painter.end()
 
     splash = QSplashScreen(pix)
     splash.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+    font = QFont()
+    font.setPointSize(9)
+    splash.setFont(font)
     splash.showMessage(
         "Loading application...",
         int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom),
         QColor(MUTED))
     return splash
-
-
-def brandmark(width=120):
-    """A QLabel showing the University brandmark `width` px wide (60 px
-    at least), or None if the file is missing."""
-    renderer = QSvgRenderer(str(BRANDMARK_PATH))
-    if not renderer.isValid():
-        return None
-    width = max(60, width)
-    size = renderer.defaultSize()
-    pix = QPixmap(QSize(width, round(width * size.height() / size.width())))
-    pix.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pix)
-    renderer.render(painter)
-    painter.end()
-    label = QLabel()
-    label.setPixmap(pix)
-    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    return label
 
 
 def logo_label(width):
@@ -109,35 +81,74 @@ def logo_label(width):
     return label
 
 
-def uoh_logo_pixmap(width, reverse=False):
-    """The University of Hull logo `width` px wide, its transparent margin
-    trimmed: black, or white with `reverse` for a dark background. A null
+def _brandmark_ratio(renderer):
+    size = renderer.defaultSize()
+    return size.height() / size.width()
+
+
+def brandmark_pixmap(width, reverse=False):
+    """The University brandmark `width` px wide: Ink Blue, or with
+    `reverse` its white (negative) version, for a dark background. A null
     pixmap if the file is missing."""
-    image = QImage(str(UOH_LOGO_PATH))
-    if image.isNull():
+    renderer = QSvgRenderer(str(BRANDMARK_PATH))
+    if not renderer.isValid():
         return QPixmap()
-    image = image.convertToFormat(QImage.Format.Format_ARGB32)
-    # trim to the opaque part (the file has a wide transparent border)
-    alpha = image.createAlphaMask()
-    left, top = image.width(), image.height()
-    right = bottom = -1
-    step = max(1, image.width() // 400)
-    for y in range(0, image.height(), step):
-        for x in range(0, image.width(), step):
-            if alpha.pixelIndex(x, y):
-                left, right = min(left, x), max(right, x)
-                top, bottom = min(top, y), max(bottom, y)
-    if right >= left:
-        image = image.copy(QRect(left, top, right - left + step,
-                                 bottom - top + step))
-    pix = QPixmap.fromImage(image).scaledToWidth(
-        width, Qt.TransformationMode.SmoothTransformation)
+    pix = QPixmap(QSize(width, round(width * _brandmark_ratio(renderer))))
+    pix.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pix)
+    renderer.render(painter)
     if reverse:
-        painter = QPainter(pix)
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
         painter.fillRect(pix.rect(), QColor("white"))
-        painter.end()
+    painter.end()
     return pix
+
+
+def brandmark(width=120, reverse=None):
+    """A QLabel showing the University brandmark `width` px wide (60 px at
+    least), or None if the file is missing. White on the dark theme unless
+    `reverse` says otherwise."""
+    if reverse is None:
+        reverse = theme.P["dark"]
+    pix = brandmark_pixmap(max(60, width), reverse)
+    if pix.isNull():
+        return None
+    label = QLabel()
+    label.setPixmap(pix)
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    label.setToolTip("University of Hull")
+    return label
+
+
+class Brandmark(QWidget):
+    """The University brandmark at up to `max_width`, scaled down to fit a
+    narrower space (the sidebar collapsed to its icon strip) - never below
+    the brand's 60 px; narrower than that it isn't drawn."""
+
+    def __init__(self, max_width, reverse=False):
+        super().__init__()
+        renderer = QSvgRenderer(str(BRANDMARK_PATH))
+        self._valid = renderer.isValid()
+        self._ratio = _brandmark_ratio(renderer) if self._valid else 1.0
+        self._max = max_width
+        self._reverse = reverse
+        self._pix = QPixmap()
+        self.setFixedHeight(round(max_width * self._ratio))
+        self.setMinimumWidth(1)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.setToolTip("University of Hull")
+
+    def paintEvent(self, _event):
+        width = min(self._max, self.width())
+        if not self._valid or width < 60:
+            return
+        if self._pix.width() != width:
+            self._pix = brandmark_pixmap(width, self._reverse)
+        painter = QPainter(self)
+        painter.drawPixmap((self.width() - self._pix.width()) // 2,
+                           (self.height() - self._pix.height()) // 2,
+                           self._pix)
+        painter.end()
 
 
 def ensure_default_folders():

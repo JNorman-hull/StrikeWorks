@@ -18,7 +18,7 @@ from importlib import metadata
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
 from .layout import centred, scroll_area
@@ -130,20 +130,10 @@ class AboutDialog(QDialog):
         desc.setAlignment(centre)
         v.addWidget(desc)
 
-        # the Ink Blue brandmark belongs on white, so it keeps its own white
-        # panel in the dark theme (the brand forbids recolouring it)
+        # the University brandmark (white on the dark theme)
         logo = brandmark(110)
         if logo is not None:
-            panel = QFrame()
-            panel.setObjectName("uohPanel")
-            pv = QHBoxLayout(panel)
-            pv.setContentsMargins(16, 12, 16, 12)
-            pv.addWidget(logo)
-            row = QHBoxLayout()
-            row.addStretch()
-            row.addWidget(panel)
-            row.addStretch()
-            v.addLayout(row)
+            v.addWidget(logo)
         copyright_ = QLabel("Copyright © University of Hull (2026)")
         style(copyright_, role="strong")
         copyright_.setAlignment(centre)

@@ -26,7 +26,8 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QPushButton, QSplitter, QVBoxLayout, QWidget,
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSplitter,
+    QVBoxLayout, QWidget,
 )
 
 from . import deployment_index as di
@@ -44,15 +45,15 @@ class StatCard(QFrame):
         super().__init__(parent)
         self.setObjectName("statCard")
         v = QVBoxLayout(self)
-        v.setContentsMargins(12, 8, 12, 8)
-        v.setSpacing(2)
+        v.setContentsMargins(10, 6, 10, 6)
+        v.setSpacing(1)
         # title and detail at the standard text size; the value bolder and
         # a few points larger
         self._title = QLabel(title)
         style(self._title, role="muted")
         self._value = QLabel("-")
         f = QFont(self._title.font())
-        f.setPointSize(max(f.pointSize(), 9) + 5)
+        f.setPointSize(max(f.pointSize(), 9) + 3)
         f.setBold(True)
         self._value.setFont(f)
         self._detail = QLabel("")
@@ -118,16 +119,18 @@ class ProcessPage(Page):
         self.lib_selector.section_layout.addWidget(btn_rescan)
         lv.addWidget(self.lib_selector)
 
+        # the four cards two by two, so the column stays short enough for
+        # a laptop screen
         grp_cards = Section("Summary")
-        cv = QVBoxLayout(grp_cards)
+        cv = QGridLayout(grp_cards)
         cv.setSpacing(6)
         self.card_recordings = StatCard("Recordings")
         self.card_processed = StatCard("Processed")
         self.card_validated = StatCard("Validated")
         self.card_bad = StatCard("Flagged bad")
-        for c in (self.card_recordings, self.card_processed,
-                  self.card_validated, self.card_bad):
-            cv.addWidget(c)
+        for i, c in enumerate((self.card_recordings, self.card_processed,
+                               self.card_validated, self.card_bad)):
+            cv.addWidget(c, i // 2, i % 2)
         lv.addWidget(grp_cards)
         lv.addStretch()
         row.addWidget(left)
@@ -142,9 +145,10 @@ class ProcessPage(Page):
         split.setChildrenCollapsible(False)
         split.addWidget(page)
         split.addWidget(self.inventory.log_section)
-        split.setStretchFactor(0, 2)
+        split.setStretchFactor(0, 3)
         split.setStretchFactor(1, 1)
-        split.setSizes([2000, 1000])
+        split.setSizes([3000, 1000])
+        self.inventory.console.setMinimumHeight(60)
         layout.addWidget(split)
 
     def _connect(self):

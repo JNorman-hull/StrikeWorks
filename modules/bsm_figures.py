@@ -155,9 +155,8 @@ class _LiveTightLayout(TightLayoutEngine):
 def _rotate_bar_labels(fig, ax, n_bars, label_px):
     """Bar labels flat when each bar's slot is wide enough for its
     (wrapped) label, slanted when it's tighter, vertical when it's very
-    narrow (the half-width mortality figure on screen) - worked out from
-    the figure's actual width, so the same figure reads at report size
-    and on a narrow canvas."""
+    narrow - worked out from the figure's actual width, so the same
+    figure reads at report size and on a narrow canvas."""
     slot = fig.get_size_inches()[0] * fig.dpi * 0.8 / max(n_bars, 1)
     rotation = 0 if slot >= label_px else (30 if slot >= label_px * 0.55 else 90)
     for lab in ax.get_xticklabels():
@@ -342,7 +341,8 @@ def draw_comparison_bars(fig, cen_values, comparisons, dark=True,
         ax.set_title(title, fontsize=10, fontweight="bold", color=fg)
     if not cen_items and not comparisons:
         ax.set_xticks([])
-        _awaiting(ax, "Run a Blade Strike Modelling calculation first")
+        # on three lines, like the mortality figure beside it
+        _awaiting(ax, "Run a Blade Strike\nModelling calculation\nfirst")
         _bar_style(ax, dark, ylabel)
         _finish_layout(fig, dark)
         return
@@ -393,7 +393,7 @@ def draw_mortality_bars(fig, items, dark=True, title="Mortality",
         ax.set_title(title, fontsize=10, fontweight="bold", color=fg)
     if not items:
         ax.set_xticks([])
-        _awaiting(ax, "Run a Blade Strike Modelling calculation first")
+        _awaiting(ax, "Run a Blade Strike\nModelling calculation\nfirst")
         _bar_style(ax, dark, ylabel)
         _finish_layout(fig, dark)
         return

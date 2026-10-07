@@ -18,7 +18,6 @@ from pathlib import Path
 
 import numpy as np
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt, QElapsedTimer, QTimer
 from PySide6.QtWidgets import (
@@ -31,6 +30,7 @@ from . import bsm_figures, hig_peaks, ml_figures, settings, severity
 from .bsm_model import (
     default_vcrit, recompute_mortality, recompute_mortality_at_vcrit,
 )
+from .canvas import FigureCanvas
 from .cards import MetaCard, RingCard, Spinner
 from .layout import apply_section_defaults, hsplit, scroll_page, Section
 from .tables import fill_acceleration_table
@@ -325,10 +325,15 @@ class PredictTab(QWidget):
         self.card_rate       = RingCard("Strike rate", w=170)
         self.card_conf       = RingCard("Mean confidence", w=170)
         self.card_regions    = RingCard("Strike classes", w=170)
-        # measured HIG beside the model's verdict: the peak analysis when
-        # it ran, else each recording's severity band (_populate_summary_cards)
-        self.card_severity   = MetaCard("Severity (HIG peak)")
-        self.card_severe     = RingCard("Severe strikes (> 400 g)", w=170)
+        # the HIG peak analysis beside the model's verdict, shown while its
+        # box is ticked (_refresh_hig_visibility)
+        self.card_severity   = MetaCard("HIG peak events")
+        self.card_severe     = RingCard(
+            f"Collisions (≥ {hig_peaks.COLLISION_G} g)", w=170)
+        self.card_severity.setToolTip(
+            "Acceleration events within 0.1 s of the nadir (HIG peak "
+            "analysis), and the recordings with a collision - an event "
+            f"of {hig_peaks.COLLISION_G} g or more.")
         for i, c in enumerate((self.card_recordings, self.card_strikes,
                                self.card_rate, self.card_conf,
                                self.card_regions, self.card_severity,
@@ -359,16 +364,13 @@ class PredictTab(QWidget):
         fv = QVBoxLayout(grp_figs)
         # two rows: the model's strike rate and the measured severity, then
         # strike location and mortality
-        figs = QGridLayout()
-        figs.setSpacing(8)
-        for i, canvas in enumerate((self.canvas_bin, self.canvas_sev,
-                                    self.canvas_mc, self.canvas_vcrit)):
-            figs.addWidget(canvas, i // 2, i % 2)
-        fv.addLayout(figs)
+        self._figs = QGridLayout()
+        self._figs.setSpacing(8)
+        fv.addLayout(self._figs)
         v.addWidget(grp_figs)
 
         # ── row 6: HIG peak analysis ────────────────────────────────────────
-        grp_hig = Section("HIG peak analysis")
+        grp_hig = self.grp_hig = Section("HIG peak analysis")
         hv = QVBoxLayout(grp_hig)
         hv.setSpacing(8)
         self.lbl_hig_status = muted_label(
@@ -572,13 +574,21 @@ class PredictTab(QWidget):
         self.chk_hig_peaks.blockSignals(True)
         self.chk_hig_peaks.setChecked(s.hig_peaks)
         self.chk_hig_peaks.blockSignals(False)
-        if s.summary is None:
-            # before a run the HIG cards are named for what the run will show
-            self.card_severity.set_title(
-                "HIG peak events" if s.hig_peaks else "Severity (HIG peak)")
-            self.card_severe.set_title(
-                f"Collisions (≥ {hig_peaks.COLLISION_G} g)" if s.hig_peaks
-                else "Severe strikes (> 400 g)")
+        self._refresh_hig_visibility()
+
+    def _refresh_hig_visibility(self):
+        """The HIG output - its two cards, its figure and the HIG peak
+        analysis section - shows only while HIG peak analysis is ticked."""
+        on = self.state.hig_peaks
+        for w in (self.card_severity, self.card_severe, self.grp_hig):
+            w.setVisible(on)
+        canvases = [self.canvas_bin] + ([self.canvas_sev] if on else []) + [
+            self.canvas_mc, self.canvas_vcrit]
+        self.canvas_sev.setVisible(on)
+        while self._figs.count():
+            self._figs.takeAt(0)
+        for i, canvas in enumerate(canvases):
+            self._figs.addWidget(canvas, i // 2, i % 2)
 
     def _on_mode_changed(self):
         mode = self.cmb_mode.currentData()
@@ -697,12 +707,12 @@ class PredictTab(QWidget):
         self._populate_table()
         ml_figures.draw_strike_rate(self.fig_bin, s.summary, dark=True)
         self.canvas_bin.draw()
-        if s.acc_summary is not None:
-            ml_figures.draw_peak_summary(self.fig_sev, s.acc_summary, dark=True)
-        else:
-            ml_figures.draw_severity(self.fig_sev, s.severity_summary,
-                                     dark=True,
-                                     measured=severity.available(s.summary))
+        ml_figures.draw_peak_summary(
+            self.fig_sev, s.acc_summary, dark=True,
+            note=None if s.acc_summary is not None else (
+                "No HIG channel in this dataset"
+                if (s.run_meta or {}).get("hig_peaks_requested")
+                else "HIG peak analysis was off for this run"))
         self.canvas_sev.draw()
         self._populate_hig_peaks()
         mc_run = s.run_meta.get("mode") == "multiclass"
@@ -777,19 +787,16 @@ class PredictTab(QWidget):
             self.card_regions.clear()
 
         acc = s.acc_summary
-        if acc is not None and len(acc):
+        if acc is None or not len(acc):
+            self.card_severity.set_rows([])
+            self.card_severe.clear()
+        else:
             total = acc.iloc[-1]       # the "All recordings" row, or the only one
-            self.card_severity.set_title("HIG peak events")
-            self.card_severity.setToolTip(
-                "Acceleration events within 0.1 s of the nadir (HIG peak "
-                "analysis), and the recordings with a collision - an event "
-                f"of {hig_peaks.COLLISION_G} g or more.")
             self.card_severity.set_rows(
                 [(f"Events ≥ {g} g", int(total[f"n_events_{g}g"]))
                  for g in hig_peaks.THRESHOLDS_G]
                 + [("Collisions", f"{int(total['n_collision'])} of "
                                   f"{int(total['n_sensors'])} recordings")])
-            self.card_severe.set_title(f"Collisions (≥ {hig_peaks.COLLISION_G} g)")
             self.card_severe.setToolTip(
                 "Share of recordings with an event of "
                 f"{hig_peaks.COLLISION_G} g or more within 0.1 s of the "
@@ -797,27 +804,6 @@ class PredictTab(QWidget):
                 f"{total['ci_hi'] * 100:.1f}%).")
             rate = float(total["collision_rate"])
             self.card_severe.set_value(rate, f"{rate * 100:.1f}%")
-            self.card_severity.setVisible(True)
-            self.card_severe.setVisible(True)
-            return
-
-        measured = severity.available(df)
-        self.card_severity.setVisible(measured)
-        self.card_severe.setVisible(measured)
-        self.card_severity.set_title("Severity (HIG peak)")
-        self.card_severity.setToolTip(
-            "Each recording's peak high-g acceleration: at or below 95 g, "
-            "95-200 g, 200-400 g, or over 400 g - only over 400 g is a "
-            "severe strike. Measured, not predicted: the model flags "
-            "contacts of any size.")
-        self.card_severe.set_title("Severe strikes (> 400 g)")
-        self.card_severe.setToolTip(
-            "Share of recordings whose HIG peak passed 400 g.")
-        if measured:
-            self.card_severity.set_rows(severity.band_rows(s.predictions))
-            n_severe = int(df[f"n_over_{severity.SEVERE_G}g"].sum())
-            share = n_severe / n_total if n_total else 0.0
-            self.card_severe.set_value(share, f"{share * 100:.1f}%")
 
     # ── HIG peak analysis ────────────────────────────────────────────────────
     def _populate_hig_peaks(self):

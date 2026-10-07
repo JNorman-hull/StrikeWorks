@@ -22,8 +22,9 @@ Usage:
 
 --mc-model/--mc-metrics are optional; if omitted only the binary stage runs.
 --threshold overrides the deployed optimal_threshold (the GUI passes it
-only when the override box is ticked). --hig-peaks runs the HIG peak
-analysis (hig_peaks.py; Predict's "HIG peak analysis" box, on by default).
+only when the override box is ticked). --hig-peaks runs the HIG
+analyses - severity and the peak analysis (hig_peaks.py) - Predict's "HIG
+peak analysis" box, on by default; without it there are no HIG outputs.
 
 Outputs:
     predictions.csv     per-recording predictions
@@ -257,7 +258,8 @@ def main():
             results[f"prob_{cn}"] = mc_probs[:, i].round(4)
 
     # ---- HIG severity (measured, independent of the model) ----
-    peaks, hig_source = _hig_peaks(df, file_meta)
+    peaks, hig_source = (_hig_peaks(df, file_meta) if args.hig_peaks
+                         else (None, None))
     if peaks is not None:
         results["hig_peak_g"] = np.round(peaks, 1)
         results["severity"] = _severity_band(peaks)

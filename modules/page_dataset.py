@@ -24,7 +24,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -36,6 +35,7 @@ from PySide6.QtWidgets import (
 from . import deployment_index as di
 from . import sensor_config, settings
 from .bind_datasets import BindTrainingData
+from .canvas import FigureCanvas
 from .dataset_build import (
     INDEX_REL, OPT_SEGMENTED, OPT_UNSEGMENTED, WIN_SEC, ExtractThread,
 )

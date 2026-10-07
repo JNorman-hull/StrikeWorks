@@ -59,7 +59,7 @@ from PySide6.QtCore import QEventLoop, QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from . import deployment_index as di
-from . import raw_layout, report_center, sensor_config, settings
+from . import raw_layout, report_center, sensor_config, settings, win_utils
 from .edition import simple_only
 
 DEMO_LIBRARY_NAME = "StrikeWorks_demo"
@@ -312,6 +312,7 @@ class _RunnerBase(QObject):
                 QMessageBox.critical, QMessageBox.question,
                 QFileDialog.getExistingDirectory)
         noop = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok)
+        win_utils.suppress_open_folder = True
         QMessageBox.information = noop
         QMessageBox.warning = noop
         QMessageBox.critical = noop
@@ -323,6 +324,7 @@ class _RunnerBase(QObject):
         try:
             yield
         finally:
+            win_utils.suppress_open_folder = False
             (QMessageBox.information, QMessageBox.warning,
              QMessageBox.critical, QMessageBox.question,
              QFileDialog.getExistingDirectory) = orig

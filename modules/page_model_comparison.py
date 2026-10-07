@@ -14,8 +14,8 @@ Mortality: the current model's strike rate put through each species' BSM
 injury model (`bsm_model.mortality_from_strike_rate`, the same formula as
 the BSM's observed-counts mortality) - the model-projected mortality -
 against the BSM's own mortality and any video-observed mortality, as a
-figure half the collision figure's width and extra table columns. The
-manual Model 1 counts get no projected mortality (no BSM run behind them).
+figure beside the collision figure and extra table columns. The manual
+Model 1 counts get no projected mortality (no BSM run behind them).
 
 Layout: Filters (the same Deployment / Treatment / Run filters as Raw data
 processing) and the three input boxes on the left, figures over the table
@@ -30,13 +30,13 @@ from PySide6.QtWidgets import (
 )
 
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from . import bsm_figures
 from .bsm_model import mortality_from_strike_rate
+from .canvas import FigureCanvas
 from .library_widgets import LibrarySelector
 from .ml_model_library import model_display_name
-from .layout import apply_section_defaults, Page, scroll_page, Section
+from .layout import apply_section_defaults, Page, scroll_area, scroll_page, Section
 from .theme import muted_label, style
 from .wilson_calc import wilson_interval
 
@@ -76,6 +76,24 @@ def _run_text(value):
         return s
 
 
+def _count_form():
+    form = QGridLayout()
+    form.setHorizontalSpacing(8)
+    form.setColumnStretch(1, 1)
+    return form
+
+
+def _count_row(form, label, changed):
+    """A count box on its own row of `form`, after its label."""
+    spin = QSpinBox()
+    spin.setRange(0, 1000000)
+    spin.valueChanged.connect(changed)
+    row = form.count() // 2
+    form.addWidget(muted_label(label, wrap=True), row, 0)
+    form.addWidget(spin, row, 1)
+    return spin
+
+
 class ModelComparisonPage(Page):
 
     def __init__(self, main_window, bsm_state, prediction_state=None):
@@ -106,22 +124,34 @@ class ModelComparisonPage(Page):
         g = Section("Comparison")
         gv = QVBoxLayout(g)
 
+        # the inputs scroll in their own column, so they keep their size
+        # while the figures fill the height there is
+        column = self._inputs_column()
+        inputs = scroll_area(column)
+        inputs.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # never narrower than the inputs themselves, beside their scrollbar;
+        # opened wide enough for the filters' names
+        inputs.setMinimumWidth(column.minimumSizeHint().width()
+                               + inputs.verticalScrollBar().sizeHint().width() + 6)
+        inputs.setMaximumWidth(max(480, inputs.minimumWidth()))
+        names = max(c.sizeHint().width() - c.minimumSizeHint().width()
+                    for c in (self.lib_selector.cmb_deployment,
+                              self.lib_selector.cmb_treatment,
+                              self.lib_selector.cmb_run))
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
-        split.addWidget(self._inputs_column())
+        split.addWidget(inputs)
         split.addWidget(self._results_column())
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
-        split.setSizes([320, 1000])
-        split.setMinimumHeight(520)
+        split.setSizes([min(inputs.minimumWidth() + names,
+                            inputs.maximumWidth()), 1000])
         gv.addWidget(split)
         return g
 
     def _inputs_column(self):
         """Filters, then Video observed / Model 1 / Blade strike model."""
         left = QWidget()
-        left.setMinimumWidth(300)
-        left.setMaximumWidth(440)
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 4, 0)
         lv.setSpacing(8)
@@ -142,33 +172,31 @@ class ModelComparisonPage(Page):
         return left
 
     def _results_column(self):
-        """The collision and mortality figures side by side (mortality at
-        half the collision figure's width) over the table, the figures
-        taking two thirds of the height."""
-        self.fig_compare = Figure(figsize=(5.0, 3.2), dpi=100)
+        """The collision and mortality figures side by side, half the
+        width each, over the table, the figures taking two thirds of the
+        height."""
+        self.fig_compare = Figure(figsize=(3.5, 3.2), dpi=100)
         self.canvas_compare = FigureCanvas(self.fig_compare)
-        self.canvas_compare.setMinimumSize(260, 240)
-        self.canvas_compare.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.fig_mortality = Figure(figsize=(2.5, 3.2), dpi=100)
+        self.fig_mortality = Figure(figsize=(3.5, 3.2), dpi=100)
         self.canvas_mortality = FigureCanvas(self.fig_mortality)
-        self.canvas_mortality.setMinimumSize(180, 240)
-        self.canvas_mortality.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        for canvas in (self.canvas_compare, self.canvas_mortality):
+            canvas.setMinimumSize(200, 240)
+            canvas.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # redrawn at their real size - the bar labels' angle depends on it
         self.canvas_compare.mpl_connect(
-            "resize_event", lambda _e: self._draw_figures())
+            "resize_event", lambda _e: self._draw_compare())
         self.canvas_mortality.mpl_connect(
-            "resize_event", lambda _e: self._draw_figures())
+            "resize_event", lambda _e: self._draw_mortality())
 
         figs = QSplitter(Qt.Orientation.Horizontal)
         figs.setChildrenCollapsible(False)
         figs.addWidget(self.canvas_compare)
         figs.addWidget(self.canvas_mortality)
-        figs.setStretchFactor(0, 2)
+        figs.setStretchFactor(0, 1)
         figs.setStretchFactor(1, 1)
-        figs.setSizes([2000, 1000])
+        figs.setSizes([1000, 1000])
 
         self.tbl_compare = QTableWidget(0, 12)
         self.tbl_compare.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -197,26 +225,16 @@ class ModelComparisonPage(Page):
         head.addWidget(self.chk_video_plot)
         gv.addLayout(head)
 
-        form = QGridLayout()
-        form.setHorizontalSpacing(8)
-        self.spin_manual_total = QSpinBox()
-        self.spin_manual_total.setRange(0, 1000000)
-        self.spin_manual_total.valueChanged.connect(self._refresh_comparison)
-        form.addWidget(muted_label("Sensors deployed", wrap=True), 0, 0)
-        form.addWidget(self.spin_manual_total, 0, 1)
-        self.spin_manual_strike = QSpinBox()
-        self.spin_manual_strike.setRange(0, 1000000)
-        self.spin_manual_strike.valueChanged.connect(self._refresh_comparison)
-        form.addWidget(muted_label("Strikes observed", wrap=True), 0, 2)
-        form.addWidget(self.spin_manual_strike, 0, 3)
-        self.spin_manual_mort = QSpinBox()
-        self.spin_manual_mort.setRange(0, 1000000)
+        form = _count_form()
+        self.spin_manual_total = _count_row(form, "Sensors deployed",
+                                            self._refresh_comparison)
+        self.spin_manual_strike = _count_row(form, "Strikes observed",
+                                             self._refresh_comparison)
+        self.spin_manual_mort = _count_row(form, "Mortalities observed",
+                                           self._refresh_comparison)
         self.spin_manual_mort.setToolTip(
             "Fish killed, out of the sensors deployed - the observed "
             "mortality the mortality figure compares against.")
-        self.spin_manual_mort.valueChanged.connect(self._refresh_comparison)
-        form.addWidget(muted_label("Mortalities observed", wrap=True), 1, 2)
-        form.addWidget(self.spin_manual_mort, 1, 3)
         gv.addLayout(form)
         self.lbl_manual = QLabel("")
         style(self.lbl_manual)
@@ -238,18 +256,11 @@ class ModelComparisonPage(Page):
         head.addWidget(self.chk_model1_plot)
         gv.addLayout(head)
 
-        form = QGridLayout()
-        form.setHorizontalSpacing(8)
-        self.spin_model1_total = QSpinBox()
-        self.spin_model1_total.setRange(0, 1000000)
-        self.spin_model1_total.valueChanged.connect(self._refresh_comparison)
-        form.addWidget(muted_label("Sensors deployed", wrap=True), 0, 0)
-        form.addWidget(self.spin_model1_total, 0, 1)
-        self.spin_model1_strike = QSpinBox()
-        self.spin_model1_strike.setRange(0, 1000000)
-        self.spin_model1_strike.valueChanged.connect(self._refresh_comparison)
-        form.addWidget(muted_label("Predicted strike", wrap=True), 0, 2)
-        form.addWidget(self.spin_model1_strike, 0, 3)
+        form = _count_form()
+        self.spin_model1_total = _count_row(form, "Sensors deployed",
+                                            self._refresh_comparison)
+        self.spin_model1_strike = _count_row(form, "Predicted strike",
+                                             self._refresh_comparison)
         gv.addLayout(form)
         self.lbl_model1 = QLabel("")
         style(self.lbl_model1)
@@ -267,36 +278,34 @@ class ModelComparisonPage(Page):
         head.addWidget(self.ed_bsm_label, stretch=1)
         gv.addLayout(head)
 
+        # each species' tick box (plot its bars) over its two values, so
+        # the column stays narrow
         form = QGridLayout()
-        form.setHorizontalSpacing(10)
-        form.addWidget(muted_label("Collision", wrap=True), 0, 1)
-        form.addWidget(muted_label("Mortality", wrap=True), 0, 2)
-
-        def value_label():
-            lab = QLabel("Not calculated")
-            style(lab)
-            return lab
-
-        self.lbl_scaly_value = value_label()
-        self.lbl_scaly_mort = value_label()
-        self.chk_scaly_show = QCheckBox("Show")
-        self.chk_scaly_show.setChecked(True)
-        self.chk_scaly_show.toggled.connect(self._refresh_comparison)
-        form.addWidget(muted_label("Scaly", wrap=True), 1, 0)
-        form.addWidget(self.lbl_scaly_value, 1, 1)
-        form.addWidget(self.lbl_scaly_mort, 1, 2)
-        form.addWidget(self.chk_scaly_show, 1, 3)
-        self.lbl_eel_value = value_label()
-        self.lbl_eel_mort = value_label()
-        self.chk_eel_show = QCheckBox("Show")
-        self.chk_eel_show.setChecked(True)
-        self.chk_eel_show.toggled.connect(self._refresh_comparison)
-        form.addWidget(muted_label("Eel", wrap=True), 2, 0)
-        form.addWidget(self.lbl_eel_value, 2, 1)
-        form.addWidget(self.lbl_eel_mort, 2, 2)
-        form.addWidget(self.chk_eel_show, 2, 3)
-        form.setColumnStretch(1, 1)
+        form.setHorizontalSpacing(8)
+        form.setColumnMinimumWidth(0, 12)
         form.setColumnStretch(2, 1)
+
+        def species_rows(name, row):
+            box = QCheckBox(name)
+            box.setChecked(True)
+            box.setToolTip(f"Plot the {name.lower()} Blade Strike Model "
+                           "bars.")
+            box.toggled.connect(self._refresh_comparison)
+            form.addWidget(box, row, 0, 1, 3)
+            values = []
+            for i, what in enumerate(("Collision", "Mortality"), start=1):
+                lab = QLabel("Not calculated")
+                style(lab)
+                lab.setWordWrap(True)
+                form.addWidget(muted_label(what), row + i, 1)
+                form.addWidget(lab, row + i, 2)
+                values.append(lab)
+            return box, values[0], values[1]
+
+        (self.chk_scaly_show, self.lbl_scaly_value,
+         self.lbl_scaly_mort) = species_rows("Scaly", 0)
+        (self.chk_eel_show, self.lbl_eel_value,
+         self.lbl_eel_mort) = species_rows("Eel", 3)
         gv.addLayout(form)
         note = muted_label(
             "Collision probability (Pco) and mortality (Pm) from the Blade "
@@ -538,10 +547,16 @@ class ModelComparisonPage(Page):
 
     def _draw_figures(self):
         """Both figures from what `_refresh_comparison` last worked out."""
+        self._draw_compare()
+        self._draw_mortality()
+
+    def _draw_compare(self):
         bsm_figures.draw_comparison_bars(
             self.fig_compare, self.cen_values, self.comparisons,
             title="Collision probability")
         self.canvas_compare.draw_idle()
+
+    def _draw_mortality(self):
         bsm_figures.draw_mortality_bars(self.fig_mortality,
                                         self.mortality_items)
         self.canvas_mortality.draw_idle()

@@ -19,16 +19,16 @@ Follows `BSMState.calculated`, so it shows the latest result however it
 was produced.
 """
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtWidgets import (
     QFileDialog, QHBoxLayout, QPushButton, QSizePolicy, QTableWidget,
     QTableWidgetItem, QVBoxLayout,
 )
 
-from . import bsm_figures, bsm_io
+from . import bsm_figures, bsm_io, win_utils
 from .bsm_model import sensitivity_sweeps
 from .bsm_state import output_card_rows
+from .canvas import FigureCanvas
 from .cards import MetaCard
 from .layout import (
     apply_section_defaults, centred, Page, scroll_page, Section, when_visible,
@@ -199,6 +199,7 @@ class BSMAnalysisPage(Page):
         except Exception as e:
             self.status.emit(f"Report failed: {e}", 6000)
             return
+        win_utils.open_folder(out)
         self.status.emit(f"Report generated in {out}"
                          + (f" ({'; '.join(warnings)})" if warnings else ""),
                          5000)

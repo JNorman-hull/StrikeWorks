@@ -28,33 +28,34 @@ import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QLayout,
+    QCheckBox, QComboBox, QDialog, QFileDialog, QGridLayout, QHBoxLayout, QLabel,
+    QLayout,
     QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSizePolicy,
     QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import deployment_index as di
 from . import (
-    hig_peaks, ml_figures, ml_report, settings, severity, theme, win_utils,
+    hig_peaks, ml_figures, ml_report, settings, severity, win_utils,
 )
 from . import validation_core as vc
+from .canvas import FigureCanvas
 from .deployment_editor import DeploymentEditor
 from .edition import simple_only
 from .inventory_widgets import FileInventory
 from .cards import MetaCard, RingCard, Spinner
-from .layout import Section
+from .layout import Section, scroll_area
 from .tables import fill_acceleration_table
 from .theme import (
     ACCENT, BAD, NADIR, OK, PALETTE, PINK, REGION_EDGE, REGION_FILL, TEXT,
     TRACE, TRACE2, WARN, muted_label, style,
 )
 from .plot_style import add_export_button, build_export_data
-from .startup import ICON_PATH, brandmark, logo_label, uoh_logo_pixmap
+from .startup import ICON_PATH, brandmark, logo_label
 
 _WIN_SEC = vc.WIN_SEC
 _IMAGES_DIR = Path(__file__).parent.parent / "images" / "images"
@@ -100,17 +101,18 @@ class SimpleModeDialog(QDialog):
         self.window = window
         self.setWindowTitle("StrikeWorks")
         self.setWindowIcon(QIcon(str(ICON_PATH)))
-        # resizable; 640 high fits a 1366x768 screen with the taskbar and
-        # title bar
-        self.resize(1340, 640)
+        # a normal window: minimise, maximise and close, resizable
+        self.setWindowFlags(
+            Qt.WindowType.Window | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowSystemMenuHint
+            | Qt.WindowType.WindowMinMaxButtonsHint
+            | Qt.WindowType.WindowCloseButtonHint)
         self.setMinimumSize(900, 560)
-        # a maximum as well: while the window is dragged by its title bar,
-        # Windows sizes it against Qt's minimum/maximum, and without one
-        # it can jump to a page's larger natural size mid-drag
-        self.setMaximumSize(1600, 900)
         # the app's first visible window, and its owner (MainWindow) is
         # hidden, so it needs the taskbar fix (win_utils.py)
         win_utils.ensure_taskbar_button(self)
+        # within the screen's work area (not under the taskbar), centred
+        win_utils.fit_to_screen(self, 1340, 800)
         # window-modal, so the dev console stays usable
         self.setWindowModality(Qt.WindowModality.WindowModal)
 
@@ -169,6 +171,8 @@ class SimpleModeDialog(QDialog):
             item.setData(Qt.ItemDataRole.UserRole, page)
             if page is None:
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            # the main steps bold, their sub-steps not
+            if not indent:
                 f = item.font()
                 f.setBold(True)
                 item.setFont(f)
@@ -212,14 +216,15 @@ class SimpleModeDialog(QDialog):
         top_row.addWidget(btn_settings)
         right_col.addLayout(top_row)
 
+        # each step in a scroll area: a small window scrolls the step
+        # rather than squashing it
         self.stack = QStackedWidget()
-        self.stack.addWidget(self._build_welcome_page())
-        self.stack.addWidget(self._build_deployment_page())
-        self.stack.addWidget(self._build_process_inventory_page())
-        self.stack.addWidget(self._build_process_validate_page())
-        self.stack.addWidget(self._build_predict_page())
-        self.stack.addWidget(self._build_report_page())
-        self.stack.addWidget(self._build_finished_page())
+        for build in (self._build_welcome_page, self._build_deployment_page,
+                      self._build_process_inventory_page,
+                      self._build_process_validate_page,
+                      self._build_predict_page, self._build_report_page,
+                      self._build_finished_page):
+            self.stack.addWidget(scroll_area(build()))
         right_col.addWidget(self.stack, stretch=1)
         body.addLayout(right_col, stretch=1)
         outer.addLayout(body, stretch=1)
@@ -403,11 +408,13 @@ class SimpleModeDialog(QDialog):
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        btn_blade_strike = QPushButton("Blade strike\n(next)")
-        btn_blade_strike.setMinimumSize(140, 44)
-        style(btn_blade_strike, role="primary")
-        btn_blade_strike.clicked.connect(self._go_next)
-        btn_row.addWidget(btn_blade_strike)
+        self.btn_blade_strike = QPushButton("Blade strike\n(next)")
+        self.btn_blade_strike.setMinimumSize(140, 44)
+        style(self.btn_blade_strike, role="primary")
+        self.btn_blade_strike.clicked.connect(self._go_next)
+        # the Simple edition has nothing to choose between: Next continues
+        self.btn_blade_strike.setVisible(not simple_only())
+        btn_row.addWidget(self.btn_blade_strike)
         self.btn_dev_toolkit = QPushButton("Development\ntoolkit")
         self.btn_dev_toolkit.setMinimumSize(140, 44)
         style(self.btn_dev_toolkit, role="alternative")
@@ -420,13 +427,11 @@ class SimpleModeDialog(QDialog):
         v.addLayout(btn_row)
 
         v.addStretch()
-        # the University brandmark, centred below, in the Hull theme (its
-        # Ink Blue version needs the theme's white background)
-        if theme.NAME == "hull":
-            mark = brandmark(90)
-            if mark is not None:
-                v.addWidget(mark)
-                v.addSpacing(10)
+        # the University brandmark, centred below (white on the dark theme)
+        mark = brandmark(90)
+        if mark is not None:
+            v.addWidget(mark)
+            v.addSpacing(10)
         return page
 
     def _go_development_toolkit(self):
@@ -461,11 +466,21 @@ class SimpleModeDialog(QDialog):
         self.chk_hig_peaks.blockSignals(True)
         self.chk_hig_peaks.setChecked(state.hig_peaks)
         self.chk_hig_peaks.blockSignals(False)
-        if state.summary is None:
-            # before a run the HIG card is named for what the run will show
-            self.card_severity.set_title(
-                f"Collisions (≥ {hig_peaks.COLLISION_G} g)" if state.hig_peaks
-                else "Severity (HIG peak)")
+        self._refresh_hig_card()
+
+    def _refresh_hig_card(self):
+        """The collisions card: shown only while HIG peak analysis is
+        ticked, filled when the last run did the analysis."""
+        state = self.window.ml_prediction_page.state
+        self.card_severity.setVisible(state.hig_peaks)
+        acc = state.acc_summary
+        if acc is None or not len(acc):
+            self.card_severity.clear()
+            return
+        total = acc.iloc[-1]       # the "All recordings" row, or the only one
+        k, n_rec = int(total["n_collision"]), int(total["n_sensors"])
+        self.card_severity.set_segments([
+            ("Collision", k, PINK), ("No collision", n_rec - k, PALETTE[0])])
 
     def _on_session_library_changed_simple(self, path):
         self._lib_root = path
@@ -930,7 +945,7 @@ class SimpleModeDialog(QDialog):
         grp_ds = Section("Dataset")
         grp_ds.setMaximumWidth(430)
         dv = QVBoxLayout(grp_ds)
-        self.card_predict_dataset = MetaCard("Curated sensor dataset")
+        self.card_predict_dataset = MetaCard()
         dv.addWidget(self.card_predict_dataset)
         ds_row = QHBoxLayout()
         ds_row.addStretch()
@@ -984,10 +999,12 @@ class SimpleModeDialog(QDialog):
         cards_row.addWidget(self.card_predicted_strikes)
         self.card_strike_classes = RingCard("Strike classes")
         cards_row.addWidget(self.card_strike_classes)
-        self.card_severity = RingCard("Severity (HIG peak)")
+        # the HIG peak analysis, shown while its box is ticked
+        self.card_severity = RingCard(f"Collisions (≥ {hig_peaks.COLLISION_G} g)")
         self.card_severity.setToolTip(
-            "Each recording's peak high-g acceleration - only over 400 g is "
-            "a severe strike. Measured, not predicted.")
+            f"Recordings with an acceleration event of "
+            f"{hig_peaks.COLLISION_G} g or more within 0.1 s of the nadir "
+            "(HIG peak analysis). Measured, not predicted.")
         cards_row.addWidget(self.card_severity)
         cards_row.addStretch()
         v.addLayout(cards_row)
@@ -1084,31 +1101,7 @@ class SimpleModeDialog(QDialog):
         else:
             self.card_strike_classes.clear()
 
-        acc = state.acc_summary
-        if acc is not None and len(acc):
-            # the HIG peak analysis: recordings with a collision
-            total = acc.iloc[-1]
-            k, n_rec = int(total["n_collision"]), int(total["n_sensors"])
-            self.card_severity.set_title(
-                f"Collisions (≥ {hig_peaks.COLLISION_G} g)")
-            self.card_severity.setToolTip(
-                f"Recordings with an acceleration event of "
-                f"{hig_peaks.COLLISION_G} g or more within 0.1 s of the "
-                "nadir. Measured, not predicted.")
-            self.card_severity.set_segments([
-                ("Collision", k, PINK), ("No collision", n_rec - k, PALETTE[0])])
-            self.card_severity.setVisible(True)
-            return
-        bands = severity.band_counts(state.predictions)
-        self.card_severity.set_title("Severity (HIG peak)")
-        self.card_severity.setToolTip(
-            "Each recording's peak high-g acceleration - only over 400 g is "
-            "a severe strike. Measured, not predicted.")
-        self.card_severity.setVisible(bool(bands))
-        if bands:
-            self.card_severity.set_segments([
-                (label, count, colour) for (label, count), colour in
-                zip(bands, (PALETTE[0], PALETTE[3], PALETTE[2], PINK))])
+        self._refresh_hig_card()
 
     def _on_predict_failed(self, msg):
         self.btn_run_predict.setEnabled(True)
@@ -1126,6 +1119,7 @@ class SimpleModeDialog(QDialog):
 
         self.tbl_report = QTableWidget(0, 0)
         self.tbl_report.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.tbl_report.setMinimumHeight(150)
         v.addWidget(self.tbl_report)
 
         # the HIG peak analysis table, as in the reports
@@ -1143,8 +1137,10 @@ class SimpleModeDialog(QDialog):
         self.lbl_report_acc_notes.setWordWrap(True)
         v.addWidget(self.lbl_report_acc_notes)
 
+        # the two model figures side by side, the HIG peak figure (two
+        # panels) the full width under them
         grp_figs = Section("Prediction figures")
-        fv = QHBoxLayout(grp_figs)
+        fv = QGridLayout(grp_figs)
         self.fig_report_bin = Figure(figsize=(4.3, 3.2), dpi=100)
         self.canvas_report_bin = FigureCanvas(self.fig_report_bin)
         self.fig_report_mc = Figure(figsize=(4.3, 3.2), dpi=100)
@@ -1155,8 +1151,10 @@ class SimpleModeDialog(QDialog):
                   self.canvas_report_peaks):
             c.setSizePolicy(QSizePolicy.Policy.Expanding,
                             QSizePolicy.Policy.Expanding)
-            # the two-panel peak figure gets the width of two
-            fv.addWidget(c, stretch=2 if c is self.canvas_report_peaks else 1)
+            c.setMinimumHeight(320)
+        fv.addWidget(self.canvas_report_bin, 0, 0)
+        fv.addWidget(self.canvas_report_mc, 0, 1)
+        fv.addWidget(self.canvas_report_peaks, 1, 0, 1, 2)
         v.addWidget(grp_figs, stretch=1)
         return page
 
@@ -1239,14 +1237,10 @@ class SimpleModeDialog(QDialog):
         wrap.addStretch()
         v.addLayout(wrap)
         v.addStretch()
-        # the University of Hull logo, white on the dark theme
-        uoh = uoh_logo_pixmap(240, reverse=theme.P["dark"])
-        if not uoh.isNull():
-            lbl_uoh = QLabel()
-            lbl_uoh.setPixmap(uoh)
-            lbl_uoh.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl_uoh.setToolTip("University of Hull")
-            v.addWidget(lbl_uoh)
+        # the University brandmark, as on the welcome page
+        mark = brandmark(90)
+        if mark is not None:
+            v.addWidget(mark)
             v.addSpacing(10)
         return page
 
@@ -1269,5 +1263,6 @@ class SimpleModeDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(self.window, "Download failed", str(e))
             return
+        win_utils.open_folder(out)
         QMessageBox.information(
             self.window, "Report downloaded", f"Saved to:\n{out}")

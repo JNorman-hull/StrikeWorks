@@ -7,7 +7,8 @@
   under "New on 6 October" below, not yet committed) and smoke-tested the
   same day (start-up, the prediction worker, the demos on a clean copy,
   the Simple edition's lock): `dist/StrikeWorks` (full app) and
-  `dist/StrikeWorks_Simple` (Simple mode only). No zips yet.
+  `dist/StrikeWorks_Simple` (Simple mode only); the 7 October changes
+  ("Windows" below) are not built yet. No zips yet.
   `dist/StrikeWorks` holds only what ships, so `build.py --zip-only`
   remakes its zip; `dist/StrikeWorks_Simple` also holds a Pentair run
   (`input_data`, `output_data`, `settings.json`), so `--simple --zip-only`
@@ -40,9 +41,26 @@
     same section boxes as File inventory and Treatments (scroll areas no
     longer paint the default grey).
   - **Logos**: the StrikeWorks logo outlined for white in the University
-    of Hull theme; the University of Hull logo at the foot of the sidebar
-    (white) and on Simple mode's Download page.
-- Tests: 65 pass, both demos and the lint check included
+    of Hull theme; the University brandmark the one University logo, in
+    the same places in both themes (splash, sidebar, Simple mode's welcome
+    and Download pages, About), white on dark backgrounds.
+  - **Windows** (7 October): the standard Windows frame for both windows
+    (Simple mode gained minimise/maximise); both open within the screen's
+    work area (taskbar excluded); every page and Simple mode step scrolls
+    rather than growing the window; Raw data processing's Summary cards
+    two by two; the splash sized to its logos; a saved report opens its
+    folder; unticking HIG peak analysis hides the HIG cards and skips the
+    analysis; no "Blade strike (next)" button in the Simple edition.
+    Then: the settings panel's text white (its "More" button gone); the
+    title without "Passive sensor data toolkit"; no border round the
+    window; Model comparison's inputs scroll in their own column; Export
+    and report is Preview / Export / Export all, with sections that have
+    nothing to report greyed out; Simple mode's main steps bold. Then:
+    Model comparison's inputs column narrows to about half its old
+    minimum (counts one per row, each species' values under its tick
+    box, filter lists that shrink), its two figures half the width each;
+    figures app-wide redraw once a resize is over, not during a drag.
+- Tests: 68 pass, both demos and the lint check included
   (`STRIKEWORKS_E2E=1`; 11-19 minutes on this machine on 6 October,
   where building the main window alone took 25 s).
 

@@ -25,14 +25,12 @@ QDialog { background-color: @bg; }
 
 /* ////////////////////////////////////////////////////////////////////
    Main window */
-#bgApp {
-	background-color: @bg;
-	border: 1px solid @border;
-}
+#bgApp { background-color: @bg; }
 
 /* Left menu */
 #leftMenuBg { background-color: @sidebar; }
-#leftMenuBg QWidget, #extraLeftBox QWidget, #contentTopBg QWidget, #bottomBar QWidget { color: @sidebar_text; }
+#leftMenuBg QWidget, #extraLeftBox QWidget, #extraRightBox QWidget, #contentTopBg QWidget,
+#bottomBar QWidget { color: @sidebar_text; }
 #topLogo {
 	background-color: @sidebar;
 	background-image: url(:/images/images/images/PyDracula.png);
@@ -296,6 +294,12 @@ QRadioButton::indicator:checked {
 	background: 3px solid @radio_checked;
 	border: 3px solid @indicator_border;
 }
+/* a box or button that can't be used looks it */
+QCheckBox:disabled, QRadioButton:disabled { color: @disabled_text; }
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {
+	border: 3px solid @empty;
+	background: @empty;
+}
 
 QSlider::groove:horizontal, QSlider::groove:vertical {
 	border-radius: 5px;
@@ -401,4 +405,3 @@ QPlainTextEdit[role="console"] {
 #metaCard, #statCard { background-color: @card; border-radius: 6px; border: 1px solid @border; }
 #metaCard QLabel, #statCard QLabel { border: none; background: transparent; }
 #homeSessionBox { border: 1px solid @session_box; border-radius: 10px; }
-#uohPanel { background: #ffffff; border-radius: 6px; }

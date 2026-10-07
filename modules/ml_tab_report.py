@@ -13,20 +13,18 @@ Hosts the central reporting hub (`report_center.py`): a checklist of every
 report a page in the app can produce - BSM maths, Study design, Raw data
 processing, Annotation, Model training, Misclassification, Model
 deployment summary, Model prediction, Model comparison - all in the same
-HTML format. Four actions:
+HTML format; a section with nothing to report yet is greyed out. Three
+actions:
 
-  Preview report            - assembles the checked sections and opens the
-                              result in the user's default web browser.
-  Export full report        - same assembly, written to disk under the
-                              session library's output folder (or the
-                              Settings default) and left there.
-  Export all                - every *available* section (not just
-                              checked), same as above - the quickest way to
-                              get everything there is.
-  Export StrikeWorks analysis - the self-contained prediction package
-                              (report + tables + PNG/SVG figures +
-                              provenance.json) from
-                              `ml_report.export_analysis`.
+  Preview     - assembles the checked sections and opens the result in the
+                user's default web browser.
+  Export      - the same, written to disk under the session library's
+                output folder (or the Settings default), its folder opened.
+  Export all  - every *available* section (not just checked), as Export -
+                the quickest way to get everything there is.
+
+(Simple mode's Download writes the prediction's self-contained package,
+`ml_report.export_analysis`.)
 
 Figure output settings (file formats, DPI) sit underneath and thread
 through to every section that renders its own figure (the `formats=`/
@@ -35,11 +33,11 @@ through to every section that renders its own figure (the `formats=`/
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
+    QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel,
     QMessageBox, QPushButton, QSpinBox, QVBoxLayout,
 )
 
-from . import ml_report, report_center
+from . import report_center, win_utils
 from .layout import apply_section_defaults, Section
 from .theme import muted_label, style
 
@@ -133,21 +131,27 @@ class ReportDialog(QDialog):
         sv.addLayout(sel_row)
         v.addWidget(grp_sections)
 
+        # Preview: the ticked sections in the browser; Export: the ticked
+        # sections to a report folder; Export all: every available section
         bar = QHBoxLayout()
         bar.setSpacing(6)
-        self.btn_preview = QPushButton("Preview report")
+        self.btn_preview = QPushButton("Preview")
+        self.btn_preview.setToolTip("Open the ticked sections as a report in "
+                                    "the browser.")
         self.btn_preview.clicked.connect(self._preview_report)
-        self.btn_export_full = QPushButton("Export full report")
+        self.btn_export_full = QPushButton("Export")
         style(self.btn_export_full, role="primary")
+        self.btn_export_full.setToolTip(
+            "Write the ticked sections as one report, with their tables and "
+            "figures, and open its folder.")
         self.btn_export_full.clicked.connect(self._export_full_report)
         self.btn_export_all = QPushButton("Export all")
+        self.btn_export_all.setToolTip(
+            "Tick every section with something to report, then export.")
         self.btn_export_all.clicked.connect(self._export_all)
-        self.btn_export_strikeworks = QPushButton("Export StrikeWorks analysis")
-        self.btn_export_strikeworks.clicked.connect(
-            self._export_strikeworks_analysis)
-        for b in (self.btn_preview, self.btn_export_full, self.btn_export_all,
-                  self.btn_export_strikeworks):
+        for b in (self.btn_preview, self.btn_export_full, self.btn_export_all):
             bar.addWidget(b)
+        bar.addStretch()
         v.addLayout(bar)
 
         v.addWidget(self._figure_output_group())
@@ -329,6 +333,7 @@ class ReportDialog(QDialog):
         self._report_done(doc_path, warnings)
 
     def _report_done(self, doc_path, warnings):
+        win_utils.open_folder(doc_path)
         self.lbl_status.setText(f"Report written to {doc_path}")
         self.state.status.emit(f"Report generated: {doc_path}", 7000)
         if warnings:
@@ -339,22 +344,3 @@ class ReportDialog(QDialog):
             QMessageBox.information(
                 self.window, "Report generated",
                 f"Report written to:\n{doc_path}")
-
-    # ── StrikeWorks analysis (Model prediction only - self-contained
-    # package: report + tables + figures + provenance.json) ────────────────
-    def _export_strikeworks_analysis(self):
-        dirpath = QFileDialog.getExistingDirectory(
-            self.window, "Create analysis package in folder", "")
-        if not dirpath:
-            return
-        try:
-            out = ml_report.export_analysis(self.state, dirpath)
-        except Exception as e:
-            QMessageBox.critical(self.window, "Export failed", str(e))
-            return
-        self.lbl_status.setText(f"StrikeWorks analysis exported to {out}")
-        self.state.status.emit(f"Analysis exported to {out}", 6000)
-        QMessageBox.information(
-            self.window, "Export StrikeWorks analysis",
-            f"{out}\n\n" + "\n".join(
-                f"  - {p.name}" for p in sorted(out.glob("*"))))

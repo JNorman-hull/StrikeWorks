@@ -37,14 +37,13 @@ if len(sys.argv) > 2 and sys.argv[1] == "--worker":
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QLabel, QMainWindow, QPushButton, QSizePolicy,
-    QTableWidget, QVBoxLayout,
+    QApplication, QFrame, QMainWindow, QPushButton, QTableWidget, QVBoxLayout,
 )
 
 from modules import settings, startup, table_copy, theme, win_utils
 from modules.bsm_state import BSMState
 from modules.dev_console import DevConsole
-from modules.layout import when_visible
+from modules.layout import scroll_area, when_visible
 from modules.page_annotate import AnnotationPage
 from modules.page_bsm_analysis import BSMAnalysisPage
 from modules.page_bsm_calculator import CalculatorPage
@@ -162,8 +161,10 @@ class MainWindow(QMainWindow):
         self.dev_console = DevConsole(self)
 
         # Every page builds its own contents (layout.Page) and is added to
-        # the page stack here. Home first: it resolves the session library,
-        # which the pages below read while they're built.
+        # the page stack here, in a scroll area of its own (_page). Home
+        # first: it resolves the session library, which the pages below
+        # read while they're built.
+        self._page_holders = {}
         self.session_state = SessionState(self)
         self.home_page = self._page(HomePage(self, self.session_state))
 
@@ -239,7 +240,7 @@ class MainWindow(QMainWindow):
         for tbl in self.findChildren(QTableWidget):
             style_table(tbl)
 
-        ui.stackedWidget.setCurrentWidget(self.home_page)
+        self.show_page(self.home_page)
         self.setSelected(ui.btn_home)
 
         # start as the collapsed icon strip, section buttons disabled
@@ -250,11 +251,26 @@ class MainWindow(QMainWindow):
         # Not shown here: Simple mode opens first (see __main__). The
         # taskbar fix has to run before the window's first show().
         win_utils.ensure_taskbar_button(self)
+        # within the screen's work area (not under the taskbar), centred
+        win_utils.fit_to_screen(self, 1280, 860)
 
     def _page(self, page):
+        """Add `page` to the page stack, in a scroll area: a window smaller
+        than the page's minimum size scrolls rather than growing past the
+        screen."""
         page.status.connect(_print_status)
-        self.ui.stackedWidget.addWidget(page)
+        holder = scroll_area(page)
+        self._page_holders[page] = holder
+        self.ui.stackedWidget.addWidget(holder)
         return page
+
+    def show_page(self, page):
+        self.ui.stackedWidget.setCurrentWidget(self._page_holders[page])
+
+    def current_page(self):
+        holder = self.ui.stackedWidget.currentWidget()
+        return next((p for p, h in self._page_holders.items() if h is holder),
+                    None)
 
     # ── sidebar layout ──────────────────────────────────────────────────────
     def _order_panel_buttons(self):
@@ -291,20 +307,11 @@ class MainWindow(QMainWindow):
         btn.setStyleSheet(
             "background-image: url(:/icons/images/icons/cil-external-link.png);")
         btn.clicked.connect(self.openSimpleMode)
-        # the University of Hull logo above them, white on the sidebar; left
-        # aligned, so the collapsed icon strip shows its shield
-        uoh = startup.uoh_logo_pixmap(170, reverse=True)
-        if not uoh.isNull():
-            logo = ui.lbl_uoh_logo = QLabel()
-            logo.setPixmap(uoh)
-            logo.setToolTip("University of Hull")
-            logo.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            logo.setContentsMargins(14, 0, 0, 14)
-            # clipped, not forcing the sidebar wider, when it is collapsed
-            logo.setMinimumWidth(1)
-            logo.setSizePolicy(QSizePolicy.Policy.Ignored,
-                               QSizePolicy.Policy.Fixed)
-            bottom_v.addWidget(logo)
+        # the University brandmark above them, white on the sidebar (it
+        # shrinks to the collapsed icon strip)
+        ui.uoh_brandmark = startup.Brandmark(84, reverse=True)
+        bottom_v.addWidget(ui.uoh_brandmark)
+        bottom_v.addSpacing(8)
         bottom_v.addWidget(btn)
         bottom_v.addWidget(ui.btn_export_report)
 
@@ -357,7 +364,7 @@ class MainWindow(QMainWindow):
     # ── navigation ──────────────────────────────────────────────────────────
     def _go_home(self):
         ui = self.ui
-        ui.stackedWidget.setCurrentWidget(self.home_page)
+        self.show_page(self.home_page)
         UIFunctions.resetStyle(self, "btn_home")
         UIFunctions.resetPanelStyle(self, "")
         if ui.extraLeftBox.width() > 0:
@@ -372,7 +379,7 @@ class MainWindow(QMainWindow):
         Model training > Train instead, with the corrected dataset loaded."""
         ui = self.ui
         mp = self.misclassification_page
-        if (ui.stackedWidget.currentWidget() is mp
+        if (self.current_page() is mp
                 and btn_name != "btn_misclassification"
                 and mp.has_changes()):
             mp.notify_and_load_into_training()
@@ -390,7 +397,7 @@ class MainWindow(QMainWindow):
             return
         page_name, tab_index = target
         page = getattr(self, page_name)
-        ui.stackedWidget.setCurrentWidget(page)
+        self.show_page(page)
         if tab_index is not None:
             page.show_tab(tab_index)
 

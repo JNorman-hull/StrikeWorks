@@ -15,7 +15,7 @@ Run 1.
 """
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import QSize, Qt, QThread, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QHBoxLayout, QLabel,
@@ -58,6 +58,34 @@ class _RawScanThread(QThread):
             print(f"Could not scan {self._raw_dir}: {e}")
             tree = raw_layout.RawTree()
         self.done.emit(self._gen, tree)
+
+
+class FilterCombo(QComboBox):
+    """A filter combo as wide as its longest name where there's room, but
+    able to shrink to a few characters rather than hold its column wide;
+    its list still opens wide enough to read every name."""
+
+    MIN_CHARS = 2
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.setMinimumContentsLength(self.MIN_CHARS)
+
+    def sizeHint(self):
+        hint = super().sizeHint()       # MIN_CHARS wide
+        fm = self.fontMetrics()
+        frame = hint.width() - self.MIN_CHARS * fm.horizontalAdvance("X")
+        names = max((fm.horizontalAdvance(self.itemText(i))
+                     for i in range(self.count())), default=0)
+        return QSize(max(hint.width(), frame + names), hint.height())
+
+    def showPopup(self):
+        view = self.view()
+        view.setMinimumWidth(view.sizeHintForColumn(0) + 2 * view.frameWidth()
+                             + view.verticalScrollBar().sizeHint().width())
+        super().showPopup()
 
 
 class LibrarySelector(QWidget):
@@ -132,11 +160,15 @@ class LibrarySelector(QWidget):
         loading_row.addWidget(self.lbl_loading, stretch=1)
         fv.addLayout(loading_row)
 
-        self.cmb_deployment = QComboBox()
+        # "All ..." until the library's first scan fills them in
+        self.cmb_deployment = FilterCombo()
+        self.cmb_deployment.addItem("All deployments", ALL_DEPLOYMENTS)
         fv.addLayout(self._row(muted_label("Deployment"), self.cmb_deployment))
-        self.cmb_treatment = QComboBox()
+        self.cmb_treatment = FilterCombo()
+        self.cmb_treatment.addItem("All treatments", ALL_DEPLOYMENTS)
         fv.addLayout(self._row(muted_label("Treatment"), self.cmb_treatment))
-        self.cmb_run = QComboBox()
+        self.cmb_run = FilterCombo()
+        self.cmb_run.addItem("All runs", ALL_DEPLOYMENTS)
         fv.addLayout(self._row(muted_label("Run"), self.cmb_run))
         v.addWidget(self.section)
 

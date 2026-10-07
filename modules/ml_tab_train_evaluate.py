@@ -16,7 +16,6 @@ performance stratification, and exports a complete model report.
 from pathlib import Path
 
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -26,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import ml_model_library, ml_train_figures, settings
+from .canvas import FigureCanvas
 from .ml_tab_predict import _NumItem
 from .cards import MetaCard, RingCard
 from .layout import (

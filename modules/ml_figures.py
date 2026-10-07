@@ -78,8 +78,11 @@ def bar_width(ax, n_bars):
 
 
 def _awaiting(ax, msg):
-    ax.annotate(msg, xy=(0.5, 0.5), xycoords="axes fraction",
-                ha="center", va="center", color=_MUTED, fontsize=10)
+    note = ax.annotate(msg, xy=(0.5, 0.5), xycoords="axes fraction",
+                       ha="center", va="center", color=_MUTED, fontsize=10)
+    # tight_layout would otherwise shrink the axes to fit a message wider
+    # than them
+    note.set_in_layout(False)
 
 
 def draw_strike_rate(fig, summary, dark=False):

@@ -12,7 +12,10 @@
 
 
 class UIConfig:
-    ENABLE_CUSTOM_TITLE_BAR = True
+    # False: the standard Windows title bar and frame (move, snap,
+    # maximise, resize as any Windows app). True: the template's own
+    # frameless title bar
+    ENABLE_CUSTOM_TITLE_BAR = False
     MENU_WIDTH = 240
     MENU_COLLAPSED_WIDTH = 60      # the icon strip
     LEFT_BOX_WIDTH = 240

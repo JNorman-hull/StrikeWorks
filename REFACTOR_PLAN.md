@@ -88,6 +88,9 @@ open is at the end and in `ROADMAP.md`.
 - **Shared helpers**: `theme.muted_label`, `layout.scroll_page` /
   `scroll_area` / `hsplit` / `centred`, `cards` (MetaCard, RingCard,
   StatCard), `tables`.
+- **Figures** go on `canvas.FigureCanvas`, not Matplotlib's own Qt
+  canvas: it redraws once a resize is over (a splitter or window-edge
+  drag, maximising, the sidebar) instead of at every step.
 - **Folders**: a library's paths come from `raw_layout.py`; files the app
   writes at run time go under `settings.app_root()`, never
   `Path(__file__)`; settings go through `modules/settings.py`.

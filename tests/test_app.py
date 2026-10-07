@@ -21,13 +21,12 @@ class AppStarts(unittest.TestCase):
         cls.window.close()
 
     def test_every_page_opens(self):
-        stacked = self.window.ui.stackedWidget
         for name, (page, tab) in self.window._SUBMENU_TARGETS.items():
             with self.subTest(page=name):
                 self.window.navigate_to(name)
                 pump(50)
                 shown = getattr(self.window, page)
-                self.assertIs(stacked.currentWidget(), shown)
+                self.assertIs(self.window.current_page(), shown)
                 if tab is not None:
                     self.assertEqual(shown.tabs.currentIndex(), tab)
 
@@ -56,6 +55,20 @@ class AppStarts(unittest.TestCase):
             pump(50)
         dialog.hide()
 
+    def test_windows_fit_the_screen_work_area(self):
+        """Both windows, title bar and borders included, inside the screen
+        without the taskbar (win_utils.fit_to_screen) - here the off-screen
+        platform's 800 x 800 screen, smaller than either window's own size."""
+        from modules import win_utils
+        for window in (self.window, self.window.simple_mode_dialog):
+            with self.subTest(window=type(window).__name__):
+                win_utils.fit_to_screen(window, 1340, 860)
+                area = window.screen().availableGeometry()
+                self.assertTrue(area.contains(window.frameGeometry()),
+                                (area, window.frameGeometry()))
+                self.assertLess(window.height(), 860)
+        self.window.resize(1400, 900)
+
     def test_no_stray_windows(self):
         from PySide6.QtWidgets import QDialog, QMainWindow
         pump(200)
@@ -78,6 +91,8 @@ class SimpleEdition(unittest.TestCase):
             dialog.show()
             pump(100)
             self.assertFalse(dialog.btn_dev_toolkit.isVisible())
+            # nothing to choose between on the welcome page: Next continues
+            self.assertFalse(dialog.btn_blade_strike.isVisible())
             dialog._go_development_toolkit()
             pump(100)
             self.assertFalse(window.isVisible())

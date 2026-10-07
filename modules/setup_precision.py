@@ -19,7 +19,6 @@ import json
 import numpy as np
 
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from PySide6.QtCore import Qt
 
@@ -30,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from .bsm_state import LATEST_RESULT_PATH
+from .canvas import FigureCanvas
 from .ml_figures import fg_colour, style_axes, style_legend, _grid
 from .layout import apply_section_defaults, scroll_page, Section
 from .theme import INFO, WARN, muted_label, style
