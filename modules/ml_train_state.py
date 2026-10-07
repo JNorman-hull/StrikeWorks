@@ -7,7 +7,7 @@
 """Central training state shared by the Model Training tabs.
 
 One TrainingState instance is owned by the Model Training page controller;
-the Configure / Cross-validate / Evaluate / Deploy tabs read from it and
+the Train tab (with its Model deployment box) and Evaluate read from it and
 react to its signals. It builds the JSON configuration for
 ``modules/train_worker.py``, streams the worker's console output, loads the
 cross-validation results, and performs the final-model deployment step.
@@ -161,7 +161,7 @@ class _StreamThread(QThread):
 
 # ═════════════════════════════════════════════════════════════════════════════
 class TrainingState(QObject):
-    """Everything the Configure / Cross-validate / Evaluate / Deploy tabs share."""
+    """Everything Train, its Model deployment box and Evaluate share."""
 
     dataset_changed    = Signal()
     config_changed     = Signal()

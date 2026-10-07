@@ -8,8 +8,10 @@
 
 Presents the loaded model and dataset side by side, a real compatibility
 check, the prediction configuration, the asynchronous run control and the
-treatment-level results (cards, table, figures). All data comes from the
-shared PredictionState - this module never loads models or datasets itself.
+treatment-level results (cards, table, figures), and the HIG peak
+analysis (hig_peaks.py: the acceleration table and figures). All data
+comes from the shared PredictionState - this module never loads models or
+datasets itself.
 """
 import re
 from pathlib import Path
@@ -25,12 +27,13 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
-from . import bsm_figures, ml_figures, settings, severity
+from . import bsm_figures, hig_peaks, ml_figures, settings, severity
 from .bsm_model import (
     default_vcrit, recompute_mortality, recompute_mortality_at_vcrit,
 )
 from .cards import MetaCard, RingCard, Spinner
 from .layout import apply_section_defaults, hsplit, scroll_page, Section
+from .tables import fill_acceleration_table
 from .theme import CARD_H2, CARD_W2, PALETTE, PINK, muted_label, style
 
 FIG_MIN_W, FIG_MIN_H = 320, 300
@@ -62,13 +65,15 @@ def _model_version(path):
     return m.group(1).replace("_", ".") if m else None
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-class PredictTab:
-    """Builds the Predict tab UI into `frame` and binds it to `state`."""
 
-    def __init__(self, frame, state, window, goto_inspect=None, bsm_state=None):
+# ═════════════════════════════════════════════════════════════════════════════
+class PredictTab(QWidget):
+    """The Predict tab, bound to `state`."""
+
+    def __init__(self, state, main_window, goto_inspect=None, bsm_state=None):
+        super().__init__()
         self.state = state
-        self.window = window
+        self.main_window = main_window
         self._goto_inspect = goto_inspect
         self.bsm_state = bsm_state
 
@@ -83,17 +88,22 @@ class PredictTab:
         self.canvas_mc = FigureCanvas(self.fig_mc)
         self.fig_vcrit = Figure(figsize=(4.3, 3.4), dpi=100)
         self.canvas_vcrit = FigureCanvas(self.fig_vcrit)
+        # the HIG figure: peak analysis (a/b) when it ran, else severity
         self.fig_sev = Figure(figsize=(4.3, 3.4), dpi=100)
         self.canvas_sev = FigureCanvas(self.fig_sev)
+        self.fig_acc = Figure(figsize=(4.3, 3.4), dpi=100)
+        self.canvas_acc = FigureCanvas(self.fig_acc)
+        self.fig_nadir = Figure(figsize=(4.3, 3.4), dpi=100)
+        self.canvas_nadir = FigureCanvas(self.fig_nadir)
         for c in (self.canvas_bin, self.canvas_sev, self.canvas_mc,
-                  self.canvas_vcrit):
+                  self.canvas_vcrit, self.canvas_acc, self.canvas_nadir):
             c.setMinimumSize(FIG_MIN_W, FIG_MIN_H)
             c.setSizePolicy(QSizePolicy.Policy.Expanding,
                             QSizePolicy.Policy.Expanding)
 
         self._eel_vcrit_synced = False  # see _on_bsm_results()
 
-        self._build(frame)
+        self._build(self)
         self._connect_state()
         self._refresh_model()
         self._refresh_dataset()
@@ -121,8 +131,10 @@ class PredictTab:
         tabs.addTab(tab2, "Results")
 
         ml_figures.draw_strike_rate(self.fig_bin, None, dark=True)
-        ml_figures.draw_severity(self.fig_sev, None, dark=True)
+        ml_figures.draw_peak_summary(self.fig_sev, None, dark=True)
         ml_figures.draw_region(self.fig_mc, None, [], dark=True)
+        ml_figures.draw_acc_centred(self.fig_acc, None, "acc", dark=True)
+        ml_figures.draw_acc_centred(self.fig_nadir, None, "nadir", dark=True)
 
         apply_section_defaults(frame)
 
@@ -224,6 +236,19 @@ class PredictTab:
         self.lbl_override_note.setVisible(False)
         gv.addWidget(self.lbl_override_note)
 
+        self.chk_hig_peaks = QCheckBox("HIG peak analysis")
+        self.chk_hig_peaks.setChecked(self.state.hig_peaks)
+        self.chk_hig_peaks.setToolTip(
+            "Find the acceleration events in each recording's high-g "
+            f"magnitude: peaks of at least {hig_peaks.HEIGHT_G:.0f} g with "
+            f"a prominence of {hig_peaks.PROMINENCE_G:.0f} g, at least "
+            f"{hig_peaks.INTERPEAK_S * 1000:g} ms apart. Counts them over "
+            "95, 200 and 400 g within 0.1 s of the nadir, and gives the "
+            f"collision probability (an event of {hig_peaks.COLLISION_G} g "
+            "or more). Measured, alongside the model's prediction.")
+        self.chk_hig_peaks.toggled.connect(self.state.set_hig_peaks)
+        gv.addWidget(self.chk_hig_peaks)
+
         # ── mortality inputs: from the BSM run, independent of the
         # prediction above. Scaly and eel are shown together; only eel's
         # critical velocity is an input (scaly's regression sets its own
@@ -300,16 +325,10 @@ class PredictTab:
         self.card_rate       = RingCard("Strike rate", w=170)
         self.card_conf       = RingCard("Mean confidence", w=170)
         self.card_regions    = RingCard("Strike classes", w=170)
-        # measured severity (HIG peak) beside the model's verdict
+        # measured HIG beside the model's verdict: the peak analysis when
+        # it ran, else each recording's severity band (_populate_summary_cards)
         self.card_severity   = MetaCard("Severity (HIG peak)")
         self.card_severe     = RingCard("Severe strikes (> 400 g)", w=170)
-        self.card_severity.setToolTip(
-            "Each recording's peak high-g acceleration: at or below 95 g, "
-            "95-200 g, 200-400 g, or over 400 g - only over 400 g is a "
-            "severe strike. Measured, not predicted: the model flags "
-            "contacts of any size.")
-        self.card_severe.setToolTip(
-            "Share of recordings whose HIG peak passed 400 g.")
         for i, c in enumerate((self.card_recordings, self.card_strikes,
                                self.card_rate, self.card_conf,
                                self.card_regions, self.card_severity,
@@ -347,6 +366,34 @@ class PredictTab:
             figs.addWidget(canvas, i // 2, i % 2)
         fv.addLayout(figs)
         v.addWidget(grp_figs)
+
+        # ── row 6: HIG peak analysis ────────────────────────────────────────
+        grp_hig = Section("HIG peak analysis")
+        hv = QVBoxLayout(grp_hig)
+        hv.setSpacing(8)
+        self.lbl_hig_status = muted_label(
+            "Tick HIG peak analysis (Model, dataset and run) and run a "
+            "prediction.")
+        self.lbl_hig_status.setWordWrap(True)
+        hv.addWidget(self.lbl_hig_status)
+        self.tbl_acc = QTableWidget(0, 0)
+        self.tbl_acc.setProperty("noRowNumbers", True)   # its own header rows
+        self.tbl_acc.horizontalHeader().setVisible(False)
+        self.tbl_acc.verticalHeader().setVisible(False)
+        self.tbl_acc.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.tbl_acc.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        fill_acceleration_table(self.tbl_acc, None)
+        hv.addWidget(self.tbl_acc)
+        self.lbl_acc_notes = muted_label("\n".join(hig_peaks.TABLE_NOTES))
+        self.lbl_acc_notes.setWordWrap(True)
+        hv.addWidget(self.lbl_acc_notes)
+        centred = QGridLayout()
+        centred.setSpacing(8)
+        centred.addWidget(self.canvas_acc, 0, 0)
+        centred.addWidget(self.canvas_nadir, 0, 1)
+        hv.addLayout(centred)
+        v.addWidget(grp_hig)
 
         v.addStretch()
 
@@ -522,6 +569,17 @@ class PredictTab:
         self.spin_thresh.blockSignals(False)
         self.lbl_override_note.setVisible(s.threshold_overridden)
 
+        self.chk_hig_peaks.blockSignals(True)
+        self.chk_hig_peaks.setChecked(s.hig_peaks)
+        self.chk_hig_peaks.blockSignals(False)
+        if s.summary is None:
+            # before a run the HIG cards are named for what the run will show
+            self.card_severity.set_title(
+                "HIG peak events" if s.hig_peaks else "Severity (HIG peak)")
+            self.card_severe.set_title(
+                f"Collisions (≥ {hig_peaks.COLLISION_G} g)" if s.hig_peaks
+                else "Severe strikes (> 400 g)")
+
     def _on_mode_changed(self):
         mode = self.cmb_mode.currentData()
         if mode:
@@ -556,24 +614,24 @@ class PredictTab:
         s = self.state
         start = str(s.models_dir if Path(s.models_dir).exists() else Path.cwd())
         path = QFileDialog.getExistingDirectory(
-            self.window, "Select models folder", start)
+            self.main_window, "Select models folder", start)
         if not path:
             return
         ok, msg = s.load_models_from_dir(path)
         s.status.emit(msg, 6000)
         if not ok:
-            QMessageBox.warning(self.window, "Model loading", msg)
+            QMessageBox.warning(self.main_window, "Model loading", msg)
 
     def _load_csv(self):
         path, _ = QFileDialog.getOpenFileName(
-            self.window, "Load dataset CSV", str(settings.get_input_data_dir()),
+            self.main_window, "Load dataset CSV", str(settings.get_input_data_dir()),
             "CSV files (*.csv)")
         if not path:
             return
         ok, msg = self.state.load_dataset_csv(path)
         self.state.status.emit(msg, 6000)
         if not ok:
-            QMessageBox.warning(self.window, "Dataset loading", msg)
+            QMessageBox.warning(self.main_window, "Dataset loading", msg)
 
     # ── run lifecycle ────────────────────────────────────────────────────────
     def _on_run_started(self):
@@ -608,9 +666,16 @@ class PredictTab:
         rate = meta.get("strike_rate", 0.0) * 100
         secs = self._elapsed.elapsed() / 1000
         style(self.lbl_run_status, tone="ok")
+        peaks_ = meta.get("hig_peaks") or {}
         severity_ = meta.get("severity") or {}
-        severe_line = (f"\n{severity_['n_severe']} severe (HIG peak > "
-                       f"{severity_['severe_g']} g)" if severity_ else "")
+        if peaks_:
+            severe_line = (f"\n{peaks_['n_collision']} with a collision "
+                           f"(≥ {peaks_['collision_g']} g at the nadir)")
+        elif severity_:
+            severe_line = (f"\n{severity_['n_severe']} severe (HIG peak > "
+                           f"{severity_['severe_g']} g)")
+        else:
+            severe_line = ""
         self.lbl_run_status.setText(
             f"Prediction complete ({secs:.1f} s)\n"
             f"{n} recordings processed\n"
@@ -632,9 +697,14 @@ class PredictTab:
         self._populate_table()
         ml_figures.draw_strike_rate(self.fig_bin, s.summary, dark=True)
         self.canvas_bin.draw()
-        ml_figures.draw_severity(self.fig_sev, s.severity_summary, dark=True,
-                                 measured=severity.available(s.summary))
+        if s.acc_summary is not None:
+            ml_figures.draw_peak_summary(self.fig_sev, s.acc_summary, dark=True)
+        else:
+            ml_figures.draw_severity(self.fig_sev, s.severity_summary,
+                                     dark=True,
+                                     measured=severity.available(s.summary))
         self.canvas_sev.draw()
+        self._populate_hig_peaks()
         mc_run = s.run_meta.get("mode") == "multiclass"
         ml_figures.draw_region(self.fig_mc, s.summary,
                                s.class_names if mc_run else [], dark=True)
@@ -655,7 +725,7 @@ class PredictTab:
             return
         first = msg.splitlines()[-1]
         self.lbl_run_status.setText(f"✗ Prediction failed: {first}")
-        dlg = QMessageBox(self.window)
+        dlg = QMessageBox(self.main_window)
         dlg.setWindowTitle("Prediction error")
         dlg.setIcon(QMessageBox.Icon.Critical)
         dlg.setText("The prediction worker failed.\n\n"
@@ -706,14 +776,80 @@ class PredictTab:
         else:
             self.card_regions.clear()
 
+        acc = s.acc_summary
+        if acc is not None and len(acc):
+            total = acc.iloc[-1]       # the "All recordings" row, or the only one
+            self.card_severity.set_title("HIG peak events")
+            self.card_severity.setToolTip(
+                "Acceleration events within 0.1 s of the nadir (HIG peak "
+                "analysis), and the recordings with a collision - an event "
+                f"of {hig_peaks.COLLISION_G} g or more.")
+            self.card_severity.set_rows(
+                [(f"Events ≥ {g} g", int(total[f"n_events_{g}g"]))
+                 for g in hig_peaks.THRESHOLDS_G]
+                + [("Collisions", f"{int(total['n_collision'])} of "
+                                  f"{int(total['n_sensors'])} recordings")])
+            self.card_severe.set_title(f"Collisions (≥ {hig_peaks.COLLISION_G} g)")
+            self.card_severe.setToolTip(
+                "Share of recordings with an event of "
+                f"{hig_peaks.COLLISION_G} g or more within 0.1 s of the "
+                f"nadir (95% CI {total['ci_lo'] * 100:.1f}-"
+                f"{total['ci_hi'] * 100:.1f}%).")
+            rate = float(total["collision_rate"])
+            self.card_severe.set_value(rate, f"{rate * 100:.1f}%")
+            self.card_severity.setVisible(True)
+            self.card_severe.setVisible(True)
+            return
+
         measured = severity.available(df)
         self.card_severity.setVisible(measured)
         self.card_severe.setVisible(measured)
+        self.card_severity.set_title("Severity (HIG peak)")
+        self.card_severity.setToolTip(
+            "Each recording's peak high-g acceleration: at or below 95 g, "
+            "95-200 g, 200-400 g, or over 400 g - only over 400 g is a "
+            "severe strike. Measured, not predicted: the model flags "
+            "contacts of any size.")
+        self.card_severe.set_title("Severe strikes (> 400 g)")
+        self.card_severe.setToolTip(
+            "Share of recordings whose HIG peak passed 400 g.")
         if measured:
             self.card_severity.set_rows(severity.band_rows(s.predictions))
             n_severe = int(df[f"n_over_{severity.SEVERE_G}g"].sum())
             share = n_severe / n_total if n_total else 0.0
             self.card_severe.set_value(share, f"{share * 100:.1f}%")
+
+    # ── HIG peak analysis ────────────────────────────────────────────────────
+    def _populate_hig_peaks(self):
+        s = self.state
+        fill_acceleration_table(self.tbl_acc, s.acc_summary)
+        if s.acc_summary is not None:
+            traces = s.collision_traces()
+            n = 0 if traces is None else traces["file"].nunique()
+            events = s.peak_events
+            n_events = (int(events["in_roi"].astype(bool).sum())
+                        if events is not None and len(events) else 0)
+            self.lbl_hig_status.setText(
+                f"{n_events} acceleration events within ±0.1 s of the nadir; "
+                f"{n} recording(s) with a collision. "
+                "The figures show every recording with a collision, its "
+                "time normalised so the peak acceleration (left) or the "
+                "nadir (right) sits at 0.5; the line is the median.")
+            note = None
+        else:
+            traces = None
+            note = ("Not run - HIG peak analysis was off"
+                    if not (s.run_meta or {}).get("hig_peaks_requested")
+                    else "No HIG channel in this dataset")
+            self.lbl_hig_status.setText(
+                f"{note}. Tick HIG peak analysis (Model, dataset and run) "
+                "and run again." if note.startswith("Not run") else note + ".")
+        ml_figures.draw_acc_centred(self.fig_acc, traces, "acc", dark=True,
+                                    note=note)
+        ml_figures.draw_acc_centred(self.fig_nadir, traces, "nadir", dark=True,
+                                    note=note)
+        self.canvas_acc.draw()
+        self.canvas_nadir.draw()
 
     # ── results table ────────────────────────────────────────────────────────
     def _populate_table(self):
@@ -724,7 +860,8 @@ class PredictTab:
                                         and all(f"n_{cn}" in df.columns
                                                 for cn in s.class_names)) else []
 
-        measured = severity.available(df)
+        # severity columns only without the peak analysis (its own table)
+        measured = severity.available(df) and s.acc_summary is None
         headers = (["Treatment", "N", "Strikes", "No strike", "Strike rate",
                     "95% CI", "Mean prob", "Mean conf"]
                    + list(class_names)

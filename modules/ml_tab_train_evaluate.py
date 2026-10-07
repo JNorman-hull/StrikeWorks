@@ -22,7 +22,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
     QMessageBox, QPushButton, QSizePolicy, QSplitter, QTableWidget,
-    QTableWidgetItem, QVBoxLayout,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import ml_model_library, ml_train_figures, settings
@@ -36,12 +36,13 @@ from .theme import CARD_H2, CARD_W2, style
 FIG_MIN_W, FIG_MIN_H = 300, 250
 
 
-class EvaluateTab:
-    """Builds the Evaluate tab UI into `frame`, bound to `state`."""
+class EvaluateTab(QWidget):
+    """The Evaluate tab, bound to `state`."""
 
-    def __init__(self, frame, state, window, models_dir=None):
+    def __init__(self, state, main_window, models_dir=None):
+        super().__init__()
         self.state = state
-        self.window = window
+        self.main_window = main_window
         self.models_dir = Path(models_dir or settings.get_models_dir())
         self._entries = []
         self._entry = None
@@ -57,8 +58,7 @@ class EvaluateTab:
             self.figures[name] = fig
             self.canvases[name] = canvas
 
-        self._frame = frame
-        self._build(frame)
+        self._build(self)
         if state is not None:
             state.cv_finished.connect(self.reload_sources)
         self.reload_sources()
@@ -210,7 +210,7 @@ class EvaluateTab:
     # ── model sources ────────────────────────────────────────────────────────
     def _change_models_dir(self):
         path = QFileDialog.getExistingDirectory(
-            self.window, "Select models folder", str(self.models_dir))
+            self.main_window, "Select models folder", str(self.models_dir))
         if path:
             self.models_dir = Path(path)
             self._custom_models_dir = True
@@ -230,7 +230,7 @@ class EvaluateTab:
         """Re-list the models: now if the tab is on screen, otherwise when
         it's next opened (reading every deployed model and drawing its
         figures takes a second or more)."""
-        when_visible(self._frame, self._reload_sources, key="sources")
+        when_visible(self, self._reload_sources, key="sources")
 
     def _reload_sources(self):
         """Session results first, then every deployed model on disk."""
@@ -397,7 +397,7 @@ class EvaluateTab:
         if self._entry is None:
             return
         dirpath = QFileDialog.getExistingDirectory(
-            self.window, "Export model report to folder…", "")
+            self.main_window, "Export model report to folder…", "")
         if not dirpath:
             return
         app_version = getattr(self.state, "app_version", "") if self.state \
@@ -406,11 +406,11 @@ class EvaluateTab:
             out = ml_model_library.export_model_report(
                 self._entry, dirpath, app_version=app_version)
         except Exception as e:
-            QMessageBox.critical(self.window, "Export failed", str(e))
+            QMessageBox.critical(self.main_window, "Export failed", str(e))
             return
         if self.state is not None:
             self.state.status.emit(f"Model report exported to {out}", 6000)
         QMessageBox.information(
-            self.window, "Model report",
+            self.main_window, "Model report",
             f"Report written to:\n\n{out}\n\n"
             + "\n".join(f"  • {p.name}" for p in sorted(out.glob('*'))))

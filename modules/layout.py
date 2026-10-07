@@ -4,15 +4,48 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Layout helpers shared by the pages: collapsible Section boxes,
-splitters and centring, and running code when a widget is first shown.
+"""Layout helpers shared by the pages: the Page base every sidebar page
+is built on, collapsible Section boxes, splitters and centring, and
+running code when a widget is first shown.
 """
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QGroupBox, QHBoxLayout, QScrollArea, QSplitter, QVBoxLayout, QWidget,
+    QGroupBox, QHBoxLayout, QScrollArea, QSplitter, QTabWidget, QVBoxLayout,
+    QWidget,
 )
 
 from .theme import style
+
+
+class Page(QWidget):
+    """A sidebar page: a widget that builds its own contents in its
+    constructor, given what it needs (the main window, shared state) by
+    main.py, which adds it to the main window's page stack. `status`
+    messages go to the console."""
+
+    status = Signal(str, int)
+    MARGIN = 10   # round the page, inside the main window's content area
+
+    def __init__(self, main_window):
+        super().__init__()
+        self.main_window = main_window
+        self.setContentsMargins(*(self.MARGIN,) * 4)
+
+
+class TabbedPage(Page):
+    """A page of tabs with the tab bar hidden: the sidebar picks the tab
+    (main.py's `_SUBMENU_TARGETS`)."""
+
+    def __init__(self, main_window):
+        super().__init__(main_window)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(0, 0, 0, 0)
+        self.tabs = QTabWidget()
+        self.tabs.tabBar().setVisible(False)
+        v.addWidget(self.tabs)
+
+    def show_tab(self, index):
+        self.tabs.setCurrentIndex(index)
 
 
 def discard_widget(w):
@@ -72,6 +105,15 @@ def centred(widget, max_width=None, share=None):
         h.addWidget(widget, stretch=1)
         h.addStretch(0)
     return holder
+
+
+def group_box(title, margin=6, spacing=6):
+    """(a plain QGroupBox titled `title`, its QVBoxLayout)."""
+    box = QGroupBox(title)
+    v = QVBoxLayout(box)
+    v.setContentsMargins(margin, margin, margin, margin)
+    v.setSpacing(spacing)
+    return box, v
 
 
 def scroll_area(widget=None):
@@ -198,7 +240,7 @@ SECTION_DEFAULTS = {
     "Evaluation figures": True,
     "Performance by strike type / class": True,
     "Performance by treatment": True,
-    # Model Training - Deploy
+    # Model Training - Train's Model deployment box
     "Model deployment": True,
     "Model information": True,
 }

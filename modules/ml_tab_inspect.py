@@ -52,12 +52,13 @@ _FILTER_SEVERE    = "severe"          # HIG peak over 400 g
 _FILTER_MILD      = "strike_not_severe"   # predicted strike, peak <= 400 g
 
 
-class InspectTab:
-    """Builds the Inspect tab UI into `frame` and binds it to `state`."""
+class InspectTab(QWidget):
+    """The Inspect tab, bound to `state`."""
 
-    def __init__(self, frame, state, window):
+    def __init__(self, state, main_window):
+        super().__init__()
         self.state = state
-        self.window = window
+        self.main_window = main_window
         self._updating_table = False
         self._left_curve = None
         self._right_curve = None
@@ -71,7 +72,7 @@ class InspectTab:
         self._export_left = None
         self._export_right = None
 
-        self._build(frame)
+        self._build(self)
         self._connect_state()
         self._rebuild_filters()
         self._populate_table()
@@ -222,7 +223,7 @@ class InspectTab:
         ctl.addWidget(lab_r)
         ctl.addWidget(self.cmb_right, stretch=1)
         ctl.addWidget(self.btn_reset_view)
-        add_export_button(ctl, self._export_data, self.window,
+        add_export_button(ctl, self._export_data, self.main_window,
                           file_stub="inspect")
         gv.addLayout(ctl)
 

@@ -35,7 +35,7 @@ import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 
-from PySide6.QtCore import Qt, QObject, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QInputDialog,
     QLabel, QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy, QSplitter,
@@ -52,7 +52,7 @@ from .inventory_widgets import notifier as inventory_notifier
 from .library_widgets import LibrarySelector
 from .cards import MetaCard, Spinner
 from .layout import (
-    apply_section_defaults, discard_widget, scroll_page, Section,
+    apply_section_defaults, discard_widget, Page, scroll_page, Section,
     when_visible,
 )
 from .theme import (
@@ -92,15 +92,11 @@ class _ReviewedOnly(Exception):
     dataset append is skipped."""
 
 
-class AnnotationPage(QObject):
-    """Binds the Annotate page widgets to ``ui.content_annotate``."""
+class AnnotationPage(Page):
+    """Validate and annotate > Annotate."""
 
-    status = Signal(str, int)
-
-    def __init__(self, ui, window, session_state=None):
-        super().__init__(window)
-        self.ui = ui
-        self.window = window
+    def __init__(self, main_window, session_state=None):
+        super().__init__(main_window)
         self.session_state = session_state
 
         self._index_df = None
@@ -127,7 +123,7 @@ class AnnotationPage(QObject):
         self._status = (set(), set(), set(), set())   # validation_core.validation_status
         self._exporter = vc.DatasetExporter(self)
 
-        self._build(ui.content_annotate)
+        self._build(self)
         self._connect()
         self._on_lib_changed()
         self._populate_sensor_table()
@@ -369,7 +365,7 @@ class AnnotationPage(QObject):
         self._spinner.setVisible(False)
         win_row.addWidget(self._spinner)
         win_row.addStretch()
-        add_export_button(win_row, self._export_data, self.window,
+        add_export_button(win_row, self._export_data, self.main_window,
                           file_stub="annotate")
         sv.addLayout(win_row)
 
@@ -682,7 +678,7 @@ class AnnotationPage(QObject):
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_text("\n".join(lines))
         except Exception as e:
-            QMessageBox.critical(self.window, "Report failed", str(e))
+            QMessageBox.critical(self.main_window, "Report failed", str(e))
             return
 
         self.lbl_report_status.setText(f"Report written to {out_path}")
@@ -701,7 +697,7 @@ class AnnotationPage(QObject):
     # ── sensor loading ───────────────────────────────────────────────────────
     def _load_sensor(self, path: Path):
         if not path.exists():
-            QMessageBox.warning(self.window, "File missing", f"Cannot find:\n{path}")
+            QMessageBox.warning(self.main_window, "File missing", f"Cannot find:\n{path}")
             return
         self._pending_path = path
         self._spinner.start()
@@ -726,7 +722,7 @@ class AnnotationPage(QObject):
         self._spinner.stop()
         self.lbl_loading.setText("")
         self.status.emit(f"Load failed: {path.name}", 5000)
-        QMessageBox.warning(self.window, "Load error",
+        QMessageBox.warning(self.main_window, "Load error",
                             f"Cannot load {path.name}:\n{msg}")
 
     def _on_csv_loaded(self, path: Path, df):
@@ -955,14 +951,14 @@ class AnnotationPage(QObject):
             self.status.emit(f"No matching video for {stem}.", 4000)
             return
         if not LOSSLESSCUT_EXE.exists():
-            QMessageBox.warning(self.window, "LosslessCut missing",
+            QMessageBox.warning(self.main_window, "LosslessCut missing",
                                 LOSSLESSCUT_MISSING)
             return
         video_path = matches[0]
         if len(matches) > 1:
             names = [p.name for p in matches]
             choice, ok = QInputDialog.getItem(
-                self.window, "Choose video",
+                self.main_window, "Choose video",
                 f"{len(names)} videos match {stem}:",
                 names, 0, False)
             if not ok:
@@ -971,7 +967,7 @@ class AnnotationPage(QObject):
         try:
             subprocess.Popen([str(LOSSLESSCUT_EXE), str(video_path)])
         except Exception as e:
-            QMessageBox.critical(self.window, "Could not open video", str(e))
+            QMessageBox.critical(self.main_window, "Could not open video", str(e))
             return
         self.status.emit(f"Opened {video_path.name} in LosslessCut", 4000)
 
@@ -1010,7 +1006,7 @@ class AnnotationPage(QObject):
         self.txt_notes.setPlainText(notes)
 
     def _manage_variables(self):
-        dlg = VariableListDialog(self.window)
+        dlg = VariableListDialog(self.main_window)
         dlg.exec()
 
     # ── save + next (window, flag, annotations, dataset) ────────────────────
@@ -1040,7 +1036,7 @@ class AnnotationPage(QObject):
         if has_any or has_notes or self.chk_no_annotations.isChecked():
             return True
         QMessageBox.warning(
-            self.window, "Nothing to save",
+            self.main_window, "Nothing to save",
             "Enter at least one annotation value or a note, or tick "
             "\"No annotations for this sensor\" to save without any.")
         return False
@@ -1068,7 +1064,7 @@ class AnnotationPage(QObject):
         try:
             di.set_row_values(self._lib_root, self._cur_stem, index_values)
         except Exception as e:
-            QMessageBox.critical(self.window, "Save error", str(e))
+            QMessageBox.critical(self.main_window, "Save error", str(e))
             return
 
         self._load_index()
@@ -1153,7 +1149,7 @@ class AnnotationPage(QObject):
         except _ReviewedOnly:
             message = f"Reviewed {stem} (no annotations entered)."
         except Exception as e:
-            QMessageBox.critical(self.window, "Save error", str(e))
+            QMessageBox.critical(self.main_window, "Save error", str(e))
             return
 
         self._load_index()
@@ -1225,10 +1221,10 @@ class AnnotationPage(QObject):
             return
         stems = [r["stem"] for r in self._sensor_rows]
         outstanding = vc.outstanding_flagged(stems, self._status)
-        if outstanding and self.window.isVisible():
+        if outstanding and self.main_window.isVisible():
             n_flagged = vc.status_counts(stems, self._status)["flagged"]
             reply = QMessageBox.question(
-                self.window, "Sensors flagged for review",
+                self.main_window, "Sensors flagged for review",
                 f"Caution, {len(outstanding)}/{n_flagged} flagged sensors "
                 "still need user-validation. Export anyway?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -1248,7 +1244,7 @@ class AnnotationPage(QObject):
             self.status.emit(message, 6000)
             return
         settings.add_recent_training_dataset(path)
-        self.window.ml_prediction_page.on_dataset_ready(
+        self.main_window.ml_prediction_page.on_dataset_ready(
             df, f"Annotate - {path.stem}")
         self._load_dataset_stems()
         self._populate_sensor_table()
@@ -1260,14 +1256,14 @@ class AnnotationPage(QObject):
             return 0
         if not path:
             path, _ = QFileDialog.getOpenFileName(
-                self.window, "Import annotations CSV", str(self._lib_root),
+                self.main_window, "Import annotations CSV", str(self._lib_root),
                 "CSV files (*.csv)")
             if not path:
                 return 0
         try:
             n, names = vc.import_annotations_csv(self._lib_root, path)
         except Exception as e:
-            QMessageBox.warning(self.window, "Import failed", str(e))
+            QMessageBox.warning(self.main_window, "Import failed", str(e))
             return 0
         self._load_index()
         self._populate_sensor_table()

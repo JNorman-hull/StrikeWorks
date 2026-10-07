@@ -17,7 +17,6 @@ All of it arrives as arguments from the sensor configuration, so the same
 reader serves any RAPID-family device defined in Sensor configuration.
 Without a config the RAPID defaults apply.
 """
-import struct
 import os
 import numpy as np
 import pandas as pd
@@ -93,6 +92,30 @@ os.environ["OMP_NUM_THREADS"] = str(os.cpu_count())
 os.environ["OPENBLAS_NUM_THREADS"] = str(os.cpu_count())
 os.environ["MKL_NUM_THREADS"] = str(os.cpu_count())
 
+# Packet layouts, big-endian, as (field, type, byte offset). Every packet
+# starts with the counter the timestamps come from.
+#   .imp (29 bytes, 100 Hz): int32 counter; int16 accelerometer, gyroscope
+#        and magnetometer x/y/z; uint16 pressure (0.1 mbar); int16
+#        temperature and battery; one unused byte.
+#   .hig (11 bytes, around events): uint32 counter; int16 high-g x/y/z;
+#        one unused byte.
+_IMP_FIELDS = (("counter", ">i4", 0), ("imu", (">i2", (9,)), 4),
+               ("pressure", ">u2", 22), ("temp", ">i2", 24),
+               ("battery", ">i2", 26))
+_HIG_FIELDS = (("counter", ">u4", 0), ("acc", (">i2", (3,)), 4))
+
+
+def _packets(filename, fields, packet_size):
+    """The file's whole packets as structured records; a partial packet at
+    the end is ignored."""
+    names, formats, offsets = zip(*fields)
+    dtype = np.dtype({"names": list(names), "formats": list(formats),
+                      "offsets": list(offsets), "itemsize": int(packet_size)})
+    raw = np.fromfile(filename, dtype=np.uint8)
+    n = raw.size // dtype.itemsize
+    return np.frombuffer(raw[:n * dtype.itemsize].tobytes(), dtype=dtype)
+
+
 def read_imp_raw(filename, fs=FS, packet_size=IMP_PACKET_SIZE):
     """Read an .imp file (IMU, pressure, temperature, battery) at ~100 Hz.
 
@@ -100,96 +123,49 @@ def read_imp_raw(filename, fs=FS, packet_size=IMP_PACKET_SIZE):
     the channels arrive at.
     """
     filename = Path(filename)
-    packetSize = int(packet_size) or IMP_PACKET_SIZE
     fs = float(fs) or FS
     IMU_PREC = 3
     P_PREC = 1
     T_BAT_PREC = 2
-    gain_ac = 0.005 
+    gain_ac = 0.005
     gain_gy = 0.1
     gain_mg = 0.1
     gain_pr = 0.1
     gain_t = 0.01
     gain_bt = 0.01
-    
-    with open(filename, 'rb') as file_ID:
-        fstat = os.stat(filename)
-        flen = (fstat.st_size // packetSize) - 1
 
-        TimeRaw = []
-        TimeSpot = []
+    packets = _packets(filename, _IMP_FIELDS,
+                       int(packet_size) or IMP_PACKET_SIZE)
+    # The last whole packet isn't used, and each row pairs a packet's
+    # counter with the previous packet's readings (the first row repeats
+    # the first packet's) - the layout the original reader produced, kept
+    # so processed recordings don't change.
+    n = len(packets) - 1
+    if n < 2:
+        raise ValueError(f"{filename.name}: too short to read "
+                         f"({len(packets)} packets)")
+    readings = packets[np.maximum(np.arange(n) - 1, 0)]
+    imu = readings["imu"]
 
-        # Read time data first (matching original logic exactly)
-        for _ in range(flen):
-            time_raw = struct.unpack('>i', file_ID.read(4))[0]
-            TimeRaw.append(time_raw)
-            TimeSpot.append(file_ID.tell())
-            file_ID.seek(25, 1)
+    ts = packets["counter"][:n].astype(np.float64) / fs
+    ax, ay, az = (np.round(imu[:, i] * gain_ac, IMU_PREC) for i in (0, 1, 2))
+    gx, gy, gz = (np.round(imu[:, i] * gain_gy, IMU_PREC) for i in (3, 4, 5))
+    mx, my, mz = (np.round(imu[:, i] * gain_mg, IMU_PREC) for i in (6, 7, 8))
+    p = np.round(readings["pressure"] * gain_pr, P_PREC)
+    t = np.round(readings["temp"] * gain_t, T_BAT_PREC)
+    b = np.round(readings["battery"] * gain_bt, T_BAT_PREC)
 
-        DataRaw = np.zeros((flen, 12), dtype=np.int16)
-        DataRawP = np.zeros(flen, dtype=np.uint16)
-
-        # Read data packets (matching original structure)
-        for it in range(flen):
-            if it == 0:
-                file_ID.seek(4, 0)
-            else:
-                DataRaw[it, 0] = struct.unpack('>h', file_ID.read(2))[0]
-                DataRaw[it, 1] = struct.unpack('>h', file_ID.read(2))[0]
-                DataRaw[it, 2] = struct.unpack('>h', file_ID.read(2))[0]
-                DataRaw[it, 3] = struct.unpack('>h', file_ID.read(2))[0]
-                DataRaw[it, 4] = struct.unpack('>h', file_ID.read(2))[0]
-                DataRaw[it, 5] = struct.unpack('>h', file_ID.read(2))[0]
-                DataRaw[it, 6] = struct.unpack('>h', file_ID.read(2))[0]
-                DataRaw[it, 7] = struct.unpack('>h', file_ID.read(2))[0]
-                DataRaw[it, 8] = struct.unpack('>h', file_ID.read(2))[0]
-                file_ID.seek(2, 1)
-                DataRaw[it, 9] = struct.unpack('>h', file_ID.read(2))[0]
-                DataRaw[it, 10] = struct.unpack('>h', file_ID.read(2))[0]
-                file_ID.seek(5, 1)
-
-        DataRaw[0, :] = DataRaw[1, :]
-
-        # Read pressure data (matching original structure)
-        for it in range(flen):
-            if it == 0:
-                file_ID.seek(TimeSpot[0] + 4 + (2 * 7), 0)
-            else:
-                DataRawP[it] = struct.unpack('>H', file_ID.read(2))[0]
-                file_ID.seek(27, 1)
-
-        DataRawP[0] = DataRawP[1]
-    
-    # Use numba-accelerated processing on correctly parsed data
-    TimeRaw = np.array(TimeRaw, dtype=np.float64)
-    ts = TimeRaw / fs
-    
-    # Apply gains using numba (but keep the original data structure)
-    ax = np.round(DataRaw[:, 0] * gain_ac, IMU_PREC)
-    ay = np.round(DataRaw[:, 1] * gain_ac, IMU_PREC)
-    az = np.round(DataRaw[:, 2] * gain_ac, IMU_PREC)
-    gx = np.round(DataRaw[:, 3] * gain_gy, IMU_PREC)
-    gy = np.round(DataRaw[:, 4] * gain_gy, IMU_PREC)
-    gz = np.round(DataRaw[:, 5] * gain_gy, IMU_PREC)
-    mx = np.round(DataRaw[:, 6] * gain_mg, IMU_PREC)
-    my = np.round(DataRaw[:, 7] * gain_mg, IMU_PREC)
-    mz = np.round(DataRaw[:, 8] * gain_mg, IMU_PREC)
-    p = np.round(DataRawP * gain_pr, P_PREC)
-    t = np.round(DataRaw[:, 9] * gain_t, T_BAT_PREC)
-    b = np.round(DataRaw[:, 10] * gain_bt, T_BAT_PREC)
-    
-    # Create output dataframe
     column_names_raw = [
         'time_s', 'inacc_x_ms', 'inacc_y_ms', 'inacc_z_ms',
         'rot_x_degs', 'rot_y_degs', 'rot_z_degs', 'mag_x_mt',
         'mag_y_mt', 'mag_z_mt', 'pressure_kpa', 'temp_c', 'battery_v'
     ]
-    
-    # Convert pressure from mbar to kPa during export
+    # pressure from mbar to kPa
     dataExportCSV = np.column_stack((
         ts, ax, ay, az, gx, gy, gz, mx, my, mz, p / 10.0, t, b
     ))
     return pd.DataFrame(dataExportCSV, columns=column_names_raw)
+
 
 def read_hig_raw(filename, fs=FS, packet_size=HIG_PACKET_SIZE):
     """Read a .hig file (high-g accelerometer), sampled around events.
@@ -197,43 +173,23 @@ def read_hig_raw(filename, fs=FS, packet_size=HIG_PACKET_SIZE):
     `fs` is the counter clock, as for read_imp_raw.
     """
     filename = Path(filename)
-    packetSize = int(packet_size) or HIG_PACKET_SIZE
     fs = float(fs) or FS
     HIG_PREC = 1
     gain_hig = 0.1
-    
-    with open(filename, 'rb') as file_ID:
-        fstat = os.stat(filename)
-        flen = fstat.st_size // packetSize
 
-        TimeRaw = []
-        DataRaw = np.zeros((flen, 3), dtype=np.int16)
-        
-        for it in range(flen):
-            packet = file_ID.read(packetSize)
-            
-            time_raw = struct.unpack('>I', packet[:4])[0]
-            TimeRaw.append(time_raw)
-
-            DataRaw[it, 0] = struct.unpack('>h', packet[4:6])[0]  # acc X
-            DataRaw[it, 1] = struct.unpack('>h', packet[6:8])[0]  # acc Y
-            DataRaw[it, 2] = struct.unpack('>h', packet[8:10])[0]  # acc Z
-    
-    # Use optimized numpy processing 
-    TimeRaw = np.array(TimeRaw, dtype=np.float64)
-    ts = TimeRaw / fs
-    ax = np.round(DataRaw[:, 0] * gain_hig, HIG_PREC)
-    ay = np.round(DataRaw[:, 1] * gain_hig, HIG_PREC)
-    az = np.round(DataRaw[:, 2] * gain_hig, HIG_PREC)
+    packets = _packets(filename, _HIG_FIELDS,
+                       int(packet_size) or HIG_PACKET_SIZE)
+    acc = packets["acc"]
+    ts = packets["counter"].astype(np.float64) / fs
+    ax, ay, az = (np.round(acc[:, i] * gain_hig, HIG_PREC) for i in (0, 1, 2))
     aMag = np.round(np.sqrt(ax ** 2 + ay ** 2 + az ** 2), HIG_PREC)
-    
+
     column_names_raw = [
         'time_s', 'higacc_x_g', 'higacc_y_g', 'higacc_z_g', 'higacc_mag_g'
     ]
-    
     dataExportCSV = np.column_stack((ts, ax, ay, az, aMag))
-    
     return pd.DataFrame(dataExportCSV, columns=column_names_raw)
+
 
 def process_imp_hig_direct(imp_filename, hig_filename, output_dir, config=None):
     """Parse one .imp/.hig pair and write the combined CSV.

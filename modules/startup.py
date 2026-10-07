@@ -4,28 +4,35 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Start-up helpers for main.py: the app icon, the loading splash, the
-default data folders and the Windows taskbar identity.
+"""Start-up helpers for main.py: the app icon, the logos, the loading
+splash, the default data folders and the Windows taskbar identity.
 """
 import platform
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+from PySide6.QtCore import QRect, QSize, Qt
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QLabel, QSplashScreen
 
-from . import settings
+from . import settings, theme
 from .theme import CARD_BG, MUTED, TEXT
 
 # relative to this file rather than the working directory, so it still
 # resolves when the exe is launched from a shortcut (frozen, both files
 # sit in _internal/)
 ICON_PATH = Path(__file__).parent.parent / "icon.ico"
-_LOGO_PATH = Path(__file__).parent.parent / "images" / "images" / "PyDracula_vertical.png"
+_IMAGES = Path(__file__).parent.parent / "images" / "images"
+# the StrikeWorks logo: the version outlined for white pages in the
+# University of Hull theme, the original on the dark theme
+LOGO_PATH = _IMAGES / ("PyDracula_vertical_white.png" if theme.NAME == "hull"
+                       else "PyDracula_vertical.png")
 # the University's Primary Brandmark, Ink Blue (positive) version: for white
 # or light backgrounds only, never recoloured, at least 60 px wide
-BRANDMARK_PATH = Path(__file__).parent.parent / "images" / "images" / "uoh_brandmark.svg"
+BRANDMARK_PATH = _IMAGES / "uoh_brandmark.svg"
+# the University logo, black on transparent; white (its reverse) on a dark
+# background
+UOH_LOGO_PATH = _IMAGES / "UOH_logo.png"
 
 
 def build_splash():
@@ -35,7 +42,7 @@ def build_splash():
     pix.fill(QColor(CARD_BG))
     painter = QPainter(pix)
 
-    logo = QPixmap(str(_LOGO_PATH)) if _LOGO_PATH.exists() else QPixmap()
+    logo = QPixmap(str(LOGO_PATH)) if LOGO_PATH.exists() else QPixmap()
     if not logo.isNull():
         logo = logo.scaledToWidth(220, Qt.TransformationMode.SmoothTransformation)
 
@@ -87,6 +94,50 @@ def brandmark(width=120):
     label.setPixmap(pix)
     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     return label
+
+
+def logo_label(width):
+    """A QLabel showing the StrikeWorks logo (the theme's version) `width`
+    px wide, centred; None if the file is missing."""
+    pix = QPixmap(str(LOGO_PATH))
+    if pix.isNull():
+        return None
+    label = QLabel()
+    label.setPixmap(pix.scaledToWidth(
+        width, Qt.TransformationMode.SmoothTransformation))
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    return label
+
+
+def uoh_logo_pixmap(width, reverse=False):
+    """The University of Hull logo `width` px wide, its transparent margin
+    trimmed: black, or white with `reverse` for a dark background. A null
+    pixmap if the file is missing."""
+    image = QImage(str(UOH_LOGO_PATH))
+    if image.isNull():
+        return QPixmap()
+    image = image.convertToFormat(QImage.Format.Format_ARGB32)
+    # trim to the opaque part (the file has a wide transparent border)
+    alpha = image.createAlphaMask()
+    left, top = image.width(), image.height()
+    right = bottom = -1
+    step = max(1, image.width() // 400)
+    for y in range(0, image.height(), step):
+        for x in range(0, image.width(), step):
+            if alpha.pixelIndex(x, y):
+                left, right = min(left, x), max(right, x)
+                top, bottom = min(top, y), max(bottom, y)
+    if right >= left:
+        image = image.copy(QRect(left, top, right - left + step,
+                                 bottom - top + step))
+    pix = QPixmap.fromImage(image).scaledToWidth(
+        width, Qt.TransformationMode.SmoothTransformation)
+    if reverse:
+        painter = QPainter(pix)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+        painter.fillRect(pix.rect(), QColor("white"))
+        painter.end()
+    return pix
 
 
 def ensure_default_folders():

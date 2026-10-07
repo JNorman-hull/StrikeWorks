@@ -26,7 +26,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel,
     QPlainTextEdit, QPushButton, QSizePolicy, QSpinBox, QSplitter,
-    QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .bsm_state import LATEST_RESULT_PATH
@@ -43,14 +43,15 @@ _INPUT_WIDTH = 80
 STUDY_DESIGN_SIZE_CM = (14.0, 10.0)
 
 
-class PrecisionCalcTab:
-    """Builds the sampling-precision calculator into `frame`."""
+class PrecisionCalcTab(QWidget):
+    """Builds the sampling-precision calculator."""
 
-    def __init__(self, frame, window, status=None):
-        self.window = window
+    def __init__(self, main_window, status=None):
+        super().__init__()
+        self.main_window = main_window
         self._status = status
         self._curve = None      # (p, n, confidence, planned_half) last drawn
-        self._build(frame)
+        self._build(self)
         self._recalculate()
 
     # ── layout ───────────────────────────────────────────────────────────────

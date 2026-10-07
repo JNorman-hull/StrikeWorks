@@ -21,10 +21,9 @@ was produced.
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
-from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QFileDialog, QHBoxLayout, QPushButton, QSizePolicy, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QTableWidgetItem, QVBoxLayout,
 )
 
 from . import bsm_figures, bsm_io
@@ -32,24 +31,22 @@ from .bsm_model import sensitivity_sweeps
 from .bsm_state import output_card_rows
 from .cards import MetaCard
 from .layout import (
-    apply_section_defaults, centred, scroll_page, Section, when_visible,
+    apply_section_defaults, centred, Page, scroll_page, Section, when_visible,
 )
 from .theme import style
 
 _NODIALOG = QFileDialog.Option.DontUseNativeDialog
 
 
-class BSMAnalysisPage(QWidget):
-    status = Signal(str, int)
+class BSMAnalysisPage(Page):
 
-    def __init__(self, frame, window, bsm_state):
-        super().__init__()
-        self.window = window
+    def __init__(self, main_window, bsm_state):
+        super().__init__(main_window)
         self.bsm_state = bsm_state
         self.last_result = None
         self.sweeps = None           # bsm_model.sensitivity_sweeps() of last_result
 
-        self._build(frame)
+        self._build(self)
         self._draw_blank()
         bsm_state.calculated.connect(self.update_from_result)
         bsm_state.calculated_all.connect(self._draw_results)
@@ -198,7 +195,7 @@ class BSMAnalysisPage(QWidget):
                 self.last_result["params"]["species"]: self.last_result}
             bsm_io.export_results(results, out)
             _doc, warnings = report_center.assemble(
-                [report_center.bsm_section(self.window)], out, {"bsm"})
+                [report_center.bsm_section(self.main_window)], out, {"bsm"})
         except Exception as e:
             self.status.emit(f"Report failed: {e}", 6000)
             return

@@ -14,9 +14,11 @@
 
 Both use the theme's figure palette.
 """
+import math
+
 import numpy as np
 
-from . import theme
+from . import hig_peaks, theme
 
 _BLUES   = ["#4a86c8", "#2e5d9f", "#6fa8dc", "#1e3a5f", "#9fc5e8"]
 _PALETTE = list(theme.P["figure_palette"])
@@ -174,6 +176,166 @@ def draw_severity(fig, severity_summary, dark=False, measured=True):
     fig.tight_layout()
 
 
+def _peak_groups(acc_summary):
+    """The summary rows plotted: each treatment, without the "All
+    recordings" total when there are several."""
+    if len(acc_summary) > 1:
+        return acc_summary[acc_summary["treatment"] != hig_peaks.ALL_LABEL]
+    return acc_summary
+
+
+def draw_peak_summary(fig, acc_summary, dark=False, note=None):
+    """HIG peak analysis in two panels: (a) the number of acceleration
+    events at or over 95, 200 and 400 g, one dot per treatment; (b) the
+    collision probability - recordings with an event of at least 400 g
+    within 0.1 s of the nadir - with its Wilson 95% interval. `note`
+    replaces the "awaiting" message when there is nothing to draw."""
+    fig.clear()
+    ax_a, ax_b = fig.subplots(1, 2)
+    fg = fg_colour(dark)
+    thresholds = hig_peaks.THRESHOLDS_G
+    ax_a.set_title("a  Event count", fontsize=10, fontweight="bold", loc="left")
+    ax_a.set_ylabel("Acceleration events", fontsize=9)
+    ax_a.set_xlabel("HIG peak", fontsize=9)
+    ax_b.set_title("b  Collision probability", fontsize=9.5,
+                   fontweight="bold", loc="left")
+    ax_b.set_ylabel("Recordings with a collision (%)", fontsize=9)
+    for ax in (ax_a, ax_b):
+        _grid(ax, dark)
+    ax_a.set_xticks(range(len(thresholds)))
+    ax_a.set_xticklabels([f"≥{g} g" for g in thresholds], fontsize=8)
+    ax_a.set_xlim(-0.5, len(thresholds) - 0.5)
+
+    if acc_summary is None or not len(acc_summary):
+        ax_a.set_ylim(0, 10)
+        ax_b.set_ylim(0, 100)
+        ax_b.set_xticks([])
+        _awaiting(ax_a, note or "Awaiting prediction run")
+        for ax in (ax_a, ax_b):
+            style_axes(fig, ax, dark)
+        fig.tight_layout()
+        return
+
+    rows = _peak_groups(acc_summary).reset_index(drop=True)
+    n = len(rows)
+    step = min(0.22, 0.6 / max(n, 1))
+    top = 0
+    for j, r in rows.iterrows():
+        colour = _PALETTE[j % len(_PALETTE)]
+        counts = [int(r[f"n_events_{g}g"]) for g in thresholds]
+        top = max(top, *counts)
+        x = np.arange(len(thresholds)) + (j - (n - 1) / 2) * step
+        ax_a.scatter(x, counts, s=46, color=colour, edgecolors=fg,
+                     linewidths=0.6, zorder=3, label=str(r["treatment"]))
+        if n <= 3:
+            for xi, c in zip(x, counts):
+                ax_a.annotate(str(c), (xi, c), xytext=(6, 0),
+                              textcoords="offset points", va="center",
+                              fontsize=7, color=fg)
+    ax_a.set_ylim(0, top * 1.15 + 1)
+    if n > 1:
+        style_legend(ax_a.legend(fontsize=7, loc="upper right"), dark)
+
+    x = np.arange(n)
+    rate = rows["collision_rate"].values * 100
+    lo = rate - rows["ci_lo"].values * 100
+    hi = rows["ci_hi"].values * 100 - rate
+    for j in range(n):
+        ax_b.errorbar(x[j], rate[j], yerr=[[lo[j]], [hi[j]]], fmt="o",
+                      markersize=7, color=_PALETTE[j % len(_PALETTE)],
+                      markeredgecolor=fg, markeredgewidth=0.6, ecolor=fg,
+                      elinewidth=1.1, capsize=5, zorder=3)
+        k = int(rows["n_collision"].iloc[j])
+        total = int(rows["n_sensors"].iloc[j])
+        ax_b.annotate(f"{rate[j]:.1f}%\n({k}/{total})", (x[j], rate[j] + hi[j]),
+                      xytext=(0, 4), textcoords="offset points", ha="center",
+                      va="bottom", fontsize=7, color=fg)
+    ax_b.set_xticks(x)
+    ax_b.set_xticklabels(rows["treatment"].astype(str).values,
+                         rotation=30 if n > 2 else 0,
+                         ha="right" if n > 2 else "center", fontsize=8)
+    ax_b.set_xlim(-0.6, n - 0.4)
+    ax_b.set_ylim(0, min(100, float(np.max(rate + hi)) * 1.25 + 8))
+    ax_b.set_xlabel(f"≥{hig_peaks.COLLISION_G} g within ±"
+                    f"{hig_peaks.NADIR_WINDOW_S:g} s of the nadir", fontsize=8)
+    for ax in (ax_a, ax_b):
+        style_axes(fig, ax, dark)
+    fig.tight_layout()
+
+
+_ALIGN = {
+    "acc": ("time_norm_acc", "Normalised time (peak acceleration = 0.5)",
+            "Acceleration-aligned"),
+    "nadir": ("time_norm_nadir", "Normalised time (pressure nadir = 0.5)",
+              "Nadir-aligned"),
+}
+_TRACE_RED = "#d62728"
+
+
+def draw_acc_centred(fig, traces, align="acc", dark=False, note=None):
+    """The HIG magnitude of every recording with a collision on a
+    normalised time axis - each sample a faint red point, the median in
+    0.0025 bins as a line, 0.5 dashed - one panel per deployment (else
+    treatment). `align` "acc" puts each recording's peak acceleration at
+    0.5, "nadir" its pressure nadir (`hig_peaks.centred_traces`)."""
+    fig.clear()
+    x_col, x_label, title = _ALIGN[align]
+    fg = fg_colour(dark)
+    if traces is None or not len(traces):
+        ax = fig.add_subplot(111)
+        ax.set_title(title, fontsize=10, fontweight="bold")
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 700)
+        ax.set_xlabel(x_label, fontsize=9)
+        ax.set_ylabel("Acceleration (g)", fontsize=9)
+        _grid(ax, dark)
+        _awaiting(ax, note or (f"No collisions (≥{hig_peaks.COLLISION_G} g "
+                               "at the nadir)" if traces is not None
+                               else "Awaiting prediction run"))
+        style_axes(fig, ax, dark)
+        fig.tight_layout()
+        return
+
+    facets = list(dict.fromkeys(traces["facet"]))
+    ncols = min(3, len(facets))
+    nrows = math.ceil(len(facets) / ncols)
+    axes = fig.subplots(nrows, ncols, sharex=True, sharey=True,
+                        squeeze=False).ravel()
+    medians = hig_peaks.median_trace(traces, x_col)
+    peak = float(traces[hig_peaks.CHANNEL].max())
+    y_top = max(700.0, math.ceil(peak / 50) * 50)
+    for ax, facet in zip(axes, facets):
+        rec = traces[traces["facet"] == facet]
+        med = medians[medians["facet"] == facet]
+        ax.scatter(rec[x_col], rec[hig_peaks.CHANNEL], s=2, color=_TRACE_RED,
+                   alpha=0.3, linewidths=0, rasterized=True)
+        ax.plot(med["time_bin"], med["median_g"], color=fg, linewidth=1.2)
+        ax.axvline(0.5, color=fg, linestyle="--", linewidth=0.9)
+        ax.set_title(f"{facet} (n = {rec['file'].nunique()})", fontsize=8)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, y_top)
+        ax.set_yticks(np.arange(0, y_top + 1, 100))
+        ax.tick_params(labelsize=7)
+        _grid(ax, dark)
+        style_axes(fig, ax, dark)
+    for ax in axes[len(facets):]:
+        ax.set_visible(False)
+    fig.supxlabel(x_label, fontsize=9, color=fg)
+    fig.supylabel("Acceleration (g)", fontsize=9, color=fg)
+    fig.suptitle(f"{title}: recordings with a collision "
+                 f"(n = {traces['file'].nunique()})",
+                 fontsize=10, fontweight="bold", color=fg)
+    if dark:
+        fig.patch.set_facecolor(SCREEN_BG)
+    fig.tight_layout()
+
+
+def centred_figure_height(traces, width_rows=2.6):
+    """Inches for an acceleration-centred figure: a row per three facets."""
+    n = traces["facet"].nunique() if traces is not None and len(traces) else 1
+    return 1.0 + width_rows * math.ceil(n / min(3, n))
+
+
 def draw_region(fig, summary, class_names, dark=False):
     """Predicted strike location (class share of strikes) by treatment."""
     fig.clear()
@@ -240,7 +402,26 @@ def render_figures(state, out_dir, formats=("png",), dpi=300):
         fig.savefig(p, dpi=dpi, bbox_inches="tight")
         out["predicted_strike_rate"].append(p)
 
-    if getattr(state, "severity_summary", None) is not None:
+    acc_summary = getattr(state, "acc_summary", None)
+    if acc_summary is not None:
+        fig_pk = Figure(figsize=(7.5, 3.6), dpi=100)
+        draw_peak_summary(fig_pk, acc_summary)
+        out["hig_peak_summary"] = []
+        for fmt in formats:
+            p = out_dir / f"hig_peak_summary.{fmt}"
+            fig_pk.savefig(p, dpi=dpi, bbox_inches="tight")
+            out["hig_peak_summary"].append(p)
+        traces = state.collision_traces()
+        for align in ("acc", "nadir"):
+            fig_c = Figure(figsize=(7.5, centred_figure_height(traces)), dpi=100)
+            draw_acc_centred(fig_c, traces, align)
+            name = f"{align}_aligned_acceleration"
+            out[name] = []
+            for fmt in formats:
+                p = out_dir / f"{name}.{fmt}"
+                fig_c.savefig(p, dpi=dpi, bbox_inches="tight")
+                out[name].append(p)
+    elif getattr(state, "severity_summary", None) is not None:
         fig_sev = Figure(figsize=(6.0, 4.2), dpi=100)
         draw_severity(fig_sev, state.severity_summary)
         out["strike_severity"] = []

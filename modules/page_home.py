@@ -16,7 +16,7 @@ any other page has been opened.
 """
 
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QComboBox, QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPushButton,
@@ -26,32 +26,30 @@ from PySide6.QtWidgets import (
 from . import deployment_index as di
 from . import raw_layout, settings
 from .cards import MetaCard
-from .layout import apply_section_defaults, on_show, Section
+from .layout import apply_section_defaults, on_show, Page, Section
 from .theme import style
 from .session_state import OUTPUT_DIR_NAME
+from .startup import LOGO_PATH
 
-_LOGO_RESOURCE = ":/images/images/images/PyDracula_vertical.png"
 _CARD_WIDTH = 360
 
 
-class HomePage(QObject):
-    """Binds the Home page to `ui.home`."""
+class HomePage(Page):
+    """Home: the session library and its summary."""
 
-    status = Signal(str, int)
+    MARGIN = 0    # its own 24 px border (_build)
 
-    def __init__(self, ui, window, session_state):
-        super().__init__(window)
-        self.ui = ui
-        self.window = window
+    def __init__(self, main_window, session_state):
+        super().__init__(main_window)
         self.session_state = session_state
 
-        self._build(ui.home)
+        self._build(self)
         self._connect()
         self._refresh_library_combo()
         # the Library status card is refreshed whenever Home is shown, not
         # only when the library changes - its contents change under it
         # (processing, Simple mode, the demos) while Home isn't on screen
-        on_show(ui.home, self._refresh_summary)
+        on_show(self, self._refresh_summary)
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
@@ -77,7 +75,7 @@ class HomePage(QObject):
 
     def _build_logo(self):
         lab = QLabel()
-        pix = QPixmap(_LOGO_RESOURCE)
+        pix = QPixmap(str(LOGO_PATH))
         if not pix.isNull():
             lab.setPixmap(pix.scaledToWidth(
                 360, Qt.TransformationMode.SmoothTransformation))
@@ -161,7 +159,7 @@ class HomePage(QObject):
             self.session_state.set_library(current)
 
     def _new_library(self, parent=None):
-        parent = parent or self.window
+        parent = parent or self.main_window
         name, ok = QInputDialog.getText(
             parent, "New library", "Library name:")
         name = name.strip()
@@ -193,7 +191,7 @@ class HomePage(QObject):
             self.cmb_library.setCurrentIndex(idx)
             self.cmb_library.blockSignals(False)
         self.lbl_library_path.setText(str(path) if path else "No library selected.")
-        if self.ui.home.isVisible():
+        if self.isVisible():
             self._refresh_summary()
         else:
             # not on screen: on_show refreshes it next time Home opens
@@ -214,11 +212,11 @@ class HomePage(QObject):
         whether the sidebar itself is toggled wide or narrow - this is
         the one place that actually activates them. No section's panel is
         opened for the user - they pick where to start from the sidebar."""
-        self.window.expand_sidebar()
+        self.main_window.expand_sidebar()
 
     # ── new session ──────────────────────────────────────────────────────────
     def _new_session(self, parent=None):
-        parent = parent or self.window
+        parent = parent or self.main_window
         reply = QMessageBox.warning(
             parent, "New session",
             "Starting a new session clears the selected library here and "

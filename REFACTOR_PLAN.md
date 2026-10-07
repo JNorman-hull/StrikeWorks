@@ -1,331 +1,113 @@
-# StrikeWorks clean-up and refactoring plan
+# StrikeWorks clean-up and refactor (September 2026)
 
-Status: **done** on branch `cleanup-2026-09`, phases A-I (progress table
-in section 9). The bundle-size items wait for the next build.
+**Status: finished.** Every phase is merged into `main`; the last, the
+app-wide stylesheet, went in with `bf4df7e` on 30 September 2026, and the
+follow-up of 6 October (lint, one page pattern, RAPID reader) after it.
+This file is now the record: what the audit found, what was done, the
+decisions taken and the conventions new code should follow. What is left
+open is at the end and in `ROADMAP.md`.
 
-Numbers come from an audit of the source on 2026-09-25 (70 modules,
-~30,000 hand-written lines, plus the generated `ui_main.py` and
-`resources_rc.py`).
+## Before and after
 
----
-
-## 1. Fix first: things that lose data or are simply wrong
-
-These come before any tidying.
-
-**1.1 The build deletes whatever is inside `dist\StrikeWorks`.**
-PyInstaller empties that folder before every build. The packaged app keeps
-its default `libraries`, `input_data`, `output_data` and `models` folders
-right there, next to the exe, so anything made while using the built app
-(libraries, exported datasets, reports, deployed models) is wiped by the
-next build. This happened on 2026-09-25: an exported dataset, the
-`demo_data` pack and one library index were deleted before the build
-stopped on a locked folder.
-- `build.py`: build into a separate folder and copy only the program
-  (`StrikeWorks.exe` + `_internal`) into `dist\StrikeWorks`, never touching
-  the data folders. Refuse to build if it would have to delete a data
-  folder that has anything in it.
-- Longer term: default data folders under the user's Documents (e.g.
-  `Documents\StrikeWorks\libraries`) rather than inside the program folder,
-  which also makes the app installable under Program Files.
-
-**1.2 Two modules write runtime files inside the program bundle.**
-`bsm_state.py` and `ml_train_state.py` work out their folder from
-`Path(__file__).parent.parent`. From source that is the repo; in the built
-app it is `_internal`, so training runs (`_internal\training_runs`, 12 MB
-already) and the latest BSM result are written inside the bundle and lost at
-every rebuild. `DEFAULT_MODELS_DIR` points into `_internal` too. Use
-`settings.app_root()` (or the user data folder from 1.1) - the helper
-already exists for exactly this.
-
-**1.3 Settings are spread over three files in the home folder** -
-`.hifistrike_settings.json` (still the old HiFiStrike name),
-`.strikeworks_sensors.json`, `.strikeworks_annotations.json` - and the
-recent-datasets list keeps stale and relative paths (`input_data\...`).
-Move to one `StrikeWorks\settings.json` in the user's AppData, read the old
-files once on first start, drop missing/relative entries from the recent
-lists.
-
-**1.4 32 places catch every error and carry on silently.**
-The worst is `report_center.py` (8): a figure that fails to render simply
-disappears from the report with no message. Others: `validation_core`,
-`train_worker`, `predict_worker`, `sensor_config`, `deployment_index`,
-`dev_console` (2 each), and one each in 12 more files. Each one should
-either report the problem (the report's warnings list, the console, the
-status bar) or catch only the specific error it expects.
-
----
-
-## 2. Structure
-
-**2.1 Core logic that lives inside page modules.** Several pages hold code
-other parts of the app depend on - including two pages that are now hidden:
-
-| Code | Lives in | Used by | Move to |
-|---|---|---|---|
-| `_ExtractThread`, `_standardise` (dataset building) | `page_dataset.py` (hidden page) | `validation_core`, `page_annotate` | new `dataset_build.py` |
-| `_ProcessThread` (raw processing) | `page_process.py` | `inventory_widgets` | new `processing.py` |
-| `_Spinner`, `_NavViewBox`, `_CsvLoadThread`, `_find_col`, `_CHANNELS` | `page_validate.py` (hidden page) | Annotate, Inspect, Export animations, Misclassification | `plot_widgets.py` / `signal_io.py` (`_Spinner` duplicates `ml_widgets.Spinner` - drop it) |
-| `build_video_index` | `page_misclassification.py` | `report_center` | `raw_layout.py` (next to the other folder scanning) |
-
-Once moved, the hidden pages can be deleted outright (see 2.6) without
-breaking anything.
-
-**2.2 The same job written more than once.**
-- Nadir time + ROI window: `validation_core` (shared), plus separate copies
-  in `page_annotate` (`_index_nadir_time`, `_window_bounds`) and
-  `page_validate`. Keep the `validation_core` one.
-- Listing a library's processed CSVs: three versions with different
-  exclusion rules (`inventory_widgets`, `library_widgets.list_sensor_csvs`,
-  `validation_core.processed_sensor_files`). Keep one, in `raw_layout.py`.
-- Reports: 10 entry points - page buttons on Annotate, Analysis and
-  reporting and Evaluate, Simple mode's Download, `ml_report.export_analysis`,
-  and the central Export and report dialog - on top of two HTML page
-  wrappers (`ml_report.wrap_html_document`, `report_center._wrap_document`)
-  and four HTML builders. Make `report_center` the only way a report is
-  written: a page's own "Generate report" becomes "the central report with
-  just this section ticked", and Simple mode's Download calls the same code.
-
-**2.3 `main.ui` is mostly unused.** Every page but the two hidden ones now
-builds its own contents in Python. The `.ui` file still carries the old
-Designer pages (the Process tabs that get hidden, the Dataset page groups,
-an unused `page_final_report`). Cut it down to
-the window frame, sidebar and one empty frame per page, and regenerate
-`ui_main.py` (2,794 lines today; a few hundred after).
-
-**2.4 PyDracula template leftovers.**
-- `app_functions.py` - styles PyDracula demo widgets that are no longer in
-  the UI, so it would crash if it ever ran; it only runs when
-  `useCustomTheme` is on, which it never is. Delete, with the unused
-  `themes/*.qss`.
-- `ui_functions.py` does `from main import *`, the circular import that
-  forces the "import modules, then reload main" trick in every test. Pass
-  the window in instead. Also drops `GLOBAL_STATE` globals, `setStatus`,
-  `selectStandardMenu`, `selectPanelMenu` (unused).
-- `app_settings.Settings` (sidebar widths/colours) clashes in name with the
-  app's `settings` module - rename it `ui_config`.
-
-**2.5 One way to write a page.** Pages are currently written three ways:
-Qt objects that bind to `ui` widgets, Qt widgets that build themselves, and
-plain classes. Settle on one: a `QWidget` subclass that builds its own UI
-and is handed what it needs (state, session) in its constructor.
-
-**2.6 Hidden pages - decide.** Segmentation (`page_validate.py`, 781 lines),
-Data analysis (stub) and Advanced dataset options (`page_dataset.py`,
-767 lines) are built at every start-up but not shown. After 2.1, either
-delete them or build them only when un-hidden. Recommendation: delete
-Segmentation and the Dataset page (both fully replaced), keep the Data
-analysis stub as a placeholder.
-
-**2.7 Names that don't match the app.** Module and class names still carry
-old page names. Rename to match what the user sees:
-
-| Now | Shown as | Rename to |
+| | Audit, 25 Sep 2026 | 6 Oct 2026 |
 |---|---|---|
-| `page_bsm_biological.py` / `BiologicalPage` | Model comparison | `page_model_comparison.py` / `ModelComparisonPage` |
-| `page_bsm_sensitivity.py` / `SensitivityPage` | Analysis and reporting | `page_bsm_analysis.py` / `BSMAnalysisPage` |
-| `page_adjustments.py` / `AdjustmentsDialog` | Settings | `page_settings.py` / `SettingsDialog` |
-| `page_initiate_deployment.py` | Create and edit deployment | `page_deployment.py` |
-| `page_prepare.py`, `prepare_tab_*` | Setup and deploy | `page_setup.py`, `setup_*` |
-| `btn_adjustments`, `btn_biological`, ... | | matching button names |
+| Modules | 70, ~30,000 hand-written lines | 81, ~25,000 (smaller modules, no duplicate copies) |
+| `main.py` | 827 lines | 424 |
+| `modules/ui_main.py` (generated from `main.ui`) | 2,794 lines | 760 (`main.ui` is the window frame only) |
+| Per-widget `setStyleSheet` calls | 241 | 2 in code (the size grip, one sidebar icon) and 34 sidebar-icon styles in `main.ui`, plus the one app stylesheet |
+| Error handlers that failed silently | 32 | 0 that hide a failure (one cosmetic Windows taskbar call ignores errors) |
+| Tests | none | 65 in `tests/`, both demos end to end, a lint check, and a smoke test for the packaged app |
+| `.gitignore` | 3,890 lines | 29 |
+| Processed RAPID recording | 30 MB | 15 MB |
+| Start-up (main window) | 3.4 s | 1.4 s |
+| Reading a RAPID .imp/.hig pair | byte by byte | numpy records, ~28x faster, identical output |
+| `build.py` | deleted the data next to the exe | never touches the data folders |
 
-**2.8 `main.py` (827 lines, 37 % comments).** 14 identical
-`status -> print` hook-ups become one loop; the splash screen, default
-folder creation and app-ID helpers move out; the navigation tables stay.
+## What was done
 
-**2.9 `ml_widgets.py` is a grab bag (878 lines).** Split into `theme.py`
-(colours, fonts, stylesheets), `cards.py` (MetaCard, RingCard, StatCard),
-`layout.py` (`hsplit`, `centred`, `when_visible`, `on_show`,
-`discard_widget`) and `tables.py` (`style_table`, table copy).
-
----
-
-## 3. Repeated UI code
-
-| Pattern | Copies | Replace with |
+| Phase | Commit | What changed |
 |---|---|---|
-| a private `_muted(text)` label helper | 13 files | one `muted_label()` in `layout.py` |
-| the accent button stylesheet | 11 | `accent_button(text)` |
-| hand-built scroll area + the same stylesheet | 14 / 12 | `scroll_page(frame)` returning the body layout |
-| `setStyleSheet(...)` calls | 241 | one app stylesheet with named rules (`setObjectName`) |
-| hard-coded hex colours outside the palette | 143 | the `theme.py` constants |
+| A | e69c102 | **Build safety and repo.** `build.py` builds into `build/staging` and swaps in only `StrikeWorks.exe` and `_internal`. Training runs and BSM results follow `settings.app_root()` (beside the exe once packaged, not inside the bundle). `.gitignore` rewritten, ~100 MB of generated output untracked, `.gitattributes` added |
+| B | b08a6ec | **Tests.** `tests/` (standard-library unittest): BSM model and Wilson intervals pinned to their outputs, the EEL reader on synthetic files, the validation rules, the folder layout, every page and dialog opening off-screen, and both demos end to end (`STRIKEWORKS_E2E=1`). `tools/smoke_test.ps1` for the packaged app |
+| C | 275e534 | **Dead code.** 35 unused functions and classes (~390 lines), unused imports and variables |
+| D | a8780ce | **Shared logic out of the pages.** `plot_widgets.py`, `dataset_build.py` and `processing.py` take code the hidden pages held; `raw_layout.py` is the one place for a library's folder paths and its list of processed files (there were three, with different rules); Annotate uses `validation_core`'s nadir and window code; one HTML report wrapper |
+| E | d928462 | **Template leftovers.** No `from main import *` (the circular import every test had to work around); `app_settings` became `ui_config`; `app_functions.py` and the unused template themes deleted; unused Designer pages cut from `main.ui` |
+| F | a4fa30c | **Structure and names.** `ml_widgets.py` split into `theme`, `layout`, `tables`, `cards` and `level_grouper`; shared helpers replace per-page copies; page modules renamed to what the app shows (model comparison, BSM analysis, settings, deployment, setup); `main.py` 825 -> 461 lines, start-up helpers in `startup.py` |
+| G | bfcbae0 | **Comments and docs.** Comments and docstrings say what the code does, without the history; no internal column names in messages; `ROADMAP.md` cut to open work (2,223 -> ~90 lines); `README.md` rewritten |
+| H | 933d088 | **Settings and errors.** One `settings.json` (old home-folder files read once, left in place); recent datasets keep absolute, existing paths only; silent catch-alls now report (report warnings, console, status bar) or catch the specific error; the running dataset is never overwritten when it can't be read |
+| I | 9e499f6 | **Speed.** Processed CSVs at 10 significant figures (half the size, 35 % faster to read, no recorded value changed); Evaluate's model discovery and Analysis and reporting's figures run when first shown |
+| Stylesheet | bf4df7e | **One app stylesheet.** `themes/app.qss` styles every window, dialogs included, with `@name` colours filled from the active palette (`modules/theme.py`); widgets take a look by role and tone (`theme.style()`); sidebar highlights are properties. This made the University of Hull theme a second palette |
+| Follow-up | 6 Oct 2026 | **Lint, pages, RAPID reader.** ruff (`ruff.toml`, `requirements-dev.txt`, `tests/test_lint.py`) and its findings fixed; every page a self-building `QWidget` (`layout.Page` / `TabbedPage`) added to the page stack by `main.py`, the hidden Segmentation and dataset pages included, so `main.ui` holds only the window frame (2,260 lines, from 3,649); the RAPID `.imp`/`.hig` readers on numpy structured records, the way `eel_format.py` reads, byte-identical on the Testbed recordings (`tests/test_rapid_format.py`) |
 
----
+## Decisions taken on the way
 
-## 4. Dead code and lint
-
-Remove (none are referenced anywhere):
-- `bsm_figures`: `draw_pco`, `draw_pm`, `draw_sens_wf`, `draw_sweep_lines`
-  (replaced by the 4-panel figures)
-- `sensor_config`: `resample_frame`, `primary_extension`,
-  `nadir_search_samples`; `register_parser` only if no plug-in use is
-  planned
-- `library_widgets`: `_DirsOnlyProxy`, `video_dir_for`, `selected_path`
-- `ml_report`: `export_tables`, `export_figures`
-- `ml_widgets`: `set_checks`, `set_running`
-- `raw_layout.video_dirs_for`, `deployment_index.runs_for`,
-  `ml_state.has_ground_truth`, `ml_train_state.trained_kinds`,
-  `page_home._go_simple`, `page_ml_prediction.goto_report`,
-  `page_annotate._deployment_map`, `page_process._parse_name`,
-  `dev_console.set_app_window`, `eel_format.device_and_time`
-- the PyDracula functions listed in 2.4
-
-Plus 26 unused imports, 5 unused variables and one empty f-string reported
-by pyflakes, and the old `_min.csv` exclusions once no library still has
-those files.
-
----
-
-## 5. Comments, docstrings and wording
-
-About one line in six is a comment or docstring, which is fine; the problem
-is what many of them say. Around 180 of them tell the story of how the code
-got here rather than what it does now: "used to", "no longer", "moved here
-from", "renamed from", ROADMAP item numbers, "the MVP", "the user asked
-for", dates. That belongs in git history.
-
-Rules for the pass:
-- A docstring says what the function does and anything surprising about
-  how to use it. One line where one line will do.
-- A comment explains *why* the code is written the way it is, only where it
-  isn't obvious. No history, no ticket or roadmap numbers, no "deliberately",
-  no restating the code.
-- Plain words in the UI: no internal names (`hstrike_flagged`,
-  `pres_min.time.`) in labels, tooltips or messages.
-- `main.py` first (22 history references), then the page modules.
-
-Documents:
-- `ROADMAP.md` (2,223 lines, mostly finished work) - keep only open items
-  and the "Hidden for now" list; the finished-work history is in git.
-- `README.md` - bring up to date with the current workflow (Simple mode,
-  demos, sensor configurations including the EEL tag).
-
----
-
-## 6. Speed and size
-
-- **Processed CSV writing is ~90 % of processing time** (about 1.8 s of
-  2.3 s per RAPID recording, all in pandas' number formatting). Writing
-  with 6 significant figures halves the file size (29 → 14 MB per RAPID
-  recording; EEL files are 48 MB per minute) and is a little faster.
-  Parquet would be much faster still, but needs `pyarrow` and changes the
-  file type users open.
-- **Start-up builds every page**, hidden ones included. Build pages the
-  first time they are opened.
-- **Bundle size** (590 MB when last built): all of sktime and its test
-  suites are collected, but only MiniRocket is used; `excludes` is empty.
-  `opencv-python` (112 MB) could be `opencv-python-headless` if the video
-  preview only decodes frames. `llvmlite`/numba (115 MB) is needed by
-  sktime's MiniRocket.
-- The RAPID binary reader loops byte by byte; it is fast enough (0.1 s per
-  recording) but could be rewritten the way `eel_format.py` reads, for
-  clarity rather than speed.
-
----
-
-## 7. Repository
-
-- `.gitignore` is 3,890 lines - 3,857 of them individual `dist/` files.
-  Replace with `/dist/`, `/build/`, and ignore generated output folders
-  (`bsm_results/`, `output_data/`, exported `input_data/*.csv`, `.idea/`).
-- About 100 MB of generated output and data is tracked in git (old
-  `bsm_results`, bar plots, dataset CSVs). Untrack them (`git rm
-  --cached`); keep one small sample dataset for the demo, or use Git LFS.
-- Stray files in the repo root: `.Rhistory`, `format-specification.html`,
-  `strikeworks_dev_log.txt`.
-- Add `.gitattributes` (`* text=auto`) - git currently warns about line
-  endings on most modules.
-
----
-
-## 8. Tests and tooling
-
-There are no tests in the repo; every check so far has been a throwaway
-script. Add:
-- `tests/` with pytest for the pure code first: `bsm_model`, `wilson_calc`,
-  `eel_format` (the synthetic-file checks already written), the
-  `validation_core` flag rules, `deployment_index`, `raw_layout`, report
-  figure sizes.
-- A start-up test with pytest-qt (offscreen): the main window builds and
-  every page opens. Simple once 2.4 removes the circular import.
-- The Simple and Advanced demos as an end-to-end test on a small demo pack.
-- `ruff` for lint and import order, run before each commit.
-- The frozen-build smoke test (launch the exe, run the prediction and
-  training workers) as `tools/smoke_test.ps1`.
-
----
-
-## 9. Order of work
-
-Each phase ends with: lint clean, tests + both demos passing, a look at
-the changed pages, then a commit.
-
-| Phase | Covers | Size | Risk |
-|---|---|---|---|
-| A | 1.1-1.2 build safety and runtime paths, 7 repo hygiene | small | low |
-| B | 8 test harness (pure-code tests, start-up test, demos) | medium | low |
-| C | 4 dead code and lint | small | low |
-| D | 2.1-2.2 move core logic out of pages, remove duplicates | medium | medium |
-| E | 2.4, 2.3 template leftovers, cut `main.ui` down | medium | medium |
-| F | 2.5-2.9, 3 page pattern, renames, shared UI helpers | large | medium |
-| G | 5 comments and docs pass | medium | low |
-| H | 1.3-1.4 settings file, error reporting | medium | medium |
-| I | 6 speed and bundle size | small-medium | low |
-
-Phase B comes early on purpose: everything after it changes a lot of code,
-and the tests are what show nothing broke.
-
-### Progress
-
-| Phase | Commit | Notes |
-|---|---|---|
-| A | e69c102 | `build.py` builds into `build/staging` and swaps in only the exe and `_internal` |
-| B | b08a6ec | `tests/` (unittest), `tools/smoke_test.ps1` |
-| C | 275e534 | 35 unused functions/classes removed |
-| D | a8780ce | `plot_widgets`, `dataset_build`, `processing`, `raw_layout` paths; one report wrapper. The Evaluate model-package export and Simple mode's analysis export stay separate deliverables |
-| E | d928462 | template leftovers gone, `main.ui` trimmed, no star imports |
-| F | a4fa30c | `ml_widgets` split into `theme` / `layout` / `tables` / `cards` / `level_grouper`; `muted_label`, `ACCENT_BUTTON`, `CONSOLE_STYLE`, `scroll_page`, `scroll_area`; modules renamed per 2.7; `main.py` 825 -> 461 lines, start-up helpers in `startup.py` |
-| G | bfcbae0 | history and filler comments rewritten across the modules (module docstrings first); internal column names out of log messages; LibrarySelector's unused library picker removed; ROADMAP.md 2,223 -> ~90 lines (open work + "Hidden for now"); README rewritten |
-| H | 933d088 | one settings file, `%APPDATA%\StrikeWorks\settings.json` (app keys + `sensor_configs` / `annotation_variables` sections), read once from the three old home-folder files, which stay in place; recent datasets keep absolute, existing paths only. Silent `except Exception` handlers now report (report warnings, console, status bar) or catch the specific error; the running dataset is never overwritten when it can't be read (one shared merge); the training worker's pipe is closed |
-| I | this phase | processed sensor CSVs written at 10 significant figures (`raw_layout.CSV_FLOAT_FORMAT`): 30 -> 15 MB per RAPID recording, read back 35 % faster, largest change 5e-7 in the computed magnitude columns (time and raw channels exact); writing is ~0.7 s slower per recording. Start-up (building MainWindow) 3.4 s -> 1.4 s: Evaluate's model discovery and Analysis and reporting's figures now run when first shown |
-
-Decisions taken on the way:
-- **2.6 hidden pages are kept, not deleted** - they are hidden temporarily
-  (ROADMAP.md, "Hidden for now"). Building them lazily is left to phase I.
-- **2.5 one page pattern is deferred.** Converting the `QObject` page
-  controllers that bind to `main.ui` widgets into self-building `QWidget`s
-  means moving each page's layout out of `main.ui`; worth doing page by
-  page when a page is next reworked, not as one sweep.
-- **2.7 Designer object names stay** (`page_prepare`, `btn_adjustments`,
+- **Hidden pages are kept**, not deleted - they are hidden temporarily
+  (`ROADMAP.md`, "Hidden for now"). Building them lazily wasn't worth it:
+  they take 0.02 s together.
+- **One page pattern**, deferred at first, was done in the follow-up for
+  every page at once: the per-page conversions were small, and leaving
+  half the pages in `main.ui` kept two ways of writing a page.
+- **Designer object names stay** (`page_prepare`, `btn_adjustments`,
   `btn_biological`, ...): renaming them touches `main.ui`, the generated
-  file and every lookup for no visible gain. Only modules, classes and
+  file and every lookup for no visible gain. Modules, classes and
   attributes were renamed.
-- **6, 6 significant figures was not used**: it moves values by up to
-  0.005 and would lose the time step beyond 100 s. 10 significant figures
-  gives the same size saving without changing any recorded value.
-- **6, hidden pages are not built lazily**: they take 0.02 s together; the
-  start-up time was in two visible pages (above).
-- **6, bundle size is left for the next build**, since each change needs a
-  build and a smoke test to prove it. Measured in the current build
-  (548 MB `_internal`): sktime's test suites are only 3 MB, so excluding
-  them isn't worth the risk to its registry. The real sizes are
-  `cv2` 112 MB (`opencv-python-headless` would drop its GUI parts - a
-  package change), `llvmlite` 115 MB (needed by numba / MiniRocket) and
-  `PySide6` 102 MB, of which ~30 MB is unused (`Qt6Quick`, `Qt6Qml`,
-  `Qt6Pdf`, `opengl32sw.dll` - candidates for `excludes` / removal in
-  `build.py`, to be smoke-tested).
-- **6, the RAPID reader rewrite** (clarity only, it takes 0.1 s) is left.
-- **3, the app-wide stylesheet** was done after phase I, with the
-  University of Hull theme: one `themes/app.qss` for every window (it had
-  only covered the main window - dialogs mixed native styling with dark-
-  theme text colours), `@name` colours from the active palette, widgets
-  tagged by role and tone (`theme.style()`), sidebar highlights as
-  properties. The per-widget `setStyleSheet` calls are gone apart from
-  the sidebar icons.
+- **Reports**: one HTML wrapper and the central Export and report dialog;
+  Evaluate's model-package export and Simple mode's analysis export stay
+  separate deliverables.
+- **The packaged app is portable** rather than installed: `settings.json`
+  and the data folders sit beside the exe. Moving the data folders to
+  Documents (so the app could live under Program Files) was not done.
+- **10 significant figures, not 6**, for processed CSVs: 6 moves values by
+  up to 0.005 and loses the time step beyond 100 s; 10 gives the same size
+  saving without changing any recorded value.
+- **Tests use unittest** (they also run under pytest), so nothing extra is
+  needed to run them. **Lint is ruff**, a development requirement only
+  (`requirements-dev.txt`): pyflakes' checks, pycodestyle's error classes
+  and bugbear; line length and import order are left alone.
+- **The template's unused icons stay** in `resources.qrc` (223 of 257
+  unused): they may be used for new pages, and cost 1 MB.
+- **The RAPID reader keeps the original pairing**: each .imp row pairs a
+  packet's counter with the previous packet's readings, and the last
+  packet is unused - what the original reader produced, kept so no
+  processed recording changes.
+- **Exported figures and HTML reports keep their own colours** (36 in
+  `ml_report`, `report_center`, `bsm_report` and the figure modules):
+  publication styling on white, independent of the on-screen theme.
 
-## 10. Not changing
+## Still open
+
+| Item | Notes |
+|---|---|
+| Bundle size | `_internal` is 539 MB. Exclude PySide6's unused Qt parts (`Qt6Quick`, `Qt6Qml`, `Qt6Pdf`, `opengl32sw.dll`, ~30 MB); consider `opencv-python-headless` (112 MB `cv2`). `llvmlite` (115 MB) is needed by numba for MiniRocket; sktime's test suites are only 3 MB. Each change needs a build and a smoke test (`ROADMAP.md`) |
+
+## Conventions for new code
+
+- **Look**: `theme.style(widget, role=..., tone=...)`, never
+  `setStyleSheet`; a new look is a rule in `themes/app.qss`, a new colour
+  a token in both palettes in `theme.py`.
+- **Shared helpers**: `theme.muted_label`, `layout.scroll_page` /
+  `scroll_area` / `hsplit` / `centred`, `cards` (MetaCard, RingCard,
+  StatCard), `tables`.
+- **Folders**: a library's paths come from `raw_layout.py`; files the app
+  writes at run time go under `settings.app_root()`, never
+  `Path(__file__)`; settings go through `modules/settings.py`.
+- **Errors**: report them (console, status bar, a report's warnings list)
+  or catch only the error expected.
+- **Pages**: a page is a `layout.Page` (`TabbedPage` for tabs the sidebar
+  picks) that builds its own UI and is given what it needs (the main
+  window as `main_window`, state, session) in the constructor; `main.py`
+  adds it to the page stack and to `_SUBMENU_TARGETS`. Nothing goes into
+  `main.ui` but the window frame.
+- **Comments** say what the code does and why where it isn't obvious - no
+  history, dates or ticket numbers; that belongs in git.
+- **`modules/ui_main.py`** is generated from `main.ui` by `build_ui.py`;
+  never edit it by hand.
+- **Before a commit**: `ruff check .`, the tests with both demos
+  (`STRIKEWORKS_E2E=1`), and a look at the pages changed.
+
+## Not changed
 
 The science and the file formats: the BSM maths, the Wilson intervals, the
 RAPID and EEL decoding, the index and dataset column names, and the model
-pipeline. The refactor moves and tidies code around them; it must not change
-a single output number (the tests in phase B pin that down).
+pipeline. The refactor moved and tidied code around them without changing
+a single output number; the tests pin that down.

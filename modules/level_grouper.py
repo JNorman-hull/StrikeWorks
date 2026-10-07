@@ -161,7 +161,7 @@ class LevelGrouper(QWidget):
         if self._updating or idx >= len(self._groups):
             return
         self._groups[idx]["name"] = text
-        for key, cmb in self._level_combos.items():
+        for cmb in self._level_combos.values():
             cmb.setItemText(idx, text or f"Class {idx + 1}")
         self._refresh_summary()
         self.changed.emit()

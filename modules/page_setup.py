@@ -8,26 +8,21 @@
 
 Sensor configuration chooses and edits the device the session works with;
 Study design is a sampling-precision calculator (Wilson score interval).
-The tab widget itself is in main.ui with its tab bar hidden - the sidebar
-picks the tab (`main.py`'s `_SUBMENU_TARGETS`).
+The tab bar is hidden - the sidebar picks the tab (`main.py`'s
+`_SUBMENU_TARGETS`).
 """
-from PySide6.QtCore import QObject, Signal
-
+from .layout import TabbedPage
 from .setup_sensor import SensorTab
 from .setup_precision import PrecisionCalcTab
 
 
-class SetupPage(QObject):
-    """Builds the two tabs into main.ui's `tabs_prepare`."""
+class SetupPage(TabbedPage):
+    """Sensor configuration and Study design."""
 
-    status = Signal(str, int)
-
-    def __init__(self, ui, window):
-        super().__init__(window)
-        self.ui = ui
-        self.window = window
-
-        self.tab_sensor = SensorTab(
-            ui.frame_prepare_sensor, window, status=self.status.emit)
-        self.tab_precision = PrecisionCalcTab(
-            ui.frame_prepare_study, window, status=self.status.emit)
+    def __init__(self, main_window):
+        super().__init__(main_window)
+        self.tab_sensor = SensorTab(main_window, status=self.status.emit)
+        self.tab_precision = PrecisionCalcTab(main_window,
+                                              status=self.status.emit)
+        self.tabs.addTab(self.tab_sensor, "Sensor configuration")
+        self.tabs.addTab(self.tab_precision, "Study design")

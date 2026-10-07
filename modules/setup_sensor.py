@@ -44,18 +44,19 @@ from .layout import (
 from .theme import muted_label, style
 
 
-class SensorTab:
-    """Builds the Sensor configuration tab into `frame`."""
+class SensorTab(QWidget):
+    """Builds the Sensor configuration tab."""
 
-    def __init__(self, frame, window, status=None):
-        self.window = window
+    def __init__(self, main_window, status=None):
+        super().__init__()
+        self.main_window = main_window
         self._status = status
         self._cfg = sensor_config.active().copy()
         self._loading = False
         self._dirty = False
         self._source_rows = []          # [{extension, packet, rate, method}]
 
-        self._build(frame)
+        self._build(self)
         self._reload_list()
         self._load_into_widgets()
 
@@ -311,7 +312,7 @@ class SensorTab:
 
     def _confirm_discard(self):
         answer = QMessageBox.question(
-            self.window, "Unsaved changes",
+            self.main_window, "Unsaved changes",
             f"'{self._cfg.name}' has unsaved changes. Discard them?",
             QMessageBox.StandardButton.Discard
             | QMessageBox.StandardButton.Cancel)
@@ -457,7 +458,7 @@ class SensorTab:
 
     def _add_channel(self):
         name, ok = QInputDialog.getText(
-            self.window, "Add channel", "Column name:")
+            self.main_window, "Add channel", "Column name:")
         if ok and name.strip():
             self._append_channel(name.strip())
             self._touch()
@@ -531,7 +532,7 @@ class SensorTab:
         cfg = self._collect()
         problems = cfg.problems()
         if problems:
-            QMessageBox.warning(self.window, "Cannot save",
+            QMessageBox.warning(self.main_window, "Cannot save",
                                 "\n".join(f"• {p}" for p in problems))
             return
         sensor_config.upsert(cfg)
@@ -555,7 +556,7 @@ class SensorTab:
         if not sensor_config.is_builtin(key):
             return
         if QMessageBox.question(
-                self.window, "Restore defaults",
+                self.main_window, "Restore defaults",
                 f"Replace '{self._cfg.name}' with the values StrikeWorks "
                 "provides? Your edits to it are lost.") \
                 != QMessageBox.StandardButton.Yes:
@@ -568,7 +569,7 @@ class SensorTab:
 
     def _new(self):
         name, ok = QInputDialog.getText(
-            self.window, "New sensor configuration", "Sensor name:")
+            self.main_window, "New sensor configuration", "Sensor name:")
         if not ok or not name.strip():
             return
         if self._dirty and not self._confirm_discard():
@@ -602,7 +603,7 @@ class SensorTab:
         if sensor_config.is_builtin(key):
             return
         if QMessageBox.question(
-                self.window, "Delete configuration",
+                self.main_window, "Delete configuration",
                 f"Delete '{self._cfg.name}'?") \
                 != QMessageBox.StandardButton.Yes:
             return

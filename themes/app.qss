@@ -373,6 +373,10 @@ QPushButton[role="link"]:hover { text-decoration: underline; }
 *[role="placeholder"] { color: @muted; background-color: @placeholder; border-radius: 5px; }
 *[role="bare"] { background: transparent; }
 QScrollArea[role="bare"] { border: none; background: transparent; }
+/* its viewport and the page inside it too - else they paint the default
+   window grey wherever no parent makes them transparent (Simple mode) */
+QScrollArea[role="bare"] > #qt_scrollarea_viewport,
+QScrollArea[role="bare"] > #qt_scrollarea_viewport > QWidget { background: transparent; }
 QPlainTextEdit[role="console"] {
 	background: @console;
 	color: @console_text;

@@ -23,7 +23,7 @@ pattern and parser come from the active sensor configuration.
 """
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QPushButton, QSplitter, QVBoxLayout, QWidget,
@@ -34,7 +34,7 @@ from . import sensor_config
 from . import validation_core as vc
 from .inventory_widgets import FileInventory
 from .library_widgets import LibrarySelector
-from .layout import Section, when_visible
+from .layout import Page, Section, when_visible
 from .theme import style
 
 class StatCard(QFrame):
@@ -72,18 +72,16 @@ class StatCard(QFrame):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-class ProcessPage(QObject):
-    """Builds Raw data processing into `ui.content_process`."""
+class ProcessPage(Page):
+    """Raw data processing."""
 
-    status = Signal(str, int)
-
-    def __init__(self, ui, window, session_state=None):
-        super().__init__(window)
-        self.ui = ui
-        self.window = window
+    def __init__(self, main_window, session_state=None):
+        super().__init__(main_window)
         self.session_state = session_state
 
-        self._build(ui.layout_content_process)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self._build(outer)
         self._connect()
         self._on_lib_changed()
         self._on_filters_changed()

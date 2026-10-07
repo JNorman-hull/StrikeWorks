@@ -37,7 +37,8 @@ if len(sys.argv) > 2 and sys.argv[1] == "--worker":
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QMainWindow, QPushButton, QTableWidget, QVBoxLayout,
+    QApplication, QFrame, QLabel, QMainWindow, QPushButton, QSizePolicy,
+    QTableWidget, QVBoxLayout,
 )
 
 from modules import settings, startup, table_copy, theme, win_utils
@@ -94,7 +95,7 @@ class MainWindow(QMainWindow):
                        "btn_annotation"),
         "model_training": ("Model training",
                            ("btn_ml_training", "btn_evaluate_train",
-                            "btn_misclassification", "btn_deploy_train"),
+                            "btn_misclassification"),
                            "btn_model_training"),
         "model_prediction": ("Model prediction",
                              ("btn_ml_prediction", "btn_inspect_pred",
@@ -102,34 +103,33 @@ class MainWindow(QMainWindow):
                              "btn_model_prediction"),
     }
 
-    # Each sub-menu button's destination: the stacked-widget page, and for
-    # pages built as a QTabWidget (tab bar hidden), the tab to select.
-    # Export and report isn't here - it opens a dialog.
+    # Each sub-menu button's destination: the page (a MainWindow attribute)
+    # and, for a page of tabs (TabbedPage), the tab to show. Export and
+    # report isn't here - it opens a dialog.
     _SUBMENU_TARGETS = {
         # Setup and deploy
-        "btn_prepare":             ("page_prepare", "tabs_prepare", 0),
-        "btn_study_design":        ("page_prepare", "tabs_prepare", 1),
-        "btn_initiate_deployment": ("page_initiate_deployment", None, None),
+        "btn_prepare":             ("setup_page", 0),
+        "btn_study_design":        ("setup_page", 1),
+        "btn_initiate_deployment": ("deployment_page", None),
         # Sensor processing
-        "btn_process":             ("page_process", None, None),
-        "btn_validate":            ("page_validate", None, None),
-        "btn_data_analysis":       ("page_data_analysis", None, None),
+        "btn_process":             ("process_page", None),
+        "btn_validate":            ("validate_page", None),
+        "btn_data_analysis":       ("data_analysis_page", None),
         # Validate and annotate
-        "btn_annotate":            ("page_annotate", None, None),
-        "btn_export_animations":   ("page_export_animations", None, None),
-        "btn_dataset":             ("page_dataset", None, None),
+        "btn_annotate":            ("annotation_page", None),
+        "btn_export_animations":   ("export_animations_page", None),
+        "btn_dataset":             ("dataset_page", None),
         # Model training
-        "btn_ml_training":         ("page_ml_training", "tabs_ml_training", 0),
-        "btn_evaluate_train":      ("page_ml_training", "tabs_ml_training", 1),
-        "btn_deploy_train":        ("page_ml_training", "tabs_ml_training", 2),
-        "btn_misclassification":   ("page_misclassification", None, None),
+        "btn_ml_training":         ("ml_training_page", 0),
+        "btn_evaluate_train":      ("ml_training_page", 1),
+        "btn_misclassification":   ("misclassification_page", None),
         # Model prediction
-        "btn_ml_prediction":  ("page_ml_prediction", "tabs_ml_prediction", 0),
-        "btn_inspect_pred":   ("page_ml_prediction", "tabs_ml_prediction", 1),
-        "btn_biological":          ("page_biological", None, None),
+        "btn_ml_prediction":       ("ml_prediction_page", 0),
+        "btn_inspect_pred":        ("ml_prediction_page", 1),
+        "btn_biological":          ("model_comparison_page", None),
         # Mathematical blade strike modelling
-        "btn_bsm_calculator":      ("page_bsm_calculator", None, None),
-        "btn_bsm_sensitivity":     ("page_bsm_sensitivity", None, None),
+        "btn_bsm_calculator":      ("bsm_calculator_page", None),
+        "btn_bsm_sensitivity":     ("bsm_analysis_page", None),
     }
 
     # built but not offered in the sidebar for now (ROADMAP.md, "Hidden for now")
@@ -161,33 +161,34 @@ class MainWindow(QMainWindow):
         # its demo runners, not its Qt parent
         self.dev_console = DevConsole(self)
 
-        # Home first: it resolves the session library, which the pages
-        # below read while they're built
+        # Every page builds its own contents (layout.Page) and is added to
+        # the page stack here. Home first: it resolves the session library,
+        # which the pages below read while they're built.
         self.session_state = SessionState(self)
-        self.home_page = self._page(HomePage(ui, self, self.session_state))
+        self.home_page = self._page(HomePage(self, self.session_state))
 
         # Setup and deploy comes first: its sensor drives processing,
         # validation and dataset building
-        self.setup_page = self._page(SetupPage(ui, self))
-        self.process_page = self._page(ProcessPage(ui, self, self.session_state))
-        self.validate_page = self._page(ValidatePage(ui, self, self.session_state))
-        self.dataset_page = self._page(DatasetPage(ui, self, self.session_state))
+        self.setup_page = self._page(SetupPage(self))
+        self.process_page = self._page(ProcessPage(self, self.session_state))
+        self.validate_page = self._page(ValidatePage(self, self.session_state))
+        self.dataset_page = self._page(DatasetPage(self, self.session_state))
         self.deployment_page = self._page(
-            DeploymentPage(ui, self, self.session_state))
+            DeploymentPage(self, self.session_state))
         self.annotation_page = self._page(
-            AnnotationPage(ui, self, self.session_state))
+            AnnotationPage(self, self.session_state))
         self.export_animations_page = self._page(
-            ExportAnimationsPage(ui, self, self.session_state))
+            ExportAnimationsPage(self, self.session_state))
 
         # before Model prediction: its Predict tab shows BSM mortality
         self.bsm_state = BSMState(self)
         self.ml_prediction_page = self._page(
-            MLPredictionPage(ui, self, self.bsm_state))
+            MLPredictionPage(self, self.bsm_state))
         # Simple mode shares ml_prediction_page.state
         self.simple_mode_dialog = SimpleModeDialog(self)
-        self.ml_training_page = self._page(MLTrainingPage(ui, self))
+        self.ml_training_page = self._page(MLTrainingPage(self))
         self.misclassification_page = self._page(
-            MisclassificationPage(ui, self, self.ml_training_page.state))
+            MisclassificationPage(self, self.ml_training_page.state))
 
         self.dataset_page.dataset_ready.connect(
             self.ml_prediction_page.on_dataset_ready)
@@ -198,23 +199,17 @@ class MainWindow(QMainWindow):
 
         # Calculator runs the BSM; Analysis and reporting and Model
         # comparison follow its result through the shared BSMState
-        self.bsm_calculator_page = self._page(CalculatorPage(
-            ui.content_bsm_calculator, self, self.bsm_state))
-        self.bsm_analysis_page = self._page(BSMAnalysisPage(
-            ui.content_bsm_sensitivity, self, self.bsm_state))
+        self.bsm_calculator_page = self._page(
+            CalculatorPage(self, self.bsm_state))
+        self.bsm_analysis_page = self._page(
+            BSMAnalysisPage(self, self.bsm_state))
         self.model_comparison_page = self._page(ModelComparisonPage(
-            ui.content_biological, self, self.bsm_state,
-            self.ml_prediction_page.state))
+            self, self.bsm_state, self.ml_prediction_page.state))
 
-        self._stub_pages = [
-            StubPage(ui.content_data_analysis, "Data analysis",
-                     "Passage duration, time-series normalisation, "
-                     "barotrauma metrics, acceleration peak finding."),
-        ]
-
-        # the sidebar drives these tab widgets, so their own tab bars are hidden
-        for name in ("tabs_prepare", "tabs_ml_training", "tabs_ml_prediction"):
-            getattr(ui, name).tabBar().setVisible(False)
+        self.data_analysis_page = self._page(StubPage(
+            self, "Data analysis",
+            "Passage duration, time-series normalisation, "
+            "barotrauma metrics, acceleration peak finding."))
 
         self._order_panel_buttons()
         self._build_bottom_menu()
@@ -244,7 +239,7 @@ class MainWindow(QMainWindow):
         for tbl in self.findChildren(QTableWidget):
             style_table(tbl)
 
-        ui.stackedWidget.setCurrentWidget(ui.home)
+        ui.stackedWidget.setCurrentWidget(self.home_page)
         self.setSelected(ui.btn_home)
 
         # start as the collapsed icon strip, section buttons disabled
@@ -258,6 +253,7 @@ class MainWindow(QMainWindow):
 
     def _page(self, page):
         page.status.connect(_print_status)
+        self.ui.stackedWidget.addWidget(page)
         return page
 
     # ── sidebar layout ──────────────────────────────────────────────────────
@@ -273,7 +269,6 @@ class MainWindow(QMainWindow):
                 layout.indexOf(getattr(self.ui, anchor)) + offset, widget)
 
         move("btn_export_animations", "btn_dataset", 0)
-        move("btn_deploy_train", "btn_misclassification", 1)
 
     def _build_bottom_menu(self):
         """Pin "Simple mode" and "Export and report" to the bottom of the
@@ -296,6 +291,20 @@ class MainWindow(QMainWindow):
         btn.setStyleSheet(
             "background-image: url(:/icons/images/icons/cil-external-link.png);")
         btn.clicked.connect(self.openSimpleMode)
+        # the University of Hull logo above them, white on the sidebar; left
+        # aligned, so the collapsed icon strip shows its shield
+        uoh = startup.uoh_logo_pixmap(170, reverse=True)
+        if not uoh.isNull():
+            logo = ui.lbl_uoh_logo = QLabel()
+            logo.setPixmap(uoh)
+            logo.setToolTip("University of Hull")
+            logo.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            logo.setContentsMargins(14, 0, 0, 14)
+            # clipped, not forcing the sidebar wider, when it is collapsed
+            logo.setMinimumWidth(1)
+            logo.setSizePolicy(QSizePolicy.Policy.Ignored,
+                               QSizePolicy.Policy.Fixed)
+            bottom_v.addWidget(logo)
         bottom_v.addWidget(btn)
         bottom_v.addWidget(ui.btn_export_report)
 
@@ -348,7 +357,7 @@ class MainWindow(QMainWindow):
     # ── navigation ──────────────────────────────────────────────────────────
     def _go_home(self):
         ui = self.ui
-        ui.stackedWidget.setCurrentWidget(ui.home)
+        ui.stackedWidget.setCurrentWidget(self.home_page)
         UIFunctions.resetStyle(self, "btn_home")
         UIFunctions.resetPanelStyle(self, "")
         if ui.extraLeftBox.width() > 0:
@@ -363,7 +372,7 @@ class MainWindow(QMainWindow):
         Model training > Train instead, with the corrected dataset loaded."""
         ui = self.ui
         mp = self.misclassification_page
-        if (ui.stackedWidget.currentWidget() is ui.page_misclassification
+        if (ui.stackedWidget.currentWidget() is mp
                 and btn_name != "btn_misclassification"
                 and mp.has_changes()):
             mp.notify_and_load_into_training()
@@ -379,10 +388,11 @@ class MainWindow(QMainWindow):
         target = self._SUBMENU_TARGETS.get(btn_name)
         if target is None:
             return
-        page_name, tab_widget_name, tab_index = target
-        ui.stackedWidget.setCurrentWidget(getattr(ui, page_name))
-        if tab_widget_name is not None:
-            getattr(ui, tab_widget_name).setCurrentIndex(tab_index)
+        page_name, tab_index = target
+        page = getattr(self, page_name)
+        ui.stackedWidget.setCurrentWidget(page)
+        if tab_index is not None:
+            page.show_tab(tab_index)
 
         UIFunctions.resetPanelStyle(self, btn_name)
         self.setSelected(getattr(ui, btn_name))
@@ -413,9 +423,9 @@ class MainWindow(QMainWindow):
         new_dir = settings.get_models_dir()
         training = self.ml_training_page
         training.tab_evaluate.follow_default_models_dir()
-        training.tab_deploy.follow_default_models_dir()
+        training.deployment.follow_default_models_dir()
         mp = self.misclassification_page
-        when_visible(self.ui.content_misclassification, mp._reload_models,
+        when_visible(mp, mp._reload_models,
                      key="models")
         state = self.ml_prediction_page.state
         if Path(state.models_dir) == Path(old_dir):

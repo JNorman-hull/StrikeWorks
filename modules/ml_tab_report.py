@@ -222,7 +222,7 @@ class ReportDialog(QDialog):
         label, since `available_model_entries` builds fresh `ModelEntry`
         objects each call) if it's still in the list."""
         entries = report_center.available_model_entries(self.window)
-        for key, combo in self._model_combos.items():
+        for combo in self._model_combos.values():
             keep_label = combo.currentText()
             combo.blockSignals(True)
             combo.clear()

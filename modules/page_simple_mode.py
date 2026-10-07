@@ -39,19 +39,22 @@ from PySide6.QtWidgets import (
 )
 
 from . import deployment_index as di
-from . import ml_figures, ml_report, settings, severity, theme, win_utils
+from . import (
+    hig_peaks, ml_figures, ml_report, settings, severity, theme, win_utils,
+)
 from . import validation_core as vc
 from .deployment_editor import DeploymentEditor
 from .edition import simple_only
 from .inventory_widgets import FileInventory
 from .cards import MetaCard, RingCard, Spinner
 from .layout import Section
+from .tables import fill_acceleration_table
 from .theme import (
     ACCENT, BAD, NADIR, OK, PALETTE, PINK, REGION_EDGE, REGION_FILL, TEXT,
     TRACE, TRACE2, WARN, muted_label, style,
 )
 from .plot_style import add_export_button, build_export_data
-from .startup import ICON_PATH, brandmark
+from .startup import ICON_PATH, brandmark, logo_label, uoh_logo_pixmap
 
 _WIN_SEC = vc.WIN_SEC
 _IMAGES_DIR = Path(__file__).parent.parent / "images" / "images"
@@ -136,6 +139,9 @@ class SimpleModeDialog(QDialog):
         state = self.window.ml_prediction_page.state
         state.run_finished.connect(self._on_predict_finished)
         state.run_failed.connect(self._on_predict_failed)
+        # the HIG peak analysis box follows Predict's (one shared setting)
+        state.config_changed.connect(self._on_prediction_config_changed)
+        self._on_prediction_config_changed()
         self.window.session_state.library_changed.connect(
             self._on_session_library_changed_simple)
 
@@ -387,9 +393,8 @@ class SimpleModeDialog(QDialog):
         page = QWidget()
         v = QVBoxLayout(page)
         v.addStretch()
-        logo = self._make_logo("PyDracula_vertical.png", width=220)
+        logo = logo_label(220)
         if logo is not None:
-            logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
             v.addWidget(logo)
         subtitle = QLabel("Deploy. Process. Predict.")
         style(subtitle, role="tagline")
@@ -451,6 +456,17 @@ class SimpleModeDialog(QDialog):
         v.addWidget(self.editor, stretch=1)
         return page
 
+    def _on_prediction_config_changed(self):
+        state = self.window.ml_prediction_page.state
+        self.chk_hig_peaks.blockSignals(True)
+        self.chk_hig_peaks.setChecked(state.hig_peaks)
+        self.chk_hig_peaks.blockSignals(False)
+        if state.summary is None:
+            # before a run the HIG card is named for what the run will show
+            self.card_severity.set_title(
+                f"Collisions (≥ {hig_peaks.COLLISION_G} g)" if state.hig_peaks
+                else "Severity (HIG peak)")
+
     def _on_session_library_changed_simple(self, path):
         self._lib_root = path
 
@@ -484,15 +500,15 @@ class SimpleModeDialog(QDialog):
         style(title, role="strong")
         v.addWidget(title)
 
-        # a fixed-width list column (no splitter, per simple_spec/Validate.png)
+        # a fixed-width list column (no splitter, per simple_spec/Validate.png);
+        # both columns are Section boxes, as on Deploy and Process
         split = QHBoxLayout()
         split.setContentsMargins(0, 0, 0, 0)
         split.setSpacing(10)
 
-        left = QWidget()
-        left.setFixedWidth(240)
+        left = Section("Sensors")
+        left.setFixedWidth(270)
         lv = QVBoxLayout(left)
-        lv.setContentsMargins(0, 0, 0, 0)
         self.validate_list = QListWidget()
         # the highlighted sensor is the loaded one - by mouse or arrow keys
         self.validate_list.currentItemChanged.connect(
@@ -527,9 +543,22 @@ class SimpleModeDialog(QDialog):
         self.btn_reset_v = QPushButton("Reset current sensor")
         self.btn_reset_v.clicked.connect(self._reset_current_validate)
         lv.addWidget(self.btn_reset_v)
+
+        auto_row = QHBoxLayout()
+        self.btn_auto_process_all = QPushButton("Auto process all")
+        style(self.btn_auto_process_all, role="strong", tone="ok")
+        self.btn_auto_process_all.clicked.connect(self._auto_process_all)
+        auto_row.addWidget(self.btn_auto_process_all, stretch=1)
+        self._auto_spinner = Spinner(size=20)
+        self._auto_spinner.setVisible(False)
+        auto_row.addWidget(self._auto_spinner)
+        lv.addLayout(auto_row)
+        lv.addWidget(muted_label(
+            "Tip: press Auto process all first, then check the sensors "
+            "it flagged for review.", wrap=True))
         split.addWidget(left)
 
-        right = QWidget()
+        right = Section("Nadir validation")
         rv = QVBoxLayout(right)
         toolbar = QHBoxLayout()
         toolbar.addStretch()
@@ -561,26 +590,9 @@ class SimpleModeDialog(QDialog):
         self._validate_curve = None
         self._validate_curve2 = None
         rv.addWidget(self._pw_validate, stretch=1)
-        split.addWidget(right, stretch=1)
-        v.addLayout(split, stretch=1)
 
         bottom = QHBoxLayout()
-        auto_col = QVBoxLayout()
-        auto_col.setSpacing(2)
-        auto_row = QHBoxLayout()
-        self.btn_auto_process_all = QPushButton("Auto process all")
-        style(self.btn_auto_process_all, role="strong", tone="ok")
-        self.btn_auto_process_all.clicked.connect(self._auto_process_all)
-        auto_row.addWidget(self.btn_auto_process_all)
-        self._auto_spinner = Spinner(size=20)
-        self._auto_spinner.setVisible(False)
-        auto_row.addWidget(self._auto_spinner)
-        auto_col.addLayout(auto_row)
-        auto_col.addWidget(muted_label(
-            "Tip: press Auto process all first, then check the sensors "
-            "it flagged for review.", wrap=True))
-        bottom.addLayout(auto_col)
-        bottom.addWidget(muted_label("ROI window:", wrap=True))
+        bottom.addWidget(muted_label("ROI window:"))
         self.cmb_window = QComboBox()
         self.cmb_window.currentIndexChanged.connect(self._on_validate_win_size_changed)
         bottom.addWidget(self.cmb_window)
@@ -593,7 +605,9 @@ class SimpleModeDialog(QDialog):
         style(self.btn_save_export, role="strong", tone="bad")
         self.btn_save_export.clicked.connect(self._save_and_export)
         bottom.addWidget(self.btn_save_export)
-        v.addLayout(bottom)
+        rv.addLayout(bottom)
+        split.addWidget(right, stretch=1)
+        v.addLayout(split, stretch=1)
         self._save_next_shortcut = vc.install_save_next_shortcut(
             page, self.validate_list, self._save_and_next_validate)
         return page
@@ -937,6 +951,22 @@ class SimpleModeDialog(QDialog):
         btn_row.addStretch()
         v.addLayout(btn_row)
 
+        state = self.window.ml_prediction_page.state
+        chk_row = QHBoxLayout()
+        chk_row.addStretch()
+        self.chk_hig_peaks = QCheckBox("HIG peak analysis")
+        self.chk_hig_peaks.setChecked(state.hig_peaks)
+        self.chk_hig_peaks.setToolTip(
+            "Count the acceleration events in each recording's high-g "
+            f"magnitude (peaks of at least {hig_peaks.HEIGHT_G:.0f} g) within "
+            "0.1 s of the nadir, and the recordings with a collision (an "
+            f"event of {hig_peaks.COLLISION_G} g or more). Measured, "
+            "alongside the model's prediction.")
+        self.chk_hig_peaks.toggled.connect(state.set_hig_peaks)
+        chk_row.addWidget(self.chk_hig_peaks)
+        chk_row.addStretch()
+        v.addLayout(chk_row)
+
         self.lbl_predict_status = QLabel("")
         style(self.lbl_predict_status, role="muted")
         self.lbl_predict_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1054,7 +1084,26 @@ class SimpleModeDialog(QDialog):
         else:
             self.card_strike_classes.clear()
 
+        acc = state.acc_summary
+        if acc is not None and len(acc):
+            # the HIG peak analysis: recordings with a collision
+            total = acc.iloc[-1]
+            k, n_rec = int(total["n_collision"]), int(total["n_sensors"])
+            self.card_severity.set_title(
+                f"Collisions (≥ {hig_peaks.COLLISION_G} g)")
+            self.card_severity.setToolTip(
+                f"Recordings with an acceleration event of "
+                f"{hig_peaks.COLLISION_G} g or more within 0.1 s of the "
+                "nadir. Measured, not predicted.")
+            self.card_severity.set_segments([
+                ("Collision", k, PINK), ("No collision", n_rec - k, PALETTE[0])])
+            self.card_severity.setVisible(True)
+            return
         bands = severity.band_counts(state.predictions)
+        self.card_severity.set_title("Severity (HIG peak)")
+        self.card_severity.setToolTip(
+            "Each recording's peak high-g acceleration - only over 400 g is "
+            "a severe strike. Measured, not predicted.")
         self.card_severity.setVisible(bool(bands))
         if bands:
             self.card_severity.set_segments([
@@ -1079,16 +1128,35 @@ class SimpleModeDialog(QDialog):
         self.tbl_report.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         v.addWidget(self.tbl_report)
 
+        # the HIG peak analysis table, as in the reports
+        self.tbl_report_acc = QTableWidget(0, 0)
+        self.tbl_report_acc.setProperty("noRowNumbers", True)   # its own header rows
+        self.tbl_report_acc.horizontalHeader().setVisible(False)
+        self.tbl_report_acc.verticalHeader().setVisible(False)
+        self.tbl_report_acc.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers)
+        self.tbl_report_acc.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        v.addWidget(self.tbl_report_acc)
+        self.lbl_report_acc_notes = muted_label(
+            "\n".join(hig_peaks.TABLE_NOTES))
+        self.lbl_report_acc_notes.setWordWrap(True)
+        v.addWidget(self.lbl_report_acc_notes)
+
         grp_figs = Section("Prediction figures")
         fv = QHBoxLayout(grp_figs)
         self.fig_report_bin = Figure(figsize=(4.3, 3.2), dpi=100)
         self.canvas_report_bin = FigureCanvas(self.fig_report_bin)
         self.fig_report_mc = Figure(figsize=(4.3, 3.2), dpi=100)
         self.canvas_report_mc = FigureCanvas(self.fig_report_mc)
-        for c in (self.canvas_report_bin, self.canvas_report_mc):
+        self.fig_report_peaks = Figure(figsize=(5.6, 3.2), dpi=100)
+        self.canvas_report_peaks = FigureCanvas(self.fig_report_peaks)
+        for c in (self.canvas_report_bin, self.canvas_report_mc,
+                  self.canvas_report_peaks):
             c.setSizePolicy(QSizePolicy.Policy.Expanding,
                             QSizePolicy.Policy.Expanding)
-            fv.addWidget(c)
+            # the two-panel peak figure gets the width of two
+            fv.addWidget(c, stretch=2 if c is self.canvas_report_peaks else 1)
         v.addWidget(grp_figs, stretch=1)
         return page
 
@@ -1100,7 +1168,8 @@ class SimpleModeDialog(QDialog):
                        and df is not None
                        and all(f"n_{cn}" in df.columns for cn in state.class_names)
                        else [])
-        measured = severity.available(df)
+        # severity columns only without the HIG peak analysis (its own table)
+        measured = severity.available(df) and state.acc_summary is None
         headers = (["Treatment", "N", "Strikes", "No strike", "Strike rate",
                     "95% CI", "Mean prob", "Mean conf"] + list(class_names)
                    + (severity.TABLE_HEADERS if measured else []))
@@ -1133,6 +1202,16 @@ class SimpleModeDialog(QDialog):
                                class_names if mc_run else [], dark=True)
         self.canvas_report_mc.draw()
 
+        have_peaks = state.acc_summary is not None
+        for w in (self.tbl_report_acc, self.lbl_report_acc_notes,
+                  self.canvas_report_peaks):
+            w.setVisible(have_peaks)
+        if have_peaks:
+            fill_acceleration_table(self.tbl_report_acc, state.acc_summary)
+            ml_figures.draw_peak_summary(self.fig_report_peaks,
+                                         state.acc_summary, dark=True)
+            self.canvas_report_peaks.draw()
+
     def _processing_review_rows(self):
         """How Validate went for this library (validation_core) - fed
         into the *downloaded* report, not this wizard's Report step."""
@@ -1144,9 +1223,8 @@ class SimpleModeDialog(QDialog):
         page = QWidget()
         v = QVBoxLayout(page)
         v.addStretch()
-        logo = self._make_logo("PyDracula_vertical.png", width=220)
+        logo = logo_label(220)
         if logo is not None:
-            logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
             v.addWidget(logo)
         title = QLabel("Finished!")
         style(title, role="display")
@@ -1161,6 +1239,15 @@ class SimpleModeDialog(QDialog):
         wrap.addStretch()
         v.addLayout(wrap)
         v.addStretch()
+        # the University of Hull logo, white on the dark theme
+        uoh = uoh_logo_pixmap(240, reverse=theme.P["dark"])
+        if not uoh.isNull():
+            lbl_uoh = QLabel()
+            lbl_uoh.setPixmap(uoh)
+            lbl_uoh.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl_uoh.setToolTip("University of Hull")
+            v.addWidget(lbl_uoh)
+            v.addSpacing(10)
         return page
 
     def _download_report(self):

@@ -26,9 +26,11 @@ import pandas as pd
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
-from PySide6.QtCore import Qt, QObject, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QFileDialog, QGroupBox, QLabel, QTreeWidgetItem, QVBoxLayout,
+    QCheckBox, QFileDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
+    QLabel, QLineEdit, QPlainTextEdit, QPushButton, QRadioButton,
+    QTreeWidget, QTreeWidgetItem, QVBoxLayout,
 )
 
 from . import deployment_index as di
@@ -37,6 +39,7 @@ from .bind_datasets import BindTrainingData
 from .dataset_build import (
     INDEX_REL, OPT_SEGMENTED, OPT_UNSEGMENTED, WIN_SEC, ExtractThread,
 )
+from .layout import Page, group_box
 from .theme import style
 
 # ── annotation join (model_labels.csv) ──────────────────────────────────────
@@ -59,19 +62,16 @@ def _init_item(item, tristate=False):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-class DatasetPage(QObject):
-    """Binds dataset-creation behaviour to the widgets defined in main.ui."""
+class DatasetPage(Page):
+    """Advanced dataset options: dataset creation and Bind training data."""
 
-    status = Signal(str, int)
     # emitted whenever a dataset is created or annotated, so downstream
     # pages (Machine Learning Analysis) can consume the curated dataset
     # without re-running any sensor-processing logic
     dataset_ready = Signal(object, str)   # (DataFrame, source description)
 
-    def __init__(self, ui, window, session_state=None):
-        super().__init__(window)
-        self.ui = ui
-        self.window = window
+    def __init__(self, main_window, session_state=None):
+        super().__init__(main_window)
         self.session_state = session_state
 
         self._root = None
@@ -82,6 +82,7 @@ class DatasetPage(QObject):
         self._feat_path = None
         self._label_path = None
 
+        self._build_ui()
         self._build_figure()
         self._build_bind_training_data()
         self._configure_widgets()
@@ -90,8 +91,83 @@ class DatasetPage(QObject):
             session_state.library if session_state is not None else None)
 
     # ── setup ────────────────────────────────────────────────────────────────
+    def _build_ui(self):
+        """Library, Sensor selection and Console output on the left; Create
+        dataset, Annotate dataset and Annotation summary on the right."""
+        grid = self.grid_dataset = QGridLayout(self)
+        grid.setContentsMargins(8, 8, 8, 8)
+        grid.setSpacing(8)
+
+        self.grp_ds_library, _ = group_box("Library")
+        grid.addWidget(self.grp_ds_library, 0, 0)
+
+        self.grp_ds_filter, fv = group_box("Sensor selection")
+        self.tree_ds_filter = QTreeWidget()
+        self.tree_ds_filter.setHeaderHidden(True)
+        fv.addWidget(self.tree_ds_filter)
+        self.chk_ds_select_all = QCheckBox("Select / unselect all")
+        fv.addWidget(self.chk_ds_select_all)
+        grid.addWidget(self.grp_ds_filter, 1, 0)
+
+        self.grp_ds_console, cv = group_box("Console output")
+        self.console_ds = QPlainTextEdit()
+        self.console_ds.setReadOnly(True)
+        cv.addWidget(self.console_ds)
+        grid.addWidget(self.grp_ds_console, 2, 0)
+
+        self.grp_ds_create, rv = group_box("Create dataset")
+        self.rb_ds_unsegmented = QRadioButton(
+            "Create from unsegmented (auto nadir, 200 ms window)")
+        self.rb_ds_unsegmented.setChecked(True)
+        self.rb_ds_segmented = QRadioButton(
+            "Create from segmented (bind saved nadir windows)")
+        rv.addWidget(self.rb_ds_unsegmented)
+        rv.addWidget(self.rb_ds_segmented)
+        self.btn_ds_create = QPushButton("Create dataset")
+        self.btn_ds_save = QPushButton("Save dataset")
+        rv.addLayout(self._button_row(self.btn_ds_create, self.btn_ds_save))
+        grid.addWidget(self.grp_ds_create, 0, 1)
+
+        self.grp_ds_annotate, av = group_box("Annotate dataset")
+        self.ed_ds_features, self.btn_ds_browse_features = self._file_row(
+            av, "Sensor dataset:")
+        self.ed_ds_labels, self.btn_ds_browse_labels = self._file_row(
+            av, "Annotation dataset:")
+        self.btn_ds_append = QPushButton("Append features")
+        self.btn_ds_save_annotated = QPushButton("Save annotated dataset")
+        av.addLayout(self._button_row(self.btn_ds_append,
+                                      self.btn_ds_save_annotated))
+        grid.addWidget(self.grp_ds_annotate, 1, 1)
+
+        self.grp_ds_figure, gv = group_box("Annotation summary")
+        self.frame_ds_figure = QFrame()
+        gv.addWidget(self.frame_ds_figure)
+        grid.addWidget(self.grp_ds_figure, 2, 1)
+
+    @staticmethod
+    def _button_row(*buttons):
+        row = QHBoxLayout()
+        for b in buttons:
+            b.setEnabled(False)
+            row.addWidget(b)
+        row.addStretch()
+        return row
+
+    @staticmethod
+    def _file_row(layout, label):
+        row = QHBoxLayout()
+        row.addWidget(QLabel(label))
+        edit = QLineEdit()
+        edit.setPlaceholderText("no file selected")
+        edit.setReadOnly(True)
+        row.addWidget(edit, stretch=1)
+        browse = QPushButton("Browse…")
+        row.addWidget(browse)
+        layout.addLayout(row)
+        return edit, browse
+
     def _build_figure(self):
-        holder = QVBoxLayout(self.ui.frame_ds_figure)
+        holder = QVBoxLayout(self.frame_ds_figure)
         holder.setContentsMargins(0, 0, 0, 0)
         self.fig = Figure(figsize=(9.2, 3.2), dpi=100)
         self.canvas = FigureCanvas(self.fig)
@@ -101,22 +177,19 @@ class DatasetPage(QObject):
     def _build_bind_training_data(self):
         """Joins several ``model_features.csv`` files - one per library,
         typically - into one combined training set for Model training,
-        without needing them merged into a single library first. Built in
-        Python rather than in main.ui: `content_dataset`'s grid already
-        has every cell filled (library/filter/console left, create/
-        annotate/figure right), so this is a new row spanning both
-        columns rather than a Designer restructure."""
+        without needing them merged into a single library first: a row
+        under the grid's six boxes, spanning both columns."""
         grp = QGroupBox("Bind training data")
         gv = QVBoxLayout(grp)
         gv.addWidget(BindTrainingData(start_dir=lambda: self._root
                                       or settings.get_libraries_dir()))
 
         # only Bind training data is offered: building a dataset is
-        # Annotate's Save and export, so main.ui's other boxes are hidden
-        grid = self.ui.grid_dataset
-        for w in (self.ui.grp_ds_library, self.ui.grp_ds_filter,
-                  self.ui.grp_ds_console, self.ui.grp_ds_create,
-                  self.ui.grp_ds_annotate, self.ui.grp_ds_figure):
+        # Annotate's Save and export, so the other boxes are hidden
+        grid = self.grid_dataset
+        for w in (self.grp_ds_library, self.grp_ds_filter,
+                  self.grp_ds_console, self.grp_ds_create,
+                  self.grp_ds_annotate, self.grp_ds_figure):
             w.setVisible(False)
         for row in range(3):
             grid.setRowStretch(row, 0)
@@ -125,30 +198,26 @@ class DatasetPage(QObject):
         grid.setRowStretch(4, 1)
 
     def _configure_widgets(self):
-        u = self.ui
         # the library is chosen on Home; this box only shows it
-        u.tree_ds_library.setVisible(False)
-        u.btn_ds_change_libraries.setVisible(False)
         self.lbl_library = QLabel("No library selected.")
         style(self.lbl_library, role="muted")
         self.lbl_library.setWordWrap(True)
-        u.grp_ds_library.layout().insertWidget(0, self.lbl_library)
+        self.grp_ds_library.layout().insertWidget(0, self.lbl_library)
 
-        style(u.console_ds, role="console")
-        u.chk_ds_select_all.setChecked(True)
+        style(self.console_ds, role="console")
+        self.chk_ds_select_all.setChecked(True)
 
     def _connect(self):
-        u = self.ui
         if self.session_state is not None:
             self.session_state.library_changed.connect(
                 self._on_session_library_changed)
-        u.chk_ds_select_all.toggled.connect(self._set_all_checked)
-        u.btn_ds_create.clicked.connect(self._run)
-        u.btn_ds_save.clicked.connect(self._save)
-        u.btn_ds_browse_features.clicked.connect(self._browse_features)
-        u.btn_ds_browse_labels.clicked.connect(self._browse_labels)
-        u.btn_ds_append.clicked.connect(self._append_annotations)
-        u.btn_ds_save_annotated.clicked.connect(self._save_annotation_outputs)
+        self.chk_ds_select_all.toggled.connect(self._set_all_checked)
+        self.btn_ds_create.clicked.connect(self._run)
+        self.btn_ds_save.clicked.connect(self._save)
+        self.btn_ds_browse_features.clicked.connect(self._browse_features)
+        self.btn_ds_browse_labels.clicked.connect(self._browse_labels)
+        self.btn_ds_append.clicked.connect(self._append_annotations)
+        self.btn_ds_save_annotated.clicked.connect(self._save_annotation_outputs)
 
     # ── library selection (session_state - see session_state.py) ────────────
     def _on_session_library_changed(self, root):
@@ -159,21 +228,21 @@ class DatasetPage(QObject):
         if root is None:
             self._root = None
             self._index = None
-            self.ui.tree_ds_filter.clear()
-            self.ui.btn_ds_create.setEnabled(False)
+            self.tree_ds_filter.clear()
+            self.btn_ds_create.setEnabled(False)
             return
         self._set_root(root)
 
     def _set_root(self, root: Path):
         self._root = root
-        self.ui.tree_ds_filter.clear()
-        self.ui.console_ds.clear()
+        self.tree_ds_filter.clear()
+        self.console_ds.clear()
 
         idx_path = root / INDEX_REL
         if not idx_path.exists():
             self._log(f"Index not found:\n  {idx_path}\n")
             self._index = None
-            self.ui.btn_ds_create.setEnabled(False)
+            self.btn_ds_create.setEnabled(False)
             return
 
         try:
@@ -182,16 +251,16 @@ class DatasetPage(QObject):
         except Exception as e:
             self._log(f"Failed to load index: {e}\n")
             self._index = None
-            self.ui.btn_ds_create.setEnabled(False)
+            self.btn_ds_create.setEnabled(False)
             return
 
         self._populate_tree(self._index)
-        self.ui.btn_ds_create.setEnabled(True)
+        self.btn_ds_create.setEnabled(True)
         self._log(f"Library: {root.name}  ({len(self._index)} sensors)\n")
 
     def _populate_tree(self, df):
         """deployment_id -> treatment -> run -> file checkbox tree."""
-        tree = self.ui.tree_ds_filter
+        tree = self.tree_ds_filter
         tree.blockSignals(True)
         tree.clear()
 
@@ -230,7 +299,7 @@ class DatasetPage(QObject):
         tree.blockSignals(False)
 
     def _get_selected_files(self):
-        tree = self.ui.tree_ds_filter
+        tree = self.tree_ds_filter
         if tree.invisibleRootItem().childCount() == 0:
             return None
         selected = set()
@@ -250,7 +319,7 @@ class DatasetPage(QObject):
 
     def _set_all_checked(self, checked):
         state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
-        tree = self.ui.tree_ds_filter
+        tree = self.tree_ds_filter
         tree.blockSignals(True)
 
         def _apply(item):
@@ -275,16 +344,16 @@ class DatasetPage(QObject):
             self._log("No files selected in the sensor selection tree.")
             return
 
-        option = (OPT_UNSEGMENTED if self.ui.rb_ds_unsegmented.isChecked()
+        option = (OPT_UNSEGMENTED if self.rb_ds_unsegmented.isChecked()
                   else OPT_SEGMENTED)
         self._result = None
         self._annotated = False
-        self.ui.btn_ds_create.setEnabled(False)
-        self.ui.btn_ds_save.setEnabled(False)
-        self.ui.btn_ds_save_annotated.setEnabled(False)
+        self.btn_ds_create.setEnabled(False)
+        self.btn_ds_save.setEnabled(False)
+        self.btn_ds_save_annotated.setEnabled(False)
         self.fig.clear()
         self.canvas.draw()
-        self.ui.console_ds.clear()
+        self.console_ds.clear()
 
         cfg = sensor_config.active()
         half = WIN_SEC / 2
@@ -302,11 +371,11 @@ class DatasetPage(QObject):
         self._thread.start()
 
     def _on_done(self, n_ok, n_skip, n_rows):
-        self.ui.btn_ds_create.setEnabled(True)
+        self.btn_ds_create.setEnabled(True)
         self._result = self._thread.result
 
         if self._result is not None:
-            self.ui.btn_ds_save.setEnabled(True)
+            self.btn_ds_save.setEnabled(True)
             self.status.emit(
                 f"Dataset created - {n_ok} files, {n_rows:,} rows.", 5000)
             self.dataset_ready.emit(
@@ -319,30 +388,30 @@ class DatasetPage(QObject):
     # ── annotate ─────────────────────────────────────────────────────────────
     def _browse_features(self):
         path, _ = QFileDialog.getOpenFileName(
-            self.window, "Select sensor dataset CSV",
+            self.main_window, "Select sensor dataset CSV",
             str(settings.get_input_data_dir()),
             "CSV files (*.csv)")
         if not path:
             return
         self._feat_path = Path(path)
-        self.ui.ed_ds_features.setText(str(self._feat_path))
+        self.ed_ds_features.setText(str(self._feat_path))
         self._refresh_append_enabled()
 
     def _browse_labels(self):
         path, _ = QFileDialog.getOpenFileName(
-            self.window, "Select annotation dataset CSV",
+            self.main_window, "Select annotation dataset CSV",
             str(settings.get_input_data_dir()),
             "CSV files (*.csv)")
         if not path:
             return
         self._label_path = Path(path)
-        self.ui.ed_ds_labels.setText(str(self._label_path))
+        self.ed_ds_labels.setText(str(self._label_path))
         self._refresh_append_enabled()
 
     def _refresh_append_enabled(self):
         """Append needs a features source (file or in-memory) and a label file."""
         have_feats = self._feat_path is not None or self._result is not None
-        self.ui.btn_ds_append.setEnabled(
+        self.btn_ds_append.setEnabled(
             bool(have_feats and self._label_path is not None))
 
     def _append_annotations(self):
@@ -406,8 +475,8 @@ class DatasetPage(QObject):
             self._log(f"    drop {d}")
 
         self._draw_annotation_figure()
-        self.ui.btn_ds_save.setEnabled(True)
-        self.ui.btn_ds_save_annotated.setEnabled(True)
+        self.btn_ds_save.setEnabled(True)
+        self.btn_ds_save_annotated.setEnabled(True)
         self.status.emit(
             f"Annotations appended - {len(keep)} files, "
             f"{len(dropped)} dropped, {len(merged):,} rows.", 6000)
@@ -472,7 +541,7 @@ class DatasetPage(QObject):
         if self._result is None:
             return
         path, _ = QFileDialog.getSaveFileName(
-            self.window, "Save dataset CSV",
+            self.main_window, "Save dataset CSV",
             str(Path.cwd() / "model_features.csv"), "CSV files (*.csv)")
         if not path:
             return
@@ -488,7 +557,7 @@ class DatasetPage(QObject):
         if self._result is None:
             return
         dirpath = QFileDialog.getExistingDirectory(
-            self.window, "Save outputs to folder…", "")
+            self.main_window, "Save outputs to folder…", "")
         if not dirpath:
             return
         out = Path(dirpath)
@@ -502,7 +571,7 @@ class DatasetPage(QObject):
             self.status.emit(f"Save failed: {e}", 6000)
 
     def _log(self, text):
-        self.ui.console_ds.appendPlainText(text)
-        sb = self.ui.console_ds.verticalScrollBar()
+        self.console_ds.appendPlainText(text)
+        sb = self.console_ds.verticalScrollBar()
         sb.setValue(sb.maximum())
 

@@ -8,9 +8,9 @@
 #
 # ///////////////////////////////////////////////////////////////
 
-from PySide6.QtCore import *
-from PySide6.QtGui import *
-from PySide6.QtWidgets import *
+from PySide6.QtCore import QRect, QSize, Qt
+from PySide6.QtGui import QCursor
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QSizeGrip, QWidget
 
 class CustomGrip(QWidget):
     def __init__(self, parent, position, disable_color = False):
@@ -28,8 +28,8 @@ class CustomGrip(QWidget):
             self.setMaximumHeight(10)
 
             # GRIPS
-            top_left = QSizeGrip(self.wi.top_left)
-            top_right = QSizeGrip(self.wi.top_right)
+            self.top_left = QSizeGrip(self.wi.top_left)
+            self.top_right = QSizeGrip(self.wi.top_right)
 
             # RESIZE TOP
             def resize_top(event):

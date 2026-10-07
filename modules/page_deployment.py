@@ -9,26 +9,22 @@ deployment editor (deployment_editor.py), the same one Simple mode's Deploy
 step shows. The Designer object names (`page_initiate_deployment`,
 `btn_initiate_deployment`) keep the page's old working name.
 """
-from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QVBoxLayout
 
 from .deployment_editor import DeploymentEditor
+from .layout import Page
 
 
-class DeploymentPage(QObject):
-    """Binds Create and edit deployment to `ui.content_initiate_deployment`."""
+class DeploymentPage(Page):
+    """Create and edit deployment: the deployment editor."""
 
-    status = Signal(str, int)
-
-    def __init__(self, ui, window, session_state=None):
-        super().__init__(window)
-        self.ui = ui
-        self.window = window
+    def __init__(self, main_window, session_state=None):
+        super().__init__(main_window)
         self.session_state = session_state
 
-        v = QVBoxLayout(ui.content_initiate_deployment)
+        v = QVBoxLayout(self)
         v.setContentsMargins(4, 6, 4, 6)
-        self.editor = DeploymentEditor(window, session_state,
+        self.editor = DeploymentEditor(main_window, session_state,
                                        show_configure_link=True)
         self.editor.status.connect(self.status.emit)
         v.addWidget(self.editor)

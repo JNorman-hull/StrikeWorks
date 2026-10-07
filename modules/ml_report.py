@@ -17,8 +17,12 @@ same prediction results and metadata as the Predict and Inspect tabs.
         prediction_summary.csv
         predictions_per_file.csv
         region_summary.csv            (multiclass runs only)
+        severity_summary.csv          (datasets with HIG)
+        acceleration_summary.csv, hig_peaks.csv   (HIG peak analysis)
         predicted_strike_rate.png/.svg
         predicted_strike_region.png/.svg  (multiclass runs only)
+        hig_peak_summary, acc_aligned_acceleration,
+        nadir_aligned_acceleration .png/.svg    (HIG peak analysis)
         provenance.json
 """
 import base64
@@ -27,7 +31,7 @@ import math
 from datetime import datetime
 from pathlib import Path
 
-from . import ml_figures, severity
+from . import hig_peaks, ml_figures, severity
 
 _DARK  = "#1e3a5f"
 _MUTED = "#64748b"
@@ -72,6 +76,32 @@ def _data_table(headers, rows):
     return (f"<table cellspacing='0' cellpadding='0' "
             f"style='margin:6px 0;'>"
             f"<tr>{head}</tr>{body}</table>")
+
+
+def acceleration_table_html(acc_summary):
+    """The HIG peak analysis table in the report template's layout - Region
+    of interest, then Event count, Collision probability and Acceleration
+    (g) over their columns - with its notes."""
+    with_tx = hig_peaks.show_treatment(acc_summary)
+    lead = (["Treatment"] if with_tx else []) + ["Region of interest"]
+    th = (f"border-bottom:2px solid {_BORD};padding:4px 8px;"
+          f"text-align:center;color:{_DARK};")
+    td = f"border-bottom:1px solid {_BORD};padding:3px 8px;text-align:center;"
+    top = "".join(f"<th rowspan='2' style='{th}'>{_esc(h)}</th>" for h in lead)
+    top += "".join(f"<th colspan='{span}' style='{th}'>{_esc(title)}</th>"
+                   for title, span in hig_peaks.TABLE_GROUPS)
+    second = "".join(f"<th style='{th}'>{_esc(h)}</th>"
+                     for h in hig_peaks.TABLE_COLUMNS)
+    body = ""
+    for treatment, roi, cells in hig_peaks.table_rows(acc_summary):
+        values = ([treatment] if with_tx else []) + [roi] + cells
+        body += "<tr>" + "".join(f"<td style='{td}'>{_esc(v)}</td>"
+                                 for v in values) + "</tr>"
+    notes = "".join(f"<div>{_esc(n)}</div>" for n in hig_peaks.TABLE_NOTES)
+    return (f"<table cellspacing='0' cellpadding='0' style='margin:6px 0;'>"
+            f"<tr>{top}</tr><tr>{second}</tr>{body}</table>"
+            f"<div style='color:{_MUTED};font-size:0.85em;margin-bottom:6px;'>"
+            f"{notes}</div>")
 
 
 # the report's default figure (6 in / 15.24 cm wide) is shown 560 px wide -
@@ -203,8 +233,30 @@ def build_report_html(state, image_paths=None, embed_images=False,
         ])
     h.append(_data_table(headers, rows))
 
+    # ── HIG peak analysis (measured events around the nadir) ─────────────────
+    if s.acc_summary is not None:
+        par = meta.get("hig_peaks") or hig_peaks.parameters()
+        h.append(f"<h2 style='color:{_DARK};'>HIG peak analysis</h2>")
+        h.append("<p style='margin:4px 0;color:#1e293b;'>Measured, not "
+                 "predicted: acceleration events in each recording's high-g "
+                 f"magnitude ({_esc(par.get('channel', hig_peaks.CHANNEL))}) - "
+                 f"peaks of at least {par['height_g']:.0f} g with a prominence "
+                 f"of {par['prominence_g']:.0f} g, at least "
+                 f"{par['interpeak_s'] * 1000:g} ms apart - counted within "
+                 f"±{par['nadir_window_s']:g} s of the pressure nadir. A "
+                 f"recording with an event of {par['collision_g']} g or more "
+                 "there has a collision; the model flags contacts of any "
+                 "size, so this says how many were hard hits.</p>")
+        h.append(acceleration_table_html(s.acc_summary))
+        figs_hig = [p for p in (image_paths.get("hig_peak_summary"),
+                                image_paths.get("acc_aligned_acceleration"),
+                                image_paths.get("nadir_aligned_acceleration"))
+                    if p]
+        for p in figs_hig:
+            h.append(_img_tag(p, embed_images))
+
     # ── strike severity (measured HIG peak) ──────────────────────────────────
-    if severity.available(s.summary):
+    elif severity.available(s.summary):
         sev = meta.get("severity") or {}
         h.append(f"<h2 style='color:{_DARK};'>Strike severity (HIG peak)</h2>")
         h.append("<p style='margin:4px 0;color:#1e293b;'>Measured, not "
@@ -367,6 +419,10 @@ def export_analysis(state, parent_dir, processing_review=None):
         state.region_summary.to_csv(out / "region_summary.csv", index=False)
     if state.severity_summary is not None:
         state.severity_summary.to_csv(out / "severity_summary.csv", index=False)
+    if state.acc_summary is not None:
+        state.acc_summary.to_csv(out / "acceleration_summary.csv", index=False)
+    if state.peak_events is not None:
+        state.peak_events.to_csv(out / "hig_peaks.csv", index=False)
 
     # figures (PNG for the report + SVG vector versions)
     figs = ml_figures.render_figures(state, out, formats=("png", "svg"))

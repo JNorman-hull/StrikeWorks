@@ -1,0 +1,5 @@
+# Development tools, on top of requirements.txt:
+#   python -m pip install -r requirements-dev.txt
+-r requirements.txt
+# lint: `ruff check .` (settings in ruff.toml; tests/test_lint.py runs it)
+ruff

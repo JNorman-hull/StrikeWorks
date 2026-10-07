@@ -22,12 +22,14 @@ class AppStarts(unittest.TestCase):
 
     def test_every_page_opens(self):
         stacked = self.window.ui.stackedWidget
-        for name, (page, _tabs, _index) in self.window._SUBMENU_TARGETS.items():
+        for name, (page, tab) in self.window._SUBMENU_TARGETS.items():
             with self.subTest(page=name):
                 self.window.navigate_to(name)
                 pump(50)
-                self.assertIs(stacked.currentWidget(),
-                              getattr(self.window.ui, page))
+                shown = getattr(self.window, page)
+                self.assertIs(stacked.currentWidget(), shown)
+                if tab is not None:
+                    self.assertEqual(shown.tabs.currentIndex(), tab)
 
     def test_hidden_pages_stay_hidden(self):
         self.window.openPanel("sensor")

@@ -1,0 +1,205 @@
+ # Find acceleration peaks
+    find_acceleration_peaks <- function(sensor_data, params) {
+      if (!"higacc_mag_g" %in% names(sensor_data)) {
+        stop("higacc_mag_g column not found in sensor data")
+      }
+      
+      accel <- sensor_data$higacc_mag_g
+      timestamps <- sensor_data$time_s
+      
+      # Calculate sampling frequency from data
+      fs <- round(1 / median(diff(timestamps), na.rm = TRUE))
+      
+      # Convert time-based parameters to samples
+      interpeak_samples <- round(params$interpeak * fs)
+      
+      # Step 1: Find local maxima above height threshold
+      if (length(accel) < 3) return(data.frame())
+      
+      # Find local maxima
+      peaks <- which(diff(sign(diff(accel))) == -2) + 1
+      peaks <- peaks[accel[peaks] >= params$height]
+      
+      if (length(peaks) == 0) return(data.frame())
+      
+      # Step 2: Apply prominence filter
+      valid_peaks <- peaks[sapply(peaks, function(p) {
+        left_start <- max(1, p - interpeak_samples)
+        right_end <- min(length(accel), p + interpeak_samples)
+        
+        left_min <- min(accel[left_start:p])
+        right_min <- min(accel[p:right_end])
+        peak_val <- accel[p]
+        
+        prominence <- peak_val - max(left_min, right_min)
+        return(prominence >= params$prominence)
+      })]
+      
+      if (length(valid_peaks) == 0) return(data.frame())
+      
+      # Step 3: Enforce inter-peak distance
+      if (length(valid_peaks) > 1) {
+        to_keep <- logical(length(valid_peaks))
+        sorted_peaks <- valid_peaks[order(valid_peaks)]
+        i <- 1
+        
+        while (i <= length(sorted_peaks)) {
+          p <- sorted_peaks[i]
+          window <- which((sorted_peaks >= p) & (sorted_peaks <= p + interpeak_samples))
+          best_peak_idx <- window[which.max(accel[sorted_peaks[window]])]
+          to_keep[best_peak_idx] <- TRUE
+          i <- max(window) + 1
+        }
+        
+        valid_peaks <- sorted_peaks[to_keep]
+      }
+      
+      if (length(valid_peaks) == 0) return(data.frame())
+      
+      # Step 4: Classify peaks and create results
+      peak_results <- map_dfr(seq_along(valid_peaks), function(i) {
+        p <- valid_peaks[i]
+        peak_val <- accel[p]
+        peak_time <- timestamps[p]
+        threshold <- 0.7 * peak_val
+        
+        # Find duration above 70% threshold
+        left <- p
+        while (left > 1 && accel[left] >= threshold) left <- left - 1
+        right <- p
+        while (right < length(accel) && accel[right] >= threshold) right <- right + 1
+        
+        duration_samples <- right - left
+        # If duration is less than 0.0075 (15 rows at 2000hz), then collision, if not, then shear
+        peak_type <- if (duration_samples < 15) "collision" else "shear"
+        
+        tibble(
+          peak_number = i,
+          peak_time = round(peak_time, 4),
+          peak_value = round(peak_val, 1),
+          peak_type = peak_type,
+          duration_samples = duration_samples
+        )
+      })
+      
+      return(peak_results)
+    }
+    
+    # Calculate and save acceleration peaks
+    detect_blade_strike <- function(sensor_name, output_dir, peak_results, strike_threshold) {
+      # Get nadir time from roi4_nadir in instrument index
+      instrument_df <- get_instrument_index_file(output_dir, read_data = TRUE)
+      if (is.null(instrument_df)) {
+        return(list(acc_strike = "N", acc_strike_event.time. = NA, acc_strike_event.g. = NA))
+      }
+      
+      tryCatch({
+        roi4_row <- instrument_df[instrument_df$file == sensor_name & instrument_df$roi == "roi4_nadir", ]
+        
+        if (nrow(roi4_row) == 0 || is.na(roi4_row$pres_min.time.)) {
+          return(list(acc_strike = "N", acc_strike_event.time. = NA, acc_strike_event.g. = NA))
+        }
+        
+        nadir_time <- as.numeric(roi4_row$pres_min.time.)
+        
+        # Find peaks within ±0.1s of nadir that meet strike threshold
+        strike_candidates <- peak_results[
+          peak_results$peak_value >= strike_threshold & 
+            abs(peak_results$peak_time - nadir_time) <= 0.1,
+        ]
+        
+        if (nrow(strike_candidates) == 0) {
+          return(list(acc_strike = "N", acc_strike_event.time. = NA, acc_strike_event.g. = NA))
+        }
+        
+        # Find closest to nadir time
+        closest_idx <- which.min(abs(strike_candidates$peak_time - nadir_time))
+        closest_strike <- strike_candidates[closest_idx, ]
+        
+        return(list(
+          acc_strike = "Y",
+          acc_strike_event.time. = closest_strike$peak_time,
+          acc_strike_event.g. = closest_strike$peak_value
+        ))
+        
+      }, error = function(e) {
+        return(list(acc_strike = "N", acc_strike_event.time. = NA, acc_strike_event.g. = NA))
+      })
+    }
+    
+
+
+
+
+# Create normalized time variables
+strike_data_norm <- strike_data %>%
+  group_by(file) %>%
+  mutate(
+    roi_start = min(time_s),
+    roi_end = max(time_s),
+    peak_acc_time = time_s[which.max(higacc_mag_g)],
+    nadir_pressure_time = time_s[which.min(pressure_kpa)],
+    
+    time_before_peak = peak_acc_time - roi_start,
+    time_after_peak = roi_end - peak_acc_time,
+    time_norm_acc = ifelse(time_s <= peak_acc_time,
+                          (time_s - roi_start) / (2 * time_before_peak),
+                          0.5 + (time_s - peak_acc_time) / (2 * time_after_peak)),
+    
+    time_before_nadir = nadir_pressure_time - roi_start,
+    time_after_nadir = roi_end - nadir_pressure_time,
+    time_norm_nadir = ifelse(time_s <= nadir_pressure_time,
+                            (time_s - roi_start) / (2 * time_before_nadir),
+                            0.5 + (time_s - nadir_pressure_time) / (2 * time_after_nadir)),
+    
+    acc_norm = higacc_mag_g / max(higacc_mag_g, na.rm = TRUE)
+  ) %>%
+  ungroup() %>%
+  filter(time_norm_acc >= 0 & time_norm_acc <= 1,
+         time_norm_nadir >= 0 & time_norm_nadir <= 1)
+
+bin_width <- 0.0025
+
+# Median signals by deployment_id and treatment
+# add to group_by and arrangment
+med_sig <- strike_data_norm %>%
+  mutate(time_bin = round(time_norm_acc / bin_width) * bin_width) %>%
+  group_by(deployment_id, time_bin) %>%
+  summarise(med_acc = median(higacc_mag_g, na.rm = TRUE), .groups = "drop") %>%
+  arrange(deployment_id, time_bin)
+
+med_sig_nadir <- strike_data_norm %>%
+  mutate(time_bin = round(time_norm_nadir / bin_width) * bin_width) %>%
+  group_by(deployment_id, time_bin) %>%
+  summarise(med_acc = median(higacc_mag_g, na.rm = TRUE), .groups = "drop") %>%
+  arrange(deployment_id, time_bin)
+
+# Plot A: Acceleration-aligned
+plot_acc_aligned <- ggplot(strike_data_norm, aes(x = time_norm_acc, y = higacc_mag_g)) +
+  geom_point(alpha = 0.3, color = "red", size = 0.5) +
+  geom_line(data = med_sig, aes(x = time_bin, y = med_acc), 
+            color = "black", linewidth = 0.8) +
+  geom_vline(xintercept = 0.5, linetype = "dashed", color = "black") +
+  facet_wrap(~deployment_id) +
+  scale_y_continuous(limits=c(0,700), breaks=seq(0,700,50))+
+  scale_x_continuous(limits=c(0,1), expand=c(0,0))+
+  coord_cartesian(clip = "off")+
+  labs(x = "Normalized Time (Peak Acceleration = 0.5)",
+       y = "Acceleration (g)") +
+  theme_JN()
+
+
+#Can add ~ treatment to facet for treatment
+# Plot B: Nadir-aligned
+plot_nadir_aligned <- ggplot(strike_data_norm, aes(x = time_norm_nadir, y = higacc_mag_g)) +
+  geom_point(alpha = 0.3, color = "red", size = 0.5) +
+  geom_line(data = med_sig_nadir, aes(x = time_bin, y = med_acc), 
+            color = "black", linewidth = 0.8) +
+  geom_vline(xintercept = 0.5, linetype = "dashed", color = "black") +
+  facet_wrap(~deployment_id) +
+    scale_y_continuous(limits=c(0,700), breaks=seq(0,700,50))+
+  scale_x_continuous(limits=c(0,1), expand=c(0,0))+
+  coord_cartesian(clip = "off")+
+  labs(x = "Normalized Time (Pressure Nadir = 0.5)",
+       y = "Acceleration (g)") +
+  theme_JN()

@@ -4,7 +4,9 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Deploy tab - the explicit accept / train-final / deploy workflow.
+"""Model deployment - the explicit accept / train-final / deploy workflow,
+a box beside Train on Model training's Train tab, with the model's
+information card below them.
 
 Cross-validation estimates performance; the final deployment model is a
 separate, deliberate step that retrains on all available training data.
@@ -19,27 +21,28 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout,
-    QWidget,
 )
 
 from . import settings
 from .cards import MetaCard, Spinner
-from .layout import apply_section_defaults, centred, scroll_page, Section
+from .layout import Section
 from .theme import style
 
 
-class DeployTab:
-    """Builds the Deploy tab UI into `frame`, bound to `state`."""
+class DeploymentSection(Section):
+    """The "Model deployment" box, bound to `state`. Its `info_section`
+    ("Model information", the model card) is placed by the Train tab."""
 
-    def __init__(self, frame, state, window):
+    def __init__(self, state, main_window):
+        super().__init__("Model deployment")
         self.state = state
-        self.window = window
+        self.main_window = main_window
         self.models_dir = self._default_models_dir()
 
-        self._build(frame)
+        self._build()
         self._connect_state()
         self._refresh()
-        session_state = getattr(window, "session_state", None)
+        session_state = getattr(main_window, "session_state", None)
         if session_state is not None:
             session_state.library_changed.connect(
                 lambda _root: self.follow_default_models_dir())
@@ -58,25 +61,14 @@ class DeployTab:
         """Where models are deployed: `<session library>/
         StrikeWorks_user_output/models/`, or Settings' models folder when
         no session library is selected."""
-        session_state = getattr(self.window, "session_state", None)
+        session_state = getattr(self.main_window, "session_state", None)
         out = session_state.output_dir() if session_state is not None else None
         return (out / "models") if out is not None else settings.get_models_dir()
 
     # ── layout ───────────────────────────────────────────────────────────────
-    def _build(self, frame):
-        page_v = scroll_page(frame)
-        # the boxes sit in one centred column (layout.centred) rather
-        # than stretching across the full width of a wide page
-        column = QWidget()
-        v = QVBoxLayout(column)
-        v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(10)
-        page_v.addWidget(centred(column, max_width=960))
-        page_v.addStretch()
-
-        # ── Model deployment: final model + deploy, merged ──────────────────
-        grp_deploy = Section("Model deployment")
-        dv = QVBoxLayout(grp_deploy)
+    def _build(self):
+        # final model + deploy
+        dv = QVBoxLayout(self)
         dv.setSpacing(8)
 
         # buttons at their natural width, left-aligned; what each step will
@@ -122,17 +114,13 @@ class DeployTab:
         self.lbl_deploy_status.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
         dv.addWidget(self.lbl_deploy_status)
-        v.addWidget(grp_deploy)
+        dv.addStretch()
 
-        # ── model card / provenance ──────────────────────────────────────────
-        grp_card = Section("Model information")
-        cv = QVBoxLayout(grp_card)
+        # the model card / provenance
+        self.info_section = Section("Model information")
+        cv = QVBoxLayout(self.info_section)
         self.card_prov = MetaCard("")
         cv.addWidget(self.card_prov)
-        v.addWidget(grp_card)
-        v.addStretch()
-
-        apply_section_defaults(frame)
 
     # ── state wiring ─────────────────────────────────────────────────────────
     def _connect_state(self):
@@ -154,9 +142,8 @@ class DeployTab:
 
         if not s.cv_done:
             self.btn_final.setToolTip(
-                "Train a model first (Train tab), review the results "
-                "(Evaluate tab), then accept them here by training the "
-                "final models.")
+                "Train a model first, review the results (Evaluate), then "
+                "accept them here by training the final models.")
             self.card_final.set_rows([])
             self.card_prov.set_rows([])
             self.lbl_final_status.setText("")
@@ -232,7 +219,7 @@ class DeployTab:
         style(self.lbl_final_status, tone="accent")
         self.lbl_final_status.setText(
             "Training the final deployment model on all training data… "
-            "(progress in the Train tab's console)")
+            "(progress in the Training console)")
 
     def _fill_final_card(self):
         """Deployment-model details, read from the run's final-model
@@ -301,7 +288,7 @@ class DeployTab:
         style(self.lbl_final_status, tone="bad")
         first = msg.strip().splitlines()[-1] if msg.strip() else "Unknown error"
         self.lbl_final_status.setText(f"✗ Final training failed: {first}")
-        dlg = QMessageBox(self.window)
+        dlg = QMessageBox(self.main_window)
         dlg.setWindowTitle("Final model error")
         dlg.setIcon(QMessageBox.Icon.Critical)
         dlg.setText(f"Training the final model failed.\n\n{first}")
@@ -313,13 +300,13 @@ class DeployTab:
         s = self.state
         version = self.ed_version.text().strip()
         if not version:
-            QMessageBox.warning(self.window, "Deploy model",
+            QMessageBox.warning(self.main_window, "Deploy model",
                                 "Enter a model version (e.g. 1_2).")
             return
         try:
             pkg, deployed = s.deploy(self.models_dir, version)
         except Exception as e:
-            QMessageBox.critical(self.window, "Deploy model", str(e))
+            QMessageBox.critical(self.main_window, "Deploy model", str(e))
             return
         names = ", ".join(p.name for p in deployed)
         style(self.lbl_deploy_status, tone="ok")
@@ -329,6 +316,6 @@ class DeployTab:
             "Model Prediction will discover them from the models folder.")
         s.status.emit(f"Pipeline deployed: {names}", 6000)
         QMessageBox.information(
-            self.window, "Pipeline deployed",
+            self.main_window, "Pipeline deployed",
             f"Deployed {names} to\n{self.models_dir}\n\n"
             f"Full package (model card, config, CV predictions):\n{pkg}")

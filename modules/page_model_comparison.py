@@ -22,7 +22,7 @@ processing) and the three input boxes on the left, figures over the table
 on the right. The filters narrow the prediction's per-recording results
 and each treatment's strike rate and CI are recomputed from those.
 """
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QSizePolicy, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
@@ -36,7 +36,7 @@ from . import bsm_figures
 from .bsm_model import mortality_from_strike_rate
 from .library_widgets import LibrarySelector
 from .ml_model_library import model_display_name
-from .layout import apply_section_defaults, scroll_page, Section
+from .layout import apply_section_defaults, Page, scroll_page, Section
 from .theme import muted_label, style
 from .wilson_calc import wilson_interval
 
@@ -76,22 +76,20 @@ def _run_text(value):
         return s
 
 
-class ModelComparisonPage(QWidget):
-    status = Signal(str, int)
+class ModelComparisonPage(Page):
 
-    def __init__(self, frame, window, bsm_state, prediction_state=None):
-        super().__init__()
-        self.window = window
+    def __init__(self, main_window, bsm_state, prediction_state=None):
+        super().__init__(main_window)
         self.bsm_state = bsm_state
         self.prediction_state = prediction_state
-        self.session_state = getattr(window, "session_state", None)
+        self.session_state = getattr(main_window, "session_state", None)
         # what the figure last drew - the report re-renders it at its
         # own fixed size from these
         self.cen_values = {}
         self.comparisons = []
         self.mortality_items = []
         self.model_name = "Model"
-        self._build(frame)
+        self._build(self)
         bsm_state.calculated_all.connect(self._refresh_comparison)
         if prediction_state is not None:
             prediction_state.run_finished.connect(self._refresh_comparison)

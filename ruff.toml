@@ -1,0 +1,20 @@
+# Lint settings: `ruff check .` from the repo root (ruff is in
+# requirements-dev.txt; tests/test_lint.py runs it with the test suite).
+target-version = "py313"
+line-length = 100
+extend-exclude = [
+    "modules/ui_main.py",        # generated from main.ui by build_ui.py
+    "modules/resources_rc.py",   # generated from resources.qrc
+    "resources_rc.py",
+    "build",
+    "dist",
+    "external_software",
+    "libraries",
+]
+
+[lint]
+# pyflakes (unused names, undefined names), pycodestyle's error classes
+# and bugbear's likely bugs. Style (line length, import order) is left alone.
+select = ["E4", "E7", "E9", "F", "B"]
+# zip() without strict=: the pairs zipped here are built the same length
+ignore = ["B905"]

@@ -90,7 +90,9 @@ if ($Simple) {
 if ($Demos) {
     "4. Demos on a fresh copy of the folder"
     $copy = Join-Path $work "StrikeWorks"
-    robocopy $dist $copy /E /NFL /NDL /NJH /NJS /NP | Out-Null
+    # not settings.json: a used folder's settings point at the user's own
+    # libraries, and the demo would write its library there
+    robocopy $dist $copy /E /XF settings.json /NFL /NDL /NJH /NJS /NP | Out-Null
     $copyExe = Join-Path $copy "StrikeWorks.exe"
     $reports = Join-Path $copy "libraries\StrikeWorks_demo\StrikeWorks_user_output"
     $modes = if ($Simple) { @("simple") } else { @("simple", "advanced") }

@@ -31,7 +31,7 @@ import pandas as pd
 
 from PySide6.QtCore import QObject, QThread, Signal
 
-from . import settings
+from . import hig_peaks, settings
 from .worker_launch import worker_command
 
 # Ground-truth annotation columns, in preference order. Nothing downstream
@@ -77,12 +77,14 @@ class _WorkerThread(QThread):
     failed      = Signal(str)
 
     def __init__(self, bin_model, bin_metrics, mc_model, mc_metrics,
-                 data_path, out_dir, threshold=None, df_to_write=None):
+                 data_path, out_dir, threshold=None, df_to_write=None,
+                 hig_peaks=False):
         super().__init__()
         self._bin_model, self._bin_metrics = bin_model, bin_metrics
         self._mc_model,  self._mc_metrics  = mc_model,  mc_metrics
         self._data, self._out = data_path, out_dir
         self._threshold = threshold
+        self._hig_peaks = hig_peaks
         self._df_to_write = df_to_write   # in-memory dataset -> temp CSV
 
     def run(self):
@@ -104,6 +106,8 @@ class _WorkerThread(QThread):
                     "--mc-metrics", str(self._mc_metrics)]
         if self._threshold is not None:
             cmd += ["--threshold", str(self._threshold)]
+        if self._hig_peaks:
+            cmd.append("--hig-peaks")
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             # the worker's own output, for the dev console (dev_console.py
@@ -170,6 +174,7 @@ class PredictionState(QObject):
         self.threshold_overridden = False
         self.threshold_override   = 0.5
         self.low_conf_threshold   = _DEFAULT_LOW_CONF
+        self.hig_peaks            = True         # HIG peak analysis (hig_peaks.py)
 
         # run / results
         self.running        = False
@@ -180,6 +185,8 @@ class PredictionState(QObject):
         self.summary        = None      # treatment-level DataFrame
         self.region_summary = None
         self.severity_summary = None    # treatment x HIG threshold (severity.py)
+        self.peak_events    = None      # HIG peak analysis: one row per event
+        self.acc_summary    = None      # ... and the acceleration table
         self.run_meta       = {}
 
         # selection
@@ -188,6 +195,8 @@ class PredictionState(QObject):
 
         self.app_version = ""
         self._thread = None
+        self._traces = None
+        self._traces_key = None
 
     # ── models ───────────────────────────────────────────────────────────────
     @staticmethod
@@ -523,6 +532,10 @@ class PredictionState(QObject):
         self.config_changed.emit()
         self.validate()
 
+    def set_hig_peaks(self, enabled):
+        self.hig_peaks = bool(enabled)
+        self.config_changed.emit()
+
     def set_threshold_override(self, enabled, value=None):
         self.threshold_overridden = bool(enabled)
         if value is not None:
@@ -573,7 +586,8 @@ class PredictionState(QObject):
             self.bin_model_path, self.bin_metrics_path,
             self.mc_model_path if use_mc else None,
             self.mc_metrics_path if use_mc else None,
-            data_path, out_dir, threshold=threshold, df_to_write=df_to_write)
+            data_path, out_dir, threshold=threshold, df_to_write=df_to_write,
+            hig_peaks=self.hig_peaks)
         self._thread.finished_ok.connect(self._on_worker_done)
         self._thread.failed.connect(self._on_worker_failed)
         self._thread.start()
@@ -603,6 +617,10 @@ class PredictionState(QObject):
         self.region_summary = pd.read_csv(region) if region.exists() else None
         sev = out_dir / "severity_summary.csv"
         self.severity_summary = pd.read_csv(sev) if sev.exists() else None
+        peaks = out_dir / "hig_peaks.csv"
+        self.peak_events = pd.read_csv(peaks) if peaks.exists() else None
+        acc = out_dir / "acceleration_summary.csv"
+        self.acc_summary = pd.read_csv(acc) if acc.exists() else None
         meta = out_dir / "run_meta.json"
         try:
             with open(meta, encoding="utf-8") as f:
@@ -640,6 +658,24 @@ class PredictionState(QObject):
         if not len(rows):
             return None
         return rows.sort_values("time_s")
+
+    def collision_traces(self):
+        """The HIG traces of the recordings with a collision, on the
+        acceleration-centred figures' normalised time axes, one facet per
+        deployment (else treatment) - `hig_peaks.centred_traces`. None
+        without a peak analysis, or once the dataset has been replaced."""
+        preds, df = self.predictions, self.dataset_df
+        if (self.acc_summary is None or preds is None or df is None
+                or "collision" not in preds.columns):
+            return None
+        key = (self.run_id, id(df))
+        if self._traces_key != key:
+            files = preds.loc[preds["collision"] == 1, "file"].tolist()
+            facet = next((c for c in ("deployment_id", "treatment")
+                          if c in df.columns and df[c].notna().any()), None)
+            self._traces = hig_peaks.centred_traces(df, files, facet)
+            self._traces_key = key
+        return self._traces
 
     # ── ground truth ─────────────────────────────────────────────────────────
     def ground_truth_for(self, row):

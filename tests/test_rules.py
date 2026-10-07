@@ -23,7 +23,9 @@ class ValidationRules(unittest.TestCase):
 
     def test_colours(self):
         st = _status(auto="abcd", user="b", flagged="ab", bad="d")
-        colour = lambda s: vc.status_colour(s, st, "ok", "warn", "bad", "accent")
+        def colour(s):
+            return vc.status_colour(s, st, "ok", "warn", "bad", "accent")
+
         self.assertEqual(colour("a"), "warn")
         self.assertEqual(colour("b"), "ok")
         self.assertEqual(colour("c"), "accent")

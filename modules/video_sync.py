@@ -200,12 +200,12 @@ def build_text_lines(fields, frame_idx, opts):
     """`fields`: {pump, shaft_speed, camera, sensor} - Export animations'
     Text inputs box, in place of the original script's hardcoded lines."""
     elapsed_ms = frame_idx / opts.real_fps * 1000
-    info_lines = [l for l in [
+    info_lines = [line for line in [
         f"Pump: {fields.get('pump', '')}".strip(),
         f"Shaft speed: {fields.get('shaft_speed', '')}".strip(),
         f"Video camera: {fields.get('camera', '')}".strip(),
         f"Passive sensor: {fields.get('sensor', '')}".strip(),
-    ] if l and not l.endswith(":")]
+    ] if line and not line.endswith(":")]
     realtime_line = f"Real-time: {elapsed_ms:.1f} ms"
     return info_lines, realtime_line
 
@@ -221,7 +221,7 @@ def overlay_text(frame_bgr, lines, realtime_line, video_h):
         font_rt = font
 
     if lines:
-        max_w = max(draw.textlength(l, font=font) for l in lines)
+        max_w = max(draw.textlength(line, font=font) for line in lines)
         x = img.width - max_w - TEXT_PADDING
         y = TEXT_PADDING
         for line in lines:

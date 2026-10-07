@@ -18,11 +18,12 @@ Usage:
         --bin-model <path>  --bin-metrics <path> \
         --mc-model  <path>  --mc-metrics  <path> \
         --data <path>       --out <dir> \
-        [--threshold <float>]
+        [--threshold <float>] [--hig-peaks]
 
 --mc-model/--mc-metrics are optional; if omitted only the binary stage runs.
 --threshold overrides the deployed optimal_threshold (the GUI passes it
-only when the override box is ticked).
+only when the override box is ticked). --hig-peaks runs the HIG peak
+analysis (hig_peaks.py; Predict's "HIG peak analysis" box, on by default).
 
 Outputs:
     predictions.csv     per-recording predictions
@@ -30,6 +31,9 @@ Outputs:
     region_summary.csv  tidy treatment x class table (multiclass only)
     severity_summary.csv  treatment x HIG threshold table (when the dataset
                         has the high-g accelerometer channels)
+    hig_peaks.csv       with --hig-peaks: every acceleration event found
+    acceleration_summary.csv  with --hig-peaks: event counts, collision
+                        probability and event acceleration by treatment
 
 Severity is measured, not predicted: each recording's peak high-g
 acceleration magnitude over its window (`hig_peak_g`), banded at 95, 200
@@ -47,6 +51,11 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+
+try:
+    from . import hig_peaks
+except ImportError:          # run as a script from source (worker_launch.py)
+    import hig_peaks
 
 # Shim: models saved with numpy >= 2.0 pickle references to numpy._core.*,
 # which does not exist on numpy 1.x. Register every numpy.core submodule
@@ -187,6 +196,7 @@ def main():
     ap.add_argument("--data",        required=True)
     ap.add_argument("--out",         required=True)
     ap.add_argument("--threshold",   type=float, default=None)
+    ap.add_argument("--hig-peaks",   action="store_true")
     # legacy single-model flags (binary only)
     ap.add_argument("--model",       default=None)
     ap.add_argument("--metrics",     default=None)
@@ -252,6 +262,19 @@ def main():
         results["hig_peak_g"] = np.round(peaks, 1)
         results["severity"] = _severity_band(peaks)
         results["severe_strike"] = (peaks > SEVERE_G).astype(int)
+
+    # ---- HIG peak analysis (measured events around the nadir) ----
+    acc_summary = None
+    if args.hig_peaks:
+        events, per_file = hig_peaks.analyse(df, file_meta["file"])
+        if events is not None:
+            results = results.join(per_file, on="file")
+            treatments = (file_meta.set_index("file")["treatment"]
+                          if "treatment" in file_meta.columns else None)
+            acc_summary = hig_peaks.summary(events, per_file, treatments)
+            events.to_csv(out_dir / "hig_peaks.csv", index=False)
+            acc_summary.to_csv(out_dir / "acceleration_summary.csv",
+                               index=False)
 
     # ---- per-treatment summary ----
     summary_rows = []
@@ -351,6 +374,12 @@ def main():
             "n_strike_severe": int(results.loc[results["predicted_strike"] == 1,
                                                "severe_strike"].sum()),
         },
+        "hig_peaks": None if acc_summary is None else {
+            **hig_peaks.parameters(),
+            "n_events": int(results["n_events"].sum()),
+            "n_collision": int(results["collision"].sum()),
+        },
+        "hig_peaks_requested": bool(args.hig_peaks),
         "python_version":     sys.version.split()[0],
         "package_versions":   _package_versions(),
     }

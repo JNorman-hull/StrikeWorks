@@ -116,7 +116,7 @@ class DemoSource:
                 manifest = json.loads((self.root / "demo.json").read_text(
                     encoding="utf-8"))
             except Exception as e:
-                raise _RunnerError(f"demo.json could not be read: {e}")
+                raise _RunnerError(f"demo.json could not be read: {e}") from e
         self.sensor = manifest.get("sensor") or sensor_config.DEFAULT_KEY
         self.bsm_config = manifest.get("bsm_config") or _DEFAULT_BSM_CONFIG
         self.deployment = {**_DEFAULT_DEPLOYMENT,
@@ -808,7 +808,8 @@ class AdvancedDemoRunner(_RunnerBase):
             raise _RunnerError("Model training: not ready - " + "; ".join(detail))
 
     def _step_deploy(self):
-        self._go("btn_deploy_train")
+        # Model deployment is on the Train tab
+        self._go("btn_ml_training")
         state = self.window.ml_training_page.state
         out = self.window.session_state.output_dir()
         models_dir = (out / "models") if out is not None else settings.get_models_dir()

@@ -54,7 +54,7 @@ read as Run 1. `modules/raw_layout.py` is the one definition of this.
 | Setup and deploy | **Sensor configuration**, **Study design** (Wilson-interval sample size), **Create and edit deployment** |
 | Sensor processing | **Raw data processing** (filters, summary cards, file inventory, console) |
 | Validate and annotate | **Annotate** (validation plus annotation values, video lookup), **Export animations** (sensor graph synced onto high-speed video) |
-| Model training | **Train**, **Evaluate**, **Misclassification analysis**, **Deploy** |
+| Model training | **Train** (with Model deployment beside it), **Evaluate**, **Misclassification analysis** |
 | Model prediction | **Predict**, **Inspect**, **Model comparison** (model vs BSM collision and mortality per treatment) |
 | Export and report | one dialog that builds a single HTML report from any page's section |
 
@@ -92,7 +92,11 @@ Settings > Appearance chooses the theme, applied the next time the app
 starts: **StrikeWorks (dark)**, or **University of Hull** (the brand's
 Core, low-intensity look: white pages, Ink Blue sidebar, Chartreuse and
 Mid Blue accents, brand colours in charts; its brandmark in About and on
-Simple mode's welcome page). Every window is styled by one stylesheet,
+Simple mode's welcome page; the StrikeWorks logo outlined for white,
+`PyDracula_vertical_white.png`). The University of Hull logo sits at the
+foot of the sidebar above Simple mode (white; the collapsed sidebar shows
+its shield) and on Simple mode's Download page, in either theme
+(`startup.uoh_logo_pixmap`). Every window is styled by one stylesheet,
 `themes/app.qss`, whose `@name` colours `modules/theme.py` fills from the
 active palette; widgets take a look with `theme.style(widget, role=...,
 tone=...)` rather than stylesheets of their own. A new theme is a new
@@ -102,7 +106,8 @@ palette in `theme.THEMES`.
 
 Model training runs `modules/train_worker.py` in a subprocess: a binary
 strike model and, when region labels exist, a multiclass pump-region model.
-Deploy writes `binary<v>.joblib`, `multiclass<v>.joblib` and a
+Model deployment (on the Train tab, beside Train) trains the final
+model and writes `binary<v>.joblib`, `multiclass<v>.joblib` and a
 `BladeStrikeModel_v<v>/` package into the models folder (Settings), where
 Model prediction finds them. Prediction runs `modules/predict_worker.py` in
 a subprocess, so the model stack never loads into the GUI.
@@ -116,6 +121,24 @@ how many of its strikes were hard hits. It appears in the Predict results
 "strike, ≤ 400 g" filters), Simple mode and the reports
 (`severity_summary.csv`; `hig_peak_g`, `severity`, `severe_strike` in
 `predictions.csv`). The thresholds are in `modules/severity.py`.
+
+**HIG peak analysis** (the *HIG peak analysis* box on Predict and on
+Simple mode's Predict step - one setting, ticked by default) goes further: it finds every acceleration event in each
+recording's HIG magnitude - peaks of at least 95 g with a prominence of
+25 g, at least 2 ms apart, each typed collision or shear by how long it
+stays above 70 % of its height - the peak finder of the original R
+analysis (`modules/hig_peaks.py`; tested against it). Events are counted
+within ±0.1 s of the nadir, the whole of a dataset's 200 ms window; a
+recording with an event of 400 g or more there has a **collision**, and
+the collision probability is the share of recordings with one (Wilson 95%
+CI). Predict's results then show the event and collision cards, the peak
+figure (a: events over 95, 200 and 400 g; b: collision probability) and
+an **HIG peak analysis** section: the acceleration table (event counts,
+collision probability, and the minimum, maximum and IQR of the events'
+acceleration) and the acceleration- and nadir-aligned figures of every
+recording with a collision. The reports carry the same table and figures
+(`acceleration_summary.csv`, `hig_peaks.csv`; per recording `n_events`,
+`collision`, `collision_g` ... in `predictions.csv`).
 
 ### Demos
 
@@ -171,8 +194,20 @@ packaged copy, where the build puts that folder with a readme saying so.
 ```
 
 The tests use a temporary settings folder and an off-screen Qt. Set
-`STRIKEWORKS_E2E=1` to also run both demos end to end (about 3 minutes;
+`STRIKEWORKS_E2E=1` to also run both demos end to end (about 7 minutes;
 needs `libraries/Testbed`).
+
+### Lint
+
+```
+.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.venv\Scripts\ruff.exe check .
+```
+
+`ruff.toml` holds the settings (pyflakes, pycodestyle's error classes,
+bugbear; the generated `ui_main.py` and `resources_rc.py` are skipped).
+`tests/test_lint.py` runs it with the tests, and skips when ruff isn't
+installed.
 
 ### Building
 
@@ -206,11 +241,19 @@ demo in the Dev console. The lock is a start-up hook compiled into the exe
 `set STRIKEWORKS_EDITION=simple` shows the same thing. Test and zip it with
 `tools\smoke_test.ps1 -Simple -Demos` and `build.py --simple --zip-only`.
 
-### The UI file
+### Pages and the UI file
 
-The layout lives in `main.ui` (Qt Designer:
-`.venv\Scripts\pyside6-designer.exe main.ui`). `modules/ui_main.py` is
-generated from it and never edited by hand; PyCharm's **StrikeWorks** run
+Every page builds its own contents: a `layout.Page` (a `QWidget`, or a
+`layout.TabbedPage` for a page of tabs the sidebar picks between) in
+`modules/page_*.py`, given what it needs (the main window, shared state)
+in its constructor. `main.py` creates them and adds them to the main
+window's page stack; `_SUBMENU_TARGETS` maps each sidebar button to its
+page and tab.
+
+`main.ui` (Qt Designer: `.venv\Scripts\pyside6-designer.exe main.ui`)
+holds only the window frame: title bar, sidebar, the empty page stack,
+the settings panel and the status bar. `modules/ui_main.py` is generated
+from it and never edited by hand; PyCharm's **StrikeWorks** run
 configuration regenerates it before launch, or by hand:
 
 ```

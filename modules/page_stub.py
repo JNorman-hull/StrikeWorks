@@ -5,18 +5,18 @@
 #
 # ///////////////////////////////////////////////////////////////
 """Placeholder content for a page that isn't built yet (Data analysis)."""
-from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QLabel, QVBoxLayout
 
+from .layout import Page
 from .theme import style
 
 
-class StubPage(QObject):
-    """Title + a short note on what's coming and when."""
+class StubPage(Page):
+    """Title + a short note on what's coming."""
 
-    def __init__(self, frame, title, note="Not built yet."):
-        super().__init__(frame)
-        v = QVBoxLayout(frame)
+    def __init__(self, main_window, title, note="Not built yet."):
+        super().__init__(main_window)
+        v = QVBoxLayout(self)
         v.setContentsMargins(4, 6, 4, 6)
         v.setSpacing(4)
 

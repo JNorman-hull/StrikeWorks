@@ -32,7 +32,7 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from PySide6.QtCore import Qt, QObject, QThread, QTimer, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QGridLayout,
@@ -45,7 +45,9 @@ from . import deployment_index as di
 from . import sensor_config, video_sync
 from .library_widgets import LibrarySelector
 from .session_state import OUTPUT_DIR_NAME
-from .layout import apply_section_defaults, scroll_area, Section, when_visible
+from .layout import (
+    apply_section_defaults, Page, scroll_area, Section, when_visible,
+)
 from .theme import NADIR, REGION_EDGE, REGION_FILL, TRACE, muted_label, style
 from .page_annotate import LOSSLESSCUT_EXE, LOSSLESSCUT_MISSING
 from .plot_widgets import CsvLoadThread, NavViewBox, find_col
@@ -105,15 +107,11 @@ class _VideoSyncWorker(QThread):
         self.finished_ok.emit(str(self.output_path))
 
 
-class ExportAnimationsPage(QObject):
-    """Binds Export animations to `ui.content_export_animations`."""
+class ExportAnimationsPage(Page):
+    """Validate and annotate > Export animations."""
 
-    status = Signal(str, int)
-
-    def __init__(self, ui, window, session_state=None):
-        super().__init__(window)
-        self.ui = ui
-        self.window = window
+    def __init__(self, main_window, session_state=None):
+        super().__init__(main_window)
         self.session_state = session_state
 
         self._sensor_rows = []
@@ -145,7 +143,7 @@ class ExportAnimationsPage(QObject):
         self._scrub_timer = QTimer(self)
         self._scrub_timer.timeout.connect(self._advance_scrub_frame)
 
-        self._build(ui.content_export_animations)
+        self._build(self)
         self._connect()
         self._on_lib_changed()
         self._populate_sensor_table()
@@ -315,7 +313,7 @@ class ExportAnimationsPage(QObject):
         looked at side by side on screen at the same time, which is the
         whole point of this tool (matching a nadir point to a video
         frame)."""
-        dlg = QDialog(self.window)
+        dlg = QDialog(self.main_window)
         dlg.setWindowTitle("Video preview")
         dlg.resize(520, 520)
         gv = QVBoxLayout(dlg)
@@ -687,14 +685,14 @@ class ExportAnimationsPage(QObject):
             self.status.emit(f"No matching video for {stem}.", 4000)
             return
         if not LOSSLESSCUT_EXE.exists():
-            QMessageBox.warning(self.window, "LosslessCut missing",
+            QMessageBox.warning(self.main_window, "LosslessCut missing",
                                 LOSSLESSCUT_MISSING)
             return
         video_path = matches[0]
         if len(matches) > 1:
             names = [p.name for p in matches]
             choice, ok = QInputDialog.getItem(
-                self.window, "Choose video",
+                self.main_window, "Choose video",
                 f"{len(names)} videos match {stem}:", names, 0, False)
             if not ok:
                 return
@@ -702,14 +700,14 @@ class ExportAnimationsPage(QObject):
         try:
             subprocess.Popen([str(LOSSLESSCUT_EXE), str(video_path)])
         except Exception as e:
-            QMessageBox.critical(self.window, "Could not open video", str(e))
+            QMessageBox.critical(self.main_window, "Could not open video", str(e))
             return
         self.status.emit(f"Opened {video_path.name} in LosslessCut", 4000)
 
     # ── sensor loading ───────────────────────────────────────────────────────
     def _load_sensor(self, path):
         if not path.exists():
-            QMessageBox.warning(self.window, "File missing", f"Cannot find:\n{path}")
+            QMessageBox.warning(self.main_window, "File missing", f"Cannot find:\n{path}")
             return
         self._close_scrubber()
         self._pending_path = path
@@ -731,7 +729,7 @@ class ExportAnimationsPage(QObject):
         if path != self._pending_path:
             return
         self.lbl_loading.setText("")
-        QMessageBox.warning(self.window, "Load error", f"Cannot load {path.name}:\n{msg}")
+        QMessageBox.warning(self.main_window, "Load error", f"Cannot load {path.name}:\n{msg}")
 
     def _on_csv_loaded(self, path, df):
         if path != self._pending_path:
@@ -994,7 +992,7 @@ class ExportAnimationsPage(QObject):
 
     def _choose_logo(self):
         path, _ = QFileDialog.getOpenFileName(
-            self.window, "Choose an overlay image", "",
+            self.main_window, "Choose an overlay image", "",
             "Images (*.png *.PNG)")
         if path:
             self._set_logo_path(path)
@@ -1046,13 +1044,13 @@ class ExportAnimationsPage(QObject):
         if self._df is None or self._cur_stem == "":
             return
         if not self._video_matches:
-            QMessageBox.warning(self.window, "No video",
+            QMessageBox.warning(self.main_window, "No video",
                                 "No matching video for this sensor.")
             return
         video_path = self._video_matches[0]
         nadir_time_s = self._nadir_time_s()
         if nadir_time_s is None:
-            QMessageBox.warning(self.window, "No nadir",
+            QMessageBox.warning(self.main_window, "No nadir",
                                 "Couldn't determine this sensor's nadir time.")
             return
 
@@ -1104,7 +1102,7 @@ class ExportAnimationsPage(QObject):
         self._reset_process_buttons()
         self.lbl_progress.setText(f"Failed: {msg}")
         if msg != "Cancelled.":
-            QMessageBox.critical(self.window, "Processing failed", msg)
+            QMessageBox.critical(self.main_window, "Processing failed", msg)
 
     # ── video preview (frame scrubber, Video preview row) ───────────────────
     def _open_scrubber(self, path):
@@ -1199,12 +1197,12 @@ class ExportAnimationsPage(QObject):
     # ── preview-frame composite (sanity-check before a full render) ────────
     def _generate_preview_frame(self):
         if self._df is None or not self._video_matches:
-            QMessageBox.warning(self.window, "Nothing to preview",
+            QMessageBox.warning(self.main_window, "Nothing to preview",
                                 "Load a sensor with a matched video first.")
             return
         nadir_time_s = self._nadir_time_s()
         if nadir_time_s is None:
-            QMessageBox.warning(self.window, "No nadir",
+            QMessageBox.warning(self.main_window, "No nadir",
                                 "Couldn't determine this sensor's nadir time.")
             return
         cfg = self._config_values()
@@ -1222,7 +1220,7 @@ class ExportAnimationsPage(QObject):
                 self._video_matches[0], self._df, nadir_time_s,
                 cfg["nadir_frame"], cfg, opts, frame_idx)
         except Exception as e:
-            QMessageBox.critical(self.window, "Preview failed", str(e))
+            QMessageBox.critical(self.main_window, "Preview failed", str(e))
             return
         self._show_preview_dialog(combined, frame_idx)
 
@@ -1230,7 +1228,7 @@ class ExportAnimationsPage(QObject):
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         h, w, _ = rgb.shape
         qimg = QImage(rgb.data, w, h, 3 * w, QImage.Format.Format_RGB888).copy()
-        dlg = QDialog(self.window)
+        dlg = QDialog(self.main_window)
         dlg.setWindowTitle(f"Preview frame - {frame_idx}")
         lay = QVBoxLayout(dlg)
         lab = QLabel()

@@ -5,8 +5,8 @@
 #
 # ///////////////////////////////////////////////////////////////
 """Segmentation (Sensor processing; hidden for now - see ROADMAP.md,
-"Hidden for now"): per-sensor nadir validation and ROI window saving,
-bound to widgets in main.ui. Annotate does this job in the visible app.
+"Hidden for now"): per-sensor nadir validation and ROI window saving.
+Annotate does this job in the visible app.
 
 It writes the same saved-window files and ``global_sensor_index.csv``
 columns as Annotate.
@@ -17,17 +17,18 @@ import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 
-from PySide6.QtCore import Qt, QObject, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QMessageBox, QTreeWidgetItem, QVBoxLayout,
+    QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QMessageBox,
+    QPushButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
 )
 
 from . import deployment_index as di
 from . import sensor_config
 from . import raw_layout
 from .cards import Spinner
-from .layout import when_visible
+from .layout import Page, group_box, when_visible
 from .theme import (
     NADIR, OK, REGION_EDGE, REGION_FILL, TEXT, TRACE, TRACE2, style,
 )
@@ -55,15 +56,11 @@ _VALIDATED_COL = "hstrike_processed"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-class ValidatePage(QObject):
-    """Binds nadir-validation behaviour to the widgets defined in main.ui."""
+class ValidatePage(Page):
+    """Segmentation: nadir validation, one sensor at a time."""
 
-    status = Signal(str, int)
-
-    def __init__(self, ui, window, session_state=None):
-        super().__init__(window)
-        self.ui = ui
-        self.window = window
+    def __init__(self, main_window, session_state=None):
+        super().__init__(main_window)
         self.session_state = session_state
 
         self._lib_root = None
@@ -85,6 +82,7 @@ class ValidatePage(QObject):
         self._pending_path = None
         self._loading = False
 
+        self._build_ui()
         self._build_plot()
         self._configure_widgets()
         self._connect()
@@ -92,15 +90,62 @@ class ValidatePage(QObject):
             session_state.library if session_state is not None else None)
 
     # ── setup ────────────────────────────────────────────────────────────────
-    def _build_plot(self):
-        u = self.ui
+    def _build_ui(self):
+        """Library and Sensor files on the left, Nadir validation (the
+        plot) on the right."""
+        grid = QGridLayout(self)
+        grid.setContentsMargins(8, 8, 8, 8)
+        grid.setSpacing(8)
 
-        holder = QVBoxLayout(u.frame_val_plot)
+        self.grp_val_library, _ = group_box("Library")
+        grid.addWidget(self.grp_val_library, 0, 0)
+
+        self.grp_val_files, fv = group_box("Sensor files")
+        self.tree_val_files = QTreeWidget()
+        self.tree_val_files.setHeaderHidden(True)
+        fv.addWidget(self.tree_val_files)
+        self.lbl_val_progress = QLabel("-")
+        self.lbl_val_progress.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        fv.addWidget(self.lbl_val_progress)
+        self.btn_val_save_next = QPushButton("Save + Next")
+        self.btn_val_reset = QPushButton("Reset current sensor")
+        self.btn_val_jump = QPushButton("Jump to next unvalidated")
+        for b in (self.btn_val_save_next, self.btn_val_reset, self.btn_val_jump):
+            fv.addWidget(b)
+        grid.addWidget(self.grp_val_files, 1, 0)
+
+        self.grp_val_plot, pv = group_box("Nadir validation")
+        controls = QHBoxLayout()
+        self.cmb_val_left = QComboBox()
+        self.cmb_val_right = QComboBox()
+        self.cmb_val_window = QComboBox()
+        for text, cmb in (("Left axis:", self.cmb_val_left),
+                          ("Right axis:", self.cmb_val_right),
+                          ("ROI window:", self.cmb_val_window)):
+            controls.addWidget(QLabel(text))
+            controls.addWidget(cmb)
+        controls.addStretch()
+        pv.addLayout(controls)
+        self.frame_val_plot = QFrame()
+        pv.addWidget(self.frame_val_plot, stretch=1)
+        loading = QHBoxLayout()
+        self.frame_val_spinner = QFrame()
+        self.frame_val_spinner.setFixedSize(20, 20)
+        loading.addWidget(self.frame_val_spinner)
+        self.lbl_val_loading = QLabel()
+        loading.addWidget(self.lbl_val_loading, stretch=1)
+        pv.addLayout(loading)
+        grid.addWidget(self.grp_val_plot, 0, 1, 2, 1)
+        grid.setColumnStretch(1, 1)
+
+    def _build_plot(self):
+
+        holder = QVBoxLayout(self.frame_val_plot)
         holder.setContentsMargins(0, 0, 0, 0)
 
         toolbar = QHBoxLayout()
         toolbar.addStretch()
-        add_export_button(toolbar, self._export_data, self.window,
+        add_export_button(toolbar, self._export_data, self.main_window,
                           file_stub="segmentation")
         holder.addLayout(toolbar)
 
@@ -139,52 +184,48 @@ class ValidatePage(QObject):
         pi.addItem(self._region)
         pi.addItem(self._nadir_line)
 
-        # spinner lives inside the placeholder frame from the .ui
-        sp = QVBoxLayout(u.frame_val_spinner)
+        # the spinner sits in its 20 px frame beside the loading label
+        sp = QVBoxLayout(self.frame_val_spinner)
         sp.setContentsMargins(0, 0, 0, 0)
         self._spinner = Spinner(size=20)
         self._spinner.setVisible(False)
         sp.addWidget(self._spinner)
 
     def _configure_widgets(self):
-        u = self.ui
 
         # the library is chosen on Home; this box only shows it
-        u.tree_val_library.setVisible(False)
-        u.btn_val_change_libraries.setVisible(False)
         self.lbl_library = QLabel("No library selected.")
         style(self.lbl_library, role="muted")
         self.lbl_library.setWordWrap(True)
-        u.grp_val_library.layout().insertWidget(0, self.lbl_library)
+        self.grp_val_library.layout().insertWidget(0, self.lbl_library)
 
-        u.cmb_val_left.clear()
+        self.cmb_val_left.clear()
         for k in CHANNEL_ORDER:
-            u.cmb_val_left.addItem(CHANNELS[k][1], k)
-        u.cmb_val_left.setCurrentIndex(CHANNEL_ORDER.index(self._left_key))
+            self.cmb_val_left.addItem(CHANNELS[k][1], k)
+        self.cmb_val_left.setCurrentIndex(CHANNEL_ORDER.index(self._left_key))
 
-        u.cmb_val_right.clear()
-        u.cmb_val_right.addItem("None", None)
+        self.cmb_val_right.clear()
+        self.cmb_val_right.addItem("None", None)
         for k in CHANNEL_ORDER:
-            u.cmb_val_right.addItem(CHANNELS[k][1], k)
-        u.cmb_val_right.setCurrentIndex(0)
+            self.cmb_val_right.addItem(CHANNELS[k][1], k)
+        self.cmb_val_right.setCurrentIndex(0)
 
         self._fill_window_combo()
 
-        for b in (u.btn_val_save_next, u.btn_val_reset, u.btn_val_jump):
+        for b in (self.btn_val_save_next, self.btn_val_reset, self.btn_val_jump):
             b.setEnabled(False)
 
     def _connect(self):
-        u = self.ui
         if self.session_state is not None:
             self.session_state.library_changed.connect(
                 self._on_session_library_changed)
-        u.tree_val_files.itemClicked.connect(self._on_file_clicked)
-        u.cmb_val_left.currentIndexChanged.connect(self._on_axis_changed)
-        u.cmb_val_right.currentIndexChanged.connect(self._on_axis_changed)
-        u.cmb_val_window.currentIndexChanged.connect(self._on_win_size_changed)
-        u.btn_val_save_next.clicked.connect(self._save_and_next)
-        u.btn_val_reset.clicked.connect(self._reset_current)
-        u.btn_val_jump.clicked.connect(self._jump_next_unvalidated)
+        self.tree_val_files.itemClicked.connect(self._on_file_clicked)
+        self.cmb_val_left.currentIndexChanged.connect(self._on_axis_changed)
+        self.cmb_val_right.currentIndexChanged.connect(self._on_axis_changed)
+        self.cmb_val_window.currentIndexChanged.connect(self._on_win_size_changed)
+        self.btn_val_save_next.clicked.connect(self._save_and_next)
+        self.btn_val_reset.clicked.connect(self._reset_current)
+        self.btn_val_jump.clicked.connect(self._jump_next_unvalidated)
         sensor_config.notifier.changed.connect(self._on_sensor_changed)
 
     # ── library selection (session_state - see session_state.py) ────────────
@@ -196,10 +237,10 @@ class ValidatePage(QObject):
             f"Library: {lib_root.name}" if lib_root else "No library selected.")
         self._index_df = None
         self._csv_files = []
-        self.ui.tree_val_files.clear()
+        self.tree_val_files.clear()
         # the index read + file tree only once this page is actually opened
         # - a library switch shouldn't pay for pages nobody is looking at
-        when_visible(self.ui.tree_val_files, self._load_library, key="library")
+        when_visible(self.tree_val_files, self._load_library, key="library")
 
     def _load_library(self):
         self._load_index()
@@ -241,7 +282,7 @@ class ValidatePage(QObject):
 
     def _update_progress(self):
         if self._index_df is None:
-            self.ui.lbl_val_progress.setText("No index")
+            self.lbl_val_progress.setText("No index")
             return
         # the deployment plan's treatment rows share this file but are not
         # sensors, so they are not something to validate
@@ -250,11 +291,11 @@ class ValidatePage(QObject):
         done = (int((sensors[_VALIDATED_COL]
                      .astype(str).str.upper() == "Y").sum())
                 if _VALIDATED_COL in sensors.columns else 0)
-        self.ui.lbl_val_progress.setText(f"Validated: {done} / {total}")
+        self.lbl_val_progress.setText(f"Validated: {done} / {total}")
 
     # ── file tree ────────────────────────────────────────────────────────────
     def _populate_file_tree(self):
-        tree = self.ui.tree_val_files
+        tree = self.tree_val_files
         tree.clear()
         self._csv_files = []
         if self._lib_root is None:
@@ -292,16 +333,16 @@ class ValidatePage(QObject):
     # ── sensor loading ───────────────────────────────────────────────────────
     def _load_sensor(self, path: Path):
         if not path.exists():
-            QMessageBox.warning(self.window, "File missing", f"Cannot find:\n{path}")
+            QMessageBox.warning(self.main_window, "File missing", f"Cannot find:\n{path}")
             return
 
         self._pending_path = path
         self._loading = True
         self._spinner.start()
-        self.ui.lbl_val_loading.setText(f"Loading {path.name} …")
+        self.lbl_val_loading.setText(f"Loading {path.name} …")
         self.status.emit(f"Loading {path.name} …", 0)
-        for b in (self.ui.btn_val_save_next, self.ui.btn_val_reset,
-                  self.ui.btn_val_jump):
+        for b in (self.btn_val_save_next, self.btn_val_reset,
+                  self.btn_val_jump):
             b.setEnabled(False)
 
         loader = CsvLoadThread(path)
@@ -320,9 +361,9 @@ class ValidatePage(QObject):
             return
         self._loading = False
         self._spinner.stop()
-        self.ui.lbl_val_loading.setText("")
+        self.lbl_val_loading.setText("")
         self.status.emit(f"Load failed: {path.name}", 5000)
-        QMessageBox.warning(self.window, "Load error",
+        QMessageBox.warning(self.main_window, "Load error",
                             f"Cannot load {path.name}:\n{msg}")
 
     def _on_csv_loaded(self, path: Path, df):
@@ -330,7 +371,7 @@ class ValidatePage(QObject):
             return
         self._loading = False
         self._spinner.stop()
-        self.ui.lbl_val_loading.setText("")
+        self.lbl_val_loading.setText("")
         if len(df) == 0:
             self.status.emit(f"{path.name} is empty - skipping.", 5000)
             return
@@ -344,7 +385,7 @@ class ValidatePage(QObject):
                 else np.arange(len(df), dtype=float) / self._fs())
 
         if pres_col is None:
-            QMessageBox.warning(self.window, "No pressure column",
+            QMessageBox.warning(self.main_window, "No pressure column",
                                 f"No pressure column found in {path.name}.\n"
                                 "Nadir detection may be inaccurate.")
 
@@ -363,8 +404,8 @@ class ValidatePage(QObject):
             self._nadir_idx = len(df) // 2
 
         self._draw_plot()
-        for b in (self.ui.btn_val_save_next, self.ui.btn_val_reset,
-                  self.ui.btn_val_jump):
+        for b in (self.btn_val_save_next, self.btn_val_reset,
+                  self.btn_val_jump):
             b.setEnabled(True)
         self.status.emit(f"Loaded: {path.name}", 3000)
 
@@ -403,8 +444,8 @@ class ValidatePage(QObject):
         pi.setXRange(nadir_t - 0.5, nadir_t + 0.5, padding=0)
 
     def _on_axis_changed(self):
-        self._left_key = self.ui.cmb_val_left.currentData()
-        self._right_key = self.ui.cmb_val_right.currentData()
+        self._left_key = self.cmb_val_left.currentData()
+        self._right_key = self.cmb_val_right.currentData()
         if self._df is None:
             return
         self._refresh_curves()
@@ -502,7 +543,7 @@ class ValidatePage(QObject):
 
     def _fill_window_combo(self):
         """Offer 100-1000 ms, defaulting to this page's own width."""
-        cmb = self.ui.cmb_val_window
+        cmb = self.cmb_val_window
         want = int(round(self._win_sec * 1000))
         options = sorted(set(range(100, 1001, 100)) | {want})
         cmb.blockSignals(True)
@@ -518,7 +559,7 @@ class ValidatePage(QObject):
             self._update_region(float(self._time[self._nadir_idx]))
 
     def _on_win_size_changed(self):
-        ms = self.ui.cmb_val_window.currentData()
+        ms = self.cmb_val_window.currentData()
         if ms is None:
             return
         self._win_sec = ms / 1000.0
@@ -547,7 +588,7 @@ class ValidatePage(QObject):
             self._mark_validated_in_tree(self._cur_file)
             self._update_progress()
         except Exception as e:
-            QMessageBox.critical(self.window, "Save error", str(e))
+            QMessageBox.critical(self.main_window, "Save error", str(e))
             return
         self._jump_next_unvalidated()
 
@@ -624,8 +665,8 @@ class ValidatePage(QObject):
     def _select_tree_item(self, path: Path):
         def _try(item):
             if item.data(0, Qt.ItemDataRole.UserRole) == path:
-                self.ui.tree_val_files.setCurrentItem(item)
-                self.ui.tree_val_files.scrollToItem(item)
+                self.tree_val_files.setCurrentItem(item)
+                self.tree_val_files.scrollToItem(item)
         self._walk_tree(_try)
 
     def _walk_tree(self, fn):
@@ -634,4 +675,4 @@ class ValidatePage(QObject):
                 child = parent.child(i)
                 fn(child)
                 _recurse(child)
-        _recurse(self.ui.tree_val_files.invisibleRootItem())
+        _recurse(self.tree_val_files.invisibleRootItem())

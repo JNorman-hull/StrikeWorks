@@ -35,7 +35,7 @@ from . import bsm_config
 from .bsm_model import compute
 from .bsm_state import LATEST_RESULT_PATH, build_latest_payload, output_card_rows
 from .cards import MetaCard
-from .layout import apply_section_defaults, scroll_area, Section
+from .layout import apply_section_defaults, Page, scroll_area, Section
 from .theme import muted_label, style
 
 _EEL_LF_DEFAULT = 0.66
@@ -45,17 +45,15 @@ _EEL_BF_DEFAULT = 0.08
 _NUMERIC = ("wf", "alpha", "eel_vcrit", "n", "N", "Q", "r", "bh")
 
 
-class CalculatorPage(QWidget):
+class CalculatorPage(Page):
     calculated = Signal(dict)
-    status = Signal(str, int)
 
-    def __init__(self, frame, window, bsm_state):
-        super().__init__()
-        self.window = window
+    def __init__(self, main_window, bsm_state):
+        super().__init__(main_window)
         self.bsm_state = bsm_state
         self.last_result = None
 
-        self._build(frame)
+        self._build(self)
         self._wire_validation()
         self._load_selected_config()
 

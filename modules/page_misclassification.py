@@ -31,7 +31,7 @@ from pathlib import Path
 import pandas as pd
 import pyqtgraph as pg
 
-from PySide6.QtCore import Qt, QObject, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QGridLayout, QHBoxLayout, QHeaderView,
     QInputDialog, QLabel, QMessageBox, QPushButton, QSizePolicy, QSplitter,
@@ -43,7 +43,7 @@ from . import ml_model_library
 from . import settings
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
 from .layout import (
-    apply_section_defaults, discard_widget, Section, when_visible,
+    apply_section_defaults, discard_widget, Page, Section, when_visible,
 )
 from .theme import TRACE, TRACE2, muted_label, style
 from .page_annotate import LOSSLESSCUT_EXE, LOSSLESSCUT_MISSING
@@ -126,15 +126,11 @@ def _misclassified_rows(entry):
     return rows
 
 
-class MisclassificationPage(QObject):
-    """Binds Misclassification analysis to `ui.content_misclassification`."""
+class MisclassificationPage(Page):
+    """Model training > Misclassification analysis."""
 
-    status = Signal(str, int)
-
-    def __init__(self, ui, window, training_state):
-        super().__init__(window)
-        self.ui = ui
-        self.window = window
+    def __init__(self, main_window, training_state):
+        super().__init__(main_window)
         self.training_state = training_state
 
         self._entries = []
@@ -153,11 +149,11 @@ class MisclassificationPage(QObject):
         self._video_index = None     # built in the background, then cached
         self._video_thread = None
 
-        self._build(ui.content_misclassification)
+        self._build(self)
         self._connect()
         # nothing loaded at startup - the model list (and the video index
         # behind its Video column) the first time the page is opened
-        when_visible(ui.content_misclassification, self._reload_models,
+        when_visible(self, self._reload_models,
                      key="models")
 
     # ── layout ───────────────────────────────────────────────────────────────
@@ -243,7 +239,7 @@ class MisclassificationPage(QObject):
         axis_row.addWidget(muted_label("Right"))
         axis_row.addWidget(self.cmb_right, stretch=1)
         axis_row.addStretch()
-        add_export_button(axis_row, self._export_data, self.window,
+        add_export_button(axis_row, self._export_data, self.main_window,
                           file_stub="misclassification")
         sv.addLayout(axis_row)
 
@@ -422,14 +418,14 @@ class MisclassificationPage(QObject):
             self.status.emit(f"No matching video for {stem}.", 4000)
             return
         if not LOSSLESSCUT_EXE.exists():
-            QMessageBox.warning(self.window, "LosslessCut missing",
+            QMessageBox.warning(self.main_window, "LosslessCut missing",
                                 LOSSLESSCUT_MISSING)
             return
         video_path = matches[0]
         if len(matches) > 1:
             names = [p.name for p in matches]
             choice, ok = QInputDialog.getItem(
-                self.window, "Choose video",
+                self.main_window, "Choose video",
                 f"{len(names)} videos match {stem}:", names, 0, False)
             if not ok:
                 return
@@ -437,7 +433,7 @@ class MisclassificationPage(QObject):
         try:
             subprocess.Popen([str(LOSSLESSCUT_EXE), str(video_path)])
         except Exception as e:
-            QMessageBox.critical(self.window, "Could not open video", str(e))
+            QMessageBox.critical(self.main_window, "Could not open video", str(e))
             return
         self.status.emit(f"Opened {video_path.name} in LosslessCut", 4000)
 
@@ -654,7 +650,7 @@ class MisclassificationPage(QObject):
             editor.set_current(value)
 
     def _manage_variables(self):
-        dlg = VariableListDialog(self.window)
+        dlg = VariableListDialog(self.main_window)
         dlg.exec()
 
     # ── save ─────────────────────────────────────────────────────────────────
@@ -664,20 +660,20 @@ class MisclassificationPage(QObject):
         base_path = self._resolve_dataset_path(self._entry)
         if base_path is None:
             QMessageBox.warning(
-                self.window, "No dataset",
+                self.main_window, "No dataset",
                 "Can't locate this model's training dataset on disk.")
             return
 
         df = self._df_cache.get(id(self._entry))
         if df is None:
-            QMessageBox.warning(self.window, "No dataset",
+            QMessageBox.warning(self.main_window, "No dataset",
                                 "Training dataset not loaded.")
             return
 
         mask = df["file"] == self._cur_stem
         if not mask.any():
             QMessageBox.warning(
-                self.window, "Not found",
+                self.main_window, "Not found",
                 f"{self._cur_stem} not found in the training dataset.")
             return
 
@@ -685,7 +681,7 @@ class MisclassificationPage(QObject):
                   self._editors.items()}
         if not any(values.values()):
             QMessageBox.warning(
-                self.window, "Nothing entered",
+                self.main_window, "Nothing entered",
                 "Enter at least one corrected value before saving.")
             return
 
@@ -715,7 +711,7 @@ class MisclassificationPage(QObject):
         try:
             df.to_csv(corrected_path, index=False)
         except Exception as e:
-            QMessageBox.critical(self.window, "Save failed", str(e))
+            QMessageBox.critical(self.main_window, "Save failed", str(e))
             return
 
         self._df_cache[id(self._entry)] = df
@@ -739,7 +735,7 @@ class MisclassificationPage(QObject):
         `navigate_to` performs next lands on it already in place."""
         self._has_changes = False
         QMessageBox.information(
-            self.window, "Retrain recommended",
+            self.main_window, "Retrain recommended",
             "You corrected one or more classifications. Retrain the model "
             "with the corrected dataset before its next deployment.\n\n"
             "The corrected dataset has been loaded on the Train page.")

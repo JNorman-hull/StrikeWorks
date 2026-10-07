@@ -10,10 +10,11 @@ Dataset loading and filtering, target/label definition with live class
 distributions, input-channel selection, sequence preparation, validation
 (hold-out + stratified CV), class balancing and model configuration, then
 the training run itself: the TRAIN MODEL control, the streaming training
-console and the out-of-fold performance of both pipeline stages.
+console and the out-of-fold performance of both pipeline stages, and
+beside them Model deployment (ml_tab_train_deploy.py).
 
-All configuration and results live in the shared TrainingState; the
-Evaluate and Deploy tabs consume them unchanged.
+All configuration and results live in the shared TrainingState; Evaluate
+and Model deployment consume them unchanged.
 """
 from pathlib import Path
 
@@ -33,6 +34,7 @@ from .bind_datasets import BindTrainingData
 from .ml_train_state import GROUPING_PRESETS
 from .cards import MetaCard, Spinner
 from .layout import apply_section_defaults, hsplit, scroll_page, Section
+from .ml_tab_train_deploy import DeploymentSection
 from .level_grouper import LevelGrouper
 from .theme import EMPTY, MUTED, PALETTE, TEXT, muted_label, style
 
@@ -89,12 +91,13 @@ class _ClassDist(QWidget):
         p.end()
 
 
-class TrainTab:
-    """Builds the Train tab UI into `frame` and binds it to `state`."""
+class TrainTab(QWidget):
+    """The Train tab, bound to `state`."""
 
-    def __init__(self, frame, state, window, goto_evaluate=None):
+    def __init__(self, state, main_window, goto_evaluate=None):
+        super().__init__()
         self.state = state
-        self.window = window
+        self.main_window = main_window
         self._goto_evaluate = goto_evaluate
         self._updating = False
         self._include_checks = {}
@@ -105,7 +108,7 @@ class TrainTab:
         self._tick.setInterval(500)
         self._tick.timeout.connect(self._update_elapsed)
 
-        self._build(frame)
+        self._build(self)
         self._connect_state()
         self._rebuild_dataset_widgets()
         self._refresh_all()
@@ -382,7 +385,7 @@ class TrainTab:
         mv.addWidget(self.spin_n_alpha, 3, 1)
         v.addWidget(hsplit(grp_val, grp_bal, grp_model))
 
-        # ── row 5: train + console + out-of-fold performance ────────────────
+        # ── row 5: train + deployment + console, then the model card ────────
         grp_run = Section("Train")
         gv = QVBoxLayout(grp_run)
         gv.setSpacing(8)
@@ -440,7 +443,12 @@ class TrainTab:
         self.console.setMinimumHeight(280)
         style(self.console, role="console")
         cv.addWidget(self.console, stretch=1)
-        v.addWidget(hsplit((grp_run, 2), (grp_console, 3)))
+
+        # accept the run: train the final model and deploy it
+        self.deployment = DeploymentSection(self.state, self.main_window)
+        v.addWidget(hsplit((grp_run, 2), (self.deployment, 2),
+                           (grp_console, 3)))
+        v.addWidget(self.deployment.info_section)
         v.addStretch()
 
         apply_section_defaults(frame)
@@ -464,7 +472,7 @@ class TrainTab:
     # ── dataset loading ──────────────────────────────────────────────────────
     def _load_dataset(self):
         path, _ = QFileDialog.getOpenFileName(
-            self.window, "Load training dataset",
+            self.main_window, "Load training dataset",
             str(settings.get_input_data_dir()),
             "CSV files (*.csv)")
         if path:
@@ -479,7 +487,7 @@ class TrainTab:
         ok, msg = self.state.load_dataset_csv(path)
         self.state.status.emit(msg, 6000)
         if not ok:
-            QMessageBox.warning(self.window, "Training dataset", msg)
+            QMessageBox.warning(self.main_window, "Training dataset", msg)
 
     # ── dynamic widget sets (rebuilt on dataset change) ──────────────────────
     def _rebuild_dataset_widgets(self):
@@ -944,7 +952,7 @@ class TrainTab:
         style(self.lbl_status, tone="bad")
         first = msg.strip().splitlines()[-1] if msg.strip() else "Unknown error"
         self.lbl_status.setText(f"✗ Training failed: {first}")
-        dlg = QMessageBox(self.window)
+        dlg = QMessageBox(self.main_window)
         dlg.setWindowTitle("Training error")
         dlg.setIcon(QMessageBox.Icon.Critical)
         dlg.setText("The training worker failed.\n\n"
