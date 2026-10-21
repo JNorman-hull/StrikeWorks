@@ -611,7 +611,6 @@ class MisclassificationPage(Page):
     def _export_data(self):
         if self._time is None or not hasattr(self, "_sig"):
             return None
-        (x0, x1), _ = self._pw.plotItem.vb.viewRange()
         left_y = (self._sig[self._left_key].to_numpy(dtype=float)
                   if self._left_key and self._left_key in self._sig.columns
                   else None)
@@ -620,7 +619,7 @@ class MisclassificationPage(Page):
                    else None)
         return build_export_data(
             self._time, self._left_key or "", left_y,
-            self._right_key or "", right_y, (x0, x1))
+            self._right_key or "", right_y, self._pw, self._vb2)
 
     # ── labels ───────────────────────────────────────────────────────────────
     def _rebuild_labels(self):

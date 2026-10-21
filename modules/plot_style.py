@@ -18,12 +18,16 @@ reserve a matching blank strip at the top.
 
 Export
 ------
-Export redraws the visible window with matplotlib in a print style: white
-background, black axes, the left channel black and the right channel red.
+Export redraws what the plot shows - its time window and both axes' y
+ranges, as the user has zoomed them - with matplotlib in a print style:
+white background, black axes, the left channel black and the right
+channel red.
 `add_export_button` adds a toolbar button with PNG (300 dpi) / SVG; the
 caller supplies `get_export_data()`, which returns None when there is
 nothing to export yet.
 """
+import numpy as np
+
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
@@ -105,8 +109,9 @@ class _ExportSizeDialog(QDialog):
 
 def render_export_figure(width_cm, height_cm, dpi, series, x_label,
                          y_label, right_label=None, xlim=None,
-                         title=None):
-    """`series`: [(label, x_arr, y_arr, color, axis)], axis 'left'/'right'.
+                         title=None, ylim=None, right_ylim=None):
+    """`series`: [(label, x_arr, y_arr, color, axis)], axis 'left'/'right';
+    `xlim`/`ylim`/`right_ylim` the axes' ranges (None: fitted to the data).
 
     Returns a matplotlib Figure styled for static export (white
     background, black axes) - not attached to any Qt widget, ready for
@@ -139,33 +144,55 @@ def render_export_figure(width_cm, height_cm, dpi, series, x_label,
         ax_left.set_title(title, color=EXPORT_AXIS_COLOR)
     if xlim:
         ax_left.set_xlim(*xlim)
+    if ylim:
+        ax_left.set_ylim(*ylim)
 
     if ax_right is not None:
         for spine in ax_right.spines.values():
             spine.set_color(EXPORT_AXIS_COLOR)
         ax_right.tick_params(colors=EXPORT_RIGHT_COLOR)
         ax_right.set_ylabel(right_label or "", color=EXPORT_RIGHT_COLOR)
+        if right_ylim:
+            ax_right.set_ylim(*right_ylim)
 
     fig.tight_layout()
     return fig
 
 
-def build_export_data(time, left_label, left_y, right_label, right_y, xlim,
-                      x_label="Time (s)"):
+def build_export_data(time, left_label, left_y, right_label, right_y,
+                      plot_widget, right_view=None, x_label="Time (s)"):
     """The common shape every page's `get_export_data()` needs: one left
     (primary) channel and an optional right (secondary) one, coloured per
-    the EXPORT_LEFT_COLOR/EXPORT_RIGHT_COLOR convention above. None if
-    there's nothing plotted yet."""
+    the EXPORT_LEFT_COLOR/EXPORT_RIGHT_COLOR convention above, over the
+    window `plot_widget` shows - its time range, its y range and, with a
+    right channel, the y range of `right_view` (the ViewBox the right axis
+    is linked to). Only the samples in that window are kept (one either
+    side, so the lines reach the edges). None if there's nothing plotted
+    yet."""
     if time is None or left_y is None:
         return None
-    series = [(left_label, time, left_y, EXPORT_LEFT_COLOR, "left")]
-    right_label_out = None
+    (x0, x1), ylim = plot_widget.plotItem.vb.viewRange()
+    time = np.asarray(time, dtype=float)
+    window = slice(None)
+    if len(time) > 1 and np.all(np.diff(time) >= 0):
+        lo = max(0, int(np.searchsorted(time, x0, "left")) - 1)
+        hi = min(len(time), int(np.searchsorted(time, x1, "right")) + 1)
+        if hi - lo >= 2:
+            window = slice(lo, hi)
+    t = time[window]
+    series = [(left_label, t, np.asarray(left_y)[window],
+               EXPORT_LEFT_COLOR, "left")]
+    right_label_out = right_ylim = None
     if right_y is not None:
-        series.append((right_label, time, right_y, EXPORT_RIGHT_COLOR, "right"))
+        series.append((right_label, t, np.asarray(right_y)[window],
+                       EXPORT_RIGHT_COLOR, "right"))
         right_label_out = right_label
+        if right_view is not None:
+            right_ylim = tuple(right_view.viewRange()[1])
     return {
         "series": series, "x_label": x_label, "y_label": left_label,
-        "right_label": right_label_out, "xlim": xlim,
+        "right_label": right_label_out, "xlim": (x0, x1),
+        "ylim": tuple(ylim), "right_ylim": right_ylim,
     }
 
 
@@ -176,7 +203,7 @@ def add_export_button(toolbar_layout, get_export_data, parent, file_stub="plot")
     or None/empty if there is nothing to export yet."""
     btn = QToolButton()
     btn.setText("Export ▾")
-    btn.setToolTip("Save the currently plotted signal as an image")
+    btn.setToolTip("Save the plot as an image, zoomed as it is now")
     btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
     menu = QMenu(btn)
     act_png = menu.addAction("Export as PNG (300 dpi)…")
@@ -196,7 +223,8 @@ def add_export_button(toolbar_layout, get_export_data, parent, file_stub="plot")
         fig = render_export_figure(
             w_cm, h_cm, dpi, data["series"], data.get("x_label", ""),
             data.get("y_label", ""), data.get("right_label"),
-            data.get("xlim"), data.get("title"))
+            data.get("xlim"), data.get("title"), data.get("ylim"),
+            data.get("right_ylim"))
         ext = "png" if fmt == "png" else "svg"
         path, _ = QFileDialog.getSaveFileName(
             parent, "Export plot image", f"{file_stub}.{ext}",

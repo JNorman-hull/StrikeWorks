@@ -145,7 +145,8 @@ within ±0.1 s of the nadir, the whole of a dataset's 200 ms window; a
 recording with an event of 400 g or more there has a **collision**, and
 the collision probability is the share of recordings with one (Wilson 95%
 CI). Predict's results then show the event and collision cards, the peak
-figure (a: events over 95, 200 and 400 g; b: collision probability) and
+figure (a: each recording's peak acceleration as a box plot; b: events
+over 95, 200 and 400 g; c: collision probability, 0-100%) and
 an **HIG peak analysis** section: the acceleration table (event counts,
 collision probability, and the minimum, maximum and IQR of the events'
 acceleration) and the acceleration- and nadir-aligned figures of every

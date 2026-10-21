@@ -3,16 +3,15 @@
 ## Where things stand (6 October 2026)
 
 - `main` is pushed to GitHub (`origin/main` = `bf4df7e`). Not tagged yet.
-- Latest builds, both from the 6 October working copy (everything listed
-  under "New on 6 October" below, not yet committed) and smoke-tested the
-  same day (start-up, the prediction worker, the demos on a clean copy,
-  the Simple edition's lock): `dist/StrikeWorks` (full app) and
-  `dist/StrikeWorks_Simple` (Simple mode only); the 7 October changes
-  ("Windows" below) are not built yet. No zips yet.
-  `dist/StrikeWorks` holds only what ships, so `build.py --zip-only`
-  remakes its zip; `dist/StrikeWorks_Simple` also holds a Pentair run
-  (`input_data`, `output_data`, `settings.json`), so `--simple --zip-only`
-  refuses until those are moved out.
+- Latest builds, from the working copy (not yet committed):
+  `dist/StrikeWorks` (full app) on 13 October, with everything below
+  including the 7-8 October changes - not smoke-tested (not wanted that
+  time); `dist/StrikeWorks_Simple` (Simple mode only) on 6 October,
+  smoke-tested then, without the 7-8 October changes. No zips yet.
+  `dist/StrikeWorks` now also holds `external_software` (LosslessCut) and
+  a `settings.json`, and `dist/StrikeWorks_Simple` a Pentair run
+  (`input_data`, `output_data`, `settings.json`), so `--zip-only` refuses
+  for either until those are moved out.
 - New since the 26 September builds: the University of Hull theme
   (Settings > Appearance) on one app-wide stylesheet; the review counter
   reads "Flagged for review: k/n sensors"; **strike severity** - each
@@ -26,8 +25,9 @@
     by default): the original R
     analysis's peak finder - events of at least 95 g, collisions of at
     least 400 g within ±0.1 s of the nadir, collision probability with a
-    Wilson CI - shown as cards, the peak figure (a: event counts, b:
-    collision probability), the acceleration table (the
+    Wilson CI - shown as cards, the peak figure (a: each recording's
+    peak g as a box plot, b: event counts, c: collision probability),
+    the acceleration table (the
     `Acceleration_table.xlsx` template, with the events' minimum, maximum
     and IQR) and the acceleration- and nadir-aligned figures, in Predict
     and the reports (`modules/hig_peaks.py`, README "Models").
@@ -59,8 +59,15 @@
     Model comparison's inputs column narrows to about half its old
     minimum (counts one per row, each species' values under its tick
     box, filter lists that shrink), its two figures half the width each;
-    figures app-wide redraw once a resize is over, not during a drag.
-- Tests: 68 pass, both demos and the lint check included
+    figures app-wide redraw once a resize is over, not during a drag; a
+    sensor plot's Export (PNG/SVG) saves the window the plot shows - its
+    time range and both y ranges - not the whole recording.
+  - **HIG peak figure** (8 October): three panels in the layout of the
+    user's reformatted version - a) each recording's peak acceleration
+    (box plot per treatment), b) event counts, c) collision probability
+    on 0-100% - "a)" letters, n (and CI) top right, no grid; a full row
+    of its own on Predict.
+- Tests: 70 pass, both demos and the lint check included
   (`STRIKEWORKS_E2E=1`; 11-19 minutes on this machine on 6 October,
   where building the main window alone took 25 s).
 

@@ -88,8 +88,8 @@ class PredictTab(QWidget):
         self.canvas_mc = FigureCanvas(self.fig_mc)
         self.fig_vcrit = Figure(figsize=(4.3, 3.4), dpi=100)
         self.canvas_vcrit = FigureCanvas(self.fig_vcrit)
-        # the HIG figure: peak analysis (a/b) when it ran, else severity
-        self.fig_sev = Figure(figsize=(4.3, 3.4), dpi=100)
+        # the HIG peak analysis figure (three panels, a full row)
+        self.fig_sev = Figure(figsize=(8.6, 3.4), dpi=100)
         self.canvas_sev = FigureCanvas(self.fig_sev)
         self.fig_acc = Figure(figsize=(4.3, 3.4), dpi=100)
         self.canvas_acc = FigureCanvas(self.fig_acc)
@@ -362,8 +362,8 @@ class PredictTab(QWidget):
         # ── row 5: figures ──────────────────────────────────────────────────
         grp_figs = Section("Prediction figures")
         fv = QVBoxLayout(grp_figs)
-        # two rows: the model's strike rate and the measured severity, then
-        # strike location and mortality
+        # the model's strike rate and strike location, the HIG peak figure,
+        # then mortality (_refresh_hig_visibility lays them out)
         self._figs = QGridLayout()
         self._figs.setSpacing(8)
         fv.addLayout(self._figs)
@@ -578,17 +578,20 @@ class PredictTab(QWidget):
 
     def _refresh_hig_visibility(self):
         """The HIG output - its two cards, its figure and the HIG peak
-        analysis section - shows only while HIG peak analysis is ticked."""
+        analysis section - shows only while HIG peak analysis is ticked.
+        The model's figures two to a row, the HIG figure (three panels) a
+        row of its own under the first two."""
         on = self.state.hig_peaks
         for w in (self.card_severity, self.card_severe, self.grp_hig):
             w.setVisible(on)
-        canvases = [self.canvas_bin] + ([self.canvas_sev] if on else []) + [
-            self.canvas_mc, self.canvas_vcrit]
         self.canvas_sev.setVisible(on)
         while self._figs.count():
             self._figs.takeAt(0)
-        for i, canvas in enumerate(canvases):
-            self._figs.addWidget(canvas, i // 2, i % 2)
+        self._figs.addWidget(self.canvas_bin, 0, 0)
+        self._figs.addWidget(self.canvas_mc, 0, 1)
+        if on:
+            self._figs.addWidget(self.canvas_sev, 1, 0, 1, 2)
+        self._figs.addWidget(self.canvas_vcrit, 2 if on else 1, 0)
 
     def _on_mode_changed(self):
         mode = self.cmb_mode.currentData()
@@ -708,7 +711,7 @@ class PredictTab(QWidget):
         ml_figures.draw_strike_rate(self.fig_bin, s.summary, dark=True)
         self.canvas_bin.draw()
         ml_figures.draw_peak_summary(
-            self.fig_sev, s.acc_summary, dark=True,
+            self.fig_sev, s.acc_summary, s.predictions, dark=True,
             note=None if s.acc_summary is not None else (
                 "No HIG channel in this dataset"
                 if (s.run_meta or {}).get("hig_peaks_requested")

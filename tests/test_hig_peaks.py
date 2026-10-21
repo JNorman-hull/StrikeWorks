@@ -129,6 +129,36 @@ class Analyse(unittest.TestCase):
         self.assertEqual(list(sm["treatment"]), [hp.ALL_LABEL])
         self.assertFalse(hp.show_treatment(sm))
 
+    def test_peak_figure(self):
+        """a) a box of per-recording peaks per treatment, b) the event
+        counts, c) the collision probability on 0-100%."""
+        from matplotlib.figure import Figure
+
+        from modules import ml_figures
+        tx = self.df.groupby("file")["treatment"].first()
+        sm = hp.summary(self.events, self.per_file, tx)
+        predictions = pd.DataFrame({
+            "file": ["a", "b", "c", "d"], "treatment": ["T1", "T1", "T2", "T2"],
+            "hig_peak_g": self.df.groupby("file")["higacc_mag_g"].max().values})
+        fig = Figure(figsize=(10.5, 3.6))
+        ml_figures.draw_peak_summary(fig, sm, predictions)
+        ax_a, ax_b, ax_c = fig.axes
+        self.assertEqual([t.get_text() for t in ax_a.get_xticklabels()],
+                         ["T1", "T2"])
+        self.assertEqual(len(ax_a.patches), 2)       # one box per treatment
+        self.assertEqual(ax_c.get_ylim(), (0.0, 100.0))
+        texts = [t.get_text() for ax in fig.axes for t in ax.texts]
+        self.assertEqual(texts[:2], ["a)", "n = 4"])
+        self.assertIn("CI = 95%\nn = 4", texts)
+        self.assertIn("50.0%", [t.get_text() for t in ax_c.texts])
+
+        # treatments read back from CSV as numbers still find their peaks
+        sm_num = sm.assign(treatment=sm["treatment"].map(
+            {"T1": 500, "T2": 700, hp.ALL_LABEL: hp.ALL_LABEL}))
+        pred_num = predictions.assign(treatment=[500.0, 500.0, 700.0, 700.0])
+        ml_figures.draw_peak_summary(fig, sm_num, pred_num)
+        self.assertEqual(len(fig.axes[0].patches), 2)
+
 
 class CentredTraces(unittest.TestCase):
     def test_peak_and_nadir_sit_at_one_half(self):

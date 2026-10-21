@@ -793,9 +793,8 @@ class InspectTab(QWidget):
     def _export_data(self):
         if self._export_t is None or self._export_left is None:
             return None
-        (x0, x1), _ = self._pw.plotItem.vb.viewRange()
         left_label, left_y = self._export_left
         right_label, right_y = self._export_right or (None, None)
         return build_export_data(
             self._export_t, left_label, left_y, right_label, right_y,
-            (x0, x1))
+            self._pw, self._vb2)

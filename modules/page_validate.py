@@ -516,12 +516,11 @@ class ValidatePage(Page):
         self._vb2.linkedViewChanged(pi.vb, self._vb2.XAxis)
 
     def _export_data(self):
-        (x0, x1), _ = self._pw.plotItem.vb.viewRange()
         left_label = CHANNELS[self._left_key][1] if self._left_key else ""
         right_label = CHANNELS[self._right_key][1] if self._right_key else ""
         return build_export_data(
             self._time, left_label, self._channel(self._left_key),
-            right_label, self._channel(self._right_key), (x0, x1))
+            right_label, self._channel(self._right_key), self._pw, self._vb2)
 
     def _apply_view_limits(self):
         vb = self._pw.plotItem.getViewBox()

@@ -642,7 +642,7 @@ class SimpleModeDialog(QDialog):
         return build_export_data(
             time, "Pressure (kPa)", self._cur_validate_pres,
             "HIG acc mag (g)", self._cur_validate_hig,
-            (float(time[0]), float(time[-1])))
+            self._pw_validate, self._vb2_validate)
 
     # -- validate step logic (validation_core.py, shared with Annotate) ----
     def _validate_index(self):
@@ -1137,7 +1137,7 @@ class SimpleModeDialog(QDialog):
         self.lbl_report_acc_notes.setWordWrap(True)
         v.addWidget(self.lbl_report_acc_notes)
 
-        # the two model figures side by side, the HIG peak figure (two
+        # the two model figures side by side, the HIG peak figure (three
         # panels) the full width under them
         grp_figs = Section("Prediction figures")
         fv = QGridLayout(grp_figs)
@@ -1145,7 +1145,7 @@ class SimpleModeDialog(QDialog):
         self.canvas_report_bin = FigureCanvas(self.fig_report_bin)
         self.fig_report_mc = Figure(figsize=(4.3, 3.2), dpi=100)
         self.canvas_report_mc = FigureCanvas(self.fig_report_mc)
-        self.fig_report_peaks = Figure(figsize=(5.6, 3.2), dpi=100)
+        self.fig_report_peaks = Figure(figsize=(8.6, 3.2), dpi=100)
         self.canvas_report_peaks = FigureCanvas(self.fig_report_peaks)
         for c in (self.canvas_report_bin, self.canvas_report_mc,
                   self.canvas_report_peaks):
@@ -1207,7 +1207,8 @@ class SimpleModeDialog(QDialog):
         if have_peaks:
             fill_acceleration_table(self.tbl_report_acc, state.acc_summary)
             ml_figures.draw_peak_summary(self.fig_report_peaks,
-                                         state.acc_summary, dark=True)
+                                         state.acc_summary, state.predictions,
+                                         dark=True)
             self.canvas_report_peaks.draw()
 
     def _processing_review_rows(self):

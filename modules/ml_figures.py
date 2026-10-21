@@ -187,81 +187,147 @@ def _peak_groups(acc_summary):
     return acc_summary
 
 
-def draw_peak_summary(fig, acc_summary, dark=False, note=None):
-    """HIG peak analysis in two panels: (a) the number of acceleration
-    events at or over 95, 200 and 400 g, one dot per treatment; (b) the
-    collision probability - recordings with an event of at least 400 g
-    within 0.1 s of the nadir - with its Wilson 95% interval. `note`
-    replaces the "awaiting" message when there is nothing to draw."""
+def _group_label(value):
+    """A treatment as the acceleration table writes it: whole numbers
+    without ".0" (a CSV round trip turns 500 into 500.0), blanks empty."""
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _sensor_peaks(predictions, rows):
+    """Each plotted group's per-recording HIG peaks (g), from the
+    predictions' `hig_peak_g`: [array per row of `rows`], or None when the
+    run has none."""
+    if predictions is None or "hig_peak_g" not in predictions.columns:
+        return None
+    peaks = predictions["hig_peak_g"].astype(float)
+    labels = [_group_label(t) for t in rows["treatment"]]
+    if labels == [hig_peaks.ALL_LABEL] or "treatment" not in predictions.columns:
+        values = [peaks.dropna().values]
+    else:
+        tx = predictions["treatment"].map(_group_label)
+        values = [peaks[tx == label].dropna().values for label in labels]
+    return values if any(len(v) for v in values) else None
+
+
+def _panel_text(ax, letter, corner, fg):
+    """The panel's letter top left ("a)") and its n (and CI) top right."""
+    ax.text(0.03, 0.97, f"{letter})", transform=ax.transAxes, ha="left",
+            va="top", fontsize=11, color=fg)
+    if corner:
+        ax.text(0.97, 0.97, corner, transform=ax.transAxes, ha="right",
+                va="top", multialignment="center", fontsize=9, color=fg)
+
+
+def draw_peak_summary(fig, acc_summary, predictions=None, dark=False,
+                      note=None):
+    """HIG peak analysis in three panels: (a) each recording's peak
+    acceleration (`hig_peak_g` in `predictions`) as a box plot per
+    treatment; (b) the number of acceleration events at or over 95, 200
+    and 400 g, one dot per treatment; (c) the collision probability -
+    recordings with an event of at least 400 g within 0.1 s of the nadir -
+    with its Wilson 95% interval, on 0-100%. `note` replaces the
+    "awaiting" message when there is nothing to draw."""
     fig.clear()
-    ax_a, ax_b = fig.subplots(1, 2)
+    ax_a, ax_b, ax_c = fig.subplots(1, 3)
     fg = fg_colour(dark)
     thresholds = hig_peaks.THRESHOLDS_G
-    ax_a.set_title("a  Event count", fontsize=10, fontweight="bold", loc="left")
-    ax_a.set_ylabel("Acceleration events", fontsize=9)
-    ax_a.set_xlabel("HIG peak", fontsize=9)
-    ax_b.set_title("b  Collision probability", fontsize=9.5,
-                   fontweight="bold", loc="left")
-    ax_b.set_ylabel("Recordings with a collision (%)", fontsize=9)
-    for ax in (ax_a, ax_b):
-        _grid(ax, dark)
-    ax_a.set_xticks(range(len(thresholds)))
-    ax_a.set_xticklabels([f"≥{g} g" for g in thresholds], fontsize=8)
-    ax_a.set_xlim(-0.5, len(thresholds) - 0.5)
+    ax_a.set_ylabel("Peak acceleration (g)", fontsize=9)
+    ax_b.set_ylabel("Acceleration events", fontsize=9)
+    ax_b.set_xlabel("HIG peak", fontsize=9)
+    ax_c.set_ylabel("Collision / blade strike probability (%)", fontsize=9)
+    ax_b.set_xticks(range(len(thresholds)))
+    ax_b.set_xticklabels([f"≥{g} g" for g in thresholds], fontsize=8)
+    ax_b.set_xlim(-0.5, len(thresholds) - 0.5)
+    ax_c.set_ylim(0, 100)
 
     if acc_summary is None or not len(acc_summary):
-        ax_a.set_ylim(0, 10)
-        ax_b.set_ylim(0, 100)
-        ax_b.set_xticks([])
-        _awaiting(ax_a, note or "Awaiting prediction run")
-        for ax in (ax_a, ax_b):
+        ax_a.set_ylim(0, 500)
+        ax_b.set_ylim(0, 10)
+        for ax in (ax_a, ax_c):
+            ax.set_xticks([])
+        for letter, ax in zip("abc", (ax_a, ax_b, ax_c)):
+            _panel_text(ax, letter, None, fg)
+        _awaiting(ax_b, note or "Awaiting prediction run")
+        for ax in (ax_a, ax_b, ax_c):
             style_axes(fig, ax, dark)
         fig.tight_layout()
         return
 
     rows = _peak_groups(acc_summary).reset_index(drop=True)
     n = len(rows)
+    names = [_group_label(t) for t in rows["treatment"]]
+    total = int(rows["n_sensors"].sum())
+    x = np.arange(n)
+
+    def treatment_ticks(ax):
+        ax.set_xticks(x)
+        ax.set_xticklabels(names, rotation=30 if n > 2 else 0,
+                           ha="right" if n > 2 else "center",
+                           fontsize=8 if n > 2 else 9)
+        ax.set_xlim(-0.6, n - 0.4)
+
+    # a: each recording's peak
+    values = _sensor_peaks(predictions, rows)
+    if values is None:
+        ax_a.set_xticks([])
+        ax_a.set_ylim(0, 500)
+        _awaiting(ax_a, "No per-sensor peaks")
+    else:
+        box = ax_a.boxplot(
+            values, positions=x, widths=0.5, patch_artist=True,
+            medianprops={"color": fg, "linewidth": 1.5},
+            whiskerprops={"color": fg}, capprops={"color": fg},
+            flierprops={"marker": "o", "markersize": 4,
+                        "markerfacecolor": "none", "markeredgecolor": fg})
+        for j, patch in enumerate(box["boxes"]):
+            patch.set_facecolor(_PALETTE[j % len(_PALETTE)])
+            patch.set_edgecolor(fg)
+        treatment_ticks(ax_a)
+        top = max(float(np.max(v)) for v in values if len(v))
+        ax_a.set_ylim(0, top * 1.15)
+    _panel_text(ax_a, "a", f"n = {total}", fg)
+
+    # b: events over each threshold
     step = min(0.22, 0.6 / max(n, 1))
     top = 0
     for j, r in rows.iterrows():
         colour = _PALETTE[j % len(_PALETTE)]
         counts = [int(r[f"n_events_{g}g"]) for g in thresholds]
         top = max(top, *counts)
-        x = np.arange(len(thresholds)) + (j - (n - 1) / 2) * step
-        ax_a.scatter(x, counts, s=46, color=colour, edgecolors=fg,
-                     linewidths=0.6, zorder=3, label=str(r["treatment"]))
+        xs = np.arange(len(thresholds)) + (j - (n - 1) / 2) * step
+        ax_b.scatter(xs, counts, s=46, color=colour, edgecolors=fg,
+                     linewidths=0.6, zorder=3, label=names[j])
         if n <= 3:
-            for xi, c in zip(x, counts):
-                ax_a.annotate(str(c), (xi, c), xytext=(6, 0),
+            for xi, c in zip(xs, counts):
+                ax_b.annotate(str(c), (xi, c), xytext=(6, 0),
                               textcoords="offset points", va="center",
                               fontsize=7, color=fg)
-    ax_a.set_ylim(0, top * 1.15 + 1)
+    ax_b.set_ylim(0, top * 1.15 + 1)
     if n > 1:
-        style_legend(ax_a.legend(fontsize=7, loc="upper right"), dark)
+        style_legend(ax_b.legend(fontsize=7, loc="upper right",
+                                 bbox_to_anchor=(1.0, 0.88)), dark)
+    _panel_text(ax_b, "b", f"n = {total}", fg)
 
-    x = np.arange(n)
+    # c: collision probability
     rate = rows["collision_rate"].values * 100
     lo = rate - rows["ci_lo"].values * 100
     hi = rows["ci_hi"].values * 100 - rate
     for j in range(n):
-        ax_b.errorbar(x[j], rate[j], yerr=[[lo[j]], [hi[j]]], fmt="o",
+        ax_c.errorbar(x[j], rate[j], yerr=[[lo[j]], [hi[j]]], fmt="o",
                       markersize=7, color=_PALETTE[j % len(_PALETTE)],
                       markeredgecolor=fg, markeredgewidth=0.6, ecolor=fg,
                       elinewidth=1.1, capsize=5, zorder=3)
-        k = int(rows["n_collision"].iloc[j])
-        total = int(rows["n_sensors"].iloc[j])
-        ax_b.annotate(f"{rate[j]:.1f}%\n({k}/{total})", (x[j], rate[j] + hi[j]),
+        ax_c.annotate(f"{rate[j]:.1f}%", (x[j], rate[j] + hi[j]),
                       xytext=(0, 4), textcoords="offset points", ha="center",
                       va="bottom", fontsize=7, color=fg)
-    ax_b.set_xticks(x)
-    ax_b.set_xticklabels(rows["treatment"].astype(str).values,
-                         rotation=30 if n > 2 else 0,
-                         ha="right" if n > 2 else "center", fontsize=8)
-    ax_b.set_xlim(-0.6, n - 0.4)
-    ax_b.set_ylim(0, min(100, float(np.max(rate + hi)) * 1.25 + 8))
-    ax_b.set_xlabel(f"≥{hig_peaks.COLLISION_G} g within ±"
-                    f"{hig_peaks.NADIR_WINDOW_S:g} s of the nadir", fontsize=8)
-    for ax in (ax_a, ax_b):
+    treatment_ticks(ax_c)
+    _panel_text(ax_c, "c", f"CI = 95%\nn = {total}", fg)
+
+    for ax in (ax_a, ax_b, ax_c):
         style_axes(fig, ax, dark)
     fig.tight_layout()
 
@@ -407,8 +473,9 @@ def render_figures(state, out_dir, formats=("png",), dpi=300):
 
     acc_summary = getattr(state, "acc_summary", None)
     if acc_summary is not None:
-        fig_pk = Figure(figsize=(7.5, 3.6), dpi=100)
-        draw_peak_summary(fig_pk, acc_summary)
+        fig_pk = Figure(figsize=(10.5, 3.6), dpi=100)
+        draw_peak_summary(fig_pk, acc_summary,
+                          getattr(state, "predictions", None))
         out["hig_peak_summary"] = []
         for fmt in formats:
             p = out_dir / f"hig_peak_summary.{fmt}"
