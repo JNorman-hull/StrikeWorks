@@ -190,58 +190,85 @@ class _ValueListDialog(QDialog):
 
 
 class VariableListDialog(QDialog):
-    """Add, rename or remove annotation variables (the columns, not their
-    values). Renaming only changes the display label - the index column
-    name is left alone, so historical data stays under the name it was
-    written with."""
+    """Add, rename, remove and group annotation variables (the columns,
+    not their values): one list per group - Annotations and Position
+    annotations - with a button to move the selected variable to the other.
+    Renaming only changes the display label - the index column name is
+    left alone, so historical data stays under the name it was written
+    with."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Annotation variables")
-        self.resize(360, 400)
+        self.resize(420, 560)
 
         v = QVBoxLayout(self)
         note = QLabel(
-            "Double-click to rename a variable's display label. Removing a "
-            "variable stops it being offered here - recordings already "
-            "carrying its column keep that data.")
+            "Double-click to rename a variable's display label. Position "
+            "annotations show on Annotate while its \"Position annotations\" "
+            "box is ticked. Removing a variable stops it being offered here "
+            "- recordings already carrying its column keep that data.")
         style(note, role="muted")
         note.setWordWrap(True)
         v.addWidget(note)
 
-        self.list = QListWidget()
+        self.lists = {}
+        for group in (asch.MAIN_GROUP, asch.POSITION_GROUP):
+            v.addWidget(QLabel(asch.GROUP_LABELS[group]))
+            lst = QListWidget()
+            lst.itemChanged.connect(self._on_renamed)
+            # one selection across both lists
+            lst.itemSelectionChanged.connect(
+                lambda g=group: self._on_selected(g))
+            self.lists[group] = lst
+            v.addWidget(lst, stretch=1)
+            row = QHBoxLayout()
+            btn_add = QPushButton("Add variable…")
+            btn_add.clicked.connect(lambda _c=False, g=group: self._add_variable(g))
+            row.addWidget(btn_add)
+            row.addStretch()
+            v.addLayout(row)
         self._reload()
-        self.list.itemChanged.connect(self._on_renamed)
-        v.addWidget(self.list, stretch=1)
-
-        add_row = QHBoxLayout()
-        self.btn_add = QPushButton("Add variable…")
-        self.btn_add.clicked.connect(self._add_variable)
-        add_row.addWidget(self.btn_add)
-        add_row.addStretch()
-        v.addLayout(add_row)
 
         btn_row = QHBoxLayout()
+        self.btn_move = QPushButton("Move to the other list")
+        self.btn_move.setToolTip("Move the selected variable between "
+                                 "Annotations and Position annotations.")
+        self.btn_move.clicked.connect(self._move_selected)
+        btn_row.addWidget(self.btn_move)
         btn_remove = QPushButton("Remove selected")
         btn_remove.clicked.connect(self._remove_selected)
-        btn_close = QPushButton("Close")
-        btn_close.clicked.connect(self.accept)
         btn_row.addWidget(btn_remove)
         btn_row.addStretch()
+        btn_close = QPushButton("Close")
+        btn_close.clicked.connect(self.accept)
         btn_row.addWidget(btn_close)
         v.addLayout(btn_row)
 
     def _reload(self):
-        self.list.blockSignals(True)
-        self.list.clear()
-        for var in asch.all_variables():
-            item = QListWidgetItem(var.label)
-            item.setData(Qt.ItemDataRole.UserRole, var.name)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
-            self.list.addItem(item)
-        self.list.blockSignals(False)
-        self._prior_text = {id(self.list.item(i)): self.list.item(i).text()
-                            for i in range(self.list.count())}
+        self._prior_text = {}
+        for group, lst in self.lists.items():
+            lst.blockSignals(True)
+            lst.clear()
+            for var in asch.all_variables(group):
+                item = QListWidgetItem(var.label)
+                item.setData(Qt.ItemDataRole.UserRole, var.name)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+                lst.addItem(item)
+                self._prior_text[id(item)] = item.text()
+            lst.blockSignals(False)
+
+    def _on_selected(self, group):
+        if self.lists[group].selectedItems():
+            for other, lst in self.lists.items():
+                if other != group:
+                    lst.blockSignals(True)
+                    lst.clearSelection()
+                    lst.blockSignals(False)
+
+    def _selected(self):
+        return [item for lst in self.lists.values()
+                for item in lst.selectedItems()]
 
     def _on_renamed(self, item):
         old = self._prior_text.get(id(item), item.text())
@@ -257,20 +284,29 @@ class VariableListDialog(QDialog):
                 asch.upsert(var)
         self._prior_text[id(item)] = new
 
-    def _add_variable(self):
+    def _add_variable(self, group=""):
         label, ok = QInputDialog.getText(
-            self, "Add annotation variable",
+            self, f"Add to {asch.GROUP_LABELS[group]}",
             "Display name (e.g. \"Approach direction\"):")
         label = label.strip()
         if not ok or not label:
             return
         var = asch.AnnotationVariable(
-            name=asch.unique_name(label), label=label, values=[])
+            name=asch.unique_name(label), label=label, values=[], group=group)
         asch.upsert(var)
         self._reload()
 
+    def _move_selected(self):
+        for item in self._selected():
+            var = asch.get(item.data(Qt.ItemDataRole.UserRole))
+            if var is not None:
+                asch.set_group(var.name, asch.POSITION_GROUP
+                               if var.group != asch.POSITION_GROUP
+                               else asch.MAIN_GROUP)
+        self._reload()
+
     def _remove_selected(self):
-        items = self.list.selectedItems()
+        items = self._selected()
         if not items:
             return
         names = ", ".join(i.text() for i in items)

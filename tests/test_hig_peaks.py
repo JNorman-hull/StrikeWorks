@@ -177,6 +177,33 @@ class CentredTraces(unittest.TestCase):
         self.assertAlmostEqual(med["time_bin"].diff().dropna().min(),
                                hp.MEDIAN_BIN)
 
+    def test_one_panel_per_treatment(self):
+        """Prediction's traces are faceted by treatment, whatever else the
+        dataset has (a deployment_id only some recordings carry), and a
+        recording with no treatment is "Not recorded", not "nan"."""
+        from matplotlib.figure import Figure
+        from support import isolate, qt_app
+        from modules import ml_figures
+        from modules.ml_state import PredictionState
+        qt_app()
+        isolate()
+        df = _dataset()
+        df["deployment_id"] = np.where(df["file"] == "c", "Dep1", None)
+        df.loc[df["file"] == "d", "treatment"] = np.nan
+        state = PredictionState()
+        state.acc_summary = pd.DataFrame()
+        state.dataset_df = df
+        state.run_id = "r"
+        state.predictions = pd.DataFrame({"file": list("abcd"),
+                                          "collision": [1, 0, 1, 1]})
+        tr = state.collision_traces()
+        self.assertEqual(set(tr["facet"]), {"T1", "T2", hp.NOT_RECORDED_LABEL})
+        fig = Figure()
+        ml_figures.draw_acc_centred(fig, tr)
+        titles = [ax.get_title() for ax in fig.axes if ax.get_visible()]
+        self.assertEqual([t.split(" (")[0] for t in titles],
+                         sorted(["T1", "T2", hp.NOT_RECORDED_LABEL]))
+
 
 if __name__ == "__main__":
     unittest.main()

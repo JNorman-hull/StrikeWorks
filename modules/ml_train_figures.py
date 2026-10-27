@@ -30,7 +30,7 @@ def _base_axes(fig, dark, xlabel, ylabel, title):
     if ylabel:
         ax.set_ylabel(ylabel, fontsize=9)
     if title:
-        ax.set_title(title, fontsize=10, fontweight="bold")
+        ax.set_title(title, fontsize=10)
     return ax
 
 
@@ -109,7 +109,7 @@ def _heatmap(ax, cm, labels, title, dark):
     ax.set_yticklabels(labels, fontsize=8)
     ax.set_xlabel("Predicted", fontsize=9)
     ax.set_ylabel("True", fontsize=9)
-    ax.set_title(title, fontsize=10, fontweight="bold")
+    ax.set_title(title, fontsize=10)
 
 
 def draw_confusion_binary(fig, metrics, dark=False):
@@ -277,14 +277,12 @@ def draw_confidence_by_class(fig, cv_predictions, metrics, dark=False):
         ax.set_xlabel("P(true class)", fontsize=8)
         if i == 0:
             ax.set_ylabel("Frequency", fontsize=8)
-        ax.set_title(f"True: {cn}\n(n={int(mask.sum())})", fontsize=8,
-                     fontweight="bold")
+        ax.set_title(f"True: {cn}\n(n={int(mask.sum())})", fontsize=8)
         ax.set_xlim([0, 1])
         ax.tick_params(labelsize=7)
         ax.grid(alpha=0.3)
         style_axes(fig, ax, dark)
     fig.suptitle("Prediction confidence by true class", fontsize=10,
-                 fontweight="bold",
                  color=fg_colour(dark))
     fig.tight_layout()
 
@@ -402,10 +400,12 @@ def draw_all(figures, metrics, cv_predictions, curves, dark=False):
 
 
 def render_model_figures(out_dir, metrics, cv_predictions, curves,
-                         formats=("png",), dpi=300):
+                         formats=("png",), dpi=300, problems=None):
     """Render the evaluation figures for one model to files (publication
     styling). Returns {figure name: [path, ...]}, one path per requested
-    format - callers that only want one (`paths[0]`) get the first."""
+    format - callers that only want one (`paths[0]`) get the first. A
+    figure that can't be drawn or saved is left out and, given a
+    `problems` list, noted in it."""
     from matplotlib.figure import Figure
 
     binary = "roc_auc" in (metrics or {}).get("out_of_fold_performance", {})
@@ -456,4 +456,6 @@ def render_model_figures(out_dir, metrics, cv_predictions, curves,
             out[name] = paths
         except Exception as e:
             print(f"Figure '{name}' not drawn: {e}")
+            if problems is not None:
+                problems.append(f"figure '{name}' not drawn ({e})")
     return out

@@ -32,7 +32,7 @@ from .bsm_model import (
 )
 from .canvas import FigureCanvas
 from .cards import MetaCard, RingCard, Spinner
-from .layout import apply_section_defaults, hsplit, scroll_page, Section
+from .layout import hsplit, scroll_page, Section
 from .tables import fill_acceleration_table
 from .theme import CARD_H2, CARD_W2, PALETTE, PINK, muted_label, style
 
@@ -136,7 +136,6 @@ class PredictTab(QWidget):
         ml_figures.draw_acc_centred(self.fig_acc, None, "acc", dark=True)
         ml_figures.draw_acc_centred(self.fig_nadir, None, "nadir", dark=True)
 
-        apply_section_defaults(frame)
 
     def _build_setup_tab(self, frame):
         v = scroll_page(frame)
@@ -518,9 +517,7 @@ class PredictTab(QWidget):
             ("Window length", seq),
             ("Model channels",
              f"{n_chan_present}/{len(req)} present" if req else None),
-            ("Annotations",   f"ground-truth labels present "
-                              f"({m['annotation_column']})"
-                              if m.get("annotated") else "none"),
+            ("Annotations",   s.annotation_status()),
         ])
 
     # ── validation ───────────────────────────────────────────────────────────

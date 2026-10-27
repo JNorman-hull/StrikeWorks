@@ -87,23 +87,19 @@ def pad_time_series(ts, target_length):
 
 
 def derive_strike_type(row, cfg):
-    """Strike type for downstream analysis (generalised from 01_binary_model:
-    works with both passage_type/leading_type and the curated dataset's
-    overall_passage_type/leading_edge_type column names)."""
+    """A recording's strike type, for the performance breakdown
+    (`performance_by_strike_type`): a no-strike recording's own target
+    value; a strike's first non-blank value in the breakdown columns the
+    user chose (`breakdown_columns`, in order - e.g. direct / hub_1 /
+    surface), else its target value. Values are used as they are."""
     target = str(row[cfg["target_column"]])
     if target == str(cfg["negative_class"]):
-        return "no_contact"
-    lead_col = cfg.get("leading_type_column")
-    other_col = cfg.get("other_type_column")
-    if "leading" in target.lower():
-        lead = row.get(lead_col) if lead_col else None
-        if pd.notna(lead) and str(lead).strip():
-            return f"leading_{str(lead).lower().strip().replace(' ', '_')}"
-        return "leading_unknown"
-    other = row.get(other_col) if other_col else None
-    if pd.notna(other) and str(other).strip():
-        return f"other_{str(other).lower().strip().replace(' ', '_')}"
-    return str(target).lower().strip().replace(" ", "_")
+        return target
+    for col in cfg.get("breakdown_columns") or []:
+        value = row.get(col)
+        if value is not None and pd.notna(value) and str(value).strip():
+            return str(value).strip()
+    return target
 
 
 def prepare_data(cfg, kind):
@@ -146,7 +142,7 @@ def prepare_data(cfg, kind):
             f"{n_nan} missing values in the selected channels - MiniRocket "
             "requires complete sequences. Clean the dataset first.")
 
-    n_surface = 0
+    n_unlabelled = 0
     if kind == "binary":
         df["blade_strike"] = (
             df[tcol].astype(str) != str(cfg["negative_class"])).astype(int)
@@ -154,8 +150,7 @@ def prepare_data(cfg, kind):
             lambda r: derive_strike_type(r, cfg), axis=1)
 
         agg = {"blade_strike": "first", "strike_type": "first"}
-        for col in ("treatment", tcol, cfg.get("leading_type_column"),
-                    cfg.get("other_type_column")):
+        for col in ["treatment", tcol] + list(cfg.get("breakdown_columns") or []):
             if col and col in df.columns:
                 agg[col] = "first"
         file_metadata = df.groupby("file").agg(agg).reset_index()
@@ -174,29 +169,19 @@ def prepare_data(cfg, kind):
         log(f"Strike files after removing '{cfg['negative_class']}': "
             f"{df['file'].nunique()}")
 
-        # unlabeled impeller-surface strikes
-        other_col = cfg.get("other_type_column")
-        if other_col and other_col in df.columns:
-            surface_mask = (df[other_col].astype(str).str.lower()
-                            .str.contains("surface", na=False)
-                            & df[rcol].isna())
-        else:
-            surface_mask = pd.Series(False, index=df.index)
-        n_surface = int(df.loc[surface_mask, "file"].nunique())
-        if cfg.get("include_surface_as_region1"):
-            df.loc[surface_mask, rcol] = 1
-            log(f"Relabelled {n_surface} unlabeled surface file(s) as region 1.")
-        elif n_surface:
-            log(f"Dropping {n_surface} unlabeled surface file(s).")
-
+        # strikes without a class level (a surface strike has no pump
+        # region, say) aren't in the region model
+        n_unlabelled = int(df.loc[df[rcol].isna(), "file"].nunique())
+        if n_unlabelled:
+            log(f"Leaving out {n_unlabelled} strike file(s) with no "
+                f"'{rcol}'.")
         df = df[df[rcol].notna()].copy()
         # levels are kept as normalised keys, so a class column may be
         # numeric (pump region) or categorical (e.g. hub_type)
         df["region"] = df[rcol].map(level_key)
 
         agg = {"region": "first"}
-        for col in ("treatment", tcol, cfg.get("leading_type_column"),
-                    cfg.get("other_type_column")):
+        for col in ["treatment", tcol] + list(cfg.get("breakdown_columns") or []):
             if col and col in df.columns:
                 agg[col] = "first"
         file_metadata = df.groupby("file").agg(agg).reset_index()
@@ -242,7 +227,7 @@ def prepare_data(cfg, kind):
 
     return dict(X=X, y=y, file_metadata=file_metadata, channels=channels,
                 max_length=max_length, class_names=class_names,
-                n_surface=n_surface, n_missing_target=n_missing_target,
+                n_unlabelled=n_unlabelled, n_missing_target=n_missing_target,
                 lengths=lengths)
 
 
@@ -338,6 +323,7 @@ def provenance_section(cfg, data, t0, kind):
         "target_kind":      kind,
         "target_column":    cfg["target_column"],
         "negative_class":   cfg.get("negative_class"),
+        "breakdown_columns": list(cfg.get("breakdown_columns") or []),
         "include_values":   cfg.get("include_values"),
         "n_missing_target_excluded": data["n_missing_target"],
         "class_weighting":  cfg.get("class_weighting", "balanced"),
@@ -638,13 +624,13 @@ def run_cv_multiclass(cfg, data, out_dir, cv_idx, t0):
     metrics = {
         "model": ("MiniRocket + RidgeClassifierCV "
                   f"(collapsed: {cfg.get('collapse_desc', '')})"),
-        "scheme": cfg.get("collapse_scheme", ""),
         "target": f"{cfg['region_column']} (collapsed)",
+        # the annotation column the classes come from, for prediction's
+        # ground-truth comparison (ml_state.ground_truth_for)
+        "region_column": cfg["region_column"],
         "region_to_class": {str(k): int(v)
                             for k, v in cfg["region_to_class"].items()},
-        "include_surface_as_region1":
-            "Y" if cfg.get("include_surface_as_region1") else "N",
-        "n_surface_files": data["n_surface"],
+        "n_unlabelled_files": data["n_unlabelled"],
         "n_samples": int(len(y)),
         "n_classes": n_classes,
         "class_names": class_names,

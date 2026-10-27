@@ -1,0 +1,49 @@
+{
+  "annotation_variables": {
+    "variables": [
+      {
+        "name": "passage_type",
+        "label": "Overall passage type",
+        "values": ["no_contact", "leading_edge", "other"],
+        "group": ""
+      },
+      {
+        "name": "leading_type",
+        "label": "Leading edge type",
+        "values": ["direct", "indirect"],
+        "group": ""
+      },
+      {
+        "name": "other_type",
+        "label": "Other contact type",
+        "values": ["hub_0", "hub_1", "hub_2", "surface"],
+        "group": ""
+      },
+      {
+        "name": "concentric_pump_region",
+        "label": "Concentric pump region",
+        "values": ["1", "2", "3", "4", "5"],
+        "group": ""
+      },
+      {
+        "name": "strike_location",
+        "label": "Sensor strike location",
+        "values": ["1", "2", "3", "4", "5"],
+        "group": "position"
+      },
+      {
+        "name": "approach_orientation",
+        "label": "Approach orientation",
+        "values": ["1", "2", "3"],
+        "group": "position"
+      }
+    ],
+    "show_position": false
+  },
+  "model_training": {
+    "target_column": "passage_type",
+    "negative_class": "no_contact",
+    "region_column": "concentric_pump_region",
+    "breakdown_columns": ["leading_type", "other_type"]
+  }
+}

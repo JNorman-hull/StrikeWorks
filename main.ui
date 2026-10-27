@@ -168,7 +168,7 @@
              </property>
              <property name="font">
               <font>
-               <family>Segoe UI Semibold</family>
+               <family>Segoe UI</family>
                <pointsize>12</pointsize>
                <weight>7</weight>
                <italic>false</italic>
@@ -884,43 +884,6 @@
                   </property>
                   <property name="text">
                    <string>Raw data processing</string>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="QPushButton" name="btn_validate">
-                  <property name="sizePolicy">
-                   <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-                    <horstretch>0</horstretch>
-                    <verstretch>0</verstretch>
-                   </sizepolicy>
-                  </property>
-                  <property name="minimumSize">
-                   <size>
-                    <width>0</width>
-                    <height>45</height>
-                   </size>
-                  </property>
-                  <property name="font">
-                   <font>
-                    <family>Segoe UI</family>
-                    <pointsize>10</pointsize>
-                    <weight>50</weight>
-                    <italic>false</italic>
-                    <bold>false</bold>
-                   </font>
-                  </property>
-                  <property name="cursor">
-                   <cursorShape>PointingHandCursor</cursorShape>
-                  </property>
-                  <property name="layoutDirection">
-                   <enum>Qt::LeftToRight</enum>
-                  </property>
-                  <property name="styleSheet">
-                   <string notr="true">background-image: url(:/icons/images/icons/cil-check-alt.png);</string>
-                  </property>
-                  <property name="text">
-                   <string>Segmentation</string>
                   </property>
                  </widget>
                 </item>

@@ -339,7 +339,8 @@ def build_model_report_html(entry, image_paths=None, embed_images=False,
 
 def export_model_report(entry, target_dir, app_version=""):
     """Write report.html + figures + metrics for one model. Returns the dir."""
-    target_dir = Path(target_dir)
+    # written through the long-path form, past Windows' 260-character limit
+    target_dir = ml_report.long_path(target_dir)
     name = (Path(entry.model_path).stem if entry.model_path
             else f"session_{entry.kind}")
     out = target_dir / f"ModelReport_{name}"
@@ -390,9 +391,9 @@ def export_model_report(entry, target_dir, app_version=""):
                 if src.exists():
                     shutil.copy(src, out / extra)
 
-    body = build_model_report_html(entry, image_paths=figs,
-                                   embed_images=True,
-                                   app_version=app_version)
+    body = build_model_report_html(
+        entry, image_paths={fig: paths[0] for fig, paths in figs.items()},
+        embed_images=True, app_version=app_version)
     (out / "report.html").write_text(ml_report.wrap_html_document(body),
                                      encoding="utf-8")
-    return out
+    return ml_report.short_path(out)

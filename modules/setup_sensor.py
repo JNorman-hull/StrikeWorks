@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (
 from . import sensor_config
 from .cards import MetaCard
 from .layout import (
-    apply_section_defaults, discard_widget, scroll_page, Section,
+    discard_widget, scroll_page, Section,
 )
 from .theme import muted_label, style
 
@@ -281,7 +281,6 @@ class SensorTab(QWidget):
         v.addLayout(row3)
 
         v.addStretch()
-        apply_section_defaults(frame)
 
     # ── configuration list ───────────────────────────────────────────────────
     def _reload_list(self, select=None):

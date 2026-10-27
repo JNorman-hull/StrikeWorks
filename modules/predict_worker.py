@@ -54,9 +54,10 @@ import numpy as np
 import pandas as pd
 
 try:
-    from . import hig_peaks
+    from . import hig_peaks, model_labels
 except ImportError:          # run as a script from source (worker_launch.py)
     import hig_peaks
+    import model_labels
 
 # Shim: models saved with numpy >= 2.0 pickle references to numpy._core.*,
 # which does not exist on numpy 1.x. Register every numpy.core submodule
@@ -91,15 +92,14 @@ _DEFAULT_CHANNELS = [
 ]
 
 # per-recording metadata carried into predictions.csv when present.
-# The second group are the annotation/ground-truth columns a curated
-# StrikeWorks dataset may contain - carrying them through lets the GUI
-# compare predictions against ground truth without re-reading the dataset.
+# The annotation columns the models were trained on and broken down by
+# (model_labels.label_columns) are carried too, whatever they are called -
+# so the GUI can compare predictions against them without re-reading the
+# dataset.
 _META_COLS = [
     "treatment", "n_contact", "c_1_type",
     "clear_passage", "centre_hub_contact", "blade_contact",
     "deployment_id", "run",
-    "overall_passage_type", "leading_edge_type", "other_type",
-    "concentric_pump_region",
 ]
 
 
@@ -137,10 +137,10 @@ def _pad(ts, target):
     return np.vstack([ts, np.tile(ts[-1], (target - len(ts), 1))])
 
 
-def _file_metadata(df):
+def _file_metadata(df, extra=()):
     meta_cols = ["file"]
-    for col in _META_COLS:
-        if col in df.columns:
+    for col in list(_META_COLS) + list(extra):
+        if col in df.columns and col not in meta_cols:
             meta_cols.append(col)
     return df.groupby("file")[meta_cols[1:]].first().reset_index()
 
@@ -218,7 +218,12 @@ def main():
     bin_max_len = bin_metrics["max_sequence_length"]
 
     df        = pd.read_csv(args.data, low_memory=False)
-    file_meta = _file_metadata(df)
+    mc_metrics = None
+    if args.mc_model and args.mc_metrics:
+        with open(args.mc_metrics) as f:
+            mc_metrics = json.load(f)
+    file_meta = _file_metadata(
+        df, model_labels.label_columns(bin_metrics, mc_metrics))
 
     bin_model = joblib.load(bin_model_path)
     X_bin     = _build_X(df, file_meta, bin_channels, bin_max_len)
@@ -236,9 +241,7 @@ def main():
     class_names = []
     mc_channels = None
     mc_max_len  = None
-    if args.mc_model and args.mc_metrics:
-        with open(args.mc_metrics) as f:
-            mc_metrics = json.load(f)
+    if mc_metrics is not None:
         class_names  = mc_metrics.get("class_names", [])
         mc_channels  = mc_metrics.get("channels", _DEFAULT_CHANNELS)
         mc_max_len   = mc_metrics["max_sequence_length"]

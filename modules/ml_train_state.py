@@ -19,6 +19,13 @@ the same run. Results are held per model in ``self.results``.
 
 The scientific workflow is enforced here: cross-validation first, then an
 explicit user decision, then the final deployment models, then deployment.
+
+Labelling is the user's choice, made on the Train page: the target column,
+its "no strike" value, the class column and its grouping into classes,
+and the columns the performance is broken down by. Nothing is guessed
+from column names or values. A dataset starts from the settings file's
+"model_training" section (shipped defaults: config/default_settings.json),
+each choice applied only if the dataset has it.
 """
 import json
 import re
@@ -34,6 +41,7 @@ import pandas as pd
 
 from PySide6.QtCore import QObject, QThread, Signal
 
+from . import annotation_schema as asch
 from . import sensor_config, settings
 from .worker_launch import worker_command
 
@@ -76,57 +84,11 @@ def level_key(value):
         return str(value).strip()
 
 
-# Starting points for grouping the levels of the multiclass target. These
-# are templates, not fixed schemes: each is applied to whatever levels the
-# chosen column actually has, and the result is fully editable afterwards
-# (levels can be regrouped, renamed, added to or excluded).
-GROUPING_PRESETS = {
-    "each": {
-        "desc": "Each level its own class",
-        "build": lambda keys: [{"name": f"region_{k}", "levels": [k]}
-                               for k in keys],
-    },
-    "model_1_1": {
-        "desc": "Pipeline model_1_1 - 1 | 2+3 | 4+5",
-        "build": lambda keys: _template(
-            keys, [("region_1", ["1"]), ("region_2_3", ["2", "3"]),
-                   ("region_4_5", ["4", "5"])]),
-    },
-    "model_1_2": {
-        "desc": "Pipeline model_1_2 - 1 | 2+3+4+5",
-        "build": lambda keys: _template(
-            keys, [("region_1", ["1"]), ("region_2_5", ["2", "3", "4", "5"])]),
-    },
-    "custom": {
-        "desc": "Custom grouping",
-        "build": None,          # keeps whatever the user has built
-    },
-}
-
-
-def _template(keys, spec):
-    """Apply a named template to the levels actually present.
-
-    Levels the template does not mention are appended as their own class
-    rather than silently dropped, so a dataset with an extra level (a sixth
-    region, say) still starts from a complete, sensible grouping.
-    """
-    present = set(keys)
-    groups, claimed = [], set()
-    for name, wanted in spec:
-        levels = [k for k in keys if k in wanted and k in present]
-        if levels:
-            groups.append({"name": name, "levels": levels})
-            claimed.update(levels)
-    for k in keys:
-        if k not in claimed:
-            groups.append({"name": f"class_{k}", "levels": [k]})
-    return groups or [{"name": "class_1", "levels": list(keys)}]
-
-# preferred target columns, in order
-_TARGET_PREFERENCE = ["passage_type", "overall_passage_type"]
+# the settings file's section holding Model training's starting choices
+# (settings.read_section; shipped defaults in config/default_settings.json)
+_DEFAULTS_SECTION = "model_training"
 _NON_TARGET_COLS = {"file", "deployment_id", "run", "time_s"}
-_NON_CHANNEL_COLS = {"time_s", "run", "concentric_pump_region"}
+_NON_CHANNEL_COLS = {"time_s", "run"}
 
 
 class _StreamThread(QThread):
@@ -152,7 +114,7 @@ class _StreamThread(QThread):
                     tail.append(ln)
                     self.line.emit(ln)
                     if ln.strip():
-                        # also in the dev console (it tees print)
+                        # also in the console (it tees print)
                         print(f"[train-worker] {ln}")
             self.done.emit(proc.returncode, "\n".join(tail))
         except Exception as e:
@@ -193,9 +155,10 @@ class TrainingState(QObject):
         self.train_multiclass = True         # stage 2 on/off
         self.positive_label = "blade_strike"
         self.region_column = None            # any level column, not just region
-        self.grouping_preset = "model_1_1"
         self.region_groups = []              # [{"name", "levels": [key]}]
-        self.include_surface = False
+        # columns a strike's type is read from, for the performance
+        # breakdown (train_worker.derive_strike_type)
+        self.breakdown_columns = []
 
         # variables
         self.channels = canonical_channels()
@@ -263,10 +226,9 @@ class TrainingState(QObject):
         self.dataset_path = path
         settings.add_recent_training_dataset(path)
 
-        self._autodetect_columns()
-        # a new dataset invalidates any hand-built grouping
-        self.grouping_preset = self.default_preset_for(
-            [k for k, _d, _c in self.region_levels()])
+        self._apply_defaults()
+        # a new dataset starts its grouping again
+        self.region_groups = []
         self.rebuild_region_groups()
         self.dataset_meta = self._compute_meta()
         # a fresh dataset invalidates any previous run
@@ -284,31 +246,28 @@ class TrainingState(QObject):
         self.deploy_version = None
         self.out_dir = None
 
-    def _autodetect_columns(self):
+    @staticmethod
+    def defaults():
+        """Model training's starting choices (settings "model_training")."""
+        return settings.read_section(_DEFAULTS_SECTION)
+
+    def _apply_defaults(self):
+        """Start a newly loaded dataset from the settings' choices - each
+        only if the dataset has it; anything else is left for the user."""
         df = self.dataset_df
-        cands = self.target_candidates()
-        if self.target_column not in cands:
-            self.target_column = None
-        if self.target_column is None:
-            for pref in _TARGET_PREFERENCE:
-                if pref in cands:
-                    self.target_column = pref
-                    break
-            if self.target_column is None and cands:
-                self.target_column = cands[0]
-
+        d = self.defaults()
+        target = d.get("target_column")
+        self.target_column = (target if target in self.target_candidates()
+                              else None)
         self.include_values = None
-        self._autodetect_negative()
-
-        self.region_column = next(
-            (c for c in df.columns if "region" in c.lower()), None)
-        if self.region_column is None:
-            cands = [c for c in self.class_column_candidates()
-                     if c != self.target_column]
-            self.region_column = cands[0] if cands else None
-        # the full pipeline (binary + region model) is the default whenever
-        # the dataset can support it
+        self._default_negative()
+        region = d.get("region_column")
+        self.region_column = (region if region in self.class_column_candidates()
+                              else None)
+        # the region model is trained whenever there is a class column
         self.train_multiclass = self.region_column is not None
+        self.breakdown_columns = [c for c in d.get("breakdown_columns") or []
+                                  if c in self.breakdown_candidates()]
 
         # keep only channels that exist; fall back to the canonical defaults
         present = [c for c in self.channels if c in df.columns]
@@ -316,12 +275,11 @@ class TrainingState(QObject):
             present = [c for c in canonical_channels() if c in df.columns]
         self.channels = present
 
-    def _autodetect_negative(self):
-        vals = self.target_values()
-        self.negative_class = next(
-            (v for v in vals
-             if "no" in v.lower() and "contact" in v.lower()),
-            vals[0] if vals else None)
+    def _default_negative(self):
+        """The settings' "no strike" value, if the target column has it."""
+        value = self.defaults().get("negative_class")
+        self.negative_class = (str(value) if value is not None
+                               and str(value) in self.target_values() else None)
 
     def target_candidates(self):
         """Categorical columns that could define the target."""
@@ -336,9 +294,7 @@ class TrainingState(QObject):
             series = per_file[col]
             if series.dtype == object and 2 <= series.dropna().nunique() <= 15:
                 out.append(col)
-        # preferred names first
-        out.sort(key=lambda c: (c not in _TARGET_PREFERENCE, c))
-        return out
+        return sorted(out)
 
     def target_values(self):
         """Distinct file-level values of the target column."""
@@ -350,28 +306,23 @@ class TrainingState(QObject):
                 .dropna().astype(str).unique().tolist())
         return sorted(vals)
 
-    def leading_type_column(self):
-        df = self.dataset_df
-        if df is None:
-            return None
-        for c in ("leading_type", "leading_edge_type"):
-            if c in df.columns:
-                return c
-        return None
-
-    def other_type_column(self):
-        df = self.dataset_df
-        return "other_type" if df is not None \
-            and "other_type" in df.columns else None
+    def breakdown_candidates(self):
+        """Columns a strike's type can be read from for the performance
+        breakdown: any per-file column with a few levels, but the target."""
+        return [c for c in self.class_column_candidates()
+                if c != self.target_column]
 
     def channel_candidates(self):
         """Numeric sensor columns usable as model input channels."""
         df = self.dataset_df
         if df is None:
             return []
+        # annotation columns are labels, not sensor channels, even when
+        # numeric (a pump region, say)
+        labels = {v.name for v in asch.all_variables()}
         out = []
         for col in df.columns:
-            if col in _NON_CHANNEL_COLS or col in _NON_TARGET_COLS:
+            if col in _NON_CHANNEL_COLS or col in _NON_TARGET_COLS                     or col in labels:
                 continue
             if pd.api.types.is_numeric_dtype(df[col]):
                 out.append(col)
@@ -423,7 +374,7 @@ class TrainingState(QObject):
         neg = str(self.negative_class)
         n_neg = int((s == neg).sum())
         n_pos = int((s != neg).sum())
-        return [(neg, n_neg), ("blade_strike (all others)", n_pos)]
+        return [(neg, n_neg), (self.positive_label or "blade_strike", n_pos)]
 
     def class_column_candidates(self):
         """Columns usable as the multiclass target: any per-file column with
@@ -439,8 +390,7 @@ class TrainingState(QObject):
             n = per_file[col].dropna().nunique()
             if 2 <= n <= 20:
                 out.append(col)
-        out.sort(key=lambda c: ("region" not in c.lower(), c))
-        return out
+        return sorted(out)
 
     def region_levels(self):
         """[(key, display, n_files)] for the multiclass target column,
@@ -471,36 +421,19 @@ class TrainingState(QObject):
                 return (1, k)
         return [(k, k, counts[k]) for k in sorted(counts, key=_sort)]
 
-    def default_preset_for(self, keys):
-        """The preset that best fits the levels present: the pipeline's
-        pump-region template when the levels look like regions 1-5,
-        otherwise one class per level."""
-        if keys and set(keys) <= {"1", "2", "3", "4", "5"}:
-            return "model_1_1"
-        return "each"
-
-    def rebuild_region_groups(self, preset=None):
-        """Regenerate the level grouping from a preset (or keep custom).
-
-        A custom grouping only makes sense for the levels it was built
-        against; when the column or dataset changes underneath it and no
-        level is left assigned, fall back to a generated grouping rather
-        than leaving the user with nothing selected.
-        """
-        if preset is not None:
-            self.grouping_preset = preset
+    def rebuild_region_groups(self):
+        """Keep the user's grouping for the levels still present (a level
+        that's gone drops out of its class); with nothing left - a new
+        dataset or class column - start from each level as its own class,
+        named as the level, for the user to group and rename."""
         keys = [k for k, _d, _c in self.region_levels()]
-        build = GROUPING_PRESETS.get(self.grouping_preset, {}).get("build")
-        if build is None:
-            groups = [{"name": g["name"],
-                       "levels": [k for k in g["levels"] if k in keys]}
-                      for g in self.region_groups]
-            if any(g["levels"] for g in groups):
-                self.region_groups = groups
-                return
-            self.grouping_preset = self.default_preset_for(keys)
-            build = GROUPING_PRESETS[self.grouping_preset]["build"]
-        self.region_groups = build(keys)
+        groups = [{"name": g["name"],
+                   "levels": [k for k in g["levels"] if k in keys]}
+                  for g in self.region_groups]
+        if any(g["levels"] for g in groups):
+            self.region_groups = groups
+            return
+        self.region_groups = [{"name": k, "levels": [k]} for k in keys]
 
     def region_to_class(self):
         """{level key: class index} for the worker."""
@@ -540,16 +473,15 @@ class TrainingState(QObject):
             setattr(self, k, v)
         if "target_column" in kw:
             self.include_values = None
-            self._autodetect_negative()
+            self._default_negative()
+            self.breakdown_columns = [c for c in self.breakdown_columns
+                                      if c != self.target_column]
         # anything that changes which levels exist rebuilds the grouping;
-        # switching the class variable also re-picks the fitting preset,
-        # since a template built for pump regions means nothing for, say,
-        # a hub_type column
+        # a new class column starts it again
         if {"target_column", "negative_class", "region_column",
                 "include_values"} & set(kw):
             if "region_column" in kw:
-                self.grouping_preset = self.default_preset_for(
-                    [k for k, _d, _c in self.region_levels()])
+                self.region_groups = []
             self.rebuild_region_groups()
         self.config_changed.emit()
         self.validate()
@@ -596,6 +528,8 @@ class TrainingState(QObject):
         counts = self.binary_class_counts()
         if not self.target_column:
             add("fail", "Binary target", "Choose a target column.")
+        elif self.negative_class is None:
+            add("fail", "Binary target", "Choose the null value (0).")
         elif not counts or len([c for _, c in counts if c > 0]) < 2:
             add("fail", "Binary target",
                 "The current target definition yields fewer than two classes.")
@@ -619,8 +553,7 @@ class TrainingState(QObject):
         if self.train_multiclass:
             if self.region_column is None or self.region_column not in df.columns:
                 add("fail", "Region model",
-                    "The multiclass stage needs a pump-region column "
-                    "(e.g. concentric_pump_region).")
+                    "Choose the class column for the multiclass stage.")
             else:
                 mc_counts = self.region_class_counts()
                 nonzero = [c for _, c in mc_counts if c > 0]
@@ -662,8 +595,7 @@ class TrainingState(QObject):
             "target_column": self.target_column,
             "negative_class": self.negative_class,
             "positive_label": self.positive_label or "blade_strike",
-            "leading_type_column": self.leading_type_column(),
-            "other_type_column": self.other_type_column(),
+            "breakdown_columns": list(self.breakdown_columns),
             "include_values": (sorted(self.include_values)
                                if self.include_values is not None else None),
             "channels": list(self.channels),
@@ -688,7 +620,6 @@ class TrainingState(QObject):
             names = self.region_class_names()
             cfg.update({
                 "region_column": self.region_column,
-                "collapse_scheme": self.grouping_preset,
                 "collapse_desc": " | ".join(
                     "%s=%s" % (g["name"], "+".join(g["levels"]))
                     for g in self.region_groups if g["levels"]),
@@ -697,7 +628,6 @@ class TrainingState(QObject):
                 "class_names": names,
                 "level_groups": [{"name": g["name"], "levels": list(g["levels"])}
                                  for g in self.region_groups],
-                "include_surface_as_region1": bool(self.include_surface),
             })
         return cfg
 
@@ -838,9 +768,9 @@ class TrainingState(QObject):
             "package_versions": tr.get("package_versions", na),
             "target_column": tr.get("target_column", na),
             "negative_class": tr.get("negative_class", na),
+            "breakdown_columns": tr.get("breakdown_columns") or [],
             "include_values": tr.get("include_values") or "all",
             "region_column": self.region_column if mc_m else None,
-            "collapse_scheme": mc_m.get("scheme") if mc_m else None,
             "level_groups": ([{g["name"]: g["levels"]}
                               for g in self.region_groups]
                              if mc_m else None),

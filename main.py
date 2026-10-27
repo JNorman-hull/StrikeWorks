@@ -37,12 +37,13 @@ if len(sys.argv) > 2 and sys.argv[1] == "--worker":
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QMainWindow, QPushButton, QTableWidget, QVBoxLayout,
+    QApplication, QFrame, QLabel, QMainWindow, QPushButton, QTableWidget,
+    QVBoxLayout,
 )
 
 from modules import settings, startup, table_copy, theme, win_utils
 from modules.bsm_state import BSMState
-from modules.dev_console import DevConsole
+from modules.dev_console import DevConsole, install_capture
 from modules.layout import scroll_area, when_visible
 from modules.page_annotate import AnnotationPage
 from modules.page_bsm_analysis import BSMAnalysisPage
@@ -60,7 +61,6 @@ from modules.page_settings import SettingsDialog
 from modules.page_setup import SetupPage
 from modules.page_simple_mode import SimpleModeDialog
 from modules.page_stub import StubPage
-from modules.page_validate import ValidatePage
 from modules.plot_widgets import configure_pyqtgraph
 from modules.session_state import SessionState
 from modules.tables import style_table
@@ -70,6 +70,10 @@ from modules.ui_functions import UIFunctions
 from modules.ui_main import Ui_MainWindow
 
 os.environ["QT_FONT_DPI"] = "96"  # consistent sizing at display scaling above 100 %
+
+# the full app's name, in its title bar and on the taskbar (StrikeWorks
+# itself is the Simple mode window)
+TOOLKIT_NAME = "StrikeWorks (development toolkit)"
 
 
 def _print_status(msg, _ms=0):
@@ -112,7 +116,6 @@ class MainWindow(QMainWindow):
         "btn_initiate_deployment": ("deployment_page", None),
         # Sensor processing
         "btn_process":             ("process_page", None),
-        "btn_validate":            ("validate_page", None),
         "btn_data_analysis":       ("data_analysis_page", None),
         # Validate and annotate
         "btn_annotate":            ("annotation_page", None),
@@ -132,7 +135,7 @@ class MainWindow(QMainWindow):
     }
 
     # built but not offered in the sidebar for now (ROADMAP.md, "Hidden for now")
-    _HIDDEN_PAGES = ("btn_validate", "btn_data_analysis", "btn_dataset")
+    _HIDDEN_PAGES = ("btn_data_analysis", "btn_dataset")
 
     # greyed out until Home's "Advanced mode" enables them
     _SIDEBAR_NAV_BUTTONS = (
@@ -146,18 +149,27 @@ class MainWindow(QMainWindow):
         theme.apply(QApplication.instance())
         self.ui = ui = Ui_MainWindow()
         ui.setupUi(self)
-        self.setWindowTitle("StrikeWorks")
+        # the taskbar tells the two windows apart
+        self.setWindowTitle(TOOLKIT_NAME)
         # set on the window as well as the app: the frameless window can
         # otherwise lose the app-level icon on the taskbar
         self.setWindowIcon(QIcon(str(startup.ICON_PATH)))
+        # the app icon top left in the sidebar, and no name beside it or
+        # in the footer (the title bar has it)
+        ui.titleLeftApp.hide()
+        ui.creditsLabel.hide()
+        badge = QLabel(ui.topLogo)
+        badge.setPixmap(startup.icon_pixmap(ui.topLogo.width()))
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setGeometry(ui.topLogo.rect())
         # (the header text, titleRightInfo, comes from main.ui)
 
         ui.toggleButton.clicked.connect(lambda: UIFunctions.toggleMenu(self, True))
         UIFunctions.uiDefinitions(self)
 
         configure_pyqtgraph()
-        # hidden until opened from Settings; `self` is only a reference for
-        # its demo runners, not its Qt parent
+        # the console: hidden until opened from Settings > Console; `self`
+        # is only a reference for its demo runners, not its Qt parent
         self.dev_console = DevConsole(self)
 
         # Every page builds its own contents (layout.Page) and is added to
@@ -172,7 +184,6 @@ class MainWindow(QMainWindow):
         # validation and dataset building
         self.setup_page = self._page(SetupPage(self))
         self.process_page = self._page(ProcessPage(self, self.session_state))
-        self.validate_page = self._page(ValidatePage(self, self.session_state))
         self.dataset_page = self._page(DatasetPage(self, self.session_state))
         self.deployment_page = self._page(
             DeploymentPage(self, self.session_state))
@@ -287,8 +298,8 @@ class MainWindow(QMainWindow):
         move("btn_export_animations", "btn_dataset", 0)
 
     def _build_bottom_menu(self):
-        """Pin "Simple mode" and "Export and report" to the bottom of the
-        sidebar, in the template's `#bottomMenu` frame."""
+        """Pin "Go to StrikeWorks" and "Export and report" to the bottom of
+        the sidebar, in the template's `#bottomMenu` frame."""
         ui = self.ui
         ui.topMenu.layout().removeWidget(ui.btn_export_report)
         bottom = QFrame(ui.leftMenuFrame)
@@ -297,7 +308,7 @@ class MainWindow(QMainWindow):
         bottom_v.setContentsMargins(0, 0, 0, 0)
         bottom_v.setSpacing(0)
 
-        btn = ui.btn_simple_mode_nav = QPushButton("Simple mode")
+        btn = ui.btn_simple_mode_nav = QPushButton("Go to StrikeWorks")
         btn.setObjectName("btn_simple_mode_nav")
         btn.setSizePolicy(ui.btn_export_report.sizePolicy())
         btn.setMinimumSize(QSize(0, 45))
@@ -306,11 +317,11 @@ class MainWindow(QMainWindow):
         btn.setLayoutDirection(Qt.LeftToRight)
         btn.setStyleSheet(
             "background-image: url(:/icons/images/icons/cil-external-link.png);")
-        btn.clicked.connect(self.openSimpleMode)
-        # the University brandmark above them, white on the sidebar (it
-        # shrinks to the collapsed icon strip)
-        ui.uoh_brandmark = startup.Brandmark(84, reverse=True)
-        bottom_v.addWidget(ui.uoh_brandmark)
+        btn.clicked.connect(self.goToStrikeWorks)
+        # the small logo above them, white on the sidebar (gone when the
+        # sidebar collapses to its icon strip)
+        ui.sidebar_logo = startup.ScaledLogo(200)
+        bottom_v.addWidget(ui.sidebar_logo)
         bottom_v.addSpacing(8)
         bottom_v.addWidget(btn)
         bottom_v.addWidget(ui.btn_export_report)
@@ -444,11 +455,23 @@ class MainWindow(QMainWindow):
                 state.models_changed.emit()
             _print_status(f"Models folder: {new_dir} - {msg}")
 
+    def goToStrikeWorks(self):
+        """The sidebar's "Go to StrikeWorks": this window closes and
+        StrikeWorks takes over, as at start-up - the app ends when
+        StrikeWorks is closed, unless it's left through "Development
+        toolkit", which shows this window again."""
+        self.hide()
+        if not self.openSimpleMode():
+            QApplication.instance().quit()
+
     def openSimpleMode(self):
-        """Run Simple mode. True if it was left through "Development
-        toolkit" (which shows this window itself), False otherwise."""
-        self.simple_mode_dialog.exec()
-        return self.simple_mode_dialog.went_to_dev_toolkit
+        """Run StrikeWorks (the guided window - simple_mode_dialog),
+        maximised. True if it was left through "Development toolkit"
+        (which shows this window itself), False otherwise."""
+        dlg = self.simple_mode_dialog
+        dlg.setWindowState(dlg.windowState() | Qt.WindowState.WindowMaximized)
+        dlg.exec()
+        return dlg.went_to_dev_toolkit
 
     # ── window events ───────────────────────────────────────────────────────
     def resizeEvent(self, event):
@@ -486,6 +509,15 @@ def _option(name):
 
 
 if __name__ == "__main__":
+    # a console that can't show a character the app prints (→, ≥) shows a
+    # stand-in rather than stopping whatever printed it
+    for _stream in (sys.stdout, sys.stderr):
+        if _stream is not None and hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(errors="replace")
+    if _option("--demo") is None:
+        # everything printed from here on, errors included, goes to the
+        # console and this session's log file (dev_console.py)
+        install_capture(settings.SETTINGS_FILE.parent / "logs")
     startup.set_windows_app_id()
     startup.ensure_default_folders()
     app = QApplication(sys.argv)

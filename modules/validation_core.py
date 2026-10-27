@@ -164,9 +164,17 @@ def counts_text(stems, status):
     return "\n".join(lines)
 
 
+def legend_tooltip(view, ok, warn, bad, accent, plain):
+    """What a validation list's colours mean, as the list's tooltip (on
+    the list and its viewport, so it shows over the rows too)."""
+    html = legend_html(ok, warn, bad, accent, plain)
+    view.setToolTip(html)
+    view.viewport().setToolTip(html)
+
+
 def legend_html(ok, warn, bad, accent, plain, columns=1):
-    """What the list colours mean - shown under every validation list, in
-    one column (a narrow list) or two (under a wide one, to save height)."""
+    """What the list colours mean - in one column, or two (to save
+    height)."""
     def row(colour, text):
         return (f"<span style='color:{colour};font-size:14px;'>&#9679;</span>"
                 f"&nbsp;{text}")
@@ -399,45 +407,21 @@ def join_annotations(df, index_df):
     return df
 
 
-# older annotation spreadsheets' column names and values (e.g. the demo
-# pack's annotations CSV) -> the app's annotation variables
-# (annotation_schema.DEFAULT_VARIABLES)
-_LEGACY_ANNOTATION_COLS = {
-    "passage_type": "overall_passage_type",
-    "leading_type": "leading_edge_type",
-}
-_PASSAGE_TYPE_MAP = {
-    "no contact": "no_contact",
-    "leading edge strike": "leading_edge",
-    "other impeller collision": "other",
-}
 
 
 def import_annotations_csv(lib_root, csv_path):
     """Stamp a spreadsheet of per-sensor annotations onto the index.
 
     The CSV needs a `file` (or `sens_file`) column naming each sensor, plus
-    any of the annotation variables - native names (overall_passage_type,
-    ...) or the older spreadsheet's (passage_type, leading_type, with
-    "No contact"/"Leading edge strike"/... values, mapped across). Only
-    sensors already in the index are touched. Returns (n_sensors,
-    [variables imported])."""
-    ann = pd.read_csv(csv_path, low_memory=False)
+    columns named as the annotation variables (annotation_schema); their
+    values are imported as written in the file. Only sensors already in
+    the index are touched. Returns (n_sensors, [variables imported])."""
+    # as text, so values arrive as written (a 2 stays "2", not 2.0)
+    ann = pd.read_csv(csv_path, dtype=str)
     if "file" not in ann.columns and "sens_file" in ann.columns:
         ann = ann.rename(columns={"sens_file": "file"})
     if "file" not in ann.columns:
         raise ValueError("The CSV needs a 'file' column naming each sensor.")
-    for old, new in _LEGACY_ANNOTATION_COLS.items():
-        if old in ann.columns and new not in ann.columns:
-            ann = ann.rename(columns={old: new})
-    if "overall_passage_type" in ann.columns:
-        mapped = (ann["overall_passage_type"].astype(str).str.strip()
-                  .str.lower().map(_PASSAGE_TYPE_MAP))
-        ann["overall_passage_type"] = mapped.fillna(ann["overall_passage_type"])
-    if "concentric_pump_region" in ann.columns:
-        ann["concentric_pump_region"] = (
-            pd.to_numeric(ann["concentric_pump_region"], errors="coerce")
-            .astype("Int64").astype(str).replace("<NA>", ""))
     names = [v.name for v in asch.all_variables() if v.name in ann.columns]
     if not names:
         raise ValueError("No annotation columns found in the CSV "

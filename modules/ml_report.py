@@ -28,6 +28,8 @@ same prediction results and metadata as the Predict and Inspect tabs.
 import base64
 import json
 import math
+import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -36,6 +38,33 @@ from . import hig_peaks, ml_figures, severity
 _DARK  = "#1e3a5f"
 _MUTED = "#64748b"
 _BORD  = "#cbd5e1"
+
+_LONG_PREFIX = "\\\\?\\"
+
+
+def long_path(path):
+    """`path` in Windows' extended-length form (\\\\?\\C:\\...), which file
+    calls accept past the 260-character MAX_PATH limit - a report folder
+    deep in OneDrive otherwise loses every file whose path runs over it.
+    Unchanged on other systems; `short_path` undoes it."""
+    s = str(path)
+    if sys.platform != "win32" or s.startswith(_LONG_PREFIX):
+        return Path(path)
+    s = os.path.abspath(s)
+    if s.startswith("\\\\"):                    # \\server\share\...
+        return Path(_LONG_PREFIX + "UNC\\" + s[2:])
+    return Path(_LONG_PREFIX + s)
+
+
+def short_path(path):
+    """`path` without `long_path`'s prefix - for showing it, or handing it
+    to Explorer or the browser."""
+    s = str(path)
+    if s.startswith(_LONG_PREFIX + "UNC\\"):
+        return Path("\\\\" + s[len(_LONG_PREFIX) + 4:])
+    if s.startswith(_LONG_PREFIX):
+        return Path(s[len(_LONG_PREFIX):])
+    return Path(path)
 
 
 def _wilson_ci(k, n, z=1.96):
@@ -116,9 +145,10 @@ def _img_tag(path, embed, width_cm=None):
         return ""
     if embed:
         data = base64.b64encode(path.read_bytes()).decode("ascii")
-        src = f"data:image/png;base64,{data}"
+        mime = "svg+xml" if path.suffix.lower() == ".svg" else "png"
+        src = f"data:image/{mime};base64,{data}"
     else:
-        src = path.as_uri()
+        src = short_path(path).as_uri()
     width = round(width_cm * _PX_PER_CM) if width_cm else 560
     return (f"<img src='{src}' width='{width}' "
             f"style='margin:8px 16px 8px 0;max-width:100%;height:auto;'/>")
@@ -314,8 +344,8 @@ def build_report_html(state, image_paths=None, embed_images=False,
             for state_, label, detail in s.checks]
     h.append(_kv_table(rows) if rows else
              f"<p style='color:{_MUTED};'>{na}</p>")
-    if s.dataset_meta.get("annotated"):
-        h.append("<p>The dataset carries ground-truth annotation labels; "
+    if s.ground_truth_column() is not None:
+        h.append("<p>The dataset carries the model's own annotation labels; "
                  "prediction accuracy can be reviewed per recording on the "
                  "Inspect tab.</p>")
 

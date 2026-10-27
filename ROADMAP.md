@@ -5,8 +5,8 @@ was built up to 2026-09-25 is the ROADMAP.md in commit `a4fa30c`. The code
 clean-up of September 2026 is recorded in `REFACTOR_PLAN.md` (finished; its
 conventions apply to new code).
 
-The whole pipeline is exercised end to end by the two demos (Dev console,
-`modules/dev_runner.py`, and `tests/test_demos.py`) from a demo pack
+The whole pipeline is exercised end to end by the two demos (Settings >
+Console, `modules/dev_runner.py`, and `tests/test_demos.py`) from a demo pack
 (`demo_data`, a library-shaped folder of recordings and annotations).
 
 ## Hidden for now
@@ -16,7 +16,6 @@ place named alongside it.
 
 | Feature | Where it was | Hidden by | Why |
 |---|---|---|---|
-| Segmentation | Sensor processing | `MainWindow._HIDDEN_PAGES` (main.py) | Superseded by Validate and annotate's validation (Auto process all + Save + next) |
 | Data analysis | Sensor processing | `MainWindow._HIDDEN_PAGES` | Still a stub (see below) |
 | Advanced dataset options | Validate and annotate | `MainWindow._HIDDEN_PAGES` | Its one remaining tool, Bind training data, is in Model training > Train's Training dataset box (`modules/bind_datasets.py`) |
 | Annotate > Reporting tab | Validate and annotate > Annotate | `AnnotationPage._build` (page_annotate.py) | Its summary is already in the central report (`report_center.annotation_section`) |
@@ -53,7 +52,8 @@ unused Qt parts (`Qt6Quick`, `Qt6Qml`, `Qt6Pdf`, `opengl32sw.dll`, ~30
 MB); `opencv-python-headless` instead of `opencv-python` (a package
 change).
 
-**Delineation tool (Segmentation page).** Seven windows covering the full
+**Delineation tool.** (The hidden Segmentation page it was planned for
+was deleted on 27 October 2026.) Seven windows covering the full
 time series: start/end trim handles placed first with everything else
 relative to them, the nadir window fixed-width and centred, pre-/post-nadir
 windows of fixed duration (default 300 ms), ROI 1/2 and 6/7 the remaining

@@ -8,13 +8,20 @@
 recording, and the known values of each.
 
 A small dataclass, a section of the settings file and a ``notifier`` the
-page follows, as in ``sensor_config.py``. The values
-themselves go onto the sensor's index row (``deployment_index.
-set_row_values``); this module only tracks which columns exist.
+page follows, as in ``sensor_config.py``. The values themselves go onto
+the sensor's index row (``deployment_index.set_row_values``) under the
+variable's name; this module only tracks which variables exist.
 
-The default columns are the ones the dataset build (``page_dataset.
-_LABEL_COLS``) and prediction (``ml_state.ANNOTATION_COLUMNS``) read, so a
-dataset annotated from an external CSV reads the same way.
+The variables are read from the settings file's "annotation_variables"
+section - until it has one, from the shipped defaults
+(`config/default_settings.json`, `settings.read_section`). None are
+written in code, and nothing is renamed or recoded: a variable's name is
+the column it reads and writes, as it is.
+
+Variables come in two groups: annotations, always shown, and position
+annotations (`POSITION_GROUP`), which Annotate shows only while its
+"Position annotations" box is ticked (`show_position`). Manage variables
+adds, renames, removes and moves variables between the two.
 """
 from dataclasses import asdict, dataclass, field
 
@@ -25,6 +32,10 @@ from . import settings
 # this module's section of the settings file (settings.py)
 _SECTION = "annotation_variables"
 
+MAIN_GROUP, POSITION_GROUP = "", "position"
+GROUP_LABELS = {MAIN_GROUP: "Annotations",
+                POSITION_GROUP: "Position annotations"}
+
 
 @dataclass
 class AnnotationVariable:
@@ -33,6 +44,7 @@ class AnnotationVariable:
     name: str
     label: str = ""
     values: list = field(default_factory=list)
+    group: str = MAIN_GROUP      # MAIN_GROUP or POSITION_GROUP
 
     def __post_init__(self):
         if not self.label:
@@ -44,24 +56,8 @@ class AnnotationVariable:
     @classmethod
     def from_dict(cls, data: dict) -> "AnnotationVariable":
         return cls(name=data["name"], label=data.get("label", ""),
-                  values=list(data.get("values", [])))
-
-
-# The default columns (page_dataset._LABEL_COLS), each starting with the
-# values the dataset build expects (page_dataset._STRIKE_TYPES /
-# _REGION_ORDER).
-DEFAULT_VARIABLES = [
-    AnnotationVariable(
-        name="overall_passage_type", label="Overall passage type",
-        values=["no_contact", "leading_edge", "other"]),
-    AnnotationVariable(
-        name="leading_edge_type", label="Leading edge type", values=[]),
-    AnnotationVariable(
-        name="other_type", label="Other contact type", values=[]),
-    AnnotationVariable(
-        name="concentric_pump_region", label="Concentric pump region",
-        values=["1", "2", "3", "4", "5"]),
-]
+                  values=[str(v) for v in data.get("values", [])],
+                  group=data.get("group", MAIN_GROUP))
 
 
 class _Notifier(QObject):
@@ -82,23 +78,42 @@ def _load():
         _store = [AnnotationVariable.from_dict(d) for d in
                   settings.read_section(_SECTION).get("variables", [])]
     except (KeyError, TypeError, ValueError) as e:
-        print(f"Saved annotation variables can't be read, using the "
-              f"defaults: {e}")
+        print(f"Saved annotation variables can't be read: {e}")
         _store = []
-    if not _store:
-        _store = [AnnotationVariable.from_dict(v.to_dict())
-                  for v in DEFAULT_VARIABLES]
     return _store
 
 
 def _write():
-    settings.write_section(
-        _SECTION, {"variables": [v.to_dict() for v in _load()]})
+    section = dict(settings.read_section(_SECTION))
+    section["variables"] = [v.to_dict() for v in _load()]
+    settings.write_section(_SECTION, section)
 
 
-def all_variables() -> list:
-    """Every annotation variable, in the order they were added."""
-    return list(_load())
+def all_variables(group=None) -> list:
+    """Every annotation variable, in the order they were added - or only
+    those in `group` ("" for the main group)."""
+    return [v for v in _load() if group is None or v.group == group]
+
+
+def set_group(name, group):
+    """Move variable `name` to `group` ("" or POSITION_GROUP)."""
+    var = get(name)
+    if var is None or var.group == group:
+        return
+    var.group = group
+    _write()
+    notifier.changed.emit()
+
+
+def show_position() -> bool:
+    """Whether Annotate shows the position annotations."""
+    return bool(settings.read_section(_SECTION).get("show_position", False))
+
+
+def set_show_position(on: bool):
+    section = dict(settings.read_section(_SECTION))
+    section["show_position"] = bool(on)
+    settings.write_section(_SECTION, section)
 
 
 def get(name) -> AnnotationVariable:

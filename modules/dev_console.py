@@ -4,19 +4,33 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Dev mode: a console window showing everything the app prints (the
-pages' `[status]` lines, the demos' `[demo]` lines, worker output) - the
-only log a windowed build has. It also runs the demos (dev_runner.py).
+"""The console: everything the app prints - the pages' `[status]` lines,
+the demos' `[demo]` lines, worker output, warnings and errors - from the
+moment it starts, and the demos (dev_runner.py). Opened from Settings >
+Console.
 
-Turned on from Settings ("Dev mode", remembered between sessions).
-Installing swaps sys.stdout/sys.stderr for a tee that still writes to the
-original stream when there is one (a windowed build has none - both are
-None). The window has no Qt parent, so no window-modal dialog blocks it.
+`install_capture()` (main.py, first thing) swaps sys.stdout/sys.stderr for
+tees that still write to the original stream when there is one (a windowed
+build has none - both are None), keep the last lines in memory for the
+console window, and append every line to this session's log file
+(`logs/strikeworks_<date>_<time>.log` beside the settings file; the last
+`_KEEP_LOGS` are kept). Unhandled errors - in a slot, a thread or start-up
+- are printed there with their traceback, Qt's own warnings too, and a
+hard crash (Python's faulthandler) writes its traceback into the same
+file, so the log of a session that crashed is already on disk.
+
+The window has no Qt parent, so no window-modal dialog blocks it.
 """
+import faulthandler
+import io
 import sys
+import threading
+import traceback
+from collections import deque
 from datetime import datetime
+from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, Qt, QtMsgType, Signal, qInstallMessageHandler
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
@@ -26,17 +40,60 @@ from PySide6.QtWidgets import (
 from .layout import Section
 from .theme import style
 
+_KEEP_LINES = 5000      # in memory, for the console window
+_KEEP_LOGS = 20         # session log files kept in logs/
 
-class _StreamTee(QObject):
-    """Wraps a real stream (stdout/stderr) - which may be None in a
-    windowed build: writes still reach it when it exists, and each write
-    also emits a signal. Qt auto-queues the connected slot onto the GUI
-    thread when the write comes from a worker QThread."""
-    written = Signal(str)
 
-    def __init__(self, real_stream):
+class _Capture(QObject):
+    """The session's output: the last lines (`lines`), the log file, and
+    `line` for the console window. Qt queues `line` onto the GUI thread
+    when the write comes from a worker QThread."""
+    line = Signal(str)
+
+    def __init__(self, log_path):
         super().__init__()
+        self.lines = deque(maxlen=_KEEP_LINES)
+        self.log_path = log_path
+        self._lock = threading.Lock()
+        self._file = None
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            self._file = open(log_path, "a", encoding="utf-8", buffering=1)
+        except OSError:
+            self.log_path = None       # an unwritable folder: memory only
+
+    @property
+    def file(self):
+        return self._file
+
+    def add(self, text):
+        ts = datetime.now().strftime("%H:%M:%S")
+        out = []
+        for line in text.rstrip("\n").split("\n"):
+            if line.strip():
+                out.append(f"[{ts}] {line}")
+        if not out:
+            return
+        with self._lock:
+            self.lines.extend(out)
+            if self._file is not None:
+                try:
+                    self._file.write("\n".join(out) + "\n")
+                except (OSError, ValueError):
+                    pass
+        for line in out:
+            self.line.emit(line)
+
+
+class _StreamTee:
+    """Stands in for stdout/stderr: writes still reach the real stream
+    when there is one, and each complete line goes to the capture."""
+
+    def __init__(self, real_stream, capture):
         self.real = real_stream
+        self._capture = capture
+        self._partial = ""
+        self._lock = threading.Lock()   # threads print too
 
     def write(self, text):
         if self.real is not None:
@@ -44,11 +101,20 @@ class _StreamTee(QObject):
                 self.real.write(text)
             except (OSError, ValueError):
                 pass    # a closed stream; reporting it would loop back here
-        if text.strip():
-            self.written.emit(text)
+        with self._lock:
+            self._partial += text
+            done = None
+            if "\n" in self._partial:
+                done, self._partial = self._partial.rsplit("\n", 1)
+        if done is not None:
+            self._capture.add(done)
         return len(text)
 
     def flush(self):
+        with self._lock:
+            rest, self._partial = self._partial, ""
+        if rest:
+            self._capture.add(rest)
         if self.real is not None:
             try:
                 self.real.flush()
@@ -58,54 +124,130 @@ class _StreamTee(QObject):
     def isatty(self):
         return False
 
+    def fileno(self):
+        # the real stream's, where there is one (a run from PyCharm)
+        if self.real is None:
+            raise io.UnsupportedOperation("no file behind this stream")
+        return self.real.fileno()
+
+
+_capture = None
+
+
+def capture():
+    """This session's capture, or None before `install_capture()` (the
+    tests, which leave stdout alone)."""
+    return _capture
+
+
+def install_capture(log_dir):
+    """Capture the app's output from here on - see the module docstring.
+    Safe to call twice."""
+    global _capture
+    if _capture is not None:
+        return _capture
+    log_dir = Path(log_dir)
+    _prune_logs(log_dir)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    _capture = _Capture(log_dir / f"strikeworks_{stamp}.log")
+    sys.stdout = _StreamTee(sys.stdout, _capture)
+    sys.stderr = _StreamTee(sys.stderr, _capture)
+    if _capture.file is not None:
+        # a hard crash (access violation, abort) writes its traceback here
+        faulthandler.enable(file=_capture.file, all_threads=True)
+    sys.excepthook = _excepthook
+    threading.excepthook = lambda args: _excepthook(
+        args.exc_type, args.exc_value, args.exc_traceback,
+        where=f"thread {args.thread.name if args.thread else '?'}")
+    qInstallMessageHandler(_qt_message)
+    print(f"StrikeWorks started - this session's log: "
+          f"{_capture.log_path or 'not saved (logs folder not writable)'}")
+    return _capture
+
+
+def _excepthook(exc_type, exc, tb, where=None):
+    """Unhandled errors: printed with their traceback (so to the console
+    and the log file) rather than lost - a windowed build has no stderr."""
+    lines = "".join(traceback.format_exception(exc_type, exc, tb))
+    print(f"ERROR - unhandled{f' in {where}' if where else ''}:\n{lines}",
+          file=sys.stderr)
+    try:
+        sys.stderr.flush()
+    except (OSError, ValueError):
+        pass
+
+
+_QT_LEVELS = {QtMsgType.QtWarningMsg: "warning",
+              QtMsgType.QtCriticalMsg: "critical",
+              QtMsgType.QtFatalMsg: "fatal"}
+
+
+def _qt_message(mode, _context, message):
+    level = _QT_LEVELS.get(mode)
+    if level is not None:        # debug/info messages are left out
+        print(f"[Qt {level}] {message}", file=sys.stderr)
+
+
+def _prune_logs(log_dir):
+    """Keep the newest `_KEEP_LOGS - 1` session logs (this one makes the
+    last)."""
+    try:
+        logs = sorted(log_dir.glob("strikeworks_*.log"))
+    except OSError:
+        return
+    for old in logs[:max(0, len(logs) - (_KEEP_LOGS - 1))]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
+
 
 class DevConsole(QDialog):
-    """The log window and demo controls; one instance, `MainWindow.
+    """The console window and demo controls; one instance, `MainWindow.
     dev_console`. It has no Qt parent: a window-modal dialog (Settings,
-    Simple mode) blocks its parent's whole window group on Windows.
-    `app_window` is only a reference, for the demos."""
+    the StrikeWorks window) blocks its parent's whole window group on
+    Windows. `app_window` is only a reference, for the demos."""
 
     def __init__(self, app_window=None):
         super().__init__(None)
         self._app_window = app_window
         self._runner = None
-        self.setWindowTitle("Dev console")
+        self.setWindowTitle("Console")
         self.setMinimumSize(760, 460)
         self.setModal(False)
-        self._out_tee = None
-        self._err_tee = None
         self._build()
+        cap = capture()
+        if cap is not None:
+            for line in cap.lines:
+                self.log.appendPlainText(line)
+            cap.line.connect(self.log.appendPlainText)
 
     def _build(self):
         v = QVBoxLayout(self)
         v.setContentsMargins(12, 12, 12, 12)
         v.setSpacing(8)
 
-        title = QLabel("Dev console")
+        title = QLabel("Console")
         style(title, role="heading")
         v.addWidget(title)
-        subtitle = QLabel(
-            "Live app output - every status message plus worker/prediction "
-            "output, while Dev mode is on.")
-        style(subtitle, role="note")
-        subtitle.setWordWrap(True)
-        v.addWidget(subtitle)
 
         grp_demo = Section("Demo")
         dv = QHBoxLayout(grp_demo)
         from .dev_runner import available_demos
-        labels = {"simple": "Simple mode (no training)",
-                  "advanced": "Advanced (full workflow, trains a model)"}
+        labels = {"simple": "StrikeWorks (no training)",
+                  "advanced": "Development toolkit (full workflow, trains a "
+                              "model)"}
         self.cmb_demo = QComboBox()
         for mode in available_demos():
             self.cmb_demo.addItem(labels[mode], mode)
         self.cmb_demo.setToolTip(
-            "Simple drives Simple mode's own wizard exactly as clicking "
-            "through it would. Advanced drives the full app's pages: blade "
-            "strike estimate, study design, deployment, processing, "
-            "validation + annotation, training, deployment, prediction, "
-            "report. Both use the demo pack (demo_data) from the libraries "
-            "folder and build a 'StrikeWorks_demo' library there.")
+            "StrikeWorks drives the StrikeWorks window's own steps exactly "
+            "as clicking through them would. Development toolkit drives the "
+            "full app's pages: blade strike estimate, study design, "
+            "deployment, processing, validation + annotation, training, "
+            "deployment, prediction, report. Both use the demo pack "
+            "(demo_data) from the libraries folder and build a "
+            "'StrikeWorks_demo' library there.")
         dv.addWidget(self.cmb_demo, stretch=1)
         self.btn_run = QPushButton("Run demo")
         style(self.btn_run, role="primary")
@@ -127,47 +269,37 @@ class DevConsole(QDialog):
 
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
-        self.log.setMaximumBlockCount(5000)
+        self.log.setMaximumBlockCount(_KEEP_LINES)
         self.log.setFont(QFont("Consolas", 9))
         v.addWidget(self.log, stretch=1)
 
+        cap = capture()
+        if cap is not None and cap.log_path is not None:
+            lbl_file = QLabel(f"Saved as it goes to {cap.log_path}")
+            style(lbl_file, role="muted")
+            lbl_file.setWordWrap(True)
+            lbl_file.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse)
+            v.addWidget(lbl_file)
+
         row = QHBoxLayout()
         btn_clear = QPushButton("Clear")
+        btn_clear.setToolTip("Clear this window (the log file keeps "
+                             "everything).")
         btn_clear.clicked.connect(self.log.clear)
         row.addWidget(btn_clear)
         btn_save = QPushButton("Save log...")
         btn_save.clicked.connect(self._save)
         row.addWidget(btn_save)
+        if cap is not None and cap.log_path is not None:
+            btn_folder = QPushButton("Open logs folder")
+            btn_folder.clicked.connect(self._open_logs_folder)
+            row.addWidget(btn_folder)
         row.addStretch()
         btn_close = QPushButton("Close")
         btn_close.clicked.connect(self.hide)
         row.addWidget(btn_close)
         v.addLayout(row)
-
-    def _append(self, text):
-        ts = datetime.now().strftime("%H:%M:%S")
-        for line in text.rstrip("\n").split("\n"):
-            if line:
-                self.log.appendPlainText(f"[{ts}] {line}")
-
-    def set_enabled(self, enabled: bool):
-        """Install/uninstall the stdout+stderr tee and show/hide the
-        window. Safe to call repeatedly with the same value."""
-        if enabled and self._out_tee is None:
-            self._out_tee = _StreamTee(sys.stdout)
-            self._err_tee = _StreamTee(sys.stderr)
-            self._out_tee.written.connect(self._append)
-            self._err_tee.written.connect(self._append)
-            sys.stdout = self._out_tee
-            sys.stderr = self._err_tee
-            self._append("Dev mode on - console attached.")
-            self.bring_up()
-        elif not enabled and self._out_tee is not None:
-            sys.stdout = self._out_tee.real
-            sys.stderr = self._err_tee.real
-            self._out_tee = None
-            self._err_tee = None
-            self.hide()
 
     def bring_up(self):
         self.show()
@@ -177,6 +309,12 @@ class DevConsole(QDialog):
     def _set_on_top(self, on):
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, on)
         self.show()   # changing window flags hides the window
+
+    def _open_logs_folder(self):
+        from . import win_utils
+        cap = capture()
+        if cap is not None and cap.log_path is not None:
+            win_utils.open_folder(cap.log_path.parent)
 
     # ── demos (dev_runner.py) ────────────────────────────────────────────────
     def _run_demo(self):
@@ -192,8 +330,8 @@ class DevConsole(QDialog):
                 "Put the 'demo_data' folder into the libraries folder:\n"
                 f"{settings.get_libraries_dir()}")
             return
-        detail = ("Simple mode's wizard, end to end - no training, "
-                  "predicts with the deployed default model."
+        detail = ("The StrikeWorks window's steps, end to end - no "
+                  "training, predicts with the deployed default model."
                   if mode == "simple" else
                   "The full app's pages, end to end - including training "
                   "and deploying a new model version (several minutes).")
@@ -206,7 +344,7 @@ class DevConsole(QDialog):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        self.set_enabled(True)
+        self.bring_up()
         self.chk_on_top.setChecked(True)
         self._runner = RUNNERS[mode](self._app_window)
         self._runner.finished.connect(self._on_demo_finished)
@@ -236,7 +374,7 @@ class DevConsole(QDialog):
 
     def _save(self):
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save dev console log", "strikeworks_dev_log.txt",
+            self, "Save console log", "strikeworks_log.txt",
             "Text files (*.txt)")
         if not path:
             return
@@ -244,4 +382,4 @@ class DevConsole(QDialog):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(self.log.toPlainText())
         except Exception as exc:
-            self._append(f"Save failed: {exc}")
+            print(f"Save failed: {exc}")

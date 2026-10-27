@@ -12,11 +12,16 @@ from PySide6.QtCore import QThread, Signal
 from . import sensor_config
 
 
+# ProcessThread.done codes
+DONE_OK, DONE_ERRORS, DONE_STOPPED = 0, 1, 2
+
+
 class ProcessThread(QThread):
     """Runs the sensor configuration's parser over a batch of
-    recordings off the GUI thread, logging each one."""
+    recordings off the GUI thread, logging each one. `request_stop()`
+    stops it before the next recording (the one in hand finishes)."""
     log = Signal(str)
-    done = Signal(int)          # 0 = all ok, 1 = some failed
+    done = Signal(int)          # DONE_OK, DONE_ERRORS or DONE_STOPPED
     processed = Signal(str)     # stem of each successfully processed file
 
     def __init__(self, files, out_dir, root, config):
@@ -25,6 +30,10 @@ class ProcessThread(QThread):
         self._out_dir = out_dir
         self._root = root
         self._config = config
+        self._stop = False
+
+    def request_stop(self):
+        self._stop = True
 
     def run(self):
         # the reader is whichever one the sensor configuration names
@@ -32,6 +41,10 @@ class ProcessThread(QThread):
 
         n_ok = n_fail = 0
         for f in self._files:
+            if self._stop:
+                self.log.emit(f"\n-- Stopped: {len(self._files) - n_ok - n_fail} "
+                              "recording(s) not processed.")
+                break
             self.log.emit(f"\n-- Processing: {f['stem']}")
             try:
                 _, summary = parse(f["paths"], self._out_dir, self._config)
@@ -46,4 +59,5 @@ class ProcessThread(QThread):
                 n_fail += 1
 
         self.log.emit(f"\n-- Complete: {n_ok} succeeded, {n_fail} failed.")
-        self.done.emit(0 if n_fail == 0 else 1)
+        self.done.emit(DONE_STOPPED if self._stop
+                       else DONE_OK if n_fail == 0 else DONE_ERRORS)

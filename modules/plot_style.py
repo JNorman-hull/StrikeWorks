@@ -47,13 +47,20 @@ EXPORT_RIGHT_COLOR = "red"      # secondary (right-axis) channel, e.g. higacc
 
 
 # ── margins ──────────────────────────────────────────────────────────────────
+# room above the plot for the side axes' top value ("1.0"), drawn centred on
+# its tick - half of it otherwise falls outside the plot and is cut off
+TOP_MARGIN_PX = 12
+
+
 def reserve_top_margin(plot_item):
-    """Blank top axis, shown once at setup - no page ever plots on it."""
+    """Blank top axis, shown once at setup - no page ever plots on it - a
+    fixed TOP_MARGIN_PX tall."""
     plot_item.showAxis("top")
     ax = plot_item.getAxis("top")
     ax.setStyle(showValues=False)
     ax.setPen(None)
     ax.setLabel("")
+    ax.setHeight(TOP_MARGIN_PX)
 
 
 def set_right_axis_active(plot_item, active):

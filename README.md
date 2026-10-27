@@ -12,11 +12,12 @@ in the app under **About**.
 
 ## Workflow
 
-The app opens in **Simple mode**, a guided wizard: Deploy > Process >
-Validate > Predict > Report. **Development toolkit** opens the full app,
-where the same steps have their own pages alongside blade strike modelling,
-study design and model training. Deploy, Process and Validate run the same
-code in both modes:
+The app opens as **StrikeWorks**, a guided window: Deploy > Process >
+Validate > Predict > Report. **Development toolkit** (its bottom-left
+button, behind a password - `devmode_123`) opens the full app, where the
+same steps have their own pages alongside blade strike modelling, study
+design and model training; its sidebar's **Go to StrikeWorks** goes back.
+Deploy, Process and Validate run the same code in both:
 
 * **Deployment editor** (`modules/deployment_editor.py`) - session library,
   library status, sensor, deployment and treatment table. *Create & open
@@ -35,6 +36,10 @@ code in both modes:
   review and moves to the next flagged sensor. *Save and export* binds the
   saved windows and annotations into one dataset and hands it to Model
   prediction.
+* **Sensor lists** (`modules/sensor_sort.py`) - every list of sensors
+  (Validate, Annotate, Export animations) has the same **Sort by**: needs
+  review first, sensor name, or recording time (from the name); one
+  choice, remembered, shared by every list.
 
 ### Raw folder layout
 
@@ -53,8 +58,8 @@ read as Run 1. `modules/raw_layout.py` is the one definition of this.
 | Mathematical blade strike modelling | **Calculator** (CEN 2025 collision and mortality, scaly and eel together), **Analysis and reporting** (results and sensitivity figures, report export) |
 | Setup and deploy | **Sensor configuration**, **Study design** (Wilson-interval sample size), **Create and edit deployment** |
 | Sensor processing | **Raw data processing** (filters, summary cards, file inventory, console) |
-| Validate and annotate | **Annotate** (validation plus annotation values, video lookup), **Export animations** (sensor graph synced onto high-speed video) |
-| Model training | **Train** (with Model deployment beside it), **Evaluate**, **Misclassification analysis** |
+| Validate and annotate | **Annotate** (the same page as StrikeWorks's Validate step - `modules/page_annotate.py` - the library's filters, the validation screen and an Annotations and notes window), **Export animations** (sensor graph synced onto high-speed video) |
+| Model training | **Train** (training dataset, labelling, inputs, cross-validation, and one Model box: train, final model, deploy), **Evaluate**, **Misclassification analysis** |
 | Model prediction | **Predict**, **Inspect**, **Model comparison** (model vs BSM collision and mortality per treatment) |
 | Export and report | one dialog that builds a single HTML report from any page's section |
 
@@ -91,21 +96,68 @@ overrides the location.
 Settings > Appearance chooses the theme, applied the next time the app
 starts: **StrikeWorks (dark)**, or **University of Hull** (the brand's
 Core, low-intensity look: white pages, Ink Blue sidebar, Chartreuse and
-Mid Blue accents, brand colours in charts; the StrikeWorks logo outlined
-for white, `PyDracula_vertical_white.png`). The University brandmark
-(`images/images/uoh_brandmark.svg`) is the one University logo, in the same
-places in both themes - the loading splash, Simple mode's welcome and
-Download pages, About, and the foot of the sidebar above Simple mode - Ink
-Blue on light backgrounds, white on dark (`startup.brandmark`,
-`startup.Brandmark`).
+Mid Blue accents, brand colours in charts). The app's one logo is
+StrikeWorks with the University of Hull beside it (`images/strikeworks_uoh_*.png`),
+in the same places in both themes - the loading splash, StrikeWorks's Home
+and Finished steps and bottom bar, the toolkit's Home and the foot of its
+sidebar, About - white on dark backgrounds, navy (`_dark`) on light; the
+300 dpi files for the big ones, 96 dpi for the small (`startup.logo_label`,
+`startup.ScaledLogo`). The small badge at the top of the toolkit's sidebar
+stays.
+
+### Annotations
+
+Annotate records each sensor's annotation variables (`modules/
+annotation_schema.py`) on its row of the library's sensor index, under
+each variable's name. The variables live in the settings file; until it
+has its own list, they come from the shipped defaults,
+`config/default_settings.json` (none are written in code):
+
+| Variable | Label | Values |
+|---|---|---|
+| `passage_type` | Overall passage type | no_contact, leading_edge, other |
+| `leading_type` | Leading edge type | direct, indirect |
+| `other_type` | Other contact type | hub_0, hub_1, hub_2, surface |
+| `concentric_pump_region` | Concentric pump region | 1-5 |
+| `strike_location` *(position)* | Sensor strike location | 1-5 |
+| `approach_orientation` *(position)* | Approach orientation | 1-3 |
+
+Position annotations show on Annotate while its *Position annotations*
+box is ticked (unticked by default; remembered). Manage variables adds,
+renames and removes variables and moves them between the two lists; each
+variable's Edit… adds, renames or removes its values.
+Misclassification analysis shows the variables the model's training
+dataset has a column for - position ones too, under their own heading.
+Its corrections go to the corrected training
+dataset and to the recording's row of its library's sensor index, so
+Annotate and the next export carry them.
+
+**Names and values are used as they are.** Nothing renames or recodes a
+label anywhere - not in the index, a dataset, Bind training data or the
+workers - so datasets to be bound together must use the same names and
+spellings (Bind training data says when files' columns differ). On the
+Train page you choose the target column and its null value (0); each of
+the target's values is coded 0, 1 (the positive value, `blade_strike` by
+default) or left out, so the derived 0/1 variable is in plain view. Then
+the class column (its levels grouped into classes by you - each level
+starts as its own class) and the columns the performance is broken down by
+(each
+strike's type: direct, indirect, hub_0 ...). A loaded dataset starts from
+the settings' `model_training` choices (`passage_type`, `no_contact`,
+`concentric_pump_region`, `leading_type` + `other_type`), each only if the
+dataset has it. Prediction doesn't use annotations; it compares its
+predictions with them only on the binary model's own terms - its target
+column holding its "no strike" value (`modules/model_labels.py`) - and
+otherwise says it can't compare.
 
 ### Windows
 
 Both windows use the standard Windows frame (minimise, maximise, snap,
 resize; `UIConfig.ENABLE_CUSTOM_TITLE_BAR` brings back the template's own
-title bar). Each opens sized and centred within the screen's work area -
-the screen less the taskbar (`win_utils.fit_to_screen`) - and every page
-(and every Simple mode step) sits in a scroll area, so a small screen
+title bar). Each opens maximised; restored, it is sized and centred within
+the screen's work area - the screen less the taskbar
+(`win_utils.fit_to_screen`) - and every page (and every StrikeWorks step)
+sits in a scroll area, so a small screen
 scrolls a page rather than pushing the window past its edge. Figures are
 redrawn once a resize is over - on releasing a splitter handle or the
 window's edge - and stretched until then (`modules/canvas.py`), so
@@ -119,7 +171,8 @@ palette in `theme.THEMES`.
 
 Model training runs `modules/train_worker.py` in a subprocess: a binary
 strike model and, when region labels exist, a multiclass pump-region model.
-Model deployment (on the Train tab, beside Train) trains the final
+The Model box on the Train tab trains it (the worker's output goes to
+the app Console - a button beside Train model), then trains the final
 model and writes `binary<v>.joblib`, `multiclass<v>.joblib` and a
 `BladeStrikeModel_v<v>/` package into the models folder (Settings), where
 Model prediction finds them. Prediction runs `modules/predict_worker.py` in
@@ -131,12 +184,12 @@ its window, counted over 95, 200 and 400 g. Only a peak over 400 g is a
 severe strike - the model flags contacts of any size, so severity shows
 how many of its strikes were hard hits. It appears in the Predict results
 (cards, treatment table, figure), Inspect (per recording, with severe and
-"strike, ≤ 400 g" filters), Simple mode and the reports
+"strike, ≤ 400 g" filters), StrikeWorks and the reports
 (`severity_summary.csv`; `hig_peak_g`, `severity`, `severe_strike` in
 `predictions.csv`). The thresholds are in `modules/severity.py`.
 
 **HIG peak analysis** (the *HIG peak analysis* box on Predict and on
-Simple mode's Predict step - one setting, ticked by default) goes further: it finds every acceleration event in each
+StrikeWorks's Predict step - one setting, ticked by default) goes further: it finds every acceleration event in each
 recording's HIG magnitude - peaks of at least 95 g with a prominence of
 25 g, at least 2 ms apart, each typed collision or shear by how long it
 stays above 70 % of its height - the peak finder of the original R
@@ -156,16 +209,21 @@ recording with a collision. The reports carry the same table and figures
 
 ### Demos
 
-Settings > Dev mode opens the **Dev console**, which shows all app output
-and runs two demos:
+Settings > **Console** (bottom left) opens the console: everything the
+app has printed since it started - status messages, worker output, Qt
+warnings, and unhandled errors with their tracebacks - also written as it
+goes to the session's log file (`logs/strikeworks_<date>_<time>.log`
+beside the settings file, the last 20 kept; a hard crash writes its
+traceback there too) (`modules/dev_console.py`). It runs two demos, each
+step on screen at least 2 s:
 
-* **Simple** - Simple mode's wizard end to end: deployment, processing,
-  validation, export, prediction with the default models, report (no
-  training).
-* **Advanced** - the full app: Calculator > Study design > deployment >
-  processing > Annotate (Auto process all, Import annotations CSV, Save
-  and export) > Train > Deploy > Predict (with the default models) >
-  Model comparison > report.
+* **StrikeWorks** - the StrikeWorks window's steps end to end: deployment,
+  processing, validation, export, prediction with the default models,
+  report (no training).
+* **Development toolkit** - the full app: Calculator > Study design >
+  deployment > processing > Annotate (Auto process all, Import annotations
+  CSV, Save and export) > Train > Deploy > Predict (with the default
+  models) > Model comparison > report.
 
 Reports go to the demo library's output folder,
 `libraries/StrikeWorks_demo/StrikeWorks_user_output/`. The same demos run
@@ -177,7 +235,7 @@ folder (or the app's own `libraries/`), shaped like a library:
 
 ```
 demo_data/raw_sens_data/<deployment>/<treatment>/[Run <n>/]<recordings>
-demo_data/*annotations*.csv     (Advanced demo's annotations)
+demo_data/*annotations*.csv     (the Development toolkit demo's annotations)
 demo_data/demo.json             (optional: site/machine, treatment conditions,
                                  sensor, BSM config)
 ```
@@ -248,9 +306,9 @@ dataset, and with `-Demos` runs both demos on a fresh copy of the folder.
 holds anything the build didn't put there.
 
 **Simple edition.** `build.py --simple` builds a second, separate app into
-`dist/StrikeWorks_Simple`: Simple mode only, with the development toolkit
-(the full app) locked - no Development toolkit button, and only the Simple
-demo in the Dev console. The lock is a start-up hook compiled into the exe
+`dist/StrikeWorks_Simple`: the StrikeWorks window only, with the
+Development toolkit (the full app) locked - no Development toolkit button,
+and only the StrikeWorks demo in the console. The lock is a start-up hook compiled into the exe
 (`tools/simple_edition_hook.py`, `modules/edition.py`); from source,
 `set STRIKEWORKS_EDITION=simple` shows the same thing. Test and zip it with
 `tools\smoke_test.ps1 -Simple -Demos` and `build.py --simple --zip-only`.

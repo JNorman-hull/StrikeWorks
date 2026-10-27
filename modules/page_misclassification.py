@@ -13,7 +13,9 @@ Corrections go to `<dataset>_corrected.csv` beside the training dataset
 (created from it on the first correction); every row of a recording shares
 one value per variable, as in `deployment_index.set_row_values`. Once it
 exists the corrected file is what's read back, so corrections build up
-across recordings and sessions.
+across recordings and sessions. Each correction is also written to the
+recording's row of its library's sensor index (`_sync_index`), so
+Annotate - and the next dataset exported from it - carry it too.
 
 The training dataset: in memory for a model trained this session
 (`TrainingState.dataset_df`), otherwise the path recorded in the model
@@ -24,7 +26,6 @@ the corrected dataset loaded, after a note that the model needs
 retraining (`notify_and_load_into_training()`, called by
 `MainWindow.navigate_to`).
 """
-import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -34,33 +35,26 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QGridLayout, QHBoxLayout, QHeaderView,
-    QInputDialog, QLabel, QMessageBox, QPushButton, QSizePolicy, QSplitter,
+    QLabel, QMessageBox, QPushButton, QSizePolicy, QSplitter,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import annotation_schema as asch
+from . import deployment_index as di
 from . import ml_model_library
 from . import settings
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
 from .layout import (
-    apply_section_defaults, discard_widget, Page, Section, when_visible,
+    discard_widget, Page, Section, when_visible,
 )
 from .theme import TRACE, TRACE2, muted_label, style
-from .page_annotate import LOSSLESSCUT_EXE, LOSSLESSCUT_MISSING
-from .raw_layout import video_index
+from .sensor_validation import open_video
+from .raw_layout import RAW_DIR, video_index
 from .plot_widgets import NavViewBox
 from .plot_style import (
     add_export_button, build_export_data, reserve_top_margin,
     set_right_axis_active,
 )
-
-# annotation_schema names and the older names the training pipeline also
-# accepts (ml_state.ANNOTATION_COLUMNS, ml_train_state.leading_type_column()),
-# so a dataset using either reads here.
-_LEGACY_ALIASES = {
-    "overall_passage_type": "passage_type",
-    "leading_edge_type": "leading_type",
-}
 
 # "Model input signal" (ml_tab_inspect.py) offers the same choice - here it's
 # the model's own training channels versus every channel recorded for the
@@ -89,10 +83,7 @@ class _VideoIndexThread(QThread):
 
 
 def _resolve_column(df, var_name):
-    if var_name in df.columns:
-        return var_name
-    alias = _LEGACY_ALIASES.get(var_name)
-    return alias if alias and alias in df.columns else None
+    return var_name if var_name in df.columns else None
 
 
 def _misclassified_rows(entry):
@@ -143,6 +134,7 @@ class MisclassificationPage(Page):
         self._left_key = None
         self._right_key = None
         self._editors = {}
+        self._labels_for = None      # id() of the dataset the editors are for
         self._has_changes = False
         self._corrected_path = None
         self._corrections = []       # [{file, variable, old, new, when}, ...]
@@ -168,16 +160,23 @@ class MisclassificationPage(Page):
 
         split.addWidget(self._build_browser())
 
-        detail = QWidget()
-        dv = QVBoxLayout(detail)
-        dv.setContentsMargins(5, 0, 0, 0)
-        dv.setSpacing(8)
-        self._build_plot_side(dv)
-        dv.addWidget(self._build_labels_side())
+        # the signal plot over the Labels box, with a grab bar between them
+        plot = QWidget()
+        pv = QVBoxLayout(plot)
+        pv.setContentsMargins(0, 0, 0, 0)
+        self._build_plot_side(pv)
+        labels = self._build_labels_side()
+        detail = QSplitter(Qt.Orientation.Vertical)
+        detail.setChildrenCollapsible(False)
+        detail.setContentsMargins(5, 0, 0, 0)
+        detail.addWidget(plot)
+        detail.addWidget(labels)
+        detail.setStretchFactor(0, 1)
+        detail.setStretchFactor(1, 0)
+        detail.setSizes([3000, labels.sizeHint().height()])
         split.addWidget(detail)
         split.setSizes([1, 1])
 
-        apply_section_defaults(frame)
 
     def _build_browser(self):
         left = QWidget()
@@ -341,6 +340,7 @@ class MisclassificationPage(Page):
         self._rows = []
         self._matches_by_file = {}
         self._clear_signal()
+        self._rebuild_labels()
 
         if self._entry is None:
             self.lbl_source.setText("No models found.")
@@ -414,28 +414,9 @@ class MisclassificationPage(Page):
         # visual row no longer lines up with self._rows' insertion order
         stem = item.data(Qt.ItemDataRole.UserRole)
         matches = self._matches_by_file.get(stem) or []
-        if not matches:
-            self.status.emit(f"No matching video for {stem}.", 4000)
-            return
-        if not LOSSLESSCUT_EXE.exists():
-            QMessageBox.warning(self.main_window, "LosslessCut missing",
-                                LOSSLESSCUT_MISSING)
-            return
-        video_path = matches[0]
-        if len(matches) > 1:
-            names = [p.name for p in matches]
-            choice, ok = QInputDialog.getItem(
-                self.main_window, "Choose video",
-                f"{len(names)} videos match {stem}:", names, 0, False)
-            if not ok:
-                return
-            video_path = matches[names.index(choice)]
-        try:
-            subprocess.Popen([str(LOSSLESSCUT_EXE), str(video_path)])
-        except Exception as e:
-            QMessageBox.critical(self.main_window, "Could not open video", str(e))
-            return
-        self.status.emit(f"Opened {video_path.name} in LosslessCut", 4000)
+        message = open_video(self.main_window, stem, matches)
+        if message:
+            self.status.emit(message, 4000)
 
     # ── dataset access ───────────────────────────────────────────────────────
     def _resolve_dataset_path(self, entry):
@@ -507,6 +488,8 @@ class MisclassificationPage(Page):
             self._load_labels_for_current(None)
             return
         sig = sig.sort_values("time_s")
+        if self._labels_for != id(df):
+            self._rebuild_labels()
 
         self._rebuild_channel_combos(sig)
         self._time = sig["time_s"].to_numpy(dtype=float)
@@ -623,20 +606,51 @@ class MisclassificationPage(Page):
 
     # ── labels ───────────────────────────────────────────────────────────────
     def _rebuild_labels(self):
+        """One editor per annotation variable the model's training dataset
+        has a column for - the main ones, then the position ones under
+        their own heading - so the labels are the data's, not every
+        variable in the settings."""
         while self.annotation_grid.count():
             item = self.annotation_grid.takeAt(0)
             w = item.widget()
             if w is not None:
                 discard_widget(w)
         self._editors = {}
-        for row, var in enumerate(asch.all_variables()):
-            lab = muted_label(var.label)
-            editor = AnnotationValueEditor(var.name)
-            self.annotation_grid.addWidget(lab, row, 0)
-            self.annotation_grid.addWidget(editor, row, 1)
-            self._editors[var.name] = editor
+        df = self._df_cache.get(id(self._entry)) if self._entry else None
+        self._labels_for = id(df) if df is not None else None
+        if df is None:
+            self._label_note("Select a misclassified recording to see the "
+                             "labels its dataset has.")
+            return
+        groups = [(None, [v for v in asch.all_variables(asch.MAIN_GROUP)
+                          if v.name in df.columns]),
+                  (asch.GROUP_LABELS[asch.POSITION_GROUP],
+                   [v for v in asch.all_variables(asch.POSITION_GROUP)
+                    if v.name in df.columns])]
+        row = 0
+        for heading, variables in groups:
+            if heading and variables:
+                lab = QLabel(heading)
+                style(lab, role="strong")
+                self.annotation_grid.addWidget(lab, row, 0, 1, 2)
+                row += 1
+            for var in variables:
+                editor = AnnotationValueEditor(var.name)
+                self.annotation_grid.addWidget(muted_label(var.label), row, 0)
+                self.annotation_grid.addWidget(editor, row, 1)
+                self._editors[var.name] = editor
+                row += 1
+        if not self._editors:
+            self._label_note("This model's dataset has none of the annotation "
+                             "variables (Manage variables… lists them).")
         if self._cur_stem and hasattr(self, "_sig") and len(self._sig):
             self._load_labels_for_current(self._sig.iloc[0])
+
+    def _label_note(self, text):
+        note = QLabel(text)
+        note.setWordWrap(True)
+        style(note, role="muted")
+        self.annotation_grid.addWidget(note, 0, 0, 1, 2)
 
     def _load_labels_for_current(self, row):
         for name, editor in self._editors.items():
@@ -717,11 +731,56 @@ class MisclassificationPage(Page):
         self._sig = df[df["file"] == self._cur_stem].sort_values("time_s")
         self._has_changes = True
         self._corrected_path = corrected_path
-        self.status.emit(
-            f"Correction saved for {self._cur_stem} to "
-            f"{corrected_path.name}", 5000)
-        self.lbl_detail_status.setText(f"Saved to {corrected_path}")
+        synced = self._sync_index(
+            self._cur_stem, {k: v for k, v in values.items() if v},
+            df.loc[mask].iloc[0])
+        where = corrected_path.name + (
+            f" and {', '.join(lib.name for lib in synced)}'s sensor index"
+            if synced else "")
+        self.status.emit(f"Correction saved for {self._cur_stem} to {where}",
+                         5000)
+        self.lbl_detail_status.setText(
+            f"Saved to {corrected_path}"
+            + (f"\nand the sensor index of {', '.join(str(lib) for lib in synced)}"
+               if synced else "\n(no library index lists this recording)"))
         style(self.lbl_detail_status, tone="ok")
+
+    def _index_libraries(self, stem, row):
+        """The libraries whose sensor index lists `stem`: the session
+        library, then any library with the recording's deployment folder
+        (only those indexes are read)."""
+        candidates = []
+        session = self.main_window.session_state.library
+        if session:
+            candidates.append(Path(session))
+        deployment = row.get(di.DEPLOYMENT_COL) if row is not None else None
+        if deployment is not None and not pd.isna(deployment) \
+                and str(deployment).strip():
+            for lib in settings.list_libraries():
+                if lib not in candidates and \
+                        (lib / RAW_DIR / str(deployment)).is_dir():
+                    candidates.append(lib)
+        found = []
+        for lib in candidates:
+            index_df = di.read_index(lib)
+            if index_df is not None and di.FILE_COL in index_df.columns and (
+                    index_df[di.FILE_COL].astype(str) == str(stem)).any():
+                found.append(lib)
+        return found
+
+    def _sync_index(self, stem, values, row):
+        """Writes the corrected `values` (variable name -> value) onto the
+        recording's row of its library's sensor index. Returns the
+        libraries written to."""
+        written = []
+        for lib in self._index_libraries(stem, row):
+            try:
+                if di.set_row_values(lib, stem, values):
+                    written.append(lib)
+            except OSError as e:
+                self.status.emit(f"Could not update {lib.name}'s sensor "
+                                 f"index: {e}", 8000)
+        return written
 
     # ── leaving the page (main.py's navigate_to hook) ───────────────────────
     def has_changes(self):

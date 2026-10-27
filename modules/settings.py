@@ -14,9 +14,16 @@
     names the file instead (the tests and the smoke test use it).
 
 Top-level keys are the app settings below (folders, default models, the
-last library, dev mode, recent datasets). Other modules keep their own
+last library, recent datasets). Other modules keep their own
 data in a named section (`read_section` / `write_section`): the sensor
-configurations and the annotation variables.
+configurations, the annotation variables, Model training's starting
+choices.
+
+A section the settings file doesn't have yet reads from the shipped
+defaults, `config/default_settings.json` (`DEFAULTS_FILE`) - the default
+annotation variables and Model training's starting choices live there,
+not in code. Once a section is written, the settings file's copy is the
+one used.
 
 From source, the first start reads the three files earlier versions kept
 in the home folder (`.hifistrike_settings.json`,
@@ -121,10 +128,22 @@ def _set(key, value):
     _save(data)
 
 
-def read_section(name) -> dict:
-    """A module's own section of the settings file ({} if unset)."""
-    section = _load().get(name)
+# the shipped defaults for sections the settings file doesn't have yet
+DEFAULTS_FILE = Path(__file__).parent.parent / "config" / "default_settings.json"
+
+
+def default_section(name) -> dict:
+    """The shipped defaults' copy of a section ({} if it has none)."""
+    section = _read_json(DEFAULTS_FILE).get(name)
     return section if isinstance(section, dict) else {}
+
+
+def read_section(name) -> dict:
+    """A module's own section of the settings file - the shipped defaults'
+    (`default_section`) until the settings file has one; {} if neither
+    has it."""
+    section = _load().get(name)
+    return section if isinstance(section, dict) else default_section(name)
 
 
 def write_section(name, payload: dict):
@@ -242,14 +261,6 @@ def get_last_library():
 def set_last_library(path):
     """`None` (New session) clears it."""
     _set("last_library", None if path is None else str(Path(path)))
-
-
-def get_dev_mode() -> bool:
-    return bool(_load().get("dev_mode", False))
-
-
-def set_dev_mode(enabled: bool):
-    _set("dev_mode", bool(enabled))
 
 
 _MAX_RECENT = 8

@@ -44,33 +44,60 @@ class LevelGrouper(QWidget):
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(6)
 
+        # the class names beside the levels' assignments, each under a
+        # muted heading
+        cols = QHBoxLayout()
+        cols.setSpacing(16)
+        names = QVBoxLayout()
+        names.setSpacing(2)
+        names.addWidget(self._heading("Classes"))
         self._names_box = QVBoxLayout()
         self._names_box.setSpacing(2)
-        v.addLayout(self._names_box)
-
+        names.addLayout(self._names_box)
         btn_row = QHBoxLayout()
         self.btn_add = QPushButton("Add class")
         self.btn_add.clicked.connect(self._add_group)
         btn_row.addWidget(self.btn_add)
         btn_row.addStretch()
-        v.addLayout(btn_row)
+        names.addLayout(btn_row)
+        names.addStretch()
+        cols.addLayout(names, stretch=1)
 
+        levels = QVBoxLayout()
+        levels.setSpacing(2)
+        levels.addWidget(self._heading("Levels"))
         self._grid = QGridLayout()
         self._grid.setHorizontalSpacing(12)
         self._grid.setVerticalSpacing(2)
-        v.addLayout(self._grid)
+        levels.addLayout(self._grid)
+        levels.addStretch()
+        cols.addLayout(levels, stretch=1)
+        v.addLayout(cols)
 
         self.lbl_summary = QLabel("")
         style(self.lbl_summary, role="muted")
         self.lbl_summary.setWordWrap(True)
         v.addWidget(self.lbl_summary)
 
+    @staticmethod
+    def _heading(text):
+        lab = QLabel(text)
+        style(lab, role="muted")
+        return lab
+
     # ── public API ───────────────────────────────────────────────────────────
     def set_data(self, levels, groups):
-        """levels: [(key, display, count)]; groups: [{"name", "levels"}]"""
-        self._levels = list(levels)
-        self._groups = [{"name": g["name"], "levels": list(g["levels"])}
-                        for g in groups]
+        """levels: [(key, display, count)]; groups: [{"name", "levels"}].
+        Nothing is rebuilt when they are what's shown already - the host
+        hands back the grouping this widget just reported, and rebuilding
+        would take away the class-name field being typed in."""
+        levels = list(levels)
+        groups = [{"name": g["name"], "levels": list(g["levels"])}
+                  for g in groups]
+        if levels == self._levels and groups == self._groups:
+            return
+        self._levels = levels
+        self._groups = groups
         self._rebuild()
 
     def groups(self):
@@ -101,6 +128,7 @@ class LevelGrouper(QWidget):
                 style(lab, role="muted")
                 lab.setMinimumWidth(56)
                 ed = QLineEdit(g["name"])
+                ed.setMinimumWidth(110)
                 ed.setPlaceholderText("class name")
                 ed.textChanged.connect(
                     lambda text, idx=i: self._name_changed(idx, text))
@@ -122,6 +150,7 @@ class LevelGrouper(QWidget):
                              else str(display))
                 style(lab)
                 cmb = QComboBox()
+                cmb.setMinimumWidth(110)
                 for i, g in enumerate(self._groups):
                     cmb.addItem(g["name"] or f"Class {i + 1}", i)
                 cmb.addItem("Exclude", self.EXCLUDE)

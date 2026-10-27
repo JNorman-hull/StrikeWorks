@@ -80,7 +80,6 @@ class RingCard(QFrame):
         p.drawRoundedRect(1, 1, w - 2, h - 2, 8, 8)
 
         tf = QFont("Segoe UI", 10)
-        tf.setBold(True)
         p.setFont(tf)
         p.setPen(QColor(TEXT))
         # elide rather than clip - metric cards can be narrow
@@ -110,7 +109,6 @@ class RingCard(QFrame):
             p.drawArc(rx, ry, self.RING_D, self.RING_D, 90 * 16, -span)
 
             vf = QFont("Segoe UI", 11)
-            vf.setBold(True)
             p.setFont(vf)
             p.setPen(QColor(TEXT))
             p.drawText(rx, ry, self.RING_D, self.RING_D,

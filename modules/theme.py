@@ -16,6 +16,7 @@ own: `style(widget, role=..., tone=...)` tags a widget with a role (a kind
 of text or button - see the list in app.qss) and/or a tone (a status
 colour: ok, warn, bad, accent, info, highlight, muted).
 """
+import gc
 import re
 from pathlib import Path
 
@@ -25,6 +26,17 @@ from . import settings
 
 _QSS = Path(__file__).parent.parent / "themes" / "app.qss"
 
+# the dark theme's two blues (in place of its original purple and pink):
+# navy fills what sits behind white text (headers, pressed and primary
+# buttons, selections, scrollbar handles), light blue is anything drawn on
+# the dark background (markers, accent and link text, rings, the spinner)
+NAVY, LIGHT_BLUE = "#0d1446", "#81daf4"
+# its data series (charts, rings, figures), from the same brand strip:
+# first green, then lime, then orange ...
+GREEN, LIME, ORANGE, PINK_S, LAVENDER = (
+    "#75dfb8", "#d6f677", "#f2bb6b", "#f0afdd", "#ab9df3")
+SERIES = [GREEN, LIME, ORANGE, LIGHT_BLUE, PINK_S, LAVENDER]
+
 STRIKEWORKS = {
     "label": "StrikeWorks (dark)",
     # content
@@ -33,16 +45,16 @@ STRIKEWORKS = {
     "placeholder": "#15181d", "empty": "#3a4150", "session_box": "#ffffff",
     # sidebar, section panel, title and status bars
     "sidebar": "#21252b", "sidebar_text": "#dddddd", "sidebar_subtle": "#717e95",
-    "sidebar_caption": "#bd93f9", "sidebar_hover": "#282c34",
+    "sidebar_caption": LIGHT_BLUE, "sidebar_hover": "#282c34",
     "sidebar_selected": "#282c34", "sidebar_panel": "#2c313a",
     "sidebar_line": "#2c313a", "sidebar_toggle": "#252930",
     "titlebar": "#21252b", "titlebar_hover": "#2c3139", "titlebar_pressed": "#171a1e",
     "statusbar": "#2c313a",
     # accents
-    "accent": "#bd93f9", "accent_hover": "#c4a1f9", "accent_pressed": "#b48dee",
-    "on_accent": "#ffffff", "accent_text": "#bd93f9",
-    "highlight": "#ff79c6", "on_highlight": "#ffffff", "highlight_text": "#ff79c6",
-    "selection": "#bd93f9", "on_selection": "#dddddd", "link": "#ffaaff",
+    "accent": NAVY, "accent_hover": "#1c2a73", "accent_pressed": "#080d2e",
+    "on_accent": "#ffffff", "accent_text": LIGHT_BLUE,
+    "highlight": LIGHT_BLUE, "on_highlight": NAVY, "highlight_text": LIGHT_BLUE,
+    "selection": NAVY, "on_selection": "#ffffff", "link": LIGHT_BLUE,
     "tooltip_bg": "rgba(33, 37, 43, 180)", "tooltip_text": "#ffffff",
     # tables
     "header": "#21252b", "header_text": "#dddddd",
@@ -50,9 +62,9 @@ STRIKEWORKS = {
     "input": "#21252b", "input_border": "#21252b", "input_hover": "#404758",
     "input_focus": "#5b657c", "field": "#1b1d23",
     "combo_divider": "rgba(39, 44, 54, 150)", "combo_button": "transparent",
-    "popup": "#21252b", "popup_text": "#ff79c6", "popup_selection": "#272c36",
+    "popup": "#21252b", "popup_text": LIGHT_BLUE, "popup_selection": "#272c36",
     "track": "#343b48", "track_end": "#373f4d", "track_hover": "#373e4c",
-    "handle": "#bd93f9",
+    "handle": NAVY,
     "indicator": "#2c313c", "indicator_border": "#343b48",
     "indicator_hover": "#3a4251", "indicator_checked": "#343b48",
     "radio_checked": "#5e6a82",
@@ -60,16 +72,16 @@ STRIKEWORKS = {
     "button": "#343b48", "button_text": "#dddddd", "button_hover": "#394150",
     "button_hover_border": "#3d4656", "button_pressed": "#232831",
     "button_pressed_border": "#2b323d",
-    "primary": "#bd93f9", "on_primary": "#ffffff", "primary_hover": "#bd93f9",
+    "primary": NAVY, "on_primary": "#ffffff", "primary_hover": "#1c2a73",
     "alternative": "#ef4444", "on_alternative": "#ffffff",
     "console": "#1b1e23", "console_text": "#d4d4d4",
     # status
     "ok": "#22c55e", "warn": "#f59e0b", "bad": "#ef4444", "info": "#568af2",
     # drawing: ring segments, figures, signal plots
-    "palette": ["#568af2", "#ff79c6", "#f59e0b", "#22c55e", "#bd93f9", "#00bcd4"],
-    "figure_palette": ["#2196F3", "#E91E63", "#FF9800", "#4CAF50", "#9C27B0",
-                       "#00BCD4"],
-    "screen_bg": "#21252b", "screen_axes": "#1b1e23", "screen_fg": "#c8cdd6",
+    "palette": SERIES,
+    "figure_palette": SERIES,
+    # plots sit on the page's own background
+    "screen_bg": "#282c34", "screen_axes": "#282c34", "screen_fg": "#c8cdd6",
     "screen_grid": "#3a4150", "plot_fg": "#c8cdd6",
     "trace": "#dddddd", "trace2": "#ff5555", "nadir": "#ffdc00",
     "region_fill": (120, 170, 255, 35), "region_edge": (120, 170, 255, 90),
@@ -134,7 +146,7 @@ CARD_BG = P["card"]
 BORDER = P["border"]
 TEXT = P["text"]
 MUTED = P["muted"]
-ACCENT = P["accent"]
+ACCENT = P["accent_text"]          # drawn on the page: text, rings, list items
 PINK = P["highlight_text"]
 OK = P["ok"]
 WARN = P["warn"]
@@ -165,6 +177,11 @@ def stylesheet():
 
 
 def apply(app):
+    # a stylesheet change re-polishes every widget, running Python event
+    # handlers as it goes; garbage collected in one of those (a widget
+    # whose wrapper sits in a reference cycle, deleted mid-iteration) is
+    # an access violation - so collect it first
+    gc.collect()
     app.setStyleSheet(stylesheet())
 
 

@@ -31,42 +31,8 @@ import pandas as pd
 
 from PySide6.QtCore import QObject, QThread, Signal
 
-from . import hig_peaks, settings
+from . import hig_peaks, model_labels, settings
 from .worker_launch import worker_command
-
-# Ground-truth annotation columns, in preference order. Nothing downstream
-# assumes a particular name: whichever of these a dataset carries is used,
-# and the "no contact" level is detected from the values rather than fixed.
-ANNOTATION_COLUMNS = ["overall_passage_type", "passage_type"]
-
-# Values treated as "no contact"; everything else in the annotation column
-# counts as a strike. Matching is case/spacing insensitive.
-NO_CONTACT_VALUES = {"no_contact", "no contact", "nocontact", "none",
-                     "no-contact"}
-
-
-def _norm(value):
-    return str(value).strip().lower().replace("-", "_").replace(" ", "_")
-
-
-def annotation_column(df):
-    """The ground-truth annotation column a dataframe carries, if any."""
-    if df is None:
-        return None
-    for col in ANNOTATION_COLUMNS:
-        if col in df.columns and df[col].notna().any():
-            return col
-    return None
-
-
-def is_strike_value(value):
-    """True when an annotation value means a strike (not 'no contact')."""
-    return _norm(value) not in NO_CONTACT_VALUES
-
-
-# Backwards compatibility: the explicit strike levels of the curated
-# datasets. Prefer is_strike_value(), which handles unseen labels.
-STRIKE_TYPES = {"leading_edge", "other"}
 
 _DEFAULT_LOW_CONF = 0.70
 
@@ -110,7 +76,7 @@ class _WorkerThread(QThread):
             cmd.append("--hig-peaks")
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            # the worker's own output, for the dev console (dev_console.py
+            # the worker's own output, for the console (dev_console.py
             # mirrors print) - captured above, so it went nowhere before
             for line in (r.stdout + r.stderr).splitlines():
                 if line.strip():
@@ -446,9 +412,6 @@ class PredictionState(QObject):
                 meta["sampling_rate_hz"] = round(1.0 / float(dt))
 
         meta["columns"]   = list(df.columns)
-        ann = annotation_column(df)
-        meta["annotation_column"] = ann
-        meta["annotated"] = ann is not None
         return meta
 
     # ── validation ───────────────────────────────────────────────────────────
@@ -662,8 +625,9 @@ class PredictionState(QObject):
     def collision_traces(self):
         """The HIG traces of the recordings with a collision, on the
         acceleration-centred figures' normalised time axes, one facet per
-        deployment (else treatment) - `hig_peaks.centred_traces`. None
-        without a peak analysis, or once the dataset has been replaced."""
+        treatment, as the prediction summary - `hig_peaks.centred_traces`.
+        None without a peak analysis, or once the dataset has been
+        replaced."""
         preds, df = self.predictions, self.dataset_df
         if (self.acc_summary is None or preds is None or df is None
                 or "collision" not in preds.columns):
@@ -671,42 +635,76 @@ class PredictionState(QObject):
         key = (self.run_id, id(df))
         if self._traces_key != key:
             files = preds.loc[preds["collision"] == 1, "file"].tolist()
-            facet = next((c for c in ("deployment_id", "treatment")
-                          if c in df.columns and df[c].notna().any()), None)
-            self._traces = hig_peaks.centred_traces(df, files, facet)
+            self._traces = hig_peaks.centred_traces(df, files, "treatment")
             self._traces_key = key
         return self._traces
 
     # ── ground truth ─────────────────────────────────────────────────────────
+    # Predictions are compared with the annotations only as the binary
+    # model was trained: its own target column, holding its own "no strike"
+    # value (model_labels - read from its metrics). Anything else - no
+    # target column, or one without that value - is not compared rather
+    # than guessed at.
+    def ground_truth_column(self, df=None):
+        """The model's target column, when `df` (the predictions by
+        default) has it holding the model's "no strike" value; else None."""
+        df = self.predictions if df is None else df
+        target = model_labels.target_column(self.bin_metrics)
+        negative = model_labels.negative_class(self.bin_metrics)
+        if df is None or not target or negative is None \
+                or target not in df.columns:
+            return None
+        # asked once per row by ground_truth_for: remembered per frame
+        key = (id(df), len(df), target, negative)
+        if getattr(self, "_gt_key", None) != key:
+            values = df[target].dropna().astype(str)
+            self._gt_key = key
+            self._gt_column = target if (values == negative).any() else None
+        return self._gt_column
+
+    def annotation_status(self, df=None):
+        """One line on whether `df` (the dataset by default) can be
+        compared with the loaded model's predictions, and why not."""
+        df = self.dataset_df if df is None else df
+        target = model_labels.target_column(self.bin_metrics)
+        negative = model_labels.negative_class(self.bin_metrics)
+        if df is None:
+            return "none"
+        if not target:
+            return "no model loaded" if not self.bin_metrics \
+                else "the model doesn't record its target column"
+        if target not in df.columns:
+            return f"none for this model ({target})"
+        if self.ground_truth_column(df) is None:
+            return (f"{target} present, but not the model's no-strike value "
+                    f"\"{negative}\" - not compared")
+        return f"{target} - compared with the predictions"
+
     def ground_truth_for(self, row):
         """(gt_strike, gt_label, gt_region_class) for a predictions row.
 
-        Returns (None, None, None) when the dataset carries no annotations.
-        gt_region_class is the collapsed class name matching the multiclass
-        model's classes, when the mapping is available.
+        Returns (None, None, None) when there is nothing to compare
+        (`ground_truth_column`) or this recording isn't annotated. Read the
+        way the models were trained (model_labels): the binary model's own
+        target column and "no strike" value, and the region model's own
+        class column and level grouping for gt_region_class.
         """
-        if row is None:
-            return None, None, None
-        col = next((c for c in ANNOTATION_COLUMNS if c in row.index), None)
-        if col is None:
+        col = self.ground_truth_column()
+        if row is None or col is None or col not in row.index:
             return None, None, None
         gt_type = row.get(col)
         if pd.isna(gt_type) or str(gt_type).strip() == "":
             return None, None, None
         gt_type = str(gt_type)
-        gt_strike = is_strike_value(gt_type)
+        gt_strike = gt_type != model_labels.negative_class(self.bin_metrics)
 
         gt_region_class = None
-        region = row.get("concentric_pump_region")
-        if (gt_strike and pd.notna(region) and self.mc_metrics
-                and self.class_names):
-            mapping = self.mc_metrics.get("region_to_class", {})
-            try:
-                idx = mapping.get(str(int(float(region))))
-                if idx is not None and 0 <= int(idx) < len(self.class_names):
-                    gt_region_class = self.class_names[int(idx)]
-            except (ValueError, TypeError):
-                pass
+        rcol = model_labels.region_column(self.mc_metrics)
+        region = row.get(rcol) if rcol else None
+        if gt_strike and region is not None and pd.notna(region) \
+                and self.class_names:
+            gt_region_class = model_labels.region_class(
+                region, self.mc_metrics, self.class_names)
         return gt_strike, gt_type, gt_region_class
 
     # ── provenance ───────────────────────────────────────────────────────────
@@ -727,7 +725,7 @@ class PredictionState(QObject):
             "n_rows":      self.dataset_meta.get("n_rows", na),
             "treatments":  self.dataset_meta.get("treatments", na),
             "sampling_rate_hz": self.dataset_meta.get("sampling_rate_hz", na),
-            "annotated":   self.dataset_meta.get("annotated", na),
+            "annotations": self.annotation_status(),
         }
         model = {
             "binary_model":   _s(self.bin_model_path.name if self.bin_model_path else None),

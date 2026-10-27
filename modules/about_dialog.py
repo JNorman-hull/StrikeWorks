@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from .layout import centred, scroll_area
-from .startup import brandmark
+from .startup import logo_label
 from .theme import ACCENT, MUTED, style
 
 _COLUMN_WIDTH = 760
@@ -130,8 +130,8 @@ class AboutDialog(QDialog):
         desc.setAlignment(centre)
         v.addWidget(desc)
 
-        # the University brandmark (white on the dark theme)
-        logo = brandmark(110)
+        # the StrikeWorks | University of Hull logo
+        logo = logo_label(width=300)
         if logo is not None:
             v.addWidget(logo)
         copyright_ = QLabel("Copyright © University of Hull (2026)")
@@ -150,20 +150,20 @@ class AboutDialog(QDialog):
         v.addWidget(self._heading(
             f"Built in Python {platform.python_version()}"))
         items = [
-            f"<li><b>Python</b> {platform.python_version()} – Python Software "
+            f"<li>Python {platform.python_version()} – Python Software "
             f"Foundation. <a style='color:{ACCENT};' href='https://www.python.org'>"
             "python.org</a></li>"]
         for name, dist, module, cite, link in PACKAGES:
             ver = _version(dist, module)
             items.append(
-                f"<li><b>{name}</b>{' ' + ver if ver else ''} – {cite} "
+                f"<li>{name}{' ' + ver if ver else ''} – {cite} "
                 f"<a style='color:{ACCENT};' href='{link}'>{link}</a></li>")
         v.addWidget(self._rich(
             "<ul style='margin-left:-18px;'>" + "".join(items) + "</ul>"))
 
         v.addWidget(self._heading("Theme"))
         v.addWidget(self._rich(
-            "Interface theme modified from <b>PyDracula</b> by Wanderson M. "
+            "Interface theme modified from PyDracula by Wanderson M. "
             f"Pimenta (MIT licence) – <a style='color:{ACCENT};' "
             f"href='{PYDRACULA_URL}'>{PYDRACULA_URL}</a>", centre=True))
         v.addStretch()

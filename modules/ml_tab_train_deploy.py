@@ -4,9 +4,9 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Model deployment - the explicit accept / train-final / deploy workflow,
-a box beside Train on Model training's Train tab, with the model's
-information card below them.
+"""Model deployment - the explicit accept / train-final / deploy workflow:
+the Final model and Deploy columns of the Train tab's Model box, the
+model's information card under Deploy.
 
 Cross-validation estimates performance; the final deployment model is a
 separate, deliberate step that retrains on all available training data.
@@ -21,20 +21,43 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout,
+    QWidget,
 )
 
 from . import settings
 from .cards import MetaCard, Spinner
-from .layout import Section
-from .theme import style
+from .theme import muted_label, style
+
+# every button in the Model box: one size, one look
+ACTION_W, ACTION_H = 150, 32
+FIELD_W = 90                     # number fields and the version box
 
 
-class DeploymentSection(Section):
-    """The "Model deployment" box, bound to `state`. Its `info_section`
-    ("Model information", the model card) is placed by the Train tab."""
+def action_button(text, tooltip=""):
+    """A Model-box button (Train model, Console, Evaluate results, Train
+    final model, Deploy model)."""
+    btn = QPushButton(text)
+    btn.setFixedSize(ACTION_W, ACTION_H)
+    btn.setToolTip(tooltip)
+    return btn
+
+
+def column(heading):
+    """(widget, its QVBoxLayout) - one column of the Model box under a
+    muted heading."""
+    w = QWidget()
+    v = QVBoxLayout(w)
+    v.setContentsMargins(0, 0, 0, 0)
+    v.setSpacing(8)
+    v.addWidget(muted_label(heading))
+    return w, v
+
+
+class DeploymentPanel(QWidget):
+    """The Final model and Deploy columns, bound to `state`."""
 
     def __init__(self, state, main_window):
-        super().__init__("Model deployment")
+        super().__init__()
         self.state = state
         self.main_window = main_window
         self.models_dir = self._default_models_dir()
@@ -67,60 +90,60 @@ class DeploymentSection(Section):
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self):
-        # final model + deploy
-        dv = QVBoxLayout(self)
-        dv.setSpacing(8)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(24)
 
-        # buttons at their natural width, left-aligned; what each step will
-        # do (and the models folder) are their tooltips
-        left = Qt.AlignmentFlag.AlignLeft
-        self.btn_final = QPushButton("Train final model")
-        self.btn_final.setMinimumHeight(32)
-        # the same side padding as the accent Deploy button
-        self.btn_final.setMinimumWidth(self.btn_final.sizeHint().width() + 28)
+        # ── final model: retrain on all the data ───────────────────────────
+        # what each step will do (and the models folder) are the buttons'
+        # tooltips
+        final, fv = column("Final model")
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        self.btn_final = action_button("Train final model")
         self.btn_final.setEnabled(False)
         self.btn_final.clicked.connect(self._train_final)
-        dv.addWidget(self.btn_final, alignment=left)
+        btn_row.addWidget(self.btn_final)
         self.spinner = Spinner(size=24)
         self.spinner.setVisible(False)
-        dv.addWidget(self.spinner, alignment=left)
+        btn_row.addWidget(self.spinner)
+        btn_row.addStretch()
+        fv.addLayout(btn_row)
         self.lbl_final_status = QLabel("")
         self.lbl_final_status.setWordWrap(True)
         style(self.lbl_final_status, role="muted")
-        dv.addWidget(self.lbl_final_status)
+        fv.addWidget(self.lbl_final_status)
         self.card_final = MetaCard("Deployment model")
-        dv.addWidget(self.card_final)
+        fv.addWidget(self.card_final)
+        fv.addStretch()
+        row.addWidget(final, stretch=1)
 
+        # ── deploy: version, Deploy model, the model card ──────────────────
+        deploy, dv = column("Deploy")
         ver_row = QHBoxLayout()
-        lab_v = QLabel("Model version")
-        style(lab_v, role="muted")
+        ver_row.setSpacing(8)
+        ver_row.addWidget(muted_label("Model version"))
         self.ed_version = QLineEdit()
-        self.ed_version.setFixedWidth(90)
+        self.ed_version.setFixedWidth(FIELD_W)
         self.ed_version.setToolTip("major_minor, e.g. 1_2 → binary1_2.joblib")
-        ver_row.addWidget(lab_v)
         ver_row.addWidget(self.ed_version)
         ver_row.addStretch()
         dv.addLayout(ver_row)
-
-        self.btn_deploy = QPushButton("Deploy model")
-        self.btn_deploy.setMinimumHeight(32)
+        self.btn_deploy = action_button("Deploy model")
         self.btn_deploy.setEnabled(False)
-        style(self.btn_deploy, role="primary")
         self.btn_deploy.clicked.connect(self._deploy)
-        dv.addWidget(self.btn_deploy, alignment=left)
+        dv.addWidget(self.btn_deploy)
         self.lbl_deploy_status = QLabel("")
         self.lbl_deploy_status.setWordWrap(True)
         style(self.lbl_deploy_status, role="muted")
         self.lbl_deploy_status.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
         dv.addWidget(self.lbl_deploy_status)
-        dv.addStretch()
-
         # the model card / provenance
-        self.info_section = Section("Model information")
-        cv = QVBoxLayout(self.info_section)
-        self.card_prov = MetaCard("")
-        cv.addWidget(self.card_prov)
+        self.card_prov = MetaCard("Model information")
+        dv.addWidget(self.card_prov)
+        dv.addStretch()
+        row.addWidget(deploy, stretch=1)
 
     # ── state wiring ─────────────────────────────────────────────────────────
     def _connect_state(self):
@@ -185,7 +208,7 @@ class DeploymentSection(Section):
             ("Application", card["application"]),
             ("Python", card["python_version"]),
             ("Target", card["target_column"]),
-            ("Negative class", card["negative_class"]),
+            ("Null value (0)", card["negative_class"]),
             ("Included records", card["include_values"]),
             ("Input channels", len(card["input_channels"])
              if isinstance(card["input_channels"], list) else "-"),
@@ -219,7 +242,7 @@ class DeploymentSection(Section):
         style(self.lbl_final_status, tone="accent")
         self.lbl_final_status.setText(
             "Training the final deployment model on all training data… "
-            "(progress in the Training console)")
+            "(progress in the Console)")
 
     def _fill_final_card(self):
         """Deployment-model details, read from the run's final-model

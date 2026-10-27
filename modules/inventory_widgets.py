@@ -121,9 +121,10 @@ class FileInventory(QWidget):
     `scan_raw`). `processing_done(code, stems)` fires once a batch has
     finished *and* been labelled (0 = every file succeeded).
 
-    `log_inside=False` leaves the console out of this widget - it's built
-    as `log_section` for the host to place itself (Raw data processing
-    puts it full width under the filters and the table)."""
+    Every log line is also printed, so it reaches the app console. Given
+    `open_console` (a no-arg callable), there is no log box: a Console
+    button beside Process selected opens the app console instead (Raw
+    data processing)."""
 
     processing_started = Signal()
     processing_done = Signal(int, list)
@@ -131,7 +132,7 @@ class FileInventory(QWidget):
 
     def __init__(self, parent=None, orientation=Qt.Orientation.Horizontal,
                  inventory_title="File inventory", log_title="Console output",
-                 log_inside=True):
+                 open_console=None):
         super().__init__(parent)
         self._lib_root = None
         self._folder = None
@@ -143,10 +144,10 @@ class FileInventory(QWidget):
         self._batch_done = []
         self._scan_gen = 0
         self._scan_threads = []
-        self._build(orientation, inventory_title, log_title, log_inside)
+        self._build(orientation, inventory_title, log_title, open_console)
 
     # ── layout ───────────────────────────────────────────────────────────────
-    def _build(self, orientation, inventory_title, log_title, log_inside=True):
+    def _build(self, orientation, inventory_title, log_title, open_console):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         split = QSplitter(orientation)
@@ -179,8 +180,28 @@ class FileInventory(QWidget):
         self.btn_process.setEnabled(False)
         self.btn_process.clicked.connect(self.process_selected)
         sel_row.addWidget(self.btn_process)
+        self.btn_stop = QPushButton("Stop")
+        self.btn_stop.setToolTip("Stop after the recording being processed "
+                                 "now; those already done are kept.")
+        self.btn_stop.setEnabled(False)
+        self.btn_stop.clicked.connect(self.stop)
+        sel_row.addWidget(self.btn_stop)
         gv.addLayout(sel_row)
         split.addWidget(grp)
+
+        self.lbl_status = QLabel("")
+        style(self.lbl_status, tone="ok")
+        self.lbl_status.setWordWrap(True)
+        if open_console is not None:
+            # no log box - the app console, a button away
+            btn_console = QPushButton("Console")
+            btn_console.setToolTip("Everything the app prints - the "
+                                   "processing log included.")
+            btn_console.clicked.connect(open_console)
+            sel_row.addWidget(btn_console)
+            gv.addWidget(self.lbl_status)
+            self.console = None
+            return
 
         grp_log = Section(log_title)
         lv = QVBoxLayout(grp_log)
@@ -190,21 +211,14 @@ class FileInventory(QWidget):
         self.console.setFont(QFont("Consolas", 9))
         style(self.console, role="console")
         lv.addWidget(self.console, stretch=1)
-        self.lbl_status = QLabel("")
-        style(self.lbl_status, role="strong", tone="ok")
-        self.lbl_status.setWordWrap(True)
         lv.addWidget(self.lbl_status)
-        self.log_section = grp_log
-        if not log_inside:
-            return                 # the host places log_section
         split.addWidget(grp_log)
 
-        if orientation == Qt.Orientation.Horizontal:
-            split.setSizes([3, 2])
-        else:
-            split.setSizes([3, 2])
-        split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 2)
+        # the inventory about three quarters, the log the rest - and kept
+        # in that ratio as the window resizes
+        split.setSizes([880, 260])
+        split.setStretchFactor(0, 10)
+        split.setStretchFactor(1, 3)
 
     # ── source ───────────────────────────────────────────────────────────────
     @property
@@ -310,12 +324,19 @@ class FileInventory(QWidget):
 
     # ── console ──────────────────────────────────────────────────────────────
     def log(self, text):
+        try:
+            print(text)            # the app console tees print
+        except UnicodeError:       # a console that can't show "→"
+            print(text.encode("ascii", "replace").decode("ascii"))
+        if self.console is None:
+            return
         self.console.appendPlainText(text)
         sb = self.console.verticalScrollBar()
         sb.setValue(sb.maximum())
 
     def clear_log(self):
-        self.console.clear()
+        if self.console is not None:
+            self.console.clear()
 
     # ── processing ───────────────────────────────────────────────────────────
     def process_selected(self):
@@ -352,6 +373,7 @@ class FileInventory(QWidget):
         style(self.lbl_status, role="strong", tone="accent")
         self.lbl_status.setText("Processing…")
         self.btn_process.setEnabled(False)
+        self.btn_stop.setEnabled(True)
         self._thread = ProcessThread(complete, out_dir, self._lib_root, cfg)
         self._thread.log.connect(self.log)
         self._thread.processed.connect(self._batch_done.append)
@@ -360,7 +382,18 @@ class FileInventory(QWidget):
         self._thread.start()
         return self._thread
 
+    def stop(self):
+        """Stop the batch before its next recording."""
+        if not self.running:
+            return
+        self._thread.request_stop()
+        self.btn_stop.setEnabled(False)
+        style(self.lbl_status, role="strong", tone="warn")
+        self.lbl_status.setText("Stopping after this recording…")
+
     def _on_done(self, code):
+        from .processing import DONE_OK, DONE_STOPPED
+        self.btn_stop.setEnabled(False)
         done = set(self._batch_done)
         located = [f for f in self._batch if f["stem"] in done]
         try:
@@ -370,9 +403,12 @@ class FileInventory(QWidget):
                          "treatment and run of the folder each came from.")
         except Exception as e:
             self.log(f"\nCould not label the batch: {e}")
-        style(self.lbl_status, role="strong", tone="ok" if code == 0 else "warn")
+        style(self.lbl_status, role="strong",
+              tone="ok" if code == DONE_OK else "warn")
         self.lbl_status.setText(
-            "All sensors processed" if code == 0
+            "All sensors processed" if code == DONE_OK
+            else f"Stopped - {len(done)} of {len(self._batch)} processed"
+            if code == DONE_STOPPED
             else "Processing finished with errors")
         stamp = datetime.now().strftime("%H:%M:%S")
         self.log(f"[{stamp}] {len(done)}/{len(self._batch)} processed.")

@@ -51,6 +51,7 @@ from . import deployment_index as di
 from . import raw_layout, sensor_config, settings
 from .cards import MetaCard
 from .layout import scroll_area, Section
+from .library_widgets import library_picker, show_library_path
 from .tables import style_table
 from .theme import muted_label, style
 
@@ -208,11 +209,9 @@ class DeploymentEditor(QWidget):
         libv = QVBoxLayout(grp_lib)
         self.cmb_library = QComboBox()
         self.cmb_library.currentIndexChanged.connect(self._on_library_combo_changed)
+        # the folder is the tooltip; right-click opens it
+        library_picker(self.cmb_library)
         libv.addWidget(self.cmb_library)
-        self.lbl_library_path = QLabel("No library selected.")
-        style(self.lbl_library_path, role="muted")
-        self.lbl_library_path.setWordWrap(True)
-        libv.addWidget(self.lbl_library_path)
         lib_actions = QHBoxLayout()
         btn_new_library = QPushButton("New library")
         btn_new_library.setFlat(True)
@@ -435,8 +434,7 @@ class DeploymentEditor(QWidget):
             idx = self.cmb_library.count() - 1
         self.cmb_library.setCurrentIndex(idx)
         self.cmb_library.blockSignals(False)
-        self.lbl_library_path.setText(
-            str(self._lib_root) if self._lib_root else "No library selected.")
+        show_library_path(self.cmb_library)
 
     def _refresh_status_card(self):
         from .page_home import library_status_rows

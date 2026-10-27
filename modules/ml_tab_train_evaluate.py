@@ -29,7 +29,7 @@ from .canvas import FigureCanvas
 from .ml_tab_predict import _NumItem
 from .cards import MetaCard, RingCard
 from .layout import (
-    apply_section_defaults, hsplit, scroll_page, Section, when_visible,
+    hsplit, scroll_page, Section, when_visible,
 )
 from .theme import CARD_H2, CARD_W2, style
 
@@ -174,7 +174,6 @@ class EvaluateTab(QWidget):
 
         ml_train_figures.draw_all(self.figures, None, None, None, dark=True)
 
-        apply_section_defaults(frame)
 
     @staticmethod
     def _make_table(headers):

@@ -8,7 +8,6 @@
 analysis table Predict and Simple mode both show.
 """
 from PySide6.QtCore import QEvent, QObject, Qt
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem
 
 from . import hig_peaks
@@ -101,26 +100,21 @@ def fill_acceleration_table(tbl, acc_summary):
     tbl.clear()
     tbl.setColumnCount(len(lead) + len(hig_peaks.TABLE_COLUMNS))
     tbl.setRowCount(2 + len(rows))
-    bold = QFont()
-    bold.setBold(True)
-
-    def put(r, c, text, header=False):
+    def put(r, c, text):
         item = QTableWidgetItem(text)
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        if header:
-            item.setFont(bold)
         tbl.setItem(r, c, item)
 
     for c, text in enumerate(lead):
-        put(0, c, text, header=True)
+        put(0, c, text)
         tbl.setSpan(0, c, 2, 1)
     c = len(lead)
     for title, span in hig_peaks.TABLE_GROUPS:
-        put(0, c, title, header=True)
+        put(0, c, title)
         tbl.setSpan(0, c, 1, span)
         c += span
     for i, text in enumerate(hig_peaks.TABLE_COLUMNS):
-        put(1, len(lead) + i, text, header=True)
+        put(1, len(lead) + i, text)
     for r, (treatment, roi, cells) in enumerate(rows, start=2):
         values = ([treatment] if with_tx else []) + [roi] + cells
         for c, value in enumerate(values):

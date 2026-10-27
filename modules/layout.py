@@ -42,6 +42,8 @@ class TabbedPage(Page):
         v.setContentsMargins(0, 0, 0, 0)
         self.tabs = QTabWidget()
         self.tabs.tabBar().setVisible(False)
+        # no frame round the tab shown
+        self.tabs.setDocumentMode(True)
         v.addWidget(self.tabs)
 
     def show_tab(self, index):
@@ -192,109 +194,20 @@ def when_visible(widget, fn, key="default"):
     watcher.pending[key] = fn
 
 
-# ── collapsible section ──────────────────────────────────────────────────────
-# Which sections start open. Keys are the section titles passed to Section();
-# anything not listed defaults to open. Set a title to False here to have that
-# panel start collapsed.
-SECTION_DEFAULTS = {
-    # Setup and deploy - Sensor configuration
-    "Session sensor": True,
-    "Rates and raw files": True,
-    "Channels": True,
-    "Parser": True,
-    # Setup and deploy - Study design
-    "Deployment": True,
-    "Treatments": True,
-    "Save to library": True,
-    # Model Prediction - Predict
-    "Model": True,
-    "Dataset": True,
-    "Compatibility": True,
-    "Prediction configuration": True,
-    "Run": True,
-    "Prediction summary": True,
-    "Results by treatment": True,
-    "Prediction figures": True,
-    # Model Prediction - Inspect
-    "Filter predictions": True,
-    "Selected prediction": True,
-    "Class probabilities": True,
-    "Model input signal": True,
-    # Model Prediction - Report
-    "Report preview": True,
-    # Model Training - Train
-    "Training dataset": True,
-    "Dataset filtering": True,
-    "Labelling": True,
-    "Dataset preview (file-level metadata)": True,
-    "Model input channels": True,
-    "Sequence configuration": True,
-    "Validation": True,
-    "Class balancing": True,
-    "Train": True,
-    "Training console": True,
-    # Model Training / Model Performance - Evaluate
-    "Performance (out-of-fold)": True,
-    "Cross-validation (mean ± SD across folds)": True,
-    "Error analysis": True,
-    "Evaluation figures": True,
-    "Performance by strike type / class": True,
-    "Performance by treatment": True,
-    # Model Training - Train's Model deployment box
-    "Model deployment": True,
-    "Model information": True,
-}
-
-
-def _set_layout_visible(layout, visible):
-    for i in range(layout.count()):
-        item = layout.itemAt(i)
-        w = item.widget()
-        if w is not None:
-            w.setVisible(visible)
-            continue
-        sub = item.layout()
-        if sub is not None:
-            _set_layout_visible(sub, visible)
-
-
+# ── section box ──────────────────────────────────────────────────────────────
 class Section(QGroupBox):
-    """Checkable group box that collapses to its title bar when unchecked.
+    """A titled part of a page: the title as a plain heading over the
+    contents - no frame, no tick box; an untitled one keeps no room for a
+    heading. Its layout's own margins go the first time it's shown, so the
+    contents line up under the heading."""
 
-    Used for every panel on the Machine Learning Analysis pages so the user
-    can fold away what they are not working on. Default open/closed state
-    comes from SECTION_DEFAULTS, applied once the contents are built via
-    apply_section_defaults().
-    """
-
-    COLLAPSED_H = 26
-
-    def __init__(self, title, key=None, parent=None):
+    def __init__(self, title, parent=None):
         super().__init__(title, parent)
-        self.key = key or title
-        self.setCheckable(True)
-        self.setChecked(True)
-        self.toggled.connect(self._apply)
+        self._margins_set = False
+        style(self, role="plain" if title else "plain-untitled")
 
-    def _apply(self, on):
-        lay = self.layout()
-        if lay is not None:
-            _set_layout_visible(lay, on)
-        self.setMaximumHeight(16777215 if on else self.COLLAPSED_H)
-
-    def apply_default(self):
-        want = SECTION_DEFAULTS.get(self.key, True)
-        if self.isChecked() != want:
-            self.setChecked(want)
-        else:
-            self._apply(want)
-
-
-def apply_section_defaults(root):
-    """Apply SECTION_DEFAULTS to every Section under `root`.
-
-    Call after a tab has finished building, so the collapse can measure and
-    hide real contents.
-    """
-    for sec in root.findChildren(Section):
-        sec.apply_default()
+    def showEvent(self, event):
+        if not self._margins_set and self.layout() is not None:
+            self.layout().setContentsMargins(0, 4, 0, 0)
+            self._margins_set = True
+        super().showEvent(event)

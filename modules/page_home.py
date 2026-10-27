@@ -17,7 +17,6 @@ any other page has been opened.
 
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QComboBox, QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPushButton,
     QVBoxLayout, QWidget,
@@ -26,12 +25,15 @@ from PySide6.QtWidgets import (
 from . import deployment_index as di
 from . import raw_layout, settings
 from .cards import MetaCard
-from .layout import apply_section_defaults, on_show, Page, Section
+from .layout import on_show, Page, Section
+from .library_widgets import library_picker, show_library_path
 from .theme import style
 from .session_state import OUTPUT_DIR_NAME
-from .startup import LOGO_PATH
+from .startup import icon_pixmap
 
 _CARD_WIDTH = 360
+# the app icon beside the session box
+HOME_ICON_PX = 320
 
 
 class HomePage(Page):
@@ -71,14 +73,12 @@ class HomePage(Page):
         outer.addLayout(content_row)
         outer.addStretch(1)
 
-        apply_section_defaults(frame)
 
     def _build_logo(self):
         lab = QLabel()
-        pix = QPixmap(str(LOGO_PATH))
+        pix = icon_pixmap(HOME_ICON_PX)
         if not pix.isNull():
-            lab.setPixmap(pix.scaledToWidth(
-                360, Qt.TransformationMode.SmoothTransformation))
+            lab.setPixmap(pix)
         lab.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         return lab
 
@@ -98,12 +98,9 @@ class HomePage(Page):
         gv.setSpacing(8)
 
         self.cmb_library = QComboBox()
+        # the folder is the tooltip; right-click opens it
+        library_picker(self.cmb_library)
         gv.addWidget(self.cmb_library)
-
-        self.lbl_library_path = QLabel("No library selected.")
-        style(self.lbl_library_path, role="note")
-        self.lbl_library_path.setWordWrap(True)
-        gv.addWidget(self.lbl_library_path)
 
         action_row = QHBoxLayout()
         self.btn_new_library = QPushButton("New library")
@@ -190,7 +187,7 @@ class HomePage(Page):
             self.cmb_library.blockSignals(True)
             self.cmb_library.setCurrentIndex(idx)
             self.cmb_library.blockSignals(False)
-        self.lbl_library_path.setText(str(path) if path else "No library selected.")
+        show_library_path(self.cmb_library)
         if self.isVisible():
             self._refresh_summary()
         else:

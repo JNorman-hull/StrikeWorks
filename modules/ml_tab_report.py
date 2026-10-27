@@ -30,15 +30,15 @@ Figure output settings (file formats, DPI) sit underneath and thread
 through to every section that renders its own figure (the `formats=`/
 `dpi=` arguments of the report_center sections).
 """
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel,
-    QMessageBox, QPushButton, QSpinBox, QVBoxLayout,
+    QMessageBox, QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from . import report_center, win_utils
-from .layout import apply_section_defaults, Section
+from .layout import scroll_area, Section
 from .theme import muted_label, style
 
 # (key, title) in the order report_center.all_sections() builds them
@@ -54,9 +54,11 @@ _SECTION_TITLES = [
     ("biological",       "Model comparison"),
 ]
 
-# these two sections report on "a model" rather than "the app's current
-# state" - own picker here, independent of Evaluate/Misclassification.
-_MODEL_PICKER_KEYS = ("training", "misclassification")
+# these two sections report on models rather than "the app's current
+# state" - their own choice here, independent of Evaluate/Misclassification:
+# a checklist of the models the evaluation covers, and one model whose
+# misclassifications are listed
+_MODEL_LIST_ROWS = 4.5          # visible rows before the checklist scrolls
 
 
 class ReportDialog(QDialog):
@@ -69,7 +71,8 @@ class ReportDialog(QDialog):
         self.state = state
         self.window = window
         self._checks = {}
-        self._model_combos = {}
+        self._model_checks = []         # [(QCheckBox, ModelEntry)]
+        self._model_ticks = {}          # model label -> ticked, kept across refreshes
         self._sections = []
 
         self._build()
@@ -103,22 +106,16 @@ class ReportDialog(QDialog):
             cb.setChecked(key == "prediction")
             self._checks[key] = cb
             row.addWidget(cb, stretch=1)
-            if key in _MODEL_PICKER_KEYS:
-                combo = QComboBox()
-                combo.setEnabled(False)
-                combo.setMinimumWidth(160)
-                self._model_combos[key] = combo
-                row.addWidget(combo)
-                if key == "training":
-                    combo.setToolTip(
-                        "The picked model's evaluation - its binary and "
-                        "multiclass (region) stages both, when it has both.")
-                    self.chk_all_models = QCheckBox("All models")
-                    self.chk_all_models.setToolTip(
-                        "Include every available model's evaluation report "
-                        "(with figures), not just the one picked above.")
-                    row.addWidget(self.chk_all_models)
+            if key == "misclassification":
+                self.cmb_misclass_model = QComboBox()
+                self.cmb_misclass_model.setEnabled(False)
+                self.cmb_misclass_model.setMinimumWidth(160)
+                self.cmb_misclass_model.setToolTip(
+                    "The model whose misclassified recordings are listed.")
+                row.addWidget(self.cmb_misclass_model)
             sv.addLayout(row)
+            if key == "training":
+                sv.addWidget(self._model_list())
 
         sel_row = QHBoxLayout()
         btn_all = QPushButton("Select all available")
@@ -169,7 +166,27 @@ class ReportDialog(QDialog):
         close_row.addWidget(btn_close)
         v.addLayout(close_row)
 
-        apply_section_defaults(self)
+
+    def _model_list(self):
+        """The models the evaluation report covers, one tick box each,
+        indented under its section and scrolling past a few rows."""
+        holder = QWidget()
+        h = QHBoxLayout(holder)
+        h.setContentsMargins(26, 0, 0, 4)
+        body = QWidget()
+        style(body, role="bare")
+        self._model_rows = QVBoxLayout(body)
+        self._model_rows.setContentsMargins(0, 0, 0, 0)
+        self._model_rows.setSpacing(2)
+        self.lbl_no_models = muted_label("No trained or deployed models.")
+        self._model_rows.addWidget(self.lbl_no_models)
+        self._model_rows.addStretch()
+        self.scroll_models = scroll_area(body)
+        self.scroll_models.setToolTip(
+            "The models whose evaluation goes in the report, each with its "
+            "own figures.")
+        h.addWidget(self.scroll_models)
+        return holder
 
     def _figure_output_group(self):
         grp = Section("Figure output")
@@ -220,32 +237,59 @@ class ReportDialog(QDialog):
         return tuple(fmts) or ("png",)
 
     # ── section checklist ────────────────────────────────────────────────────
-    def _refresh_model_combos(self):
-        """Repopulates the Model training / Misclassification pickers with
-        every available model, keeping the previous selection (matched by
-        label, since `available_model_entries` builds fresh `ModelEntry`
-        objects each call) if it's still in the list."""
+    def _refresh_models(self):
+        """Re-lists every available model in the evaluation checklist and
+        the misclassification picker, keeping the ticks and the pick
+        (matched by label, since `available_model_entries` builds fresh
+        `ModelEntry` objects each call). A model not listed before starts
+        ticked when it's in `report_center.default_model_set` - this
+        session's models, else the newest deployed pair."""
         entries = report_center.available_model_entries(self.window)
-        for combo in self._model_combos.values():
-            keep_label = combo.currentText()
-            combo.blockSignals(True)
-            combo.clear()
-            for e in entries:
-                combo.addItem(e.label, e)
-            combo.setEnabled(bool(entries))
-            idx = combo.findText(keep_label) if keep_label else -1
-            combo.setCurrentIndex(idx if idx >= 0 else (0 if entries else -1))
-            combo.blockSignals(False)
-        if hasattr(self, "chk_all_models"):
-            self.chk_all_models.setEnabled(len(entries) > 1)
+
+        for cb, entry in self._model_checks:
+            self._model_ticks[entry.label] = cb.isChecked()
+            self._model_rows.removeWidget(cb)
+            cb.hide()
+            cb.deleteLater()
+        self._model_checks = []
+        defaults = {e.label for e in report_center.default_model_set(entries)}
+        for i, entry in enumerate(entries):
+            cb = QCheckBox(entry.label)
+            cb.setChecked(self._model_ticks.get(entry.label,
+                                                entry.label in defaults))
+            self._model_rows.insertWidget(i, cb)
+            self._model_checks.append((cb, entry))
+        self.lbl_no_models.setVisible(not entries)
+        # sized once the new rows have their stylesheet look
+        QTimer.singleShot(0, self, self._fit_model_list)
+
+        combo = self.cmb_misclass_model
+        keep_label = combo.currentText()
+        combo.blockSignals(True)
+        combo.clear()
+        for e in entries:
+            combo.addItem(e.label, e)
+        combo.setEnabled(bool(entries))
+        idx = combo.findText(keep_label) if keep_label else -1
+        combo.setCurrentIndex(idx if idx >= 0 else (0 if entries else -1))
+        combo.blockSignals(False)
+
+    def _fit_model_list(self):
+        """The checklist as tall as its rows, up to _MODEL_LIST_ROWS."""
+        rows = [cb for cb, _ in self._model_checks] or [self.lbl_no_models]
+        row_h = rows[0].sizeHint().height() + self._model_rows.spacing()
+        self.scroll_models.setMaximumHeight(
+            round(row_h * min(len(rows), _MODEL_LIST_ROWS)))
+
+    def _ticked_models(self):
+        return [entry for cb, entry in self._model_checks if cb.isChecked()]
 
     def _refresh_checklist(self):
-        self._refresh_model_combos()
+        self._refresh_models()
         self._sections = report_center.all_sections(
             self.window,
-            training_entry_getter=lambda: self._model_combos["training"].currentData(),
-            misclass_entry_getter=lambda: self._model_combos["misclassification"].currentData(),
-            all_models=lambda: self.chk_all_models.isChecked(),
+            training_entries_getter=self._ticked_models,
+            misclass_entry_getter=self.cmb_misclass_model.currentData,
             formats=self._selected_formats(), dpi=self.spin_dpi.value())
         for sec in self._sections:
             cb = self._checks.get(sec.key)

@@ -36,7 +36,7 @@ from .bsm_model import mortality_from_strike_rate
 from .canvas import FigureCanvas
 from .library_widgets import LibrarySelector
 from .ml_model_library import model_display_name
-from .layout import apply_section_defaults, Page, scroll_area, scroll_page, Section
+from .layout import Page, scroll_area, scroll_page, Section
 from .theme import muted_label, style
 from .wilson_calc import wilson_interval
 
@@ -118,7 +118,6 @@ class ModelComparisonPage(Page):
     def _build(self, frame):
         v = scroll_page(frame)
         v.addWidget(self._comparison_group(), stretch=1)
-        apply_section_defaults(frame)
 
     def _comparison_group(self):
         g = Section("Comparison")

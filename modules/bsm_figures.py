@@ -15,8 +15,8 @@ from matplotlib.layout_engine import TightLayoutEngine
 
 from .ml_figures import _PALETTE, _awaiting, fg_colour, style_axes, style_legend, _grid
 
-CEN_COLOR = _PALETTE[3]   # green - "the model's own estimate"
-OBS_COLOR = _PALETTE[0]   # blue - "what was actually observed"
+CEN_COLOR = _PALETTE[3]   # "the model's own estimate"
+OBS_COLOR = _PALETTE[0]   # "what was actually observed"
 
 # dual-species default (Model comparison's Cen bars, Predict's mortality
 # vcrit sweep) - one colour per species so scaly/eel are visually
@@ -46,7 +46,7 @@ def _label_bars(ax, bars, values, dark=True, fontsize=8, tops=None):
                    xytext=(0, -3 if inside else 3), textcoords="offset points",
                    ha="center", va="top" if inside else "bottom",
                    fontsize=fontsize, color="white" if inside else fg,
-                   fontweight="bold" if inside else "normal", zorder=5)
+                   zorder=5)
 
 
 SPECIES_TITLES = {"scaly": "Scaly fish", "eel": "Eel"}
@@ -96,7 +96,7 @@ def _panel_letter(ax, letter, dark):
     """(a)/(b)/... top-left, above the axes - the multi-panel figures'
     own panel labels."""
     ax.text(-0.02, 1.03, f"({letter})", transform=ax.transAxes,
-            ha="right", va="bottom", fontsize=9, fontweight="bold",
+            ha="right", va="bottom", fontsize=9,
             color=fg_colour(dark))
 
 
@@ -308,7 +308,7 @@ def draw_vcrit_sweep(fig, series, dark=True, title=None):
                   edgecolor=fg, linewidth=0.8, zorder=4)
         ax.annotate(f"{default_pm:.1f}%", xy=(default_v, default_pm),
                    xytext=(6, 6), textcoords="offset points",
-                   fontsize=8, color=color, fontweight="bold", zorder=5)
+                   fontsize=8, color=color, zorder=5)
     style_legend(ax.legend(loc="upper right", fontsize=8), dark)
     ax.tick_params(labelsize=8)
     style_axes(fig, ax, dark)
@@ -338,7 +338,7 @@ def draw_comparison_bars(fig, cen_values, comparisons, dark=True,
     cen_items = [(species, v) for species, v in (cen_values or {}).items()
                 if v is not None]
     if title:
-        ax.set_title(title, fontsize=10, fontweight="bold", color=fg)
+        ax.set_title(title, fontsize=10, color=fg)
     if not cen_items and not comparisons:
         ax.set_xticks([])
         # on three lines, like the mortality figure beside it
@@ -390,7 +390,7 @@ def draw_mortality_bars(fig, items, dark=True, title="Mortality",
     ax = fig.add_subplot(111)
     fg = fg_colour(dark)
     if title:
-        ax.set_title(title, fontsize=10, fontweight="bold", color=fg)
+        ax.set_title(title, fontsize=10, color=fg)
     if not items:
         ax.set_xticks([])
         _awaiting(ax, "Run a Blade Strike\nModelling calculation\nfirst")

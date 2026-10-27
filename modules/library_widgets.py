@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from . import raw_layout
+from . import raw_layout, sensor_sort
 from .cards import Spinner
 from .layout import Section, when_visible
 from .tables import style_table
@@ -30,6 +30,33 @@ from .theme import BAD, OK, WARN, muted_label, style
 from .raw_layout import RAW_DIR, UNGROUPED
 
 ALL_DEPLOYMENTS = None   # combo data sentinel for "All deployments"/"All treatments"/"All runs"
+
+
+def library_picker(combo):
+    """Give a session-library dropdown (item data: the library's folder)
+    its folder as the tooltip - in place of a path label under it - and a
+    right-click "Open folder". Hosts that change the selection with the
+    signals blocked call `show_library_path` themselves."""
+    combo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+
+    def menu(pos):
+        from PySide6.QtWidgets import QMenu
+        from .win_utils import open_folder
+        path = combo.currentData()
+        m = QMenu(combo)
+        act = m.addAction("Open folder")
+        act.setEnabled(bool(path) and Path(path).is_dir())
+        if m.exec(combo.mapToGlobal(pos)) is act:
+            open_folder(path)
+
+    combo.customContextMenuRequested.connect(menu)
+    combo.currentIndexChanged.connect(lambda _i: show_library_path(combo))
+    show_library_path(combo)
+
+
+def show_library_path(combo):
+    path = combo.currentData()
+    combo.setToolTip(str(path) if path else "No library selected.")
 
 
 def _run_sort_key(run):
@@ -40,7 +67,7 @@ def _run_sort_key(run):
         return (1, 0, str(run))
 
 
-class _RawScanThread(QThread):
+class RawScanThread(QThread):
     """raw_layout.scan_tree off the GUI thread. `done(generation, tree)` -
     the selector ignores a generation a newer scan has superseded."""
 
@@ -146,7 +173,9 @@ class LibrarySelector(QWidget):
         # a host page can add its own controls to the same box
         self.section_layout = fv
 
-        self.lbl_current_library = muted_label("No library selected.", wrap=True)
+        # one line, not wrapped: a wrapping label has the page's scroll area
+        # size the page at its preferred height, so it scrolls when it needn't
+        self.lbl_current_library = muted_label("No library selected.")
         fv.addWidget(self.lbl_current_library)
 
         # shown while the raw folder is scanned in the background (a big
@@ -157,6 +186,8 @@ class LibrarySelector(QWidget):
         loading_row.addWidget(self._spinner)
         self.lbl_loading = QLabel("")
         style(self.lbl_loading, role="muted")
+        # takes no room until there's something to say
+        self.lbl_loading.setVisible(False)
         loading_row.addWidget(self.lbl_loading, stretch=1)
         fv.addLayout(loading_row)
 
@@ -176,10 +207,17 @@ class LibrarySelector(QWidget):
             self._build_sensor_list(v)
 
     def _build_sensor_list(self, v):
+        top = QHBoxLayout()
         self.chk_show_flags = QCheckBox("Show bad sensors")
         self.chk_show_flags.setChecked(True)
         self.chk_show_flags.toggled.connect(self._on_show_flags_toggled)
-        v.addWidget(self.chk_show_flags)
+        top.addWidget(self.chk_show_flags)
+        top.addStretch()
+        # the one Sort by every sensor list shares (sensor_sort.py)
+        self.sort_control = sensor_sort.SortControl()
+        self.sort_control.changed.connect(self._on_show_flags_toggled)
+        top.addWidget(self.sort_control)
+        v.addLayout(top)
 
         self.lbl_progress = QLabel("")
         style(self.lbl_progress, role="muted")
@@ -241,6 +279,7 @@ class LibrarySelector(QWidget):
         self.lbl_current_library.setText(
             f"Library: {self._lib_root.name}" if self._lib_root
             else "No library selected.")
+        self.lbl_current_library.setToolTip(str(self._lib_root or ""))
         # the raw folder is only scanned once the page is on screen
         self._scan_from_sync = self._syncing
         self._scan_gen += 1
@@ -275,7 +314,7 @@ class LibrarySelector(QWidget):
             self._apply_tree(gen, raw_layout.scan_tree(raw_dir))
             return
         self._set_loading(True)
-        thread = _RawScanThread(gen, raw_dir)
+        thread = RawScanThread(gen, raw_dir)
         thread.done.connect(self._apply_tree)
         thread.finished.connect(lambda t=thread: self._scan_threads.remove(t)
                                 if t in self._scan_threads else None)
@@ -287,9 +326,11 @@ class LibrarySelector(QWidget):
             self._spinner.start()
             self.lbl_loading.setText(
                 f"Loading {self._lib_root.name}…" if self._lib_root else "Loading…")
+            self.lbl_loading.setVisible(True)
         else:
             self._spinner.stop()
             self.lbl_loading.setText("")
+            self.lbl_loading.setVisible(False)
         for cmb in (self.cmb_deployment, self.cmb_treatment, self.cmb_run):
             cmb.setEnabled(not on)
 
@@ -418,9 +459,9 @@ class LibrarySelector(QWidget):
         return self._matches_filters(deployment, treatment, run)
 
     # ── sensor list panel (opt-in via sensor_list=True) ─────────────────────────
-    def _on_show_flags_toggled(self, _checked):
+    def _on_show_flags_toggled(self, _value):
         # re-render from the cached call rather than making the host rescan
-        # the filesystem just to react to this checkbox
+        # the filesystem just to react to this checkbox (or Sort by)
         if self._cache is not None:
             rows, kwargs = self._cache
             self.populate_sensor_list(rows, **kwargs)
@@ -456,6 +497,10 @@ class LibrarySelector(QWidget):
         the row's colour (or None for plain), `order_key(row)` sorts the
         rows (a stable sort - e.g. "needs review" first), and
         `progress(rows)` returns the counter text.
+
+        The rows are listed in the order Sort by chooses (sensor_sort):
+        "Needs review first" is `order_key`'s order (as given, without
+        one), the others sort by name or recording time.
         """
         self._cache = (rows, dict(is_bad=is_bad, is_done=is_done,
                                   done_label=done_label, extra=extra,
@@ -467,7 +512,10 @@ class LibrarySelector(QWidget):
         show_flags = self.chk_show_flags.isChecked()
 
         visible = [r for r in rows if show_flags or not is_bad(r["stem"])]
-        if order_key is not None:
+        how = sensor_sort.current()
+        if how != sensor_sort.REVIEW:
+            visible = sensor_sort.sort_rows(visible, how)
+        elif order_key is not None:
             visible = sorted(visible, key=order_key)
 
         self.tbl_sensors.setRowCount(len(visible))

@@ -44,8 +44,8 @@ class SettingsFileTest(unittest.TestCase):
     def test_no_old_files_means_defaults(self):
         self.assertEqual(settings.get_libraries_dir(), settings._DEFAULT_LIBRARIES)
         self.assertFalse(settings.SETTINGS_FILE.exists())
-        settings.set_dev_mode(True)
-        self.assertTrue(settings.get_dev_mode())
+        settings.set_last_library(self.dir)
+        self.assertEqual(settings.get_last_library(), self.dir)
 
     def test_sections_and_app_keys_are_kept_apart(self):
         settings.set_models_dir(self.dir / "models")

@@ -93,7 +93,7 @@ def draw_strike_rate(fig, summary, dark=False):
     ax.set_ylabel("Predicted blade strike rate (%)", fontsize=9)
     ax.set_xlabel("Treatment", fontsize=9)
     ax.set_title("Blade strike rate by treatment",
-                 fontsize=10, fontweight="bold")
+                 fontsize=10)
     _grid(ax, dark)
 
     if summary is None or not len(summary):
@@ -120,7 +120,7 @@ def draw_strike_rate(fig, summary, dark=False):
         ax.text(bar.get_x() + bar.get_width() / 2,
                 bar.get_height() + y_pad,
                 f"{val:.1f}%", ha="center", va="bottom",
-                fontsize=8, fontweight="bold", color=fg)
+                fontsize=8, color=fg)
 
     ax.set_xticks(x)
     ax.set_xticklabels(summary["treatment"].values, rotation=30,
@@ -141,7 +141,7 @@ def draw_severity(fig, severity_summary, dark=False, measured=True):
     ax.set_ylabel("Recordings over the threshold (%)", fontsize=9)
     ax.set_xlabel("Treatment", fontsize=9)
     ax.set_title("Strike severity (HIG peak)",
-                 fontsize=10, fontweight="bold")
+                 fontsize=10)
     _grid(ax, dark)
 
     if severity_summary is None or not len(severity_summary):
@@ -344,15 +344,16 @@ _TRACE_RED = "#d62728"
 def draw_acc_centred(fig, traces, align="acc", dark=False, note=None):
     """The HIG magnitude of every recording with a collision on a
     normalised time axis - each sample a faint red point, the median in
-    0.0025 bins as a line, 0.5 dashed - one panel per deployment (else
-    treatment). `align` "acc" puts each recording's peak acceleration at
-    0.5, "nadir" its pressure nadir (`hig_peaks.centred_traces`)."""
+    0.0025 bins as a line, 0.5 dashed - one panel per treatment, in name
+    order as the prediction summary. `align` "acc" puts each recording's
+    peak acceleration at 0.5, "nadir" its pressure nadir
+    (`hig_peaks.centred_traces`)."""
     fig.clear()
     x_col, x_label, title = _ALIGN[align]
     fg = fg_colour(dark)
     if traces is None or not len(traces):
         ax = fig.add_subplot(111)
-        ax.set_title(title, fontsize=10, fontweight="bold")
+        ax.set_title(title, fontsize=10)
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 700)
         ax.set_xlabel(x_label, fontsize=9)
@@ -365,7 +366,7 @@ def draw_acc_centred(fig, traces, align="acc", dark=False, note=None):
         fig.tight_layout()
         return
 
-    facets = list(dict.fromkeys(traces["facet"]))
+    facets = sorted(set(traces["facet"]))
     ncols = min(3, len(facets))
     nrows = math.ceil(len(facets) / ncols)
     axes = fig.subplots(nrows, ncols, sharex=True, sharey=True,
@@ -393,7 +394,7 @@ def draw_acc_centred(fig, traces, align="acc", dark=False, note=None):
     fig.supylabel("Acceleration (g)", fontsize=9, color=fg)
     fig.suptitle(f"{title}: recordings with a collision "
                  f"(n = {traces['file'].nunique()})",
-                 fontsize=10, fontweight="bold", color=fg)
+                 fontsize=10, color=fg)
     if dark:
         fig.patch.set_facecolor(SCREEN_BG)
     fig.tight_layout()
@@ -413,7 +414,7 @@ def draw_region(fig, summary, class_names, dark=False):
     ax.set_ylabel("Region share of strikes", fontsize=9)
     ax.set_xlabel("Treatment", fontsize=9)
     ax.set_title("Predicted strike location by treatment",
-                 fontsize=10, fontweight="bold")
+                 fontsize=10)
     ax.set_ylim(0, 1.0)
     _grid(ax, dark)
 
@@ -442,12 +443,14 @@ def draw_region(fig, summary, class_names, dark=False):
     ax.set_xticks(x)
     ax.set_xticklabels(summary["treatment"].values, rotation=30,
                        ha="right", fontsize=8)
-    leg = ax.legend(fontsize=7, loc="upper center",
-                    bbox_to_anchor=(0.5, -0.18),
-                    ncol=max(1, len(class_names)))
+    # the legend along the figure's foot, outside the plot: the constrained
+    # layout keeps room for it under the "Treatment" title at any size
+    fig.set_layout_engine("constrained")
+    handles, labels = ax.get_legend_handles_labels()
+    leg = fig.legend(handles, labels, fontsize=7, loc="outside lower center",
+                     ncol=max(1, len(class_names)))
     style_legend(leg, dark)
     style_axes(fig, ax, dark)
-    fig.tight_layout()
 
 
 def render_figures(state, out_dir, formats=("png",), dpi=300):

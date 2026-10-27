@@ -31,7 +31,7 @@ from .bsm_state import output_card_rows
 from .canvas import FigureCanvas
 from .cards import MetaCard
 from .layout import (
-    apply_section_defaults, centred, Page, scroll_page, Section, when_visible,
+    centred, Page, scroll_page, Section, when_visible,
 )
 from .theme import style
 
@@ -75,7 +75,6 @@ class BSMAnalysisPage(Page):
         report_row.addWidget(self.btn_report)
         v.addLayout(report_row)
 
-        apply_section_defaults(frame)
 
     def _figures_group(self):
         g = Section("Figures")

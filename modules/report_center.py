@@ -27,17 +27,12 @@ Every generated report is written under ``OUTPUT_DATA_DIR`` - one place for
 every report's output, rather than each page picking its own folder
 (a user-chosen dialog, a library-relative path, or nothing at all).
 """
-import re
 from datetime import datetime
 from pathlib import Path
 
 from . import ml_report, settings
 
 _HR = "<hr style='margin:32px 0;border:none;border-top:2px solid #cbd5e1;'/>"
-
-
-def _slug(text):
-    return re.sub(r"[^A-Za-z0-9_-]+", "_", str(text)).strip("_") or "model"
 
 
 def _nested_deployment_table(deployments, root, di):
@@ -135,7 +130,9 @@ def assemble(sections, out_dir, checked_keys):
     be included (a section that failed, a figure that couldn't be drawn),
     so one failure still leaves a report.
     """
-    out_dir = Path(out_dir)
+    # every file is written through the long-path form: a library deep in
+    # OneDrive puts the figures past Windows' 260-character limit
+    out_dir = ml_report.long_path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     body_parts = []
@@ -166,7 +163,7 @@ def assemble(sections, out_dir, checked_keys):
     doc_path = out_dir / "report.html"
     doc_path.write_text(ml_report.wrap_html_document(body, "StrikeWorks Report"),
                         encoding="utf-8")
-    return doc_path, warnings
+    return ml_report.short_path(doc_path), warnings
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -469,8 +466,8 @@ def available_model_entries(window):
     trained binary/multiclass (if any) plus every model deployed to the
     models folder - the same list Evaluate and Misclassification analysis
     already offer in their own combos. Shared so the Report page's own
-    per-section model picker (`training_section`/`misclassification_
-    section`) doesn't depend on whichever model happens to be selected on
+    model checklist and picker (`training_section`/`misclassification_
+    section`) don't depend on whichever model happens to be selected on
     either of those other pages right now."""
     tp = getattr(window, "ml_training_page", None)
     training_state = getattr(tp, "state", None) if tp is not None else None
@@ -487,32 +484,46 @@ def available_model_entries(window):
     return entries
 
 
-def training_section(window, get_entry, all_models=None,
-                     formats=("png",), dpi=300):
-    """`get_entry()` - a no-arg callable, typically the Report page's own
-    model-picker combo's `currentData` - returns the `ModelEntry` to
-    report on, called at build time so it always reflects whichever
-    model is currently selected there, not whatever was last opened on
-    Model training > Evaluate. `all_models` - an optional no-arg callable,
-    typically the dialog's "All models" checkbox - reports on every
-    available model (each with its own figures) instead of just the one
-    picked, when it returns True."""
+def default_model_set(entries):
+    """The models the evaluation report starts with ticked: this
+    session's (both stages), else the newest deployed model with the
+    other stage deployed with it."""
+    session = [e for e in entries if e.source == "session"]
+    if session:
+        return session
+    return with_partner_stage(entries[0], entries) if entries else []
+
+
+def _figure_folder(entry):
+    """A short folder name per model - binary1_0, session_binary - so the
+    figure paths stay short."""
+    return (Path(entry.model_path).stem if entry.model_path
+            else f"session_{entry.kind}")
+
+
+def training_section(window, get_entries, formats=("png",), dpi=300):
+    """`get_entries()` - a no-arg callable, typically the Export and
+    report dialog's model checklist - returns the `ModelEntry`s to report
+    on, each with its own figures; called at build time, so it reflects
+    the ticks then, not whatever was last opened on Model training >
+    Evaluate."""
     entries_avail = available_model_entries(window)
     available = bool(entries_avail)
     reason = "" if available else "No trained or deployed models found."
 
     def _one(out_dir, entry_, problems):
         from . import ml_model_library, ml_train_figures
-        fig_dir = out_dir / "training_figures" / _slug(entry_.label)
+        fig_dir = out_dir / "training_figures" / _figure_folder(entry_)
         fig_dir.mkdir(parents=True, exist_ok=True)
-        image_paths = {}
+        image_paths, missing = {}, []
         try:
             figs = ml_train_figures.render_model_figures(
                 fig_dir, entry_.metrics, entry_.cv_predictions,
-                entry_.curves, formats=formats, dpi=dpi)
+                entry_.curves, formats=formats, dpi=dpi, problems=missing)
             image_paths = {name: paths[0] for name, paths in figs.items()}
         except Exception as e:
-            problems.append(f"{entry_.label}: figures not drawn ({e})")
+            missing.append(f"figures not drawn ({e})")
+        problems.extend(f"{entry_.label}: {p}" for p in missing)
         mp = getattr(window, "ml_prediction_page", None)
         pred_state = getattr(mp, "state", None) if mp is not None else None
         app_version = getattr(pred_state, "app_version", "") if pred_state else ""
@@ -521,10 +532,7 @@ def training_section(window, get_entry, all_models=None,
             app_version=app_version)
 
     def build(out_dir):
-        want_all = bool(all_models and all_models())
-        targets = (entries_avail if want_all
-                   else with_partner_stage(get_entry(), entries_avail))
-        targets = [e for e in targets if e is not None]
+        targets = [e for e in get_entries() if e is not None]
         if not targets:
             return None
         problems = []
@@ -561,8 +569,8 @@ def with_partner_stage(entry, entries):
 
 
 def misclassification_section(window, get_entry):
-    """Same per-section model picker as `training_section` - `get_entry()`
-    chooses which model's misclassifications to report, independent of
+    """The dialog's own model picker - `get_entry()` chooses which model's
+    misclassifications to report, independent of
     whatever's currently selected on the Misclassification analysis page
     itself. Reuses that page's own `_misclassified_rows`/`_video_index` so
     the content matches exactly what it would show for the same model."""
@@ -767,24 +775,25 @@ def biological_section(window, formats=("png",), dpi=300):
                          available, reason, build)
 
 
-def all_sections(window, training_entry_getter=None, misclass_entry_getter=None,
-                 all_models=None, formats=("png",), dpi=300):
+def all_sections(window, training_entries_getter=None,
+                 misclass_entry_getter=None, formats=("png",), dpi=300):
     """Every report section, in the order the report is assembled.
 
-    `training_entry_getter`/`misclass_entry_getter`: no-arg callables
-    returning the `ModelEntry` those two sections should report on -
-    typically the Export and report dialog's own per-section model-picker
-    combos (`ml_tab_report.py`). Default to whichever model is first in
-    `available_model_entries` when not supplied, so this still works
-    standalone without a combo box behind it. `all_models` - optional
-    no-arg callable, the dialog's "All models" checkbox for the evaluation
-    report. `formats`/`dpi` - the dialog's figure-output settings.
+    `training_entries_getter`: a no-arg callable returning the
+    `ModelEntry`s the evaluation report covers - typically the Export and
+    report dialog's model checklist (`ml_tab_report.py`);
+    `misclass_entry_getter`: one returning the model whose
+    misclassifications are reported - its model combo. Without them, the
+    evaluation covers `default_model_set` and misclassification the first
+    model in `available_model_entries`, so this still works standalone.
+    `formats`/`dpi` - the dialog's figure-output settings.
     """
-    if training_entry_getter is None or misclass_entry_getter is None:
+    if training_entries_getter is None or misclass_entry_getter is None:
         entries = available_model_entries(window)
-        default_getter = (lambda: entries[0]) if entries else (lambda: None)
-        training_entry_getter = training_entry_getter or default_getter
-        misclass_entry_getter = misclass_entry_getter or default_getter
+        training_entries_getter = (training_entries_getter
+                                   or (lambda: default_model_set(entries)))
+        misclass_entry_getter = misclass_entry_getter or (
+            (lambda: entries[0]) if entries else (lambda: None))
     return [
         # study design comes first - it's the one carrying the
         # library/folder structure/deployments overview, which the user
@@ -793,8 +802,8 @@ def all_sections(window, training_entry_getter=None, misclass_entry_getter=None,
         bsm_section(window, formats=formats, dpi=dpi),
         process_section(window),
         annotation_section(window),
-        training_section(window, training_entry_getter, all_models=all_models,
-                         formats=formats, dpi=dpi),
+        training_section(window, training_entries_getter, formats=formats,
+                         dpi=dpi),
         misclassification_section(window, misclass_entry_getter),
         deployment_summary_section(window),
         prediction_section(window, formats=formats, dpi=dpi),

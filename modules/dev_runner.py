@@ -5,7 +5,7 @@
 #
 # ///////////////////////////////////////////////////////////////
 """Demo runners - one-click, unattended walkthroughs of the real app,
-started from the Dev console (dev_console.py). Both drive the app's own
+started from the console (dev_console.py). Both drive the app's own
 pages and widgets exactly as a person clicking through would, so a demo is
 an honest test of the workflow rather than a separate copy of it:
 
@@ -42,6 +42,11 @@ created inside the user's configured libraries folder - so the demo's
 output sits wherever their libraries do (a OneDrive folder stays on
 OneDrive).
 
+Pacing: run from the console, every step - each page or wizard step the
+demo shows - stays on screen at least `MIN_STEP_MS`, so it can be
+followed; run unattended (`run_headless`: `--demo`, the tests) it goes as
+fast as the app does.
+
 Waiting: every async step (a QThread or a subprocess-backed state signal)
 becomes a sequential call via `_wait_for`/`_race`/`_wait_until`, which run
 a nested QEventLoop until the step signals, times out, or `request_stop()`
@@ -52,6 +57,7 @@ in the background, the demo just stops waiting for it.
 import json
 import re
 import shutil
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -78,6 +84,9 @@ _STUDY_TARGET_PRECISION_PP = 10.0
 # stuck" backstop, not a per-step budget (76 files over OneDrive took
 # 13 min in September's runs); Stop is the way out of a merely slow run
 _LONG_TIMEOUT_MS = 1_800_000
+
+# the least time a demo step stays on screen (see Pacing above)
+MIN_STEP_MS = 2000
 
 
 class _RunnerError(Exception):
@@ -180,12 +189,14 @@ class _RunnerBase(QObject):
 
     finished = Signal(bool, str)   # ok, message
 
-    def __init__(self, window):
+    def __init__(self, window, paced=True):
         super().__init__(window)
         self.window = window
         self._stop_requested = False
         self.source = None
         self.lib_root = None
+        self._paced = paced
+        self._step_shown = None     # time.monotonic() the step went up
 
     def _label(self):
         return "Demo"
@@ -203,6 +214,24 @@ class _RunnerBase(QObject):
         QApplication.processEvents()
         if self._stop_requested:
             raise _StoppedByUser()
+
+    # ── pacing ───────────────────────────────────────────────────────────────
+    def _hold_step(self):
+        """Wait until the step on screen has been up MIN_STEP_MS."""
+        if not self._paced or self._step_shown is None:
+            return
+        left = MIN_STEP_MS - (time.monotonic() - self._step_shown) * 1000
+        if left > 0:
+            self._loop(int(left), {})
+        self._check_stop()
+
+    def _next_step(self, show):
+        """Show the next step (`show()`) once the current one has had its
+        time on screen."""
+        self._hold_step()
+        show()
+        QApplication.processEvents()
+        self._step_shown = time.monotonic()
 
     # ── logging / waiting ────────────────────────────────────────────────────
     def _log(self, msg):
@@ -287,6 +316,15 @@ class _RunnerBase(QObject):
             raise _RunnerError(f"{label} failed: {str(msg).splitlines()[-1]}")
         return box["args"]
 
+    def _wait_loaded(self, view):
+        """Waits for the validation screen's sensor to finish loading (it
+        loads in the background)."""
+        QApplication.processEvents()
+        if view.loading:
+            self._loop(_LONG_TIMEOUT_MS, {}, quit_when=lambda: not view.loading)
+        for _ in range(3):
+            QApplication.processEvents()
+
     def _wait_thread(self, thread, label):
         """Waits for a QThread a page started itself (Auto process all) to
         finish *and* for its queued `done` to reach the page - polling,
@@ -335,6 +373,7 @@ class _RunnerBase(QObject):
         self._log(f"{label} starting.")
         try:
             self._run()
+            self._hold_step()        # the last step gets its time too
         except _StoppedByUser:
             self._log(f"{label} stopped.")
             self.finished.emit(False, "Stopped.")
@@ -483,12 +522,13 @@ class SimpleDemoRunner(_RunnerBase):
     """Simple mode's wizard, end to end - no training."""
 
     def _label(self):
-        return "Simple demo"
+        return "StrikeWorks demo"
 
     def _page(self, dlg, index):
-        dlg.stack.setCurrentIndex(index)
-        dlg._sync_step_highlight()
-        QApplication.processEvents()
+        def show():
+            dlg.stack.setCurrentIndex(index)
+            dlg._sync_step_highlight()
+        self._next_step(show)
 
     def _run(self):
         w = self.window
@@ -498,6 +538,7 @@ class SimpleDemoRunner(_RunnerBase):
         if not dlg.isVisible():
             dlg.show()
         dlg.raise_()
+        self._step_shown = time.monotonic()      # its Home step
         self._step_library()
         self._check_stop()
 
@@ -514,17 +555,18 @@ class SimpleDemoRunner(_RunnerBase):
         self._page(dlg, 3)
         self._reset_validation_state()
         dlg._refresh_validate_step()
-        thread = dlg._auto_process_all()
+        view = dlg.validation
+        thread = view.auto_process_all()
         if thread is None:
             raise _RunnerError("Validate: no processed sensors to validate.")
         self._wait_thread(thread, "Auto process all")
-        QApplication.processEvents()
-        self._log(f"Validate: {dlg.lbl_all_validated.text()}")
-        self._step_review_flagged(dlg)
+        self._wait_loaded(view)
+        self._log(f"Validate: {view.lbl_status.text()}")
+        self._step_review_flagged(view)
         self._check_stop()
 
-        df, path, msg = self._wait_for(dlg._exporter.finished, _LONG_TIMEOUT_MS,
-                                       "Save and export", dlg._save_and_export)
+        df, path, msg = self._wait_for(view.exporter.finished, _LONG_TIMEOUT_MS,
+                                       "Save and export", view.save_and_export)
         if df is None:
             raise _RunnerError(f"Save and export: {msg}")
         self._log(f"Save and export: {msg}")
@@ -538,7 +580,7 @@ class SimpleDemoRunner(_RunnerBase):
                                "folder / Settings' default model).")
         model = state.bin_model_path.name + (
             f" + {state.mc_model_path.name}" if state.mc_model_path else "")
-        self._log(f"Predict: model {model} (Simple mode's own default).")
+        self._log(f"Predict: model {model} (StrikeWorks's own default).")
         self._race(state.run_finished, state.run_failed, _LONG_TIMEOUT_MS,
                    "prediction run", dlg._run_predict)
         n_rows = len(state.summary) if state.summary is not None else 0
@@ -561,7 +603,7 @@ class SimpleDemoRunner(_RunnerBase):
         self._log(f"Validate check {'PASS' if ok else 'FAIL'}: {what}")
         return ok
 
-    def _step_review_flagged(self, dlg):
+    def _step_review_flagged(self, view):
         """What a person does after Auto process all, done with the keys
         they'd use - and checked at every step: the flagged sensors are
         the top of the list (orange), the arrow keys load the sensor they
@@ -574,7 +616,7 @@ class SimpleDemoRunner(_RunnerBase):
         from . import validation_core as vc
         from .theme import OK, WARN
 
-        lst = dlg.validate_list
+        lst = view.sensor_list
 
         def order():
             return [lst.item(i).text() for i in range(lst.count())]
@@ -583,7 +625,7 @@ class SimpleDemoRunner(_RunnerBase):
             items = lst.findItems(stem, Qt.MatchFlag.MatchExactly)
             return items[0].foreground().color() if items else None
 
-        status = dlg._validation_status()
+        status = view.validation_status()
         pending = [s for s in order() if vc.needs_review(s, status)]
         n = len(pending)
         if not n:
@@ -602,29 +644,30 @@ class SimpleDemoRunner(_RunnerBase):
         # arrow keys: the highlighted sensor is the one loaded
         lst.setFocus()
         lst.setCurrentRow(0)
+        self._wait_loaded(view)
         QTest.keyClick(lst, Qt.Key.Key_Down)
-        QApplication.processEvents()
-        down_ok = dlg._cur_validate_stem == order()[1]
+        self._wait_loaded(view)
+        down_ok = view.current_stem == order()[1]
         QTest.keyClick(lst, Qt.Key.Key_Up)
-        QApplication.processEvents()
+        self._wait_loaded(view)
         fails += not self._check(
-            down_ok and dlg._cur_validate_stem == order()[0],
+            down_ok and view.current_stem == order()[0],
             "Down/Up arrow keys load the sensor they move to")
 
         # Save + Next (Ctrl+V) through every flagged sensor
         moved_ok = cleared_ok = 0
         for i in range(n):
             self._check_stop()
-            stem = dlg._cur_validate_stem
+            stem = view.current_stem
             QTest.keyClick(lst, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
-            QApplication.processEvents()
-            status = dlg._validation_status()
+            self._wait_loaded(view)
+            status = view.validation_status()
             if (not vc.needs_review(stem, status) and stem in status[1]
                     and colour_of(stem) == QColor(OK)
                     and stem not in order()[:n - i - 1]):
                 cleared_ok += 1
             expected = pending[i + 1] if i + 1 < n else None
-            if expected is None or dlg._cur_validate_stem == expected:
+            if expected is None or view.current_stem == expected:
                 moved_ok += 1
         fails += not self._check(
             cleared_ok == n,
@@ -634,10 +677,10 @@ class SimpleDemoRunner(_RunnerBase):
             moved_ok == n,
             f"Save + Next moved on to the next flagged sensor {moved_ok}/{n} "
             "times")
-        status = dlg._validation_status()
-        stems = [f["stem"] for f in dlg._validate_files]
+        status = view.validation_status()
+        stems = [f["stem"] for f in view.files]
         left = len(vc.outstanding_flagged(stems, status))
-        counter = dlg.lbl_validated_count.text().splitlines()[0]
+        counter = view.lbl_counts.text().splitlines()[0]
         fails += not self._check(
             left == 0 and counter == f"Flagged for review: 0/{len(stems)} sensors",
             f"no flags left to review (counter reads '{counter}')")
@@ -653,11 +696,10 @@ class AdvancedDemoRunner(_RunnerBase):
     """The full app's pages, end to end - including training a new model."""
 
     def _label(self):
-        return "Advanced demo"
+        return "Development toolkit demo"
 
     def _go(self, btn_name):
-        self.window.navigate_to(btn_name)
-        QApplication.processEvents()
+        self._next_step(lambda: self.window.navigate_to(btn_name))
 
     def _run(self):
         w = self.window
@@ -665,11 +707,13 @@ class AdvancedDemoRunner(_RunnerBase):
         self._check_stop()
         dlg = w.simple_mode_dialog
         if dlg.isVisible():
-            # the full app's own door from Simple mode
-            dlg._go_development_toolkit()
+            # StrikeWorks's own door into the Development toolkit (past
+            # its password: the demo is run from the console)
+            dlg.open_development_toolkit()
         elif not w.isVisible():
-            w.show()
+            w.showMaximized()
         w.home_page._go_advanced()
+        self._step_shown = time.monotonic()      # Home
         self._step_library()
         self._check_stop()
 
@@ -749,16 +793,17 @@ class AdvancedDemoRunner(_RunnerBase):
         page._load_index()
         page._populate_sensor_table()
 
-        thread = page._auto_process_all()
+        thread = page.view.auto_process_all()
         if thread is None:
             raise _RunnerError("Annotate: no processed sensors listed.")
         self._wait_thread(thread, "Auto process all")
-        self._log(f"Annotate: {page.lbl_validate_status.text()}")
+        self._wait_loaded(page.view)
+        self._log(f"Annotate: {page.view.lbl_status.text()}")
 
         if self.source.annotations_csv is not None:
             with self._headless_dialogs():
-                n = page._import_annotations(str(self.source.annotations_csv))
-            self._log(f"Annotate: {page.lbl_validate_status.text()}"
+                n = page.annotations.import_csv(str(self.source.annotations_csv))
+            self._log(f"Annotate: {page.annotations.lbl_status.text()}"
                       if n else "Annotate: annotation import failed.")
         else:
             self._log("Annotate: no annotations CSV in the demo pack - "
@@ -766,8 +811,8 @@ class AdvancedDemoRunner(_RunnerBase):
 
         with self._headless_dialogs():
             df, path, msg = self._wait_for(
-                page._exporter.finished, _LONG_TIMEOUT_MS, "Save and export",
-                page._save_and_export)
+                page.view.exporter.finished, _LONG_TIMEOUT_MS, "Save and export",
+                page.view.save_and_export)
         if df is None:
             raise _RunnerError(f"Save and export: {msg}")
         self._log(f"Save and export: {msg} - passed to Model prediction.")
@@ -875,7 +920,7 @@ def run_headless(window, mode):
     if mode not in available_demos():
         return False, f"the {mode} demo isn't available in this edition"
     result = {}
-    runner = RUNNERS[mode](window)
+    runner = RUNNERS[mode](window, paced=False)
     runner.finished.connect(lambda ok, msg: result.update(ok=ok, msg=msg))
     runner.run()
     return bool(result.get("ok")), result.get("msg", "")

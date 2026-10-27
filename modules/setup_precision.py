@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 from .bsm_state import LATEST_RESULT_PATH
 from .canvas import FigureCanvas
 from .ml_figures import fg_colour, style_axes, style_legend, _grid
-from .layout import apply_section_defaults, scroll_page, Section
+from .layout import scroll_page, Section
 from .theme import INFO, WARN, muted_label, style
 from .wilson_calc import required_n, wilson_interval
 
@@ -93,7 +93,6 @@ class PrecisionCalcTab(QWidget):
 
         v.addWidget(grp)
         v.addStretch()
-        apply_section_defaults(frame)
 
     def _inputs(self):
         form = QGridLayout()
@@ -266,7 +265,7 @@ class PrecisionCalcTab(QWidget):
         ax.set_ylabel("Precision ± (percentage points)", fontsize=9)
         if title:
             ax.set_title(f"Precision at {p * 100:.1f}% expected strike rate "
-                         f"({confidence}% CI)", fontsize=10, fontweight="bold")
+                         f"({confidence}% CI)", fontsize=10)
         ax.tick_params(labelsize=8)
         style_axes(fig, ax, dark)
         fig.tight_layout()

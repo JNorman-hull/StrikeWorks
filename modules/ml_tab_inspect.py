@@ -26,10 +26,9 @@ from PySide6.QtWidgets import (
 )
 
 from . import raw_layout, settings
-from .ml_state import annotation_column, is_strike_value
 from .ml_tab_predict import _NumItem
 from .cards import ProbBars
-from .layout import apply_section_defaults, Section
+from .layout import Section
 from .theme import (
     BAD, INFO, NADIR, OK, PALETTE, PINK, REGION_EDGE, REGION_FILL, TRACE,
     TRACE2, WARN, style,
@@ -258,7 +257,6 @@ class InspectTab(QWidget):
         split.setStretchFactor(1, 3)
         split.setSizes([2000, 3000])
 
-        apply_section_defaults(frame)
 
     # ── state wiring ─────────────────────────────────────────────────────────
     def _connect_state(self):
@@ -371,9 +369,7 @@ class InspectTab(QWidget):
 
     # ── ground truth helpers ─────────────────────────────────────────────────
     def _have_ground_truth(self):
-        p = self.state.predictions
-        return p is not None and "overall_passage_type" in p.columns \
-            and p["overall_passage_type"].notna().any()
+        return self.state.ground_truth_column() is not None
 
     def _filtered(self):
         s = self.state
@@ -393,15 +389,13 @@ class InspectTab(QWidget):
             out = out[out["severe_strike"] == 1]
         elif mode == _FILTER_MILD:
             out = out[(out["predicted_strike"] == 1) & (out["severe_strike"] == 0)]
-        elif mode == _FILTER_MISCLASS:
-            col = annotation_column(out)
-            if col is not None:
-                has_gt = (out[col].notna()
-                          & (out[col].astype(str).str.strip() != ""))
-                gt_strike = out[col].map(is_strike_value)
-                out = out[has_gt
-                          & (out["predicted_strike"].astype(bool)
-                             != gt_strike)]
+        elif mode == _FILTER_MISCLASS and len(out):
+            # ground truth read the way the model was trained
+            gt_strike = out.apply(
+                lambda r: self.state.ground_truth_for(r)[0], axis=1)
+            has_gt = gt_strike.notna()
+            out = out[has_gt & (out["predicted_strike"].astype(bool)
+                                != gt_strike.fillna(False).astype(bool))]
 
         tx = self.cmb_treatment.currentData()
         if tx is not None and "treatment" in out.columns:

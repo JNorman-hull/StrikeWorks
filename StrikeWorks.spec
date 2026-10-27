@@ -37,6 +37,9 @@ datas = [
     ("images", "images"),
     # the app stylesheet (modules/theme.py fills in the active palette)
     ("themes", "themes"),
+    # the shipped settings defaults (settings.DEFAULTS_FILE): the default
+    # annotation variables and Model training's starting choices
+    ("config", "config"),
     ("icon.ico", "."),
     # models/ and input_data/BSM_config/ are NOT listed here - both are
     # looked up via settings.app_root(), which resolves to

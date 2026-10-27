@@ -40,6 +40,7 @@ COLLISION_G = 400
 NADIR_WINDOW_S = 0.1
 ROI_LABEL = "nadir (±0.1 s)"
 ALL_LABEL = "All recordings"
+NOT_RECORDED_LABEL = "Not recorded"
 CHANNEL = "higacc_mag_g"
 
 PEAK_COLUMNS = ["file", "peak_number", "peak_time_s", "time_from_nadir_s",
@@ -292,8 +293,10 @@ def centred_traces(df, files, facet_col=None):
     """Each recording's HIG magnitude on two normalised time axes, as in
     the R figures: `time_norm_acc` puts the recording's peak acceleration
     at 0.5 and `time_norm_nadir` the nadir (the window centre), each side
-    stretched to fill 0-0.5 and 0.5-1. Columns: file, facet, time_s,
-    higacc_mag_g, time_norm_acc, time_norm_nadir."""
+    stretched to fill 0-0.5 and 0.5-1. Columns: file, facet (the
+    recording's `facet_col` value - NOT_RECORDED_LABEL where it has none -
+    or ALL_LABEL without the column), time_s, higacc_mag_g,
+    time_norm_acc, time_norm_nadir."""
     mag = hig_magnitude(df)
     if mag is None or not len(files):
         return pd.DataFrame(columns=["file", "facet", "time_s", CHANNEL,
@@ -301,7 +304,7 @@ def centred_traces(df, files, facet_col=None):
     data = pd.DataFrame({"file": df["file"].values,
                          "time_s": df["time_s"].astype(float).values,
                          CHANNEL: mag.values})
-    data["facet"] = (df[facet_col].astype(str).values
+    data["facet"] = (df[facet_col].fillna(NOT_RECORDED_LABEL).astype(str).values
                      if facet_col and facet_col in df.columns else ALL_LABEL)
     data = data[data["file"].isin(set(files))]
     parts = []

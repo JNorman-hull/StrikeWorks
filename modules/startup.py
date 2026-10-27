@@ -10,9 +10,9 @@ splash, the default data folders and the Windows taskbar identity.
 import platform
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
-from PySide6.QtSvg import QSvgRenderer
+import numpy as np
+from PySide6.QtCore import QRect, Qt
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QLabel, QSizePolicy, QSplashScreen, QWidget
 
 from . import settings, theme
@@ -21,40 +21,89 @@ from .theme import CARD_BG, MUTED
 # relative to this file rather than the working directory, so it still
 # resolves when the exe is launched from a shortcut (frozen, both files
 # sit in _internal/)
-ICON_PATH = Path(__file__).parent.parent / "icon.ico"
-_IMAGES = Path(__file__).parent.parent / "images" / "images"
-# the StrikeWorks logo: the version outlined for white pages in the
-# University of Hull theme, the original on the dark theme
-LOGO_PATH = _IMAGES / ("PyDracula_vertical_white.png" if theme.NAME == "hull"
-                       else "PyDracula_vertical.png")
-# the University's Primary Brandmark - the one University logo the app
-# shows: Ink Blue (positive) on light backgrounds, white (negative) on dark,
-# at least 60 px wide
-BRANDMARK_PATH = _IMAGES / "uoh_brandmark.svg"
+ICON_PATH = Path(__file__).parent.parent / "icon.ico"   # built from icon.png
+# the app's logo - StrikeWorks with the University of Hull beside it, the
+# one logo the app shows (the sidebar's small badge aside): white for a dark
+# background, navy (`_dark`) for a light one; the 300 dpi files for the big
+# ones (Home, Finished, the splash, About), the 96 dpi files for the small
+# ones (StrikeWorks's bottom bar, the toolkit's sidebar)
+_LOGOS = Path(__file__).parent.parent / "images"
+
+
+def logo_path(large=True, on_dark=None):
+    if on_dark is None:
+        on_dark = theme.P["dark"]
+    return _LOGOS / (f"strikeworks_uoh{'' if on_dark else '_dark'}_"
+                     f"{300 if large else 96}.png")
+
+
+def _drawn_rect(pix):
+    """The part of `pix` with anything drawn on it - the logo files carry a
+    transparent margin, which would otherwise shrink and offset them."""
+    img = pix.toImage().convertToFormat(QImage.Format.Format_ARGB32)
+    rows = np.frombuffer(img.constBits(), np.uint8).reshape(
+        img.height(), img.bytesPerLine())
+    alpha = rows[:, 3:img.width() * 4:4]          # B, G, R, A per pixel
+    ys, xs = np.nonzero(alpha > 8)
+    if not len(xs):
+        return pix.rect()
+    return QRect(int(xs.min()), int(ys.min()), int(xs.max() - xs.min() + 1),
+                 int(ys.max() - ys.min() + 1))
+
+
+def logo_pixmap(width=None, height=None, large=True, on_dark=None):
+    """The logo cropped to its drawing, scaled to `width` or `height` px;
+    a null pixmap if the file is missing."""
+    pix = QPixmap(str(logo_path(large, on_dark)))
+    if pix.isNull():
+        return pix
+    pix = pix.copy(_drawn_rect(pix))
+    smooth = Qt.TransformationMode.SmoothTransformation
+    if width:
+        return pix.scaledToWidth(width, smooth)
+    if height:
+        return pix.scaledToHeight(height, smooth)
+    return pix
+
+
+def icon_pixmap(size):
+    """The app icon (images/icon.png - the same picture as icon.ico),
+    cropped to its drawing and fitted into `size` x `size` px; a null
+    pixmap if the file is missing."""
+    pix = QPixmap(str(_LOGOS / "icon.png"))
+    if pix.isNull():
+        return pix
+    return pix.copy(_drawn_rect(pix)).scaled(
+        size, size, Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation)
+
+
+def logo_label(width=None, height=None, large=True, on_dark=None):
+    """A QLabel showing the logo (`logo_pixmap`), centred; None if the file
+    is missing."""
+    pix = logo_pixmap(width, height, large, on_dark)
+    if pix.isNull():
+        return None
+    label = QLabel()
+    label.setPixmap(pix)
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    return label
 
 
 def build_splash():
     """The loading splash shown while MainWindow builds its pages: the
-    StrikeWorks logo, the University brandmark under it, and room for the
-    "Loading application..." message - no bigger than they need."""
-    logo_w, mark_w, pad, gap, message_h = 200, 70, 22, 16, 36
-    logo = QPixmap(str(LOGO_PATH)) if LOGO_PATH.exists() else QPixmap()
-    if not logo.isNull():
-        logo = logo.scaledToWidth(logo_w, Qt.TransformationMode.SmoothTransformation)
-    mark = brandmark_pixmap(mark_w, reverse=theme.P["dark"])
-    width = max(logo.width(), mark.width()) + 2 * pad
-    height = (pad + logo.height() + (gap if not logo.isNull() else 0)
-              + mark.height() + message_h)
+    logo and room for the "Loading application..." message - no bigger
+    than they need."""
+    logo_w, pad, message_h = 340, 22, 36
+    logo = logo_pixmap(width=logo_w)
+    width = (logo.width() if not logo.isNull() else logo_w) + 2 * pad
+    height = pad + (logo.height() if not logo.isNull() else 0) + message_h
     pix = QPixmap(width, height)
     pix.fill(QColor(CARD_BG))
-    painter = QPainter(pix)
-    top = pad
     if not logo.isNull():
-        painter.drawPixmap((width - logo.width()) // 2, top, logo)
-        top += logo.height() + gap
-    if not mark.isNull():
-        painter.drawPixmap((width - mark.width()) // 2, top, mark)
-    painter.end()
+        painter = QPainter(pix)
+        painter.drawPixmap(pad, pad, logo)
+        painter.end()
 
     splash = QSplashScreen(pix)
     splash.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
@@ -68,82 +117,29 @@ def build_splash():
     return splash
 
 
-def logo_label(width):
-    """A QLabel showing the StrikeWorks logo (the theme's version) `width`
-    px wide, centred; None if the file is missing."""
-    pix = QPixmap(str(LOGO_PATH))
-    if pix.isNull():
-        return None
-    label = QLabel()
-    label.setPixmap(pix.scaledToWidth(
-        width, Qt.TransformationMode.SmoothTransformation))
-    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    return label
+class ScaledLogo(QWidget):
+    """The small (96 dpi) logo at up to `max_width`, scaled down to fit a
+    narrower space - the toolkit's sidebar - and not drawn at all once
+    narrower than `min_width` (the sidebar collapsed to its icon strip)."""
 
-
-def _brandmark_ratio(renderer):
-    size = renderer.defaultSize()
-    return size.height() / size.width()
-
-
-def brandmark_pixmap(width, reverse=False):
-    """The University brandmark `width` px wide: Ink Blue, or with
-    `reverse` its white (negative) version, for a dark background. A null
-    pixmap if the file is missing."""
-    renderer = QSvgRenderer(str(BRANDMARK_PATH))
-    if not renderer.isValid():
-        return QPixmap()
-    pix = QPixmap(QSize(width, round(width * _brandmark_ratio(renderer))))
-    pix.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pix)
-    renderer.render(painter)
-    if reverse:
-        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-        painter.fillRect(pix.rect(), QColor("white"))
-    painter.end()
-    return pix
-
-
-def brandmark(width=120, reverse=None):
-    """A QLabel showing the University brandmark `width` px wide (60 px at
-    least), or None if the file is missing. White on the dark theme unless
-    `reverse` says otherwise."""
-    if reverse is None:
-        reverse = theme.P["dark"]
-    pix = brandmark_pixmap(max(60, width), reverse)
-    if pix.isNull():
-        return None
-    label = QLabel()
-    label.setPixmap(pix)
-    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    label.setToolTip("University of Hull")
-    return label
-
-
-class Brandmark(QWidget):
-    """The University brandmark at up to `max_width`, scaled down to fit a
-    narrower space (the sidebar collapsed to its icon strip) - never below
-    the brand's 60 px; narrower than that it isn't drawn."""
-
-    def __init__(self, max_width, reverse=False):
+    def __init__(self, max_width, min_width=120, on_dark=True):
         super().__init__()
-        renderer = QSvgRenderer(str(BRANDMARK_PATH))
-        self._valid = renderer.isValid()
-        self._ratio = _brandmark_ratio(renderer) if self._valid else 1.0
-        self._max = max_width
-        self._reverse = reverse
+        self._source = logo_pixmap(large=False, on_dark=on_dark)
+        self._max, self._min = max_width, min_width
         self._pix = QPixmap()
-        self.setFixedHeight(round(max_width * self._ratio))
+        ratio = (self._source.height() / self._source.width()
+                 if not self._source.isNull() else 0.35)
+        self.setFixedHeight(round(max_width * ratio))
         self.setMinimumWidth(1)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-        self.setToolTip("University of Hull")
 
     def paintEvent(self, _event):
         width = min(self._max, self.width())
-        if not self._valid or width < 60:
+        if self._source.isNull() or width < self._min:
             return
         if self._pix.width() != width:
-            self._pix = brandmark_pixmap(width, self._reverse)
+            self._pix = self._source.scaledToWidth(
+                width, Qt.TransformationMode.SmoothTransformation)
         painter = QPainter(self)
         painter.drawPixmap((self.width() - self._pix.width()) // 2,
                            (self.height() - self._pix.height()) // 2,

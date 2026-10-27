@@ -25,7 +25,6 @@ without rendering.
 """
 import json
 import os
-import subprocess
 from pathlib import Path
 
 import cv2
@@ -36,7 +35,7 @@ from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QGridLayout,
-    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox, QPushButton,
+    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
     QSizePolicy, QSlider, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
@@ -46,10 +45,10 @@ from . import sensor_config, video_sync
 from .library_widgets import LibrarySelector
 from .session_state import OUTPUT_DIR_NAME
 from .layout import (
-    apply_section_defaults, Page, scroll_area, Section, when_visible,
+    Page, scroll_area, Section, when_visible,
 )
 from .theme import NADIR, REGION_EDGE, REGION_FILL, TRACE, muted_label, style
-from .page_annotate import LOSSLESSCUT_EXE, LOSSLESSCUT_MISSING
+from .sensor_validation import open_video
 from .plot_widgets import CsvLoadThread, NavViewBox, find_col
 from .plot_style import reserve_top_margin, set_right_axis_active
 
@@ -179,7 +178,6 @@ class ExportAnimationsPage(Page):
         split.setStretchFactor(0, 1)
         split.setStretchFactor(1, 3)
         split.setSizes([1000, 3000])
-        apply_section_defaults(frame)
 
     def _build_browser(self):
         """Left column: the sensor picker."""
@@ -258,7 +256,8 @@ class ExportAnimationsPage(Page):
         pi.addItem(self._video_region)
 
         # nadir line - yellow, draggable, snaps to the nearest sample -
-        # same interaction as Validate's nadir tool (page_validate.py).
+        # same interaction as the validation screen's nadir tool
+        # (sensor_validation.py).
         # Starts at the sensor's own recorded nadir time; dragging it
         # overrides that for this page's video sync only, persisted in
         # this sensor's own sync config rather than the shared index -
@@ -618,10 +617,8 @@ class ExportAnimationsPage(Page):
     def _set_loaded_enabled(self, enabled):
         for b in (self.btn_process, self.btn_save):
             b.setEnabled(enabled)
-        # apply_section_defaults() force-shows every widget in an open
-        # Section after _build() runs, undoing the constructor's
-        # setVisible(False) - reassert it here, which also covers loading
-        # a new sensor while a previous one's Cancel button was showing
+        # loading a new sensor while a previous one's Cancel button was
+        # showing
         self.btn_cancel.setVisible(False)
 
     # ── sensor table ─────────────────────────────────────────────────────────
@@ -681,28 +678,9 @@ class ExportAnimationsPage(Page):
             return
         stem = stem_item.text()
         matches = self.lib_selector.video_matches_for(stem)
-        if not matches:
-            self.status.emit(f"No matching video for {stem}.", 4000)
-            return
-        if not LOSSLESSCUT_EXE.exists():
-            QMessageBox.warning(self.main_window, "LosslessCut missing",
-                                LOSSLESSCUT_MISSING)
-            return
-        video_path = matches[0]
-        if len(matches) > 1:
-            names = [p.name for p in matches]
-            choice, ok = QInputDialog.getItem(
-                self.main_window, "Choose video",
-                f"{len(names)} videos match {stem}:", names, 0, False)
-            if not ok:
-                return
-            video_path = matches[names.index(choice)]
-        try:
-            subprocess.Popen([str(LOSSLESSCUT_EXE), str(video_path)])
-        except Exception as e:
-            QMessageBox.critical(self.main_window, "Could not open video", str(e))
-            return
-        self.status.emit(f"Opened {video_path.name} in LosslessCut", 4000)
+        message = open_video(self.main_window, stem, matches)
+        if message:
+            self.status.emit(message, 4000)
 
     # ── sensor loading ───────────────────────────────────────────────────────
     def _load_sensor(self, path):

@@ -15,10 +15,11 @@ all optional).
                           is selected (otherwise the library's
                           StrikeWorks_user_output/).
   Default input data folder - where exported datasets are written.
-  Default model (Simple mode) - the model Simple mode's Predict step uses;
+  Default model         - the model StrikeWorks's Predict step uses;
                           unset means 'binary1' / 'multiclass1', else the
                           newest.
-  Dev mode              - the dev console and its demos.
+  Console (bottom left) - everything the app prints, errors included, and
+                          the demos (dev_console.py).
 
 After it closes, `main.py` has Home re-read the libraries folder.
 """
@@ -29,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import settings
-from .layout import apply_section_defaults, Section
+from .layout import Section
 from . import theme
 from .theme import style
 
@@ -42,7 +43,7 @@ class SettingsDialog(QDialog):
         self.window = window
         self.setWindowTitle("Settings")
         self.setMinimumWidth(520)
-        # window-modal, so the dev console (opened from here) stays usable
+        # window-modal, so the console (opened from here) stays usable
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self._build()
 
@@ -80,7 +81,7 @@ class SettingsDialog(QDialog):
             gv, "Default binary model:",
             settings.get_default_model, settings.set_default_model,
             "binary*.joblib",
-            "Which deployed binary model Simple mode's Predict step uses "
+            "Which deployed binary model StrikeWorks's Predict step uses "
             "automatically. Unset (the normal state) uses 'binary1' if "
             "present, else whichever model was deployed most recently.")
         self.ed_default_mc_model = self._model_field(
@@ -112,17 +113,22 @@ class SettingsDialog(QDialog):
         v.addWidget(grp_input)
 
         self._appearance_row(v)
-        self._dev_mode_row(v)
 
         v.addStretch()
         close_row = QHBoxLayout()
+        btn_console = QPushButton("Console")
+        btn_console.setToolTip(
+            "Everything the app has printed this session - status "
+            "messages, worker output, warnings and errors - and the demos. "
+            "Also saved as it goes, to this session's log file.")
+        btn_console.clicked.connect(self._show_console)
+        close_row.addWidget(btn_console)
         close_row.addStretch()
         btn_close = QPushButton("Close")
         btn_close.clicked.connect(self.accept)
         close_row.addWidget(btn_close)
         v.addLayout(close_row)
 
-        apply_section_defaults(self)
 
     def _folder_field(self, gv, current, caption, tip):
         """A folder path and Browse (with `tip` as its tooltip)."""
@@ -212,58 +218,5 @@ class SettingsDialog(QDialog):
             "" if key == theme.NAME
             else "Takes effect the next time StrikeWorks starts.")
 
-    def _dev_mode_row(self, v):
-        grp = Section("Dev mode")
-        gv = QVBoxLayout(grp)
-        gv.setSpacing(6)
-
-        row = QHBoxLayout()
-        self.btn_dev_mode = QPushButton()
-        self.btn_dev_mode.setCheckable(True)
-        self.btn_dev_mode.setChecked(settings.get_dev_mode())
-        self.btn_dev_mode.setToolTip(
-            "Pops out a live console that mirrors everything the app "
-            "prints - status messages, worker/prediction output - handy "
-            "while running through a page manually. Stays on for future "
-            "launches until turned off here.")
-        self._refresh_dev_mode_label()
-        self.btn_dev_mode.toggled.connect(self._toggle_dev_mode)
-        row.addWidget(self.btn_dev_mode)
-        btn_show = QPushButton("Show console")
-        btn_show.setToolTip(
-            "Bring the dev console to the front (turns Dev mode on first "
-            "if it's currently off).")
-        btn_show.clicked.connect(self._show_dev_console)
-        row.addWidget(btn_show)
-        row.addStretch()
-        gv.addLayout(row)
-        note = QLabel("The demos (Simple / Advanced) run from the dev "
-                      "console itself - open it, close this window, and "
-                      "watch the app being driven.")
-        style(note, role="note")
-        note.setWordWrap(True)
-        gv.addWidget(note)
-
-        v.addWidget(grp)
-
-    def _refresh_dev_mode_label(self):
-        self.btn_dev_mode.setText(
-            "Dev mode: ON" if self.btn_dev_mode.isChecked()
-            else "Dev mode: OFF")
-
-    def _toggle_dev_mode(self, checked):
-        self._refresh_dev_mode_label()
-        settings.set_dev_mode(checked)
-        self.window.dev_console.set_enabled(checked)
-
-    def _show_dev_console(self):
-        console = self.window.dev_console
-        if not self.btn_dev_mode.isChecked():
-            # fires _toggle_dev_mode -> installs the tee, persists the
-            # setting, and shows the console - without this, clicking
-            # Show console while the toggle was off would raise an empty
-            # window with no stdout/stderr tee ever attached to it
-            self.btn_dev_mode.setChecked(True)
-        else:
-            console.set_enabled(True)   # no-op if already installed
-        console.bring_up()
+    def _show_console(self):
+        self.window.dev_console.bring_up()

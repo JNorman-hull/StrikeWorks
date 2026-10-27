@@ -53,6 +53,27 @@ class AppStarts(unittest.TestCase):
         for index in range(dialog.stack.count()):
             dialog.stack.setCurrentIndex(index)
             pump(50)
+        # the "Process" and "Report" headings open their first sub-step
+        for row, page in ((2, 2), (6, 5)):
+            dialog._on_step_clicked(dialog.step_list.item(row))
+            pump(50)
+            self.assertEqual(dialog.stack.currentIndex(), page)
+            self.assertEqual(dialog.step_list.currentRow(), row + 1)
+        # the small StrikeWorks | University of Hull logo, away from Home
+        self.assertEqual(dialog.logos.layout().count(), 1)
+        self.assertTrue(dialog.logos.isVisible())
+        # the step's title in the top row; every box a plain heading
+        self.assertTrue(dialog.lbl_title.text().startswith("Report blade strike"))
+        from modules.layout import Section
+        boxes = dialog.findChildren(Section)
+        self.assertTrue(boxes)
+        self.assertFalse(any(box.isCheckable() for box in boxes))
+        # the session library's folder is its picker's tooltip
+        self.assertNotIn("No library", dialog.editor.cmb_library.toolTip()
+                         if self.window.session_state.library else "x")
+        dialog.stack.setCurrentIndex(0)
+        dialog._sync_step_highlight()
+        self.assertFalse(dialog.logos.isVisible())
         dialog.hide()
 
     def test_windows_fit_the_screen_work_area(self):
@@ -91,8 +112,6 @@ class SimpleEdition(unittest.TestCase):
             dialog.show()
             pump(100)
             self.assertFalse(dialog.btn_dev_toolkit.isVisible())
-            # nothing to choose between on the welcome page: Next continues
-            self.assertFalse(dialog.btn_blade_strike.isVisible())
             dialog._go_development_toolkit()
             pump(100)
             self.assertFalse(window.isVisible())
@@ -108,6 +127,51 @@ class SimpleEdition(unittest.TestCase):
         # the full edition keeps its way in
         _main, window = main_window()
         self.assertFalse(window.simple_mode_dialog.btn_dev_toolkit.isHidden())
+
+
+class DevelopmentToolkitDoor(unittest.TestCase):
+    """StrikeWorks's "Development toolkit" button asks for the password;
+    only the right one opens the full app, maximised."""
+
+    def test_password(self):
+        from unittest import mock
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+        from modules import page_simple_mode
+        qt_app()
+        isolate()
+        _main, window = main_window()
+        dialog = window.simple_mode_dialog
+        dialog.show()
+        pump(50)
+        self.assertEqual(dialog.btn_dev_toolkit.text(), "Development toolkit")
+        # on Home only
+        self.assertTrue(dialog.btn_dev_toolkit.isVisible())
+        dialog._go_next()
+        pump(50)
+        self.assertFalse(dialog.btn_dev_toolkit.isVisible())
+        dialog._go_back()
+        pump(50)
+        self.assertTrue(dialog.btn_dev_toolkit.isVisible())
+        self.assertEqual(window.ui.btn_simple_mode_nav.text(), "Go to StrikeWorks")
+        with mock.patch.object(QMessageBox, "warning") as warned:
+            for answer in (("", False), ("devmode", True)):
+                with mock.patch.object(QInputDialog, "getText",
+                                       return_value=answer):
+                    dialog._go_development_toolkit()
+                pump(50)
+                self.assertFalse(window.isVisible())
+                self.assertFalse(dialog.went_to_dev_toolkit)
+            self.assertEqual(warned.call_count, 1)    # the wrong one, not Cancel
+        with mock.patch.object(
+                QInputDialog, "getText",
+                return_value=(page_simple_mode._DEV_TOOLKIT_PASSWORD, True)):
+            dialog._go_development_toolkit()
+        pump(100)
+        self.assertTrue(dialog.went_to_dev_toolkit)
+        self.assertTrue(window.isVisible())
+        self.assertTrue(window.isMaximized())
+        self.assertFalse(dialog.isVisible())
+        window.close()
 
 
 if __name__ == "__main__":

@@ -32,6 +32,13 @@ class FigureCanvas(FigureCanvasQTAgg):
 
     def __init__(self, figure=None):
         super().__init__(figure)
+        # the figure laid out for the size it's drawn at, every time:
+        # Matplotlib's tight_layout() lays it out once, for the size it has
+        # then, and a canvas the page later resizes keeps those margins -
+        # cutting off axis titles and putting legends over them. The drawing
+        # code's call is kept as the figure's layout engine instead
+        fig = self.figure
+        fig.tight_layout = lambda **kw: fig.set_layout_engine("tight", **kw)
         self._stale = None          # the last drawing, while resizing
         self._settle = QTimer(self)
         self._settle.setSingleShot(True)

@@ -31,13 +31,9 @@ QDialog { background-color: @bg; }
 #leftMenuBg { background-color: @sidebar; }
 #leftMenuBg QWidget, #extraLeftBox QWidget, #extraRightBox QWidget, #contentTopBg QWidget,
 #bottomBar QWidget { color: @sidebar_text; }
-#topLogo {
-	background-color: @sidebar;
-	background-image: url(:/images/images/images/PyDracula.png);
-	background-position: centered;
-	background-repeat: no-repeat;
-}
-#titleLeftApp { font: 63 12pt "Segoe UI Semibold"; }
+/* the app icon, drawn in it by main.py */
+#topLogo { background-color: @sidebar; }
+#titleLeftApp { font: 12pt "Segoe UI"; }
 #titleLeftDescription { font: 8pt "Segoe UI"; color: @sidebar_caption; }
 
 #topMenu .QPushButton, #bottomMenu .QPushButton, #extraTopMenu .QPushButton, #contentSettings .QPushButton {
@@ -337,12 +333,24 @@ QPushButton:hover { background-color: @button_hover; border: 2px solid @button_h
 QPushButton:pressed { background-color: @button_pressed; border: 2px solid @button_pressed_border; }
 QPushButton:disabled { color: @disabled_text; }
 
+/* the plots' "Export ▾" menu button (plot_style.add_export_button) - a
+   button like the rest; its text carries the arrow */
+QToolButton {
+	border: 2px solid @button;
+	border-radius: 5px;
+	background-color: @button;
+	color: @button_text;
+	padding: 2px 8px;
+}
+QToolButton:hover { background-color: @button_hover; border: 2px solid @button_hover_border; }
+QToolButton:pressed { background-color: @button_pressed; border: 2px solid @button_pressed_border; }
+QToolButton::menu-indicator { image: none; width: 0px; }
+
 /* the main action on a page */
 QPushButton[role="primary"] {
 	background-color: @primary;
 	border: 2px solid @primary;
 	color: @on_primary;
-	font-weight: bold;
 	padding: 4px 14px;
 }
 QPushButton[role="primary"]:hover { background-color: @primary_hover; border: 2px solid @primary_hover; }
@@ -352,25 +360,38 @@ QPushButton[role="alternative"] {
 	background-color: @alternative;
 	border: 2px solid @alternative;
 	color: @on_alternative;
-	font-weight: bold;
 }
 /* a text-only link-style button */
-QPushButton[role="link"] { background: transparent; border: none; color: @accent; padding: 2px; }
+QPushButton[role="link"] { background: transparent; border: none; color: @accent_text; padding: 2px; }
 QPushButton[role="link"]:hover { text-decoration: underline; }
+
+/* a section box drawn as a plain heading (Section.set_plain - StrikeWorks) */
+QGroupBox[role="plain"] { border: none; margin-top: 20px; }
+QGroupBox[role="plain-untitled"] { border: none; margin-top: 0px; }
+/* StrikeWorks's drag handles: unseen until pointed at (the frameless
+   boxes otherwise get a dark bar between them) */
+#strikeWorks QSplitter::handle { background: transparent; }
+#strikeWorks QSplitter::handle:hover { background: @empty; }
+QGroupBox[role="plain"]::title {
+	subcontrol-origin: margin;
+	subcontrol-position: top left;
+	left: 0px;
+	padding: 0px;
+}
 
 /* ////////////////////////////////////////////////////////////////////
    Text roles (theme.style(widget, role=...)) */
 *[role="muted"] { color: @muted; }
 *[role="note"] { color: @muted; font-size: 11px; }
 *[role="hint"] { color: @muted; font-style: italic; }
-*[role="strong"] { font-weight: bold; }
-*[role="subheading"] { color: @muted; font-weight: bold; }
-*[role="heading"] { font-size: 14px; font-weight: bold; }
-*[role="section-title"] { font-size: 14px; font-weight: bold; border-bottom: 1px solid @border; padding-bottom: 3px; }
-*[role="title"] { font-size: 16px; font-weight: bold; }
-*[role="value"] { font-size: 16px; font-weight: bold; }
-*[role="display"] { font-size: 20px; font-weight: bold; font-style: italic; }
-*[role="app-title"] { font-size: 22px; font-weight: bold; }
+*[role="strong"] { font-weight: normal; }
+*[role="subheading"] { color: @muted; }
+*[role="heading"] { font-size: 14px; }
+*[role="section-title"] { font-size: 14px; border-bottom: 1px solid @border; padding-bottom: 3px; }
+*[role="title"] { font-size: 16px; }
+*[role="value"] { font-size: 16px; }
+*[role="display"] { font-size: 20px; font-style: italic; }
+*[role="app-title"] { font-size: 22px; }
 *[role="lead"] { font-size: 13px; }
 *[role="tagline"] { color: @muted; font-size: 28px; font-style: italic; }
 *[role="panel"] { background: @card; border: 1px solid @border; border-radius: 5px; padding: 8px; }

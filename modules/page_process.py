@@ -13,9 +13,10 @@ Simple mode's Process step:
                    for the current filters.
   File inventory - inventory_widgets.FileInventory: every recording with
                    the deployment, treatment and run of its folder, Process
-                   selected, and the console log. Each recording is
-                   labelled from its own folder, so one batch can span
-                   several treatments and runs.
+                   selected, and a Console button (the processing log goes
+                   to the app console). Each recording is labelled from its
+                   own folder, so one batch can span several treatments and
+                   runs.
 
 A deployment's details are edited in Create and edit deployment, whose
 Update relabels sensors already processed. The file extensions, filename
@@ -26,8 +27,8 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSplitter,
-    QVBoxLayout, QWidget,
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
+    QWidget,
 )
 
 from . import deployment_index as di
@@ -47,14 +48,13 @@ class StatCard(QFrame):
         v = QVBoxLayout(self)
         v.setContentsMargins(10, 6, 10, 6)
         v.setSpacing(1)
-        # title and detail at the standard text size; the value bolder and
-        # a few points larger
+        # title and detail at the standard text size; the value a few
+        # points larger
         self._title = QLabel(title)
         style(self._title, role="muted")
         self._value = QLabel("-")
         f = QFont(self._title.font())
         f.setPointSize(max(f.pointSize(), 9) + 3)
-        f.setBold(True)
         self._value.setFont(f)
         self._detail = QLabel("")
         style(self._detail, role="muted")
@@ -135,21 +135,17 @@ class ProcessPage(Page):
         lv.addStretch()
         row.addWidget(left)
 
+        # the processing log goes to the app console - a button beside
+        # Process selected
         self.inventory = FileInventory(orientation=Qt.Orientation.Vertical,
-                                       log_inside=False)
+                                       open_console=self._open_console)
         row.addWidget(self.inventory, stretch=1)
+        layout.addWidget(page)
 
-        # filters/summary and the file inventory on top, the console full
-        # width underneath (draggable)
-        split = QSplitter(Qt.Orientation.Vertical)
-        split.setChildrenCollapsible(False)
-        split.addWidget(page)
-        split.addWidget(self.inventory.log_section)
-        split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 1)
-        split.setSizes([3000, 1000])
-        self.inventory.console.setMinimumHeight(60)
-        layout.addWidget(split)
+    def _open_console(self):
+        console = getattr(self.main_window, "dev_console", None)
+        if console is not None:
+            console.bring_up()
 
     def _connect(self):
         self.lib_selector.library_changed.connect(self._on_lib_changed)
@@ -188,6 +184,7 @@ class ProcessPage(Page):
 
     def _on_processing_done(self, code, stems):
         msg = ("Processing complete." if code == 0
+               else "Processing stopped." if code == 2
                else "Processing finished with errors.")
         self.status.emit(f"{msg} {len(stems)} sensor(s) processed.", 5000)
 

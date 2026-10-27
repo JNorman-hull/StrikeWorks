@@ -74,7 +74,7 @@ class Ui_MainWindow(object):
         self.titleLeftApp.setObjectName(u"titleLeftApp")
         self.titleLeftApp.setGeometry(QRect(70, 4, 160, 42))
         font1 = QFont()
-        font1.setFamilies([u"Segoe UI Semibold"])
+        font1.setFamilies([u"Segoe UI"])
         font1.setPointSize(12)
         font1.setBold(False)
         font1.setItalic(False)
@@ -327,18 +327,6 @@ class Ui_MainWindow(object):
         self.btn_process.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-loop-circular.png);")
 
         self.verticalLayout_11.addWidget(self.btn_process)
-
-        self.btn_validate = QPushButton(self.extraTopMenu)
-        self.btn_validate.setObjectName(u"btn_validate")
-        sizePolicy.setHeightForWidth(self.btn_validate.sizePolicy().hasHeightForWidth())
-        self.btn_validate.setSizePolicy(sizePolicy)
-        self.btn_validate.setMinimumSize(QSize(0, 45))
-        self.btn_validate.setFont(font)
-        self.btn_validate.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_validate.setLayoutDirection(Qt.LeftToRight)
-        self.btn_validate.setStyleSheet(u"background-image: url(:/icons/images/icons/cil-check-alt.png);")
-
-        self.verticalLayout_11.addWidget(self.btn_validate)
 
         self.btn_ml_training = QPushButton(self.extraTopMenu)
         self.btn_ml_training.setObjectName(u"btn_ml_training")
@@ -824,7 +812,6 @@ class Ui_MainWindow(object):
         self.extraCloseColumnBtn.setText("")
         self.btn_prepare.setText(QCoreApplication.translate("MainWindow", u"Sensor configuration", None))
         self.btn_process.setText(QCoreApplication.translate("MainWindow", u"Raw data processing", None))
-        self.btn_validate.setText(QCoreApplication.translate("MainWindow", u"Segmentation", None))
         self.btn_ml_training.setText(QCoreApplication.translate("MainWindow", u"Train", None))
         self.btn_ml_prediction.setText(QCoreApplication.translate("MainWindow", u"Predict", None))
         self.btn_annotate.setText(QCoreApplication.translate("MainWindow", u"Annotate", None))

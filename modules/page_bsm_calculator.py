@@ -35,7 +35,7 @@ from . import bsm_config
 from .bsm_model import compute
 from .bsm_state import LATEST_RESULT_PATH, build_latest_payload, output_card_rows
 from .cards import MetaCard
-from .layout import apply_section_defaults, Page, scroll_area, Section
+from .layout import Page, scroll_area, Section
 from .theme import muted_label, style
 
 _EEL_LF_DEFAULT = 0.66
@@ -92,7 +92,6 @@ class CalculatorPage(Page):
         rv.addStretch()
         outer.addWidget(right, stretch=1)
 
-        apply_section_defaults(frame)
 
     def _config_group(self):
         g = Section("Configuration")
@@ -158,7 +157,7 @@ class CalculatorPage(Page):
         g = Section("Fish")
         v = QVBoxLayout(g)
 
-        v.addWidget(self._bold_muted("Scaly"))
+        v.addWidget(self._subheading("Scaly"))
         scaly_grid = QGridLayout()
         scaly_grid.setColumnStretch(1, 1)
         self.in_lf_scaly = QLineEdit()
@@ -170,7 +169,7 @@ class CalculatorPage(Page):
             scaly_grid.addWidget(w, i, 1)
         v.addLayout(scaly_grid)
 
-        v.addWidget(self._bold_muted("Eel"))
+        v.addWidget(self._subheading("Eel"))
         eel_grid = QGridLayout()
         eel_grid.setColumnStretch(1, 1)
         self.in_lf_eel = QLineEdit(f"{_EEL_LF_DEFAULT:g}")
@@ -182,7 +181,7 @@ class CalculatorPage(Page):
             eel_grid.addWidget(w, i, 1)
         v.addLayout(eel_grid)
 
-        v.addWidget(self._bold_muted("Shared"))
+        v.addWidget(self._subheading("Shared"))
         shared_grid = QGridLayout()
         shared_grid.setColumnStretch(1, 1)
         self.in_wf = QLineEdit()
@@ -295,7 +294,7 @@ class CalculatorPage(Page):
         return g
 
     @staticmethod
-    def _bold_muted(text):
+    def _subheading(text):
         lab = QLabel(text)
         style(lab, role="subheading")
         return lab

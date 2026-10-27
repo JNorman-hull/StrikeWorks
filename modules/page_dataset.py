@@ -44,8 +44,8 @@ from .theme import style
 
 # ── annotation join (model_labels.csv) ──────────────────────────────────────
 _LABEL_FILE_COL = "sens_file"          # joins to feature 'file'
-_LABEL_COLS = ["overall_passage_type", "leading_edge_type",
-               "other_type", "concentric_pump_region"]
+_LABEL_COLS = ["passage_type", "leading_type", "other_type",
+               "concentric_pump_region"]
 _STRIKE_TYPES = {"leading_edge", "other"}
 _REGION_ORDER = [1, 2, 3, 4, 5]
 
@@ -495,30 +495,30 @@ class DatasetPage(Page):
         for bar, val in zip(bars, heights):
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + pad,
                     fmt(val), ha="center", va="bottom",
-                    fontsize=8, fontweight="bold")
+                    fontsize=8)
         ax.set_xticks(x)
         ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=8)
         ax.set_ylabel(ylabel, fontsize=9)
-        ax.set_title(title, fontsize=9, fontweight="bold", color=_DARK)
+        ax.set_title(title, fontsize=9, color=_DARK)
         ax.set_ylim(0, ymax if ymax else top * 1.20 + 1)
         ax.set_axisbelow(True)
         ax.yaxis.grid(True, color="grey", linewidth=0.5, alpha=0.5)
 
     def _draw_annotation_figure(self):
-        if self._result is None or "overall_passage_type" not in self._result.columns:
+        if self._result is None or "passage_type" not in self._result.columns:
             return
         per_file = self._result.drop_duplicates(subset="file")
         self.fig.clear()
         ax0, ax1, ax2 = self.fig.subplots(1, 3)
 
         pt_order = ["leading_edge", "no_contact", "other"]
-        pt_counts = per_file["overall_passage_type"].value_counts()
+        pt_counts = per_file["passage_type"].value_counts()
         self._bar(ax0, pt_order, [int(pt_counts.get(k, 0)) for k in pt_order],
                   title="Passage type", ylabel="Files (n)",
                   fmt=lambda v: f"{int(v)}")
 
         n_tot = len(per_file)
-        n_strike = int(per_file["overall_passage_type"].isin(_STRIKE_TYPES).sum())
+        n_strike = int(per_file["passage_type"].isin(_STRIKE_TYPES).sum())
         rate = (n_strike / n_tot * 100) if n_tot else 0.0
         tx = (str(per_file["treatment"].iloc[0])
               if "treatment" in per_file.columns and n_tot else "all")
