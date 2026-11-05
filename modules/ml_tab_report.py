@@ -43,7 +43,7 @@ from .theme import muted_label, style
 
 # (key, title) in the order report_center.all_sections() builds them
 _SECTION_TITLES = [
-    ("bsm",              "Blade strike modelling (mathematical)"),
+    ("bsm",              "Blade strike calculator"),
     ("study_design",     "Study design"),
     ("process",          "Raw data processing"),
     ("annotation",       "Annotation"),

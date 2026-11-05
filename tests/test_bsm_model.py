@@ -6,7 +6,7 @@ from support import BSM_CONFIG  # noqa: F401  (sets sys.path)
 
 from modules.bsm_config import load_config
 from modules.bsm_model import (compute, mortality_from_strike_rate,
-                               sensitivity_sweeps)
+                               sensitivity_sweeps, sweep_q_multipliers)
 from modules.wilson_calc import required_n, wilson_interval
 
 
@@ -44,6 +44,21 @@ class BSMModel(unittest.TestCase):
         # the design line passes through the design point's own result
         _x, pco = s["pco_n"][s["design_label"]]
         self.assertAlmostEqual(pco[20], 45.33190157818858, places=9)
+
+    def test_sweep_ranges(self):
+        """Calculator's Advanced options: Q lines from / to a step
+        apart, the design Q always one; N between its multiples."""
+        self.assertEqual(sweep_q_multipliers(),
+                         [0.6, 0.8, 1.0, 1.2, 1.4, 1.6])
+        self.assertEqual(sweep_q_multipliers((0.5, 1.5), 0.2),
+                         [0.5, 0.7, 0.9, 1.0, 1.1, 1.3, 1.5])
+        s = sensitivity_sweeps(self.params, q_span=(1.2, 1.6), q_step=0.4,
+                               n_span=(0.5, 1.5))
+        self.assertEqual(len(s["pco_n"]), 3)        # 1.0, 1.2, 1.6
+        n, _y = s["pco_n"][s["design_label"]]
+        design_n = self.params["N"]
+        self.assertAlmostEqual(n[0], design_n * 0.5)
+        self.assertAlmostEqual(n[-1], design_n * 1.5)
 
 
 class Wilson(unittest.TestCase):

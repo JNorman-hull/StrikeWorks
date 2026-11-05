@@ -5,13 +5,13 @@
 #
 # ///////////////////////////////////////////////////////////////
 """Layout helpers shared by the pages: the Page base every sidebar page
-is built on, collapsible Section boxes, splitters and centring, and
-running code when a widget is first shown.
+is built on, collapsible Section boxes, splitters and centring, popup
+menus, and running code when a widget is first shown.
 """
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QGroupBox, QHBoxLayout, QScrollArea, QSplitter, QTabWidget, QVBoxLayout,
-    QWidget,
+    QGroupBox, QHBoxLayout, QMenu, QScrollArea, QSplitter, QTabWidget,
+    QVBoxLayout, QWidget,
 )
 
 from .theme import style
@@ -65,6 +65,16 @@ def discard_widget(w):
     become a window at all."""
     w.hide()
     w.deleteLater()
+
+
+def popup_menu(widget=None):
+    """A right-click or button menu for `widget`, parented to its window
+    (None: no parent - for a button's menu, built before the button is in
+    a window; keep a reference). A menu parented inside the main window
+    warns "must be a top level window" as it opens: the window's central
+    widget has a native handle (win_utils' taskbar fix for StrikeWorks).
+    """
+    return QMenu(widget.window() if widget is not None else None)
 
 
 def hsplit(*items):

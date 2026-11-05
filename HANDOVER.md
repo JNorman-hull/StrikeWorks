@@ -94,17 +94,124 @@
   - **Misclassification analysis** also writes each correction to the
     recording's row of its library's sensor index, and shows the
     variables the model's dataset has (position ones included).
-  - **Train page** (26 October): four rows - Training dataset (with the
-    preview), Labelling (Target / Null value (0) / Positive value (1), each
-    target value coded 0, 1 or Exclude in place of Dataset filtering, the
-    multiclass grouping with classes beside levels, distributions, then
-    the breakdown), Inputs | Cross-validation, and one Model box
-    (Configuration, Train + Console, Final model, Deploy; one button size).
+  - **Train page** (26, 28, 29 October): four rows - the dataset (no
+    headings; loading and its card start at their narrowest beside the
+    preview, a draggable split), Labelling (Binary model: Target / Null
+    value (0) / Positive value (1) - how the 0/1 variable is derived is
+    the positive value's tooltip - with "Classes", each target value
+    coded 0, 1 or Exclude, under them | Multiclass model: class variable
+    and grouping, classes beside levels, no count line | the two class
+    distributions stacked), Inputs | Sequence length | Class weights |
+    Cross-validation (with "Performance metric" - the breakdown
+    variables, three to a column, the derived variables their tooltip -
+    under it), and the Model box, bordered and centred: Configuration
+    beside (1) Train model (CV) | (2) Evaluate performance | (3) Train
+    final model, the folds' progress and Console, one blue status line
+    for every run and the deploy ("Final model saved", "Deployed ..."),
+    the Binary and Multiclass OOF cards side by side, then Model version
+    | (4) Deploy model | Model information (the model card, in a window
+    that closes with the page). No Deployment model card; a deploy opens
+    the models folder instead of a message box. One button size, 176 px;
+    the page fits a 1290 px window without sideways scroll. The Console
+    window lost its heading and the log path line (the path is the Open
+    logs folder button's tooltip).
+    Later on 29 October: the preview lists every sensor (no 200-row cap),
+    and a click on a column header sorts or filters by it (now every
+    table's - see One table code below; a filtered header reads
+    "leading_type: Direct"). Performance metric has a
+    Variable name (the breakdown variable, `strike_type` by default -
+    Evaluate, its figure and the model report use it; the files keep the
+    `performance_by_strike_type` key) and its own tick boxes for the
+    binary and the multiclass model - the multiclass model's performance
+    is now broken down too (`mc_breakdown_columns`, train_worker
+    `_by_strike_type`). The Model box is one three-column grid, so its
+    buttons line up; the Multiclass OOF card and the progress bar
+    ("Waiting for model run") show before any run. The multiclass tick
+    boxes start on leading_type and other_type, as the binary ones
+    (config/default_settings.json, `mc_breakdown_columns`).
     No training console - the worker's lines go to the app Console; Raw
     data processing likewise has a Console button instead of its log box.
     Typing a class name no longer loses focus each key (LevelGrouper
     doesn't rebuild for its own change). No bold anywhere in the UI or
     figures (exported HTML reports keep their headings).
+  - **One set of names for a model's measures** (29 October,
+    `modules/model_measures.py`): ROC AUC, PR AUC, Accuracy,
+    Sensitivity, Specificity, Precision, F1 score, MCC (and Decision
+    threshold, binary only) - on Model training's cards, Evaluate, the
+    figures, the model and prediction reports and Predict's Model card.
+    The multiclass model now saves its counterparts too (train_worker:
+    `macro_roc_auc`, `macro_pr_auc`, `macro_specificity`, `mcc` - each
+    class against the rest, averaged; "macro" is never shown, a note
+    says so); a multiclass model trained before has "-" for them
+    (specificity comes from its confusion matrix). "Recall" is
+    Sensitivity everywhere (per-class recall is Sensitivity by class,
+    the PR curve the precision-sensitivity curve); FNR/FPR are gone
+    (1 - sensitivity/specificity).
+  - **Evaluate** (29 October): the model list (Train's dataset-row
+    width; where the model is from is its tooltip) and Refresh; one
+    performance table in the HIG table's layout (Discrimination |
+    Classification | Decision threshold | n; rows Out-of-fold,
+    Cross-validation mean ± SD, Hold-out test); Performance by class -
+    the model's own classes (n, sensitivity, specificity, precision, F1
+    score, from the confusion matrix; No strike / Strike for a binary
+    model) beside by treatment; then the figures, 300 px high - binary:
+    ROC | precision-sensitivity | confusion matrix, predicted probability
+    | accuracy by strike type (2/3); multiclass: ROC | confusion matrix,
+    sensitivity by class | predicted probability, accuracy by strike type
+    (2/3). No Models folder, Export model report or Model report box -
+    the model report is in Export and report, with the same tables and
+    figures. Strike types are the figure, not a table.
+  - **One table code** (29 October, `modules/tables.py`): `tables.install`
+    (from MainWindow) sets up every QTableWidget as it is first shown -
+    the HIG table's look (headers drawn as its cells, no dark header bars:
+    transparent, showing the table - in the toolkit that's the page,
+    because ui_main.py's page stack sets `background: transparent` on
+    everything in it, so a header in the card colour read darker than its
+    cells; text centred unless a cell sets its own), a click on a column header
+    for Sort ascending/descending and a filter by value (none for "file"),
+    filters kept through a page's refill, and right-click "Copy highlighted
+    cells" / "Copy entire table" (column names plus the rows the filters
+    leave). Pages no longer sort or style their own tables (`table_copy.py`
+    is unused; `_NumItem` and Qt's click-sorting are gone); reports read
+    tables with `tables.table_rows`. Menus are parented to their window
+    (`layout.popup_menu`): one parented inside the main window printed
+    "QWidgetWindow ... must be a top level window" (StrikeWorks's taskbar
+    fix gives the main window's central widget a native handle). Blade
+    strike modelling's Results table is as tall as its rows, as the HIG
+    table is (`tables.fit_height`).
+  - **Blade strike calculator** (29 October, `modules/page_bsm.py`): the
+    sidebar's "Blade strike modelling" is now "Blade strike calculator"
+    and opens one page, no section panel (main.ui's Calculator /
+    Analysis and reporting buttons are hidden, `_RETIRED_BUTTONS`), with
+    two tabs. Calculator: Calculate under the configuration list; the
+    blade profile table as tall as its rows; Advanced options - range
+    sliders for Q and N and a Q step, each x the design value (defaults
+    0.6-1.6, 0.6-1.4, 0.2: the sweep as it was), in
+    `BSMState.sweep_options` (`modules/range_slider.py`, Qt has no
+    two-handle slider); scaly and eel collision probability beside the
+    output cards, filling the page down to "Advanced model outputs"
+    (which opens the other tab). The page fits a standard window with no
+    main-window scrollbar: the figure's height is whatever is left
+    (vertical size policy Ignored - a matplotlib canvas asks for the size
+    it has, so once grown it held the page taller than the window).
+    Advanced analysis (was Analysis and reporting): both species in the
+    Results table and output cards, the two 4-panel figures as before,
+    the sweeps at the Advanced options (worked out when the tab is
+    shown); no Generate report - Export and report's "Blade strike
+    calculator" section is the report, and now writes bsm_results.csv
+    too. Messages that sent people to "Blade Strike Modelling" name
+    the Blade strike calculator.
+  - **University of Hull theme removed** (29 October): StrikeWorks
+    (dark) is the only theme; Settings > Appearance still lists
+    `theme.THEMES`, for any added later; the light-theme branches
+    (`P["dark"]`) stay for that. The navy (`_dark`) logo files and
+    `modules/table_copy.py` went to the Recycle Bin (29 October).
+  - **Model comparison** (29 October): the manual box is "Model
+    comparison" (it shared "Model 1" with the bundled model); Video
+    observed and Model comparison have an Include box, unticked until
+    counts are entered; the table has a column only for what is included
+    (and each species once the Blade Strike Model has it), as the figures
+    do; the Pco/Pm note is the Blade strike model label's tooltip.
   - **One validation page** (27 October): StrikeWorks's Validate step is
     the toolkit's Validate and annotate page itself
     (`page_annotate.AnnotationPage(..., for_strikeworks=True)`): the
@@ -115,14 +222,62 @@
     Misclassification and Export animations), an "Annotations and notes"
     window (`AnnotationsWindow`: stays open, follows the sensor, holds
     Import annotations CSV…, closes with its page) and Save and export,
-    which exports the sensors listed. Only the saving differs: in the
-    toolkit Save + Next also adds annotated windows to the running dataset
-    (`_after_save`) and Save and export asks first while flagged sensors
-    are unreviewed; StrikeWorks asks on Next instead, names the export
-    after the Deploy deployment and continues to Predict with it. The
-    hidden Segmentation page (`page_validate.py`) is deleted, with its
-    sidebar button. Hidden-tab-bar pages (`layout.TabbedPage`) have no
-    frame; the plots' Export button is styled like the other buttons. Section boxes have no frame or tick box
+    which exports the sensors listed. It behaves the same in both (28
+    October): Save + Next saves the review and annotations to the index
+    (no running-dataset step any more - the export still updates the
+    running dataset behind "In dataset"), Save and export asks first while
+    flagged sensors are unreviewed (StrikeWorks's Next asks once, then
+    exports without asking again), and the export is
+    `<library>_<deployment filter>_<timestamp>.csv`, added to recent
+    training datasets. StrikeWorks's Deployment filter starts on the
+    deployment picked on Deploy (`LibrarySelector.select_deployment`)
+    whenever that changes, and its Next continues to Predict with the
+    export. The hidden Segmentation page (`page_validate.py`) is deleted,
+    with its sidebar button. Hidden-tab-bar pages (`layout.TabbedPage`) have no
+    frame; the plots' Export button is styled like the other buttons.
+  - **Deploy** (28 October): "New deployment" is a link under the
+    Deployment list (the list shows "New deployment" while one is being
+    set up); + Add treatment, Create & open data folder and Update are one
+    row of same-size buttons under the treatments table, the recording
+    count under them; the treatments box runs the full page height; the
+    Remove column fits its buttons. StrikeWorks's Deploy and Process pages
+    have no margins, like Validate, so all three line up with the title.
+  - **Default models** (28 October): the models pinned in Settings are
+    now used by Model prediction too - at start-up, when Settings change
+    the models folder or the default, and even from another folder
+    (`PredictionState.use_default_models`); a rescan (after a deploy)
+    keeps the model selected. Running from source and the built app keep
+    separate settings files (`%APPDATA%\StrikeWorks\settings.json` and
+    `settings.json` beside the exe) - a default set in one isn't seen by
+    the other.
+  - **One Predict and one Results page** (28 October,
+    `modules/ml_tab_predict.py`): StrikeWorks's Predict and Report steps
+    and the toolkit's Model prediction > Predict (its Predict and Results
+    tabs) are the same two pages, StrikeWorks's as the base. Predict: the
+    Dataset and Model cards side by side (the Model card lists each
+    model's out-of-fold accuracy, sensitivity, specificity and - binary
+    only, it isn't saved for multiclass - ROC AUC; multiclass
+    sensitivity and specificity are averaged over the classes, the
+    latter from the saved confusion matrix); Load dataset CSV | Run
+    prediction | Advanced features; a spinner and the time elapsed while
+    it runs, one green line when done; the Predicted strikes (strike
+    rate in its centre), Strike classes and Collisions (collision rate)
+    rings; in the toolkit only, "Inspect low confidence". No models
+    folder or model pickers - the models are Settings' defaults.
+    **Advanced features** is a window that doesn't block (like
+    Annotations and notes) and closes with its page: Model mode, the
+    decision threshold and its override, HIG peak analysis, and the
+    blade strike model's Treatment and Eel critical velocity with the
+    scaly/eel mortality - the last two now on `BSMState`, one pair for
+    both apps. Results: the results by treatment, the HIG peak table, the
+    strike rate, strike class and HIG peak figures, the acceleration
+    centred on the peak and on the nadir, and the mortality sweep once a
+    blade strike model has been calculated this session (Calculator).
+    Gone from the toolkit's old Predict: the Recordings, Strike rate and
+    Mean confidence rings, the HIG events card, the sortable table and
+    the multi-line summary. Spin boxes in dialogs are now dark like the
+    toolkit's (app.qss).
+  - Section boxes have no frame or tick box
     anywhere (`layout.Section`), which also fixed spinners showing all
     the time. Figures are laid out at the size they're drawn
     (`canvas.FigureCanvas`).
@@ -255,7 +410,8 @@ settings in `settings.json` beside the exe.
    models and writes a full report to `.../StrikeWorks_user_output/Report_<time>/`.
 5. Predicting an existing dataset: **Development toolkit** (bottom left;
    password `devmode_123`), then Model prediction > Predict > load
-   `input_data/Pumpflow_2024_datatset1_only.csv` > Run.
+   `input_data/Pumpflow_2024_datatset1_only.csv` > Run prediction (the
+   figures on its Results tab).
 
 The same check runs unattended from the repo: `powershell -File
 tools\smoke_test.ps1 -Demos` (on a temporary copy of `dist\StrikeWorks` -

@@ -25,7 +25,6 @@ from PySide6.QtWidgets import (
 from . import raw_layout, sensor_sort
 from .cards import Spinner
 from .layout import Section, when_visible
-from .tables import style_table
 from .theme import BAD, OK, WARN, muted_label, style
 from .raw_layout import RAW_DIR, UNGROUPED
 
@@ -40,13 +39,15 @@ def library_picker(combo):
     combo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
     def menu(pos):
-        from PySide6.QtWidgets import QMenu
+        from .layout import popup_menu
         from .win_utils import open_folder
         path = combo.currentData()
-        m = QMenu(combo)
+        m = popup_menu(combo)
         act = m.addAction("Open folder")
         act.setEnabled(bool(path) and Path(path).is_dir())
-        if m.exec(combo.mapToGlobal(pos)) is act:
+        chosen = m.exec(combo.mapToGlobal(pos))
+        m.deleteLater()
+        if chosen is act:
             open_folder(path)
 
     combo.customContextMenuRequested.connect(menu)
@@ -142,6 +143,7 @@ class LibrarySelector(QWidget):
         self._list_columns = list(list_columns)
         self._cache = None           # last populate_sensor_list() call, for re-filtering
         self._syncing = False
+        self._pending_deployment = None   # select_deployment() before a scan
         self._build(sensor_list)
         self._connect()
         self._select_library(session_state.library)
@@ -227,7 +229,6 @@ class LibrarySelector(QWidget):
 
         self.tbl_sensors = QTableWidget(0, 1 + len(self._list_columns))
         self.tbl_sensors.setHorizontalHeaderLabels(["Sensor"] + self._list_columns)
-        style_table(self.tbl_sensors)
         self.tbl_sensors.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows)
         self.tbl_sensors.setSelectionMode(
@@ -267,6 +268,16 @@ class LibrarySelector(QWidget):
 
     def wanted_deployment(self):
         return self.cmb_deployment.currentData()
+
+    def select_deployment(self, name):
+        """Filter to deployment `name` (a raw_sens_data folder) - now, or
+        once the library's scan has filled the filter in."""
+        idx = self.cmb_deployment.findData(name)
+        if self._tree is not None and idx >= 0:
+            self._pending_deployment = None
+            self.cmb_deployment.setCurrentIndex(idx)
+        else:
+            self._pending_deployment = name
 
     def wanted_treatment(self):
         return self.cmb_treatment.currentData()
@@ -356,7 +367,8 @@ class LibrarySelector(QWidget):
         recording.
         """
         self._locations = dict(self._tree.locations) if self._tree else {}
-        current_dep = self.cmb_deployment.currentData()
+        current_dep = self._pending_deployment or self.cmb_deployment.currentData()
+        self._pending_deployment = None
         self.cmb_deployment.blockSignals(True)
         self.cmb_deployment.clear()
         self.cmb_deployment.addItem("All deployments", ALL_DEPLOYMENTS)

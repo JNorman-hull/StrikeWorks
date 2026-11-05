@@ -8,14 +8,17 @@
 
 Collision: each treatment's strike rate from the model against the BSM
 collision probability, as a figure and a table, plus manual Video observed
-and Model 1 counts shown as their own bars (Wilson 95 % CI).
+and Model comparison counts shown as their own bars (Wilson 95 % CI) -
+each once its Include box is ticked (as soon as counts are entered). The
+table has a column for each thing the figures show, no more.
 
 Mortality: the current model's strike rate put through each species' BSM
 injury model (`bsm_model.mortality_from_strike_rate`, the same formula as
 the BSM's observed-counts mortality) - the model-projected mortality -
 against the BSM's own mortality and any video-observed mortality, as a
 figure beside the collision figure and extra table columns. The manual
-Model 1 counts get no projected mortality (no BSM run behind them).
+Model comparison counts get no projected mortality (no BSM run behind
+them).
 
 Layout: Filters (the same Deployment / Treatment / Run filters as Raw data
 processing) and the three input boxes on the left, figures over the table
@@ -94,6 +97,15 @@ def _count_row(form, label, changed):
     return spin
 
 
+def _include_box():
+    """Include a box's counts in the figures and table - unticked until
+    some are entered (they all start at 0)."""
+    box = QCheckBox("Include")
+    box.setToolTip("Include these counts in the figures and table - "
+                   "ticked once counts are entered.")
+    return box
+
+
 class ModelComparisonPage(Page):
 
     def __init__(self, main_window, bsm_state, prediction_state=None):
@@ -149,7 +161,8 @@ class ModelComparisonPage(Page):
         return g
 
     def _inputs_column(self):
-        """Filters, then Video observed / Model 1 / Blade strike model."""
+        """Filters, then Video observed / Model comparison / Blade strike
+        model."""
         left = QWidget()
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 4, 0)
@@ -218,19 +231,18 @@ class ModelComparisonPage(Page):
         self.ed_video_label.setToolTip("Label shown on the table/figure.")
         self.ed_video_label.textChanged.connect(self._refresh_comparison)
         head.addWidget(self.ed_video_label, stretch=1)
-        self.chk_video_plot = QCheckBox("Plot")
-        self.chk_video_plot.setChecked(True)
+        self.chk_video_plot = _include_box()
         self.chk_video_plot.toggled.connect(self._refresh_comparison)
         head.addWidget(self.chk_video_plot)
         gv.addLayout(head)
 
         form = _count_form()
         self.spin_manual_total = _count_row(form, "Sensors deployed",
-                                            self._refresh_comparison)
+                                            self._video_counts_changed)
         self.spin_manual_strike = _count_row(form, "Strikes observed",
-                                             self._refresh_comparison)
+                                             self._video_counts_changed)
         self.spin_manual_mort = _count_row(form, "Mortalities observed",
-                                           self._refresh_comparison)
+                                           self._video_counts_changed)
         self.spin_manual_mort.setToolTip(
             "Fish killed, out of the sensors deployed - the observed "
             "mortality the mortality figure compares against.")
@@ -242,24 +254,23 @@ class ModelComparisonPage(Page):
         return g
 
     def _model1_group(self):
-        g = Section("Model 1")
+        g = Section("Model comparison")
         gv = QVBoxLayout(g)
         head = QHBoxLayout()
-        self.ed_model1_label = QLineEdit("Model 1")
+        self.ed_model1_label = QLineEdit("Model comparison")
         self.ed_model1_label.setToolTip("Label shown on the table/figure.")
         self.ed_model1_label.textChanged.connect(self._refresh_comparison)
         head.addWidget(self.ed_model1_label, stretch=1)
-        self.chk_model1_plot = QCheckBox("Plot")
-        self.chk_model1_plot.setChecked(True)
+        self.chk_model1_plot = _include_box()
         self.chk_model1_plot.toggled.connect(self._refresh_comparison)
         head.addWidget(self.chk_model1_plot)
         gv.addLayout(head)
 
         form = _count_form()
         self.spin_model1_total = _count_row(form, "Sensors deployed",
-                                            self._refresh_comparison)
+                                            self._model1_counts_changed)
         self.spin_model1_strike = _count_row(form, "Predicted strike",
-                                             self._refresh_comparison)
+                                             self._model1_counts_changed)
         gv.addLayout(form)
         self.lbl_model1 = QLabel("")
         style(self.lbl_model1)
@@ -272,13 +283,17 @@ class ModelComparisonPage(Page):
         gv = QVBoxLayout(g)
         head = QHBoxLayout()
         self.ed_bsm_label = QLineEdit("Blade strike model")
-        self.ed_bsm_label.setToolTip("Label shown on the table/figure.")
+        self.ed_bsm_label.setToolTip(
+            "Label shown on the table/figure.\n\nCollision probability "
+            "(Pco) and mortality (Pm) from the Blade Strike Model. The "
+            "model-projected mortality puts the current model's predicted "
+            "strike rate through the same injury model.")
         self.ed_bsm_label.textChanged.connect(self._refresh_comparison)
         head.addWidget(self.ed_bsm_label, stretch=1)
         gv.addLayout(head)
 
-        # each species' tick box (plot its bars) over its two values, so
-        # the column stays narrow
+        # each species' tick box (include its bars and columns) over its
+        # two values, so the column stays narrow
         form = QGridLayout()
         form.setHorizontalSpacing(8)
         form.setColumnMinimumWidth(0, 12)
@@ -287,8 +302,8 @@ class ModelComparisonPage(Page):
         def species_rows(name, row):
             box = QCheckBox(name)
             box.setChecked(True)
-            box.setToolTip(f"Plot the {name.lower()} Blade Strike Model "
-                           "bars.")
+            box.setToolTip(f"Include the {name.lower()} Blade Strike "
+                           "Model in the figures and table.")
             box.toggled.connect(self._refresh_comparison)
             form.addWidget(box, row, 0, 1, 3)
             values = []
@@ -306,12 +321,6 @@ class ModelComparisonPage(Page):
         (self.chk_eel_show, self.lbl_eel_value,
          self.lbl_eel_mort) = species_rows("Eel", 3)
         gv.addLayout(form)
-        note = muted_label(
-            "Collision probability (Pco) and mortality (Pm) from the Blade "
-            "Strike Model. The model-projected mortality puts the current "
-            "model's predicted strike rate through the same injury model.", wrap=True)
-        note.setWordWrap(True)
-        gv.addWidget(note)
         return g
 
     # ── filtered per-treatment results ──────────────────────────────────────
@@ -362,6 +371,23 @@ class ModelComparisonPage(Page):
         return sorted(out)
 
     # ── reactions ────────────────────────────────────────────────────────────
+    def _video_counts_changed(self):
+        self._include_if_entered(self.chk_video_plot, (
+            self.spin_manual_total, self.spin_manual_strike,
+            self.spin_manual_mort))
+
+    def _model1_counts_changed(self):
+        self._include_if_entered(self.chk_model1_plot, (
+            self.spin_model1_total, self.spin_model1_strike))
+
+    def _include_if_entered(self, box, spins):
+        """Counts entered: their Include box ticked (all back to 0:
+        unticked)."""
+        box.blockSignals(True)
+        box.setChecked(any(spin.value() for spin in spins))
+        box.blockSignals(False)
+        self._refresh_comparison()
+
     def _video_observed_bar(self):
         """(label, value_pct, ci_lo, ci_hi) for the video-observed entry,
         or None if it's empty/invalid/hidden - an extra bar in the
@@ -409,8 +435,8 @@ class ModelComparisonPage(Page):
         return (label, mort / total * 100, lo * 100, hi * 100)
 
     def _model1_bar(self):
-        """(label, value_pct, ci_lo, ci_hi) for Model 1, or None if it's
-        empty/invalid/hidden."""
+        """(label, value_pct, ci_lo, ci_hi) for the Model comparison
+        counts, or None if they're empty/invalid/left out."""
         total = self.spin_model1_total.value()
         strike = self.spin_model1_strike.value()
         if total == 0:
@@ -427,7 +453,7 @@ class ModelComparisonPage(Page):
         if total == 0 or strike > total or not self.chk_model1_plot.isChecked():
             return None
         lo, hi, _half = wilson_interval(strike / total, total, confidence=95)
-        label = self.ed_model1_label.text().strip() or "Model 1"
+        label = self.ed_model1_label.text().strip() or "Model comparison"
         return (label, strike / total * 100, lo * 100, hi * 100)
 
     def _run_model_name(self):
@@ -468,16 +494,6 @@ class ModelComparisonPage(Page):
         }
 
         model_name = self._run_model_name()
-        video_label = self.ed_video_label.text().strip() or "Video observed"
-        model1_label = self.ed_model1_label.text().strip() or "Model 1"
-        self.tbl_compare.setHorizontalHeaderLabels(
-            ["Treatment", "N", video_label, model_name, model1_label,
-             f"{bsm_label} - scaly", f"{bsm_label} - eel",
-             f"{video_label} mortality",
-             f"{model_name} mortality - scaly",
-             f"{model_name} mortality - eel",
-             f"{bsm_label} mortality - scaly",
-             f"{bsm_label} mortality - eel"])
 
         # each also refreshes its own status label as a side effect - one
         # call each, reused below, rather than once per table row
@@ -486,38 +502,44 @@ class ModelComparisonPage(Page):
         model1 = self._model1_bar()
 
         rows = self._treatment_rows()
-        self.tbl_compare.setRowCount(len(rows))
+        # a column for each thing the figures show: what's included, and
+        # each species only once the Blade Strike Model has it
+        species = [sp for sp in ("scaly", "eel")
+                   if shown[sp] and results.get(sp)]
+        columns = [("Treatment", lambda r: r[0]),
+                   ("N", lambda r: str(r[1]))]
+        if video:
+            columns.append((video[0], lambda r: f"{video[1]:.1f}%"))
+        columns.append((model_name, lambda r: (
+            f"{r[2] * 100:.1f}% [{r[3] * 100:.1f}%, {r[4] * 100:.1f}%]")))
+        if model1:
+            columns.append((model1[0], lambda r: f"{model1[1]:.1f}%"))
+        for sp in species:
+            columns.append((f"{bsm_label} - {sp}",
+                            lambda r, sp=sp: f"{cen_raw[sp]:.1f}%"))
+        if video_mort:
+            columns.append((f"{video_mort[0]} mortality",
+                            lambda r: _pct_ci(*video_mort[1:])))
+        for sp in species:
+            columns.append((f"{model_name} mortality - {sp}", lambda r, sp=sp:
+                            _pct_ci(*(mortality_from_strike_rate(results[sp], v)
+                                      * 100 for v in r[2:5]))))
+        for sp in species:
+            columns.append((f"{bsm_label} mortality - {sp}",
+                            lambda r, sp=sp: _pct(pm_raw[sp])))
+
+        tbl = self.tbl_compare
+        tbl.setColumnCount(len(columns))
+        tbl.setHorizontalHeaderLabels([name for name, _cell in columns])
+        tbl.setRowCount(len(rows))
         comparisons = []
-        for i, (label, n, rate, lo, hi) in enumerate(rows):
-            self.tbl_compare.setItem(i, 0, QTableWidgetItem(label))
-            self.tbl_compare.setItem(i, 1, QTableWidgetItem(str(n)))
-            self.tbl_compare.setItem(i, 2, QTableWidgetItem(
-                f"{video[1]:.1f}%" if video else ""))
-            self.tbl_compare.setItem(i, 3, QTableWidgetItem(
-                f"{rate * 100:.1f}% [{lo * 100:.1f}%, {hi * 100:.1f}%]"))
-            self.tbl_compare.setItem(i, 4, QTableWidgetItem(
-                f"{model1[1]:.1f}%" if model1 else ""))
-            self.tbl_compare.setItem(i, 5, QTableWidgetItem(
-                f"{cen_raw['scaly']:.1f}%" if cen_raw["scaly"] is not None
-                else "Not calculated"))
-            self.tbl_compare.setItem(i, 6, QTableWidgetItem(
-                f"{cen_raw['eel']:.1f}%" if cen_raw["eel"] is not None
-                else "Not calculated"))
-            self.tbl_compare.setItem(i, 7, QTableWidgetItem(
-                _pct_ci(*video_mort[1:]) if video_mort else ""))
-            for col, sp in ((8, "scaly"), (9, "eel")):
-                res = results.get(sp)
-                self.tbl_compare.setItem(i, col, QTableWidgetItem(
-                    _pct_ci(*(mortality_from_strike_rate(res, v) * 100
-                              for v in (rate, lo, hi)))
-                    if res else "Not calculated"))
-            for col, sp in ((10, "scaly"), (11, "eel")):
-                self.tbl_compare.setItem(i, col, QTableWidgetItem(
-                    _pct(pm_raw[sp]) if pm_raw[sp] is not None
-                    else "Not calculated"))
+        for i, row in enumerate(rows):
+            for c, (_name, cell) in enumerate(columns):
+                tbl.setItem(i, c, QTableWidgetItem(cell(row)))
+            label, _n, rate, lo, hi = row
             comparisons.append((f"{label} ({model_name})", rate * 100,
                                lo * 100, hi * 100))
-        self.tbl_compare.resizeColumnsToContents()
+        tbl.resizeColumnsToContents()
 
         if video is not None:
             comparisons.append(video)

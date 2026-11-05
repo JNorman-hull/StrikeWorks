@@ -26,7 +26,8 @@ class LevelGrouper(QWidget):
     free text - they become the model's class names.
 
     Reused wherever levels need collapsing or recoding, so the behaviour is
-    defined once.
+    defined once. No count line under it: the class distribution beside it
+    shows the counts.
     """
 
     changed = Signal()
@@ -73,11 +74,6 @@ class LevelGrouper(QWidget):
         levels.addStretch()
         cols.addLayout(levels, stretch=1)
         v.addLayout(cols)
-
-        self.lbl_summary = QLabel("")
-        style(self.lbl_summary, role="muted")
-        self.lbl_summary.setWordWrap(True)
-        v.addWidget(self.lbl_summary)
 
     @staticmethod
     def _heading(text):
@@ -163,7 +159,6 @@ class LevelGrouper(QWidget):
                 self._level_combos[key] = cmb
         finally:
             self._updating = False
-        self._refresh_summary()
 
     def _assignment(self):
         out = {}
@@ -172,19 +167,6 @@ class LevelGrouper(QWidget):
                 out[key] = i
         return out
 
-    def _refresh_summary(self):
-        counts = {key: c for key, _d, c in self._levels}
-        parts = []
-        for g in self._groups:
-            n = sum(counts.get(k) or 0 for k in g["levels"])
-            parts.append(f"{g['name'] or '(unnamed)'}: {n}")
-        excluded = [d for k, d, _c in self._levels
-                    if k not in self._assignment()]
-        text = "   ".join(parts)
-        if excluded:
-            text += f"    excluded: {', '.join(str(e) for e in excluded)}"
-        self.lbl_summary.setText(text)
-
     # ── edits ────────────────────────────────────────────────────────────────
     def _name_changed(self, idx, text):
         if self._updating or idx >= len(self._groups):
@@ -192,7 +174,6 @@ class LevelGrouper(QWidget):
         self._groups[idx]["name"] = text
         for cmb in self._level_combos.values():
             cmb.setItemText(idx, text or f"Class {idx + 1}")
-        self._refresh_summary()
         self.changed.emit()
 
     def _level_changed(self, key):
@@ -207,7 +188,6 @@ class LevelGrouper(QWidget):
                 g["levels"].remove(key)
         if target != self.EXCLUDE and target < len(self._groups):
             self._groups[target]["levels"].append(key)
-        self._refresh_summary()
         self.changed.emit()
 
     def _add_group(self):

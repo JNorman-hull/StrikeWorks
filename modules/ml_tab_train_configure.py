@@ -7,21 +7,24 @@
 """Train tab - everything that defines and runs a training run, in four
 rows:
 
-  Training dataset   loading (or binding several), its summary card and a
-                     file-level preview.
-  Labelling          the target variable, its null (0) and positive (1)
-                     values - each of the target's values coded 0, 1 or
-                     excluded - the multiclass class variable and its
-                     grouping, the class distributions and the performance
-                     breakdown.
-  Inputs | Cross-validation
-                     input channels and sequence preparation; validation
-                     (hold-out + stratified CV) and class weights.
-  Model              configuration, Train model (+ Console - the training
-                     worker's output goes to the app console), the
-                     out-of-fold performance of both pipeline stages, and
-                     the final model and deployment
-                     (ml_tab_train_deploy.py).
+  (dataset)          loading (or binding several) and its summary card,
+                     beside a file-level preview (a draggable split).
+  Labelling          Binary model - the target variable, its null (0) and
+                     positive (1) values, and each of the target's values
+                     coded 0, 1 or excluded | Multiclass model - the class
+                     variable and its grouping | the class distributions.
+  Inputs | Sequence length | Class weights | Cross-validation
+                     input channels; sequence preparation; class weights;
+                     validation (hold-out + stratified CV) and the
+                     performance metric - the variables performance is
+                     broken down by.
+  Model              one box, centred: the configuration beside (1) Train
+                     model (CV), (2) Evaluate performance, (3) Train final
+                     model; the folds' progress and Console (the training
+                     worker's output goes to the app console); one status
+                     line; the out-of-fold performance of both pipeline
+                     stages; the version, (4) Deploy model and Model
+                     information (ml_tab_train_deploy.py).
 
 All configuration and results live in the shared TrainingState; Evaluate
 and the deployment consume them unchanged.
@@ -33,23 +36,22 @@ import pandas as pd
 from PySide6.QtCore import Qt, QElapsedTimer, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QGridLayout,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QProgressBar,
     QPushButton, QRadioButton, QSizePolicy, QSpinBox, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from . import settings
+from . import model_measures, settings
 from .bind_datasets import BindTrainingData
 from .cards import MetaCard, Spinner
 from .layout import hsplit, scroll_page, Section
 from .ml_tab_train_deploy import (
-    FIELD_W, DeploymentPanel, action_button, column,
+    ACTION_W, FIELD_W, DeploymentPanel, action_button, column,
 )
 from .level_grouper import LevelGrouper
 from .theme import EMPTY, MUTED, PALETTE, TEXT, muted_label, style
 
-_PREVIEW_ROWS = 200
 COMBO_W = 220                    # the Labelling and settings dropdowns
 
 # a target value's coding in the binary model
@@ -60,8 +62,8 @@ class _ClassDist(QWidget):
     """Class-distribution rows: label, count, percentage and a bar."""
 
     ROW_H = 20
-    LAB_W = 170
-    NUM_W = 90
+    LAB_W = 110
+    NUM_W = 80
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -154,17 +156,23 @@ class TrainTab(QWidget):
         v = scroll_page(frame)
         v.addWidget(self._dataset_section())
         v.addWidget(self._labelling_section())
-        v.addWidget(hsplit(self._inputs_section(), self._cv_section()))
+        v.addWidget(hsplit((self._inputs_section(), 3),
+                           (self._sequence_section(), 3),
+                           (self._weights_section(), 2),
+                           (self._cv_section(), 3)))
         v.addWidget(self._model_section())
         v.addStretch()
 
     def _dataset_section(self):
-        """Loading and binding beside a file-level preview."""
-        grp = Section("Training dataset")
+        """Loading and binding beside a file-level preview - no headings;
+        the preview takes the width the left side doesn't need (drag the
+        boundary to change it)."""
+        grp = Section("")
         row = QHBoxLayout(grp)
-        row.setSpacing(16)
 
-        left = QVBoxLayout()
+        left_w = QWidget()
+        left = QVBoxLayout(left_w)
+        left.setContentsMargins(0, 0, 8, 0)
         left.setSpacing(8)
         btn_row = QHBoxLayout()
         self.btn_load = QPushButton("Load training dataset…")
@@ -185,20 +193,20 @@ class TrainTab(QWidget):
         self.bind_widget.bound.connect(self._load_path)
         left.addWidget(self.bind_widget)
         left.addStretch()
-        row.addLayout(left, stretch=2)
 
-        right = QVBoxLayout()
-        right.setSpacing(4)
-        right.addWidget(muted_label("Preview (file-level metadata)"))
         self.tbl_preview = QTableWidget(0, 0)
+        self.tbl_preview.setToolTip("The dataset's file-level metadata, one "
+                                    "row per sensor. Click a column's "
+                                    "header to sort or filter by it.")
         self.tbl_preview.verticalHeader().setVisible(False)
         self.tbl_preview.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.tbl_preview.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.ResizeToContents)
         self.tbl_preview.horizontalHeader().setStretchLastSection(True)
         self.tbl_preview.setMinimumHeight(180)
-        right.addWidget(self.tbl_preview, stretch=1)
-        row.addLayout(right, stretch=3)
+        # the left side starts as narrow as it can be; widths beyond go to
+        # the preview
+        row.addWidget(hsplit((left_w, 0), (self.tbl_preview, 1)))
         return grp
 
     def _labelling_section(self):
@@ -230,31 +238,23 @@ class TrainTab(QWidget):
         self.ed_positive = QLineEdit()
         self.ed_positive.setFixedWidth(COMBO_W)
         self.ed_positive.setPlaceholderText("blade_strike")
-        self.ed_positive.setToolTip(
-            "The name of the derived 0/1 variable's 1 - the model's "
-            "positive class.")
+        # its tooltip also says how the 0/1 variable is derived
+        # (_refresh_target)
         self.ed_positive.editingFinished.connect(self._positive_changed)
         tr.addWidget(self.ed_positive, 2, 1)
         tr.setColumnStretch(2, 1)
         bv.addLayout(tr)
-        self.lbl_positive = QLabel("")
-        style(self.lbl_positive, role="muted")
-        self.lbl_positive.setWordWrap(True)
-        bv.addWidget(self.lbl_positive)
-        bv.addStretch()
-        top.addWidget(binary, stretch=3)
 
-        # ── each target value coded 0, 1 or excluded ───────────────────────
-        values, vv = column("Values")
-        self.lbl_values = vv.itemAt(0).widget()
+        # each target value coded 0, 1 or excluded, under the target
+        bv.addWidget(muted_label("Classes"))
         self.values_grid = QGridLayout()
         self.values_grid.setHorizontalSpacing(12)
         self.values_grid.setVerticalSpacing(4)
-        vv.addLayout(self.values_grid)
+        bv.addLayout(self.values_grid)
         self.lbl_population = QLabel("")
-        vv.addWidget(self.lbl_population)
-        vv.addStretch()
-        top.addWidget(values, stretch=3)
+        bv.addWidget(self.lbl_population)
+        bv.addStretch()
+        top.addWidget(binary, stretch=3)
 
         # ── multiclass: class variable and its grouping ────────────────────
         multi, mv = column("Multiclass model")
@@ -278,44 +278,28 @@ class TrainTab(QWidget):
         mv.addWidget(self.grouper)
         mv.addStretch()
         top.addWidget(multi, stretch=4)
-        tv.addLayout(top)
 
-        # ── class distributions, side by side ──────────────────────────────
-        dist = QHBoxLayout()
-        dist.setSpacing(24)
-        bin_dist = QVBoxLayout()
-        bin_dist.setSpacing(4)
+        # ── the class distributions, one above the other ───────────────────
+        dist = QWidget()
+        dv = QVBoxLayout(dist)
+        dv.setContentsMargins(0, 0, 0, 0)
+        dv.setSpacing(4)
         self.lbl_dist_bin = muted_label("Binary class distribution")
-        bin_dist.addWidget(self.lbl_dist_bin)
+        dv.addWidget(self.lbl_dist_bin)
         self.class_dist = _ClassDist()
-        bin_dist.addWidget(self.class_dist)
-        bin_dist.addStretch()
-        dist.addLayout(bin_dist, stretch=1)
-        mc_dist = QVBoxLayout()
-        mc_dist.setSpacing(4)
+        dv.addWidget(self.class_dist)
+        dv.addSpacing(12)
         self.lbl_dist_mc = muted_label("Multiclass class distribution")
-        mc_dist.addWidget(self.lbl_dist_mc)
+        dv.addWidget(self.lbl_dist_mc)
         self.class_dist_mc = _ClassDist()
-        mc_dist.addWidget(self.class_dist_mc)
-        mc_dist.addStretch()
-        dist.addLayout(mc_dist, stretch=1)
-        tv.addLayout(dist)
-
-        # the columns each strike's type is read from, for the performance
-        # breakdown (direct, indirect, hub_0, ... - train_worker.
-        # derive_strike_type)
-        tv.addWidget(muted_label("Break down performance by"))
-        self.breakdown_box = QHBoxLayout()
-        self.breakdown_box.setSpacing(12)
-        tv.addLayout(self.breakdown_box)
-        self.lbl_derived = QLabel("")
-        style(self.lbl_derived, role="muted")
-        self.lbl_derived.setWordWrap(True)
-        tv.addWidget(self.lbl_derived)
+        dv.addWidget(self.class_dist_mc)
+        dv.addStretch()
+        top.addWidget(dist, stretch=3)
+        tv.addLayout(top)
         return grp
 
     def _inputs_section(self):
-        """Input channels and sequence preparation."""
+        """The input channels."""
         grp = Section("Inputs")
         iv = QVBoxLayout(grp)
         iv.setSpacing(8)
@@ -324,11 +308,15 @@ class TrainTab(QWidget):
         self.chan_grid.setHorizontalSpacing(16)
         self.chan_grid.setVerticalSpacing(2)
         iv.addLayout(self.chan_grid)
+        iv.addStretch()
+        return grp
 
-        sv = QGridLayout()
-        sv.setVerticalSpacing(6)
-        sv.setHorizontalSpacing(10)
-        sv.addWidget(muted_label("Sequence length"), 0, 0)
+    def _sequence_section(self):
+        """Sequence length, padding and truncation, and the input they
+        make."""
+        grp = Section("Sequence length")
+        sv = QVBoxLayout(grp)
+        sv.setSpacing(6)
         self.rb_seq_auto = QRadioButton("From the dataset")
         self.rb_seq_manual = QRadioButton("Specify")
         self.rb_seq_auto.setChecked(True)
@@ -336,30 +324,55 @@ class TrainTab(QWidget):
         self.spin_seq = _spin(10, 100000, 400)
         self.spin_seq.setEnabled(False)
         self.spin_seq.valueChanged.connect(self._seq_changed)
-        sv.addWidget(self.rb_seq_auto, 0, 1)
+        sv.addWidget(self.rb_seq_auto)
         seq_row = QHBoxLayout()
         seq_row.setSpacing(8)
         seq_row.addWidget(self.rb_seq_manual)
         seq_row.addWidget(self.spin_seq)
         seq_row.addStretch()
-        sv.addLayout(seq_row, 1, 1)
-        sv.addWidget(muted_label("Padding"), 2, 0)
+        sv.addLayout(seq_row)
+        sv.addWidget(muted_label("Padding"))
         self.cmb_padding = _combo(("Repeat final observation", "repeat_last"))
-        sv.addWidget(self.cmb_padding, 2, 1)
-        sv.addWidget(muted_label("Truncation"), 3, 0)
+        sv.addWidget(self.cmb_padding)
+        sv.addWidget(muted_label("Truncation"))
         self.cmb_trunc = _combo(("Truncate to target length", "truncate"))
-        sv.addWidget(self.cmb_trunc, 3, 1)
-        sv.setColumnStretch(2, 1)
-        iv.addLayout(sv)
+        sv.addWidget(self.cmb_trunc)
         self.lbl_tensor = QLabel("")
-        iv.addWidget(self.lbl_tensor)
-        iv.addStretch()
+        self.lbl_tensor.setWordWrap(True)
+        sv.addWidget(self.lbl_tensor)
+        sv.addStretch()
+        return grp
+
+    def _weights_section(self):
+        """Class weights, and each class's weight."""
+        grp = Section("Class weights")
+        wv = QVBoxLayout(grp)
+        wv.setSpacing(6)
+        self.rb_w_none = QRadioButton("None")
+        self.rb_w_balanced = QRadioButton("Balanced")
+        self.rb_w_balanced.setToolTip("Minority-class observations are "
+                                      "weighted up.")
+        self.rb_w_balanced.setChecked(True)
+        self.rb_w_balanced.toggled.connect(self._weight_changed)
+        w_row = QHBoxLayout()
+        w_row.setSpacing(12)
+        w_row.addWidget(self.rb_w_balanced)
+        w_row.addWidget(self.rb_w_none)
+        w_row.addStretch()
+        wv.addLayout(w_row)
+        self.lbl_weights = QLabel("")
+        style(self.lbl_weights, role="muted")
+        wv.addWidget(self.lbl_weights)
+        wv.addStretch()
         return grp
 
     def _cv_section(self):
-        """Validation and class weights."""
+        """Validation, then the performance metric: the variables the
+        out-of-fold performance is broken down by."""
         grp = Section("Cross-validation")
-        vv = QGridLayout(grp)
+        outer = QVBoxLayout(grp)
+        outer.setSpacing(8)
+        vv = QGridLayout()
         vv.setVerticalSpacing(6)
         vv.setHorizontalSpacing(10)
         self.rb_cv_only = QRadioButton("Cross-validation only")
@@ -396,32 +409,58 @@ class TrainTab(QWidget):
         seed_row.addWidget(self.spin_seed)
         seed_row.addStretch()
         vv.addLayout(seed_row, 5, 1)
-
-        vv.addWidget(muted_label("Class weights"), 6, 0)
-        self.rb_w_none = QRadioButton("None")
-        self.rb_w_balanced = QRadioButton("Balanced")
-        self.rb_w_balanced.setToolTip("Minority-class observations are "
-                                      "weighted up.")
-        self.rb_w_balanced.setChecked(True)
-        self.rb_w_balanced.toggled.connect(self._weight_changed)
-        w_row = QHBoxLayout()
-        w_row.setSpacing(12)
-        w_row.addWidget(self.rb_w_balanced)
-        w_row.addWidget(self.rb_w_none)
-        w_row.addStretch()
-        vv.addLayout(w_row, 6, 1)
-        self.lbl_weights = QLabel("")
-        style(self.lbl_weights, role="muted")
-        vv.addWidget(self.lbl_weights, 7, 1)
         vv.setColumnStretch(2, 1)
-        vv.setRowStretch(8, 1)
+        outer.addLayout(vv)
+
+        # the columns each strike's type is read from, for the performance
+        # breakdown (direct, indirect, hub_0, ... - train_worker.
+        # derive_strike_type): the derived variable's name, then the binary
+        # and the multiclass model's own columns, three to a column; the
+        # derived variables are the tooltip (_refresh_target)
+        self.lbl_metric = muted_label("Performance metric")
+        outer.addWidget(self.lbl_metric)
+        name_row = QHBoxLayout()
+        name_row.setSpacing(8)
+        name_row.addWidget(muted_label("Variable name"))
+        self.ed_breakdown_name = QLineEdit()
+        self.ed_breakdown_name.setFixedWidth(FIELD_W + 60)
+        self.ed_breakdown_name.setPlaceholderText("strike_type")
+        self.ed_breakdown_name.setToolTip(
+            "The name of the variable the performance is broken down by - "
+            "Evaluate, its figure and the reports show it.")
+        self.ed_breakdown_name.editingFinished.connect(
+            self._breakdown_name_changed)
+        name_row.addWidget(self.ed_breakdown_name)
+        name_row.addStretch()
+        outer.addLayout(name_row)
+        self._breakdown_grids = {}
+        for key, heading in (("binary", "Binary model"),
+                             ("multiclass", "Multiclass model")):
+            lab = muted_label(heading)
+            outer.addWidget(lab)
+            grid = QGridLayout()
+            grid.setHorizontalSpacing(16)
+            grid.setVerticalSpacing(2)
+            outer.addLayout(grid)
+            self._breakdown_grids[key] = (lab, grid)
+        outer.addStretch()
         return grp
 
     def _model_section(self):
-        """Configuration, then the workflow left to right: train
-        (cross-validation), final model, deploy."""
+        """Configuration beside the workflow, in a box centred on the page:
+        (1) Train model (CV), (2) Evaluate performance, (3) Train final
+        model; the folds' progress and Console; one status line; the
+        out-of-fold performance; the version, (4) Deploy model and Model
+        information."""
         grp = Section("Model")
-        row = QHBoxLayout(grp)
+        centre = QHBoxLayout(grp)
+        centre.addStretch()
+        box = QFrame()
+        style(box, role="box")
+        centre.addWidget(box)
+        centre.addStretch()
+        row = QHBoxLayout(box)
+        row.setContentsMargins(16, 12, 16, 12)
         row.setSpacing(24)
 
         # ── configuration ──────────────────────────────────────────────────
@@ -454,62 +493,91 @@ class TrainTab(QWidget):
         self.spin_n_alpha = _spin(5, 500, 100)
         self.spin_n_alpha.valueChanged.connect(self._model_changed)
         mv.addWidget(self.spin_n_alpha, 4, 1)
-        mv.setColumnStretch(4, 1)
         cv.addLayout(mv)
         cv.addStretch()
-        row.addWidget(config, stretch=1)
+        row.addWidget(config)
 
-        # ── train: cross-validation, its progress and results ──────────────
+        # ── the workflow: train, evaluate, final model, deploy ─────────────
         train, gv = column("Train")
-        run_row = QHBoxLayout()
-        run_row.setSpacing(8)
-        self.btn_train = action_button("Train model")
+        # one status line for the whole box - every run and the deploy
+        self.lbl_status = QLabel("")
+        self.lbl_status.setWordWrap(True)
+        style(self.lbl_status, role="muted")
+        self.deployment = DeploymentPanel(self.state, self.main_window, self,
+                                          self.lbl_status)
+
+        # three equal columns, so every button lines up: the steps, the
+        # progress and Console, the status line, the OOF cards, then the
+        # version, Deploy and Model information
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(8)
+        self.btn_train = action_button("(1) Train model (CV)")
         self.btn_train.setEnabled(False)
         self.btn_train.clicked.connect(self.state.run_cv)
+        self.btn_evaluate = action_button(
+            "(2) Evaluate performance",
+            "The cross-validation results in detail (Evaluate).")
+        self.btn_evaluate.setEnabled(False)
+        self.btn_evaluate.clicked.connect(
+            lambda: self._goto_evaluate() if self._goto_evaluate else None)
+        for c, btn in enumerate((self.btn_train, self.btn_evaluate,
+                                 self.deployment.btn_final)):
+            grid.addWidget(btn, 0, c)
+
+        self.progress = QProgressBar()
+        self.progress.setTextVisible(True)
+        self._progress_waiting()
+        grid.addWidget(self.progress, 1, 0, 1, 2)
         # the worker's output goes to the app console (it tees print)
         self.btn_console = action_button(
             "Console", "Everything the app prints - the training run's "
             "progress included.")
         self.btn_console.clicked.connect(self._open_console)
-        self.spinner = Spinner(size=24)
-        self.spinner.setVisible(False)
-        run_row.addWidget(self.btn_train)
-        run_row.addWidget(self.btn_console)
-        run_row.addWidget(self.spinner)
-        run_row.addStretch()
-        gv.addLayout(run_row)
+        grid.addWidget(self.btn_console, 1, 2)
 
-        self.progress = QProgressBar()
+        status_row = QHBoxLayout()
+        status_row.setSpacing(8)
+        self.spinner = Spinner(size=18)
+        self.spinner.setVisible(False)
+        status_row.addWidget(self.spinner, alignment=Qt.AlignmentFlag.AlignTop)
+        status_row.addWidget(self.lbl_status, stretch=1)
+        grid.addLayout(status_row, 2, 0, 1, 3)
+
+        cards = QHBoxLayout()
+        cards.setSpacing(8)
+        self.card_bin = MetaCard("Binary OOF")
+        cards.addWidget(self.card_bin, stretch=1)
+        self.card_mc = MetaCard("Multiclass OOF")
+        self.card_mc.setToolTip(
+            model_measures.AVERAGED_NOTE + " No decision threshold - the "
+            "class with the highest score is the prediction.")
+        cards.addWidget(self.card_mc, stretch=1)
+        grid.addLayout(cards, 3, 0, 1, 3)
+
+        # the version label and box as wide as a button
+        version = QWidget()
+        version.setFixedWidth(ACTION_W)
+        vr = QHBoxLayout(version)
+        vr.setContentsMargins(0, 0, 0, 0)
+        vr.setSpacing(8)
+        vr.addWidget(muted_label("Model version"))
+        self.deployment.ed_version.setMinimumWidth(0)
+        self.deployment.ed_version.setMaximumWidth(ACTION_W)
+        vr.addWidget(self.deployment.ed_version, stretch=1)
+        grid.addWidget(version, 4, 0)
+        grid.addWidget(self.deployment.btn_deploy, 4, 1)
+        grid.addWidget(self.deployment.btn_info, 4, 2)
+        gv.addLayout(grid)
+        gv.addStretch()
+        row.addWidget(train)
+        return grp
+
+    def _progress_waiting(self):
+        """The progress bar before a run (or after a failed one)."""
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
-        self.progress.setTextVisible(True)
-        self.progress.setFormat("%v/%m folds")
-        self.progress.setVisible(False)
-        gv.addWidget(self.progress)
-
-        self.lbl_status = QLabel("")
-        self.lbl_status.setWordWrap(True)
-        style(self.lbl_status, role="muted")
-        gv.addWidget(self.lbl_status)
-
-        self.card_bin = MetaCard("Binary OOF")
-        gv.addWidget(self.card_bin)
-        self.card_mc = MetaCard("Multiclass OOF")
-        self.card_mc.setVisible(False)
-        gv.addWidget(self.card_mc)
-
-        self.btn_evaluate = action_button("Evaluate results")
-        self.btn_evaluate.setVisible(False)
-        self.btn_evaluate.clicked.connect(
-            lambda: self._goto_evaluate() if self._goto_evaluate else None)
-        gv.addWidget(self.btn_evaluate)
-        gv.addStretch()
-        row.addWidget(train, stretch=1)
-
-        # accept the run: train the final model and deploy it
-        self.deployment = DeploymentPanel(self.state, self.main_window)
-        row.addWidget(self.deployment, stretch=2)
-        return grp
+        self.progress.setFormat("Waiting for model run")
 
     def _open_console(self):
         console = getattr(self.main_window, "dev_console", None)
@@ -527,8 +595,8 @@ class TrainTab(QWidget):
         s.cv_finished.connect(self._on_finished)
         s.cv_failed.connect(self._on_failed)
         s.final_started.connect(self._on_final_started)
-        s.final_finished.connect(self._stop_run_ui)
-        s.final_failed.connect(lambda _m: self._stop_run_ui())
+        s.final_finished.connect(self._on_final_finished)
+        s.final_failed.connect(self._on_final_failed)
 
     # ── dataset loading ──────────────────────────────────────────────────────
     def _load_dataset(self):
@@ -600,15 +668,19 @@ class TrainTab(QWidget):
 
     def _rebuild_breakdown_checks(self):
         s = self.state
-        self._clear_layout(self.breakdown_box)
-        self._breakdown_checks = {}
-        for col in s.breakdown_candidates():
-            chk = QCheckBox(col)
-            chk.setChecked(col in s.breakdown_columns)
-            chk.toggled.connect(self._breakdown_changed)
-            self.breakdown_box.addWidget(chk)
-            self._breakdown_checks[col] = chk
-        self.breakdown_box.addStretch()
+        for key, chosen in (("binary", s.breakdown_columns),
+                            ("multiclass", s.mc_breakdown_columns)):
+            grid = self._breakdown_grids[key][1]
+            self._clear_layout(grid)
+            self._breakdown_checks[key] = {}
+            for i, col in enumerate(s.breakdown_candidates()):
+                chk = QCheckBox(col)
+                chk.setChecked(col in chosen)
+                chk.setToolTip(self.lbl_metric.toolTip())
+                chk.toggled.connect(self._breakdown_changed)
+                # down three, then the next column
+                grid.addWidget(chk, i % 3, i // 3)
+                self._breakdown_checks[key][col] = chk
 
     def _rebuild_value_rows(self):
         """One row per value of the target: the value, its recordings and
@@ -620,8 +692,6 @@ class TrainTab(QWidget):
         self._clear_layout(self.values_grid)
         self._value_combos = {}
         df = s.dataset_df
-        self.lbl_values.setText(f"Values of {s.target_column}"
-                                if s.target_column else "Values")
         if df is None or not s.target_column:
             return
         counts = (df.groupby("file")[s.target_column].first()
@@ -678,17 +748,16 @@ class TrainTab(QWidget):
             return
         cols = ["file"]
         for c in (["treatment", s.target_column] + list(s.breakdown_columns)
-                  + [s.region_column]):
+                  + list(s.mc_breakdown_columns) + [s.region_column]):
             if c and c in df.columns and c not in cols:
                 cols.append(c)
-        per_file = df.groupby("file").first().reset_index()
-        per_file = per_file[cols].head(_PREVIEW_ROWS)
+        # every sensor, one row each
+        per_file = df.groupby("file").first().reset_index()[cols]
         self.tbl_preview.setColumnCount(len(cols))
         self.tbl_preview.setHorizontalHeaderLabels(cols)
         self.tbl_preview.setRowCount(len(per_file))
-        for r, (_, row) in enumerate(per_file.iterrows()):
-            for c, col in enumerate(cols):
-                val = row[col]
+        for r, row in enumerate(per_file.itertuples(index=False)):
+            for c, val in enumerate(row):
                 text = "-" if pd.isna(val) else str(val)
                 self.tbl_preview.setItem(r, c, QTableWidgetItem(text))
 
@@ -779,9 +848,18 @@ class TrainTab(QWidget):
     def _breakdown_changed(self):
         if self._updating:
             return
-        self.state.update(breakdown_columns=[
-            c for c, chk in self._breakdown_checks.items() if chk.isChecked()])
+        ticked = {key: [c for c, chk in checks.items() if chk.isChecked()]
+                  for key, checks in self._breakdown_checks.items()}
+        self.state.update(breakdown_columns=ticked.get("binary", []),
+                          mc_breakdown_columns=ticked.get("multiclass", []))
         self._fill_preview()
+
+    def _breakdown_name_changed(self):
+        if self._updating:
+            return
+        name = self.ed_breakdown_name.text().strip() or "strike_type"
+        if name != self.state.breakdown_name:
+            self.state.update(breakdown_name=name)
 
     def _channels_changed(self):
         if self._updating:
@@ -896,22 +974,39 @@ class TrainTab(QWidget):
         finally:
             self._updating = False
 
-        # how the derived 0/1 variable comes from the target
+        # how the derived 0/1 variable comes from the target - the
+        # positive value's tooltip
+        tip = ("The name of the derived 0/1 variable's 1 - the model's "
+               "positive class.")
         if s.negative_class is not None and s.target_column:
             excluded = sorted(set(self._value_combos) - self._included())
-            txt = (f"{pos} = 1 where {s.target_column} is any other "
-                   f"included value, 0 where it is \"{s.negative_class}\"")
+            tip += (f"\n\n{pos} = 1 where {s.target_column} is any other "
+                    f"included value, 0 where it is \"{s.negative_class}\"")
             if excluded:
-                txt += f"; {', '.join(excluded)} left out"
-            self.lbl_positive.setText(txt + ".")
-        else:
-            self.lbl_positive.setText("")
+                tip += f"; {', '.join(excluded)} left out"
+            tip += "."
+        self.ed_positive.setToolTip(tip)
 
+        name = s.breakdown_name or "strike_type"
+        if not self.ed_breakdown_name.hasFocus():
+            self.ed_breakdown_name.setText(name)
         derived = [f"{pos} (0/1)"]
-        if s.breakdown_columns:
-            derived.append("strike_type (each strike's "
-                           + " / ".join(s.breakdown_columns) + ")")
-        self.lbl_derived.setText("Derived variables: " + ", ".join(derived))
+        for model, cols in (("binary", s.breakdown_columns),
+                            ("multiclass", s.mc_breakdown_columns)):
+            if cols:
+                derived.append(f"{name} for the {model} model (each "
+                               "strike's " + " / ".join(cols) + ")")
+        tip = ("Each model's out-of-fold performance is also broken down by "
+               f"{name}: a strike's first value in the variables ticked for "
+               "that model.\n\nDerived variables: " + ", ".join(derived))
+        self.lbl_metric.setToolTip(tip)
+        for checks in self._breakdown_checks.values():
+            for chk in checks.values():
+                chk.setToolTip(tip)
+        lab, grid = self._breakdown_grids["multiclass"]
+        lab.setEnabled(s.train_multiclass)
+        for chk in self._breakdown_checks.get("multiclass", {}).values():
+            chk.setEnabled(s.train_multiclass)
 
         self.class_dist.set_counts(s.binary_class_counts())
         show_mc = s.train_multiclass and s.region_column is not None
@@ -970,6 +1065,7 @@ class TrainTab(QWidget):
         """Gate the train button, and surface any blocking problem inline."""
         s = self.state
         self.btn_train.setEnabled(s.ready and not s.running)
+        self.btn_evaluate.setEnabled(s.cv_done and not s.running)
         if s.running:
             return
         blockers = [c for c in s.checks if c[0] == "fail"]
@@ -986,12 +1082,12 @@ class TrainTab(QWidget):
     def _on_started(self):
         self.btn_train.setEnabled(False)
         self.btn_train.setText("Training…")
-        self.btn_evaluate.setVisible(False)
+        self.btn_evaluate.setEnabled(False)
+        self.lbl_status.setToolTip("")
         self.card_bin.set_rows([])
         self.card_mc.set_rows([])
-        self.card_mc.setVisible(False)
         self.spinner.start()
-        self.progress.setVisible(True)
+        self.progress.setFormat("%v/%m folds")
         n_models = 2 if self.state.train_multiclass else 1
         self.progress.setRange(0, max(1, self.state.n_folds * n_models))
         self.progress.setValue(0)
@@ -1001,10 +1097,31 @@ class TrainTab(QWidget):
         self.lbl_status.setText("Training binary strike model")
 
     def _on_final_started(self):
+        self.btn_evaluate.setEnabled(False)
+        self.lbl_status.setToolTip("")
+        self.spinner.start()
         self._elapsed.start()
         self._tick.start()
         style(self.lbl_status, tone="accent")
-        self.lbl_status.setText("Training final deployment model")
+        self.lbl_status.setText("Training final deployment model  (0 s elapsed)")
+
+    def _on_final_finished(self):
+        self._stop_run_ui()
+        style(self.lbl_status, tone="accent")
+        self.lbl_status.setText("Final model saved")
+        self.state.status.emit("Final deployment model(s) trained.", 5000)
+
+    def _on_final_failed(self, msg):
+        self._stop_run_ui()
+        style(self.lbl_status, tone="bad")
+        first = msg.strip().splitlines()[-1] if msg.strip() else "Unknown error"
+        self.lbl_status.setText(f"✗ Final training failed: {first}")
+        dlg = QMessageBox(self.main_window)
+        dlg.setWindowTitle("Final model error")
+        dlg.setIcon(QMessageBox.Icon.Critical)
+        dlg.setText(f"Training the final model failed.\n\n{first}")
+        dlg.setDetailedText(msg)
+        dlg.exec()
 
     def _on_progress(self, fold, total, model):
         n_models = 2 if self.state.train_multiclass else 1
@@ -1028,23 +1145,24 @@ class TrainTab(QWidget):
     def _stop_run_ui(self):
         self._tick.stop()
         self.spinner.stop()
-        self.btn_train.setText("Train model")
+        self.btn_train.setText("(1) Train model (CV)")
         self.btn_train.setEnabled(self.state.ready and not self.state.running)
+        self.btn_evaluate.setEnabled(self.state.cv_done
+                                     and not self.state.running)
 
     def _on_finished(self):
         self._stop_run_ui()
         self.progress.setValue(self.progress.maximum())
         s = self.state
         secs = self._elapsed.elapsed() / 1000
-        style(self.lbl_status, tone="ok")
+        style(self.lbl_status, tone="accent")
         self.lbl_status.setText(f"Cross-validation complete ({secs:.0f} s).")
         self._fill_performance()
-        self.btn_evaluate.setVisible(True)
         s.status.emit("Cross-validation complete.", 5000)
 
     def _on_failed(self, msg):
         self._stop_run_ui()
-        self.progress.setVisible(False)
+        self._progress_waiting()
         style(self.lbl_status, tone="bad")
         first = msg.strip().splitlines()[-1] if msg.strip() else "Unknown error"
         self.lbl_status.setText(f"✗ Training failed: {first}")
@@ -1058,26 +1176,19 @@ class TrainTab(QWidget):
 
     @staticmethod
     def _perf_rows(metrics):
-        perf = (metrics or {}).get("out_of_fold_performance", {})
-        rows = []
-        for key, label in (("roc_auc", "AUC"), ("pr_auc", "PR-AUC"),
-                           ("overall_accuracy", "Accuracy"),
-                           ("sensitivity", "Sensitivity"),
-                           ("specificity", "Specificity"),
-                           ("precision", "Precision"),
-                           ("macro_precision", "Macro precision"),
-                           ("macro_recall", "Macro recall"),
-                           ("f1_score", "F1-Score"),
-                           ("macro_f1", "Macro F1"),
-                           ("mcc", "MCC"),
-                           ("optimal_threshold", "Optimal threshold")):
-            if key in perf:
-                rows.append((label, f"{perf[key]:.3f}"))
+        """The out-of-fold measures, by the names used everywhere
+        (model_measures); the decision threshold for a binary model."""
+        names = [label for label, _b, _m in model_measures.MEASURES]
+        if model_measures.is_binary(metrics):
+            names.append(model_measures.THRESHOLD)
+        rows = [(n, model_measures.fmt(model_measures.value(metrics, n)))
+                for n in names
+                if model_measures.value(metrics, n) is not None]
         ho = (metrics or {}).get("holdout_performance")
         if ho:
             rows.append(("Hold-out test",
-                         f"n={ho.get('n_test')}, "
-                         f"accuracy={ho.get('accuracy'):.3f}"))
+                         f"n = {ho.get('n_test')}, "
+                         f"Accuracy = {ho.get('accuracy'):.3f}"))
         return rows
 
     def _fill_performance(self):
@@ -1086,6 +1197,6 @@ class TrainTab(QWidget):
         self.card_bin.set_rows(
             self._perf_rows(bin_res["metrics"]) if bin_res else [])
         mc_res = s.model_results("multiclass")
-        self.card_mc.setVisible(mc_res is not None)
-        if mc_res:
-            self.card_mc.set_rows(self._perf_rows(mc_res["metrics"]))
+        # always shown - a binary-only run says so
+        self.card_mc.set_rows(self._perf_rows(mc_res["metrics"]) if mc_res
+                              else [("Multiclass model", "not in this run")])

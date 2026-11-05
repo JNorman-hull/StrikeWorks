@@ -9,7 +9,7 @@ hypothesised strike rate and a planned sample size, shows the Wilson score
 interval (`wilson_calc.py`) that size would give, and how it changes over a
 range of sizes - "is N=50 enough, or plan for 100?".
 
-"Load from Blade Strike Modelling" fills the expected strike rate from the
+"Load from Blade strike calculator" fills the expected strike rate from the
 CEN estimate in `bsm_state.LATEST_RESULT_PATH`, the JSON Calculator writes
 after every run - so it works whether or not the BSM pages were opened
 this session.
@@ -107,7 +107,7 @@ class PrecisionCalcTab(QWidget):
         self.spin_rate.setValue(10.0)
         self.spin_rate.valueChanged.connect(self._recalculate)
         form.addWidget(self.spin_rate, 0, 1)
-        self.btn_load_bsm = QPushButton("Load from Blade Strike Modelling")
+        self.btn_load_bsm = QPushButton("Load from Blade strike calculator")
         self.btn_load_bsm.clicked.connect(self._load_from_bsm)
         form.addWidget(self.btn_load_bsm, 0, 2, left)
 
@@ -169,12 +169,12 @@ class PrecisionCalcTab(QWidget):
         """The Notes text: planned N, its interval and precision."""
         return self.txt_result.toPlainText()
 
-    # ── Blade Strike Modelling handoff ──────────────────────────────────────
+    # ── Blade strike calculator handoff ─────────────────────────────────────
     def _load_from_bsm(self):
         if not LATEST_RESULT_PATH.exists():
             if self._status is not None:
-                self._status("No Blade Strike Modelling result found - run "
-                             "a calculation on Calculator first.", 5000)
+                self._status("No blade strike result found - run the "
+                             "Blade strike calculator first.", 5000)
             return
         try:
             with open(LATEST_RESULT_PATH, encoding="utf-8") as f:
@@ -182,13 +182,13 @@ class PrecisionCalcTab(QWidget):
             self.spin_rate.setValue(payload["pco_cen_percent"])
         except Exception as e:
             if self._status is not None:
-                self._status(f"Could not read Blade Strike Modelling "
+                self._status(f"Could not read the Blade strike calculator's "
                              f"result: {e}", 6000)
             return
         if self._status is not None:
             self._status(
                 f"Loaded {payload['pco_cen_percent']:.1f}% expected strike "
-                f"rate from Blade Strike Modelling ({payload['species']}, "
+                f"rate from the Blade strike calculator ({payload['species']}, "
                 f"{payload['timestamp']}).", 5000)
 
     # ── calculation ──────────────────────────────────────────────────────────

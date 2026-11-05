@@ -37,7 +37,7 @@ from . import deployment_index as di
 from . import raw_layout, sensor_config
 from .cards import Spinner
 from .layout import Section
-from .tables import fill_table_width, style_table
+from .tables import fill_table_width
 from .theme import BAD, OK, WARN, style
 
 
@@ -158,7 +158,6 @@ class FileInventory(QWidget):
         gv = QVBoxLayout(grp)
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
-        style_table(self.table)
         self.table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)

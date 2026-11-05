@@ -19,7 +19,7 @@ place named alongside it.
 | Data analysis | Sensor processing | `MainWindow._HIDDEN_PAGES` | Still a stub (see below) |
 | Advanced dataset options | Validate and annotate | `MainWindow._HIDDEN_PAGES` | Its one remaining tool, Bind training data, is in Model training > Train's Training dataset box (`modules/bind_datasets.py`) |
 | Annotate > Reporting tab | Validate and annotate > Annotate | `AnnotationPage._build` (page_annotate.py) | Its summary is already in the central report (`report_center.annotation_section`) |
-| Observed strike data | Mathematical blade strike modelling > Calculator | `CalculatorPage._build` (page_bsm_calculator.py) | Awaiting a decision on how to bring it back; `bsm_model.compute()` still accepts it |
+| Observed strike data | Blade strike calculator > Calculator | `CalculatorPage._build` (page_bsm_calculator.py) | Awaiting a decision on how to bring it back; `bsm_model.compute()` still accepts it |
 
 ## Open
 
@@ -66,9 +66,9 @@ Acceleration peak finding exists already, on datasets (Predict's HIG peak
 analysis, `modules/hig_peaks.py`); this page would run it on whole
 recordings and other regions of interest.
 
-**Model comparison - two questions.** The bundled model and the manual
-"Model 1" box share a name, so both can appear as "Model 1"; and the eel
-bars' colour changed when mortality was added. Both want a decision.
+**Model comparison - one question.** The eel bars' colour changed when
+mortality was added; it wants a decision. (The manual box is now "Model
+comparison", so it no longer shares the bundled model's "Model 1".)
 
 **Raw data processing "Selection information".** The four summary cards
 should come from a JSON file the page writes for the current selection,

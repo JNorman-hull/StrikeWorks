@@ -207,7 +207,6 @@ def build_report_html(state, image_paths=None, embed_images=False,
     # ── model ────────────────────────────────────────────────────────────────
     h.append(f"<h2 style='color:{_DARK};'>Model</h2>")
     bm = s.bin_metrics or {}
-    perf = bm.get("out_of_fold_performance", {})
     rows = [
         ("Binary model",  prov["model"]["binary_model"]),
         ("Model type",    bm.get("model", na)),
@@ -219,20 +218,11 @@ def build_report_html(state, image_paths=None, embed_images=False,
         ("Sequence length", f"{bm.get('max_sequence_length', na)} samples"),
         ("Decision threshold", _threshold_text(s)),
     ]
-    for key, label in (("overall_accuracy", "Accuracy"),
-                       ("sensitivity", "Sensitivity"),
-                       ("specificity", "Specificity"),
-                       ("roc_auc", "ROC AUC")):
-        if key in perf:
-            rows.append((f"Binary {label.lower()} (out-of-fold)",
-                         f"{perf[key]:.3f}"))
+    rows += _measure_rows("Binary", bm)
     if mc_run and s.mc_metrics:
-        mperf = s.mc_metrics.get("out_of_fold_performance", {})
         rows.append(("Multiclass model", prov["model"]["multiclass_model"]))
         rows.append(("Classes", ", ".join(s.class_names)))
-        if "overall_accuracy" in mperf:
-            rows.append(("Multiclass accuracy (out-of-fold)",
-                         f"{mperf['overall_accuracy']:.3f}"))
+        rows += _measure_rows("Multiclass", s.mc_metrics)
     h.append(_kv_table(rows))
 
     # ── prediction results ───────────────────────────────────────────────────
@@ -394,6 +384,19 @@ def _model_version_text(state):
     from .ml_tab_predict import _model_version
     v = _model_version(state.bin_model_path)
     return v if v else "Not available"
+
+
+def _measure_rows(model, metrics):
+    """A model's out-of-fold accuracy, sensitivity, specificity and ROC
+    AUC, under the names used everywhere (model_measures) - Predict's
+    Model card's four."""
+    from . import model_measures
+    rows = []
+    for name in ("Accuracy", "Sensitivity", "Specificity", "ROC AUC"):
+        v = model_measures.value(metrics, name)
+        if v is not None:
+            rows.append((f"{model} {name} (out-of-fold)", f"{v:.3f}"))
+    return rows
 
 
 def _threshold_text(state):

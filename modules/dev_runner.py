@@ -565,8 +565,9 @@ class SimpleDemoRunner(_RunnerBase):
         self._step_review_flagged(view)
         self._check_stop()
 
-        df, path, msg = self._wait_for(view.exporter.finished, _LONG_TIMEOUT_MS,
-                                       "Save and export", view.save_and_export)
+        with self._headless_dialogs():
+            df, path, msg = self._wait_for(view.exporter.finished, _LONG_TIMEOUT_MS,
+                                           "Save and export", view.save_and_export)
         if df is None:
             raise _RunnerError(f"Save and export: {msg}")
         self._log(f"Save and export: {msg}")
@@ -749,7 +750,8 @@ class AdvancedDemoRunner(_RunnerBase):
 
     # ── BSM Calculator → Study design ────────────────────────────────────────
     def _step_calculator(self):
-        self._go("btn_bsm_calculator")
+        self._go("btn_bsm")
+        self.window.bsm_page.show_tab(0)        # Calculator
         page = self.window.bsm_calculator_page
         name = self.source.bsm_config
         idx = page.cmb_config.findText(name)

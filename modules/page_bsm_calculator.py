@@ -4,9 +4,15 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Calculator (Mathematical blade strike modelling): the fish, pump and
+"""Calculator (Blade strike calculator's first tab): the fish, pump and
 blade inputs (or a saved `bsm_config` file picked from the list) and
-Calculate.
+Calculate, under the list. Each species' output card and collision
+probability show beside them; "Advanced model outputs" opens the
+Advanced analysis tab (page_bsm_analysis.py).
+
+Advanced options set that tab's sensitivity sweeps - Q and N ranges as
+multiples of the design value, and the Q step - in
+`BSMState.sweep_options`.
 
 Scaly and eel have different body dimensions, so Fish has one Lf/Bf pair
 per species (eel defaults to 0.66 m / 0.08 m); everything else is shared.
@@ -18,24 +24,30 @@ for now"); `read_inputs()` still reads it and `bsm_model.compute()` still
 accepts it.
 
 Both results go to `BSMState.set_results()` (Model comparison, Predict's
-mortality panel). The scaly result also goes to `BSMState.set_result()`,
-which Analysis and reporting's sweeps and `LATEST_RESULT_PATH` (Study
-design's "Load from BSM") use.
+mortality panel, Advanced analysis). The scaly result also goes to
+`BSMState.set_result()`, which Advanced analysis's sweeps and
+`LATEST_RESULT_PATH` (Study design's "Load from BSM") use.
 """
 import json
 from pathlib import Path
 
+from matplotlib.figure import Figure
+
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel,
+    QLineEdit, QPushButton, QSizePolicy, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
-from . import bsm_config
-from .bsm_model import compute
+from . import bsm_config, bsm_figures
+from .bsm_model import SWEEP_SLIDER_SPAN, compute, sweep_q_multipliers
 from .bsm_state import LATEST_RESULT_PATH, build_latest_payload, output_card_rows
+from .canvas import FigureCanvas
 from .cards import MetaCard
-from .layout import Page, scroll_area, Section
+from .layout import Page, scroll_area, Section, when_visible
+from .range_slider import RangeSlider
+from .tables import fit_height
 from .theme import muted_label, style
 
 _EEL_LF_DEFAULT = 0.66
@@ -44,9 +56,13 @@ _EEL_BF_DEFAULT = 0.08
 # shared by both species (only lf/bf are per species)
 _NUMERIC = ("wf", "alpha", "eel_vcrit", "n", "N", "Q", "r", "bh")
 
+_SLIDER_STEP = 0.05                 # Advanced options' sliders move by
+_Q_STEP_RANGE = (0.1, 1.0)          # at most 19 Q lines (~4 s a species)
+
 
 class CalculatorPage(Page):
     calculated = Signal(dict)
+    advanced_requested = Signal()     # "Advanced model outputs"
 
     def __init__(self, main_window, bsm_state):
         super().__init__(main_window)
@@ -56,6 +72,9 @@ class CalculatorPage(Page):
         self._build(self)
         self._wire_validation()
         self._load_selected_config()
+        self._show_sweep_ranges()
+        self._draw_collision(bsm_state.results)
+        bsm_state.calculated_all.connect(self._draw_collision)
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
@@ -72,24 +91,36 @@ class CalculatorPage(Page):
         lv.addWidget(self._fish_group())
         lv.addWidget(self._pump_group())
         lv.addWidget(self._blade_group())
+        lv.addWidget(self._advanced_group())
         # "Observed strike data" is temporarily off the visible page (see
         # module docstring) - built so read_inputs()/_validate() stay
         # unchanged, just never attached to a layout here. Kept as an
         # attribute (not just a local) so Qt doesn't garbage-collect the
         # unparented Section and its children out from under us.
         self._observed_section = self._observed_group()
-        lv.addLayout(self._button_row())
         lv.addStretch()
         scroll.setWidget(left)
         scroll.setMinimumWidth(380)
         scroll.setMaximumWidth(440)
         outer.addWidget(scroll)
 
+        # the outputs fill the rest of the page: the figure takes whatever
+        # height the cards leave, "Advanced model outputs" at the foot
         right = QWidget()
         rv = QVBoxLayout(right)
+        rv.setContentsMargins(0, 0, 0, 0)
         rv.setSpacing(10)
         rv.addWidget(self._output_group())
-        rv.addStretch()
+        rv.addWidget(self._collision_figure(), stretch=1)
+        self.btn_advanced = QPushButton("Advanced model outputs")
+        self.btn_advanced.setToolTip(
+            "The Advanced analysis tab: both species' results and "
+            "mortality, and the sensitivity sweeps (Advanced options).")
+        self.btn_advanced.clicked.connect(self.advanced_requested.emit)
+        row = QHBoxLayout()
+        row.addWidget(self.btn_advanced)
+        row.addStretch()
+        rv.addLayout(row)
         outer.addWidget(right, stretch=1)
 
 
@@ -101,6 +132,14 @@ class CalculatorPage(Page):
         self.cmb_config.currentIndexChanged.connect(self._load_selected_config)
         v.addWidget(self.cmb_config)
         self._populate_configs()
+        self.btn_calc = QPushButton("Calculate")
+        self.btn_calc.setMinimumHeight(30)
+        style(self.btn_calc, role="primary")
+        self.btn_calc.clicked.connect(self.calculate)
+        row = QHBoxLayout()
+        row.addStretch()
+        row.addWidget(self.btn_calc)
+        v.addLayout(row)
         return g
 
     def _populate_configs(self):
@@ -247,7 +286,7 @@ class CalculatorPage(Page):
             for j in range(4):
                 if self.blade_tbl.item(i, j) is None:
                     self.blade_tbl.setItem(i, j, QTableWidgetItem(""))
-        self.blade_tbl.setMaximumHeight(36 + 30 * count)
+        fit_height(self.blade_tbl)       # every row, no scrolling
 
     def _observed_group(self):
         g = Section("Observed strike data")
@@ -267,15 +306,85 @@ class CalculatorPage(Page):
         v.addLayout(grid)
         return g
 
-    def _button_row(self):
-        row = QHBoxLayout()
-        self.btn_calc = QPushButton("Calculate")
-        self.btn_calc.setMinimumHeight(30)
-        style(self.btn_calc, role="primary")
-        self.btn_calc.clicked.connect(self.calculate)
-        row.addStretch()
-        row.addWidget(self.btn_calc)
-        return row
+    def _advanced_group(self):
+        """The sensitivity sweeps' ranges (Advanced analysis): Q from / to
+        and N from / to, each x the design value, and the gap between
+        the Q lines - with what they come to beside them."""
+        g = Section("Advanced options")
+        g.setToolTip(
+            "The sensitivity sweeps on Advanced analysis: one line per "
+            "flow rate Q, from / to these multiples of the design Q, a Q "
+            "step apart (the design Q always one of them); shaft speed N "
+            "along the x-axis, between these multiples of the design N.")
+        grid = QGridLayout(g)
+        grid.setColumnStretch(1, 1)
+        opts = self.bsm_state.sweep_options
+        lo, hi = SWEEP_SLIDER_SPAN
+        self.sld_Q = RangeSlider(lo, hi, _SLIDER_STEP, *opts["q_span"])
+        self.sld_N = RangeSlider(lo, hi, _SLIDER_STEP, *opts["n_span"])
+        self.spin_q_step = QDoubleSpinBox()
+        self.spin_q_step.setRange(*_Q_STEP_RANGE)
+        self.spin_q_step.setSingleStep(0.05)
+        self.spin_q_step.setDecimals(2)
+        self.spin_q_step.setValue(opts["q_step"])
+        self.lbl_Q_range = muted_label("")
+        self.lbl_N_range = muted_label("")
+        for row, (label, widget, note) in enumerate((
+                ("Flow rate Q (× design)", self.sld_Q, self.lbl_Q_range),
+                ("Shaft speed N (× design)", self.sld_N, self.lbl_N_range))):
+            grid.addWidget(muted_label(label), 2 * row, 0)
+            grid.addWidget(widget, 2 * row, 1)
+            grid.addWidget(note, 2 * row + 1, 1)
+        grid.addWidget(muted_label("Q step (× design)"), 4, 0)
+        grid.addWidget(self.spin_q_step, 4, 1)
+        self.sld_Q.valuesChanged.connect(
+            lambda a, b: self.bsm_state.set_sweep_options(q_span=(a, b)))
+        self.sld_N.valuesChanged.connect(
+            lambda a, b: self.bsm_state.set_sweep_options(n_span=(a, b)))
+        self.spin_q_step.valueChanged.connect(
+            lambda v: self.bsm_state.set_sweep_options(q_step=round(v, 6)))
+        self.bsm_state.sweep_options_changed.connect(self._show_sweep_ranges)
+        return g
+
+    def _show_sweep_ranges(self, *_args):
+        """What the sliders come to for the design Q and N entered."""
+        opts = self.bsm_state.sweep_options
+
+        def design(widget):
+            try:
+                return float(widget.text())
+            except ValueError:
+                return None
+
+        for lbl, (lo, hi), value, unit in (
+                (self.lbl_Q_range, opts["q_span"], design(self.in_Q), "m³/s"),
+                (self.lbl_N_range, opts["n_span"], design(self.in_N), "rpm")):
+            text = f"×{lo:g} to ×{hi:g}"
+            if value:
+                text += f": {value * lo:.3g} to {value * hi:.3g} {unit}"
+            lbl.setText(text)
+        lines = len(sweep_q_multipliers(opts["q_span"], opts["q_step"]))
+        self.lbl_Q_range.setText(f"{self.lbl_Q_range.text()}, {lines} lines")
+
+    def _collision_figure(self):
+        """Scaly fish and eel collision probability, side by side."""
+        self.fig_collision = Figure(figsize=(6.0, 2.0), dpi=100)
+        self.canvas_collision = FigureCanvas(self.fig_collision)
+        self.canvas_collision.setMinimumHeight(120)
+        # its height whatever is left, never what it asks for: a canvas
+        # asks for the size it has, so once grown it would hold the page
+        # taller than a smaller window (the page is laid out at its
+        # preferred height - the cards wrap) and bring up its scrollbar
+        self.canvas_collision.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                            QSizePolicy.Policy.Ignored)
+        return self.canvas_collision
+
+    def _draw_collision(self, results):
+        def draw():
+            bsm_figures.draw_collision_panels(self.fig_collision, results,
+                                              dark=True)
+            self.canvas_collision.draw()
+        when_visible(self.canvas_collision, draw, key="figure")
 
     def _output_group(self):
         g = Section("Blade strike output")
@@ -290,6 +399,7 @@ class CalculatorPage(Page):
         self.wilson_lbl = QLabel("")
         style(self.wilson_lbl, tone="accent")
         self.wilson_lbl.setWordWrap(True)
+        self.wilson_lbl.setVisible(False)       # until there's a CI to show
         v.addWidget(self.wilson_lbl)
         return g
 
@@ -332,6 +442,8 @@ class CalculatorPage(Page):
     def _wire_validation(self):
         for w in self._numeric_widgets() + [self.in_total, self.in_strike]:
             w.textChanged.connect(self._validate)
+        for w in (self.in_Q, self.in_N):
+            w.textChanged.connect(self._show_sweep_ranges)
         self.blade_tbl.itemChanged.connect(self._validate)
         self.chk_use_observed.toggled.connect(self._validate)
         self._validate()
@@ -395,6 +507,7 @@ class CalculatorPage(Page):
                     f"{label} - Wilson 95% CI on observed Pco: "
                     f"[{res['wilson_lo'] * 100:.4f}%, {res['wilson_hi'] * 100:.4f}%]")
         self.wilson_lbl.setText("\n".join(lines))
+        self.wilson_lbl.setVisible(bool(lines))
 
     def _publish_latest(self, res):
         payload = build_latest_payload(res)

@@ -4,14 +4,28 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Predict tab - the primary operational screen of Model Prediction.
+"""The Predict and Results pages - one of each, shared by StrikeWorks (its
+Predict and Report steps) and the Development toolkit (Model prediction >
+Predict, as its two tabs - PredictTab):
 
-Presents the loaded model and dataset side by side, a real compatibility
-check, the prediction configuration, the asynchronous run control and the
-treatment-level results (cards, table, figures), and the HIG peak
-analysis (hig_peaks.py: the acceleration table and figures). All data
-comes from the shared PredictionState - this module never loads models or
-datasets itself.
+  PredictPanel   - the Dataset and Model cards side by side; Load dataset,
+                   Run prediction and Advanced features; a spinner and the
+                   time elapsed while it runs, one line when it's done; and
+                   the Predicted strikes (strike rate in the centre), Strike
+                   classes and Collisions (collision rate) rings.
+  AdvancedFeaturesWindow - Model mode, the decision threshold and its
+                   override, HIG peak analysis and the blade strike
+                   mortality inputs, in a window that doesn't block (like
+                   Annotations and notes) and closes with its page.
+  ResultsPanel   - the results by treatment, the HIG peak analysis table,
+                   the strike rate, strike class and HIG peak figures, the
+                   acceleration centred on the peak and on the nadir, and -
+                   once a blade strike model has been calculated this
+                   session - the mortality sweep.
+
+All data comes from the shared PredictionState (BSMState for mortality),
+so both apps' pages show the same run. The models are Settings' defaults
+(PredictionState.use_default_models) - no pickers here.
 """
 import re
 from pathlib import Path
@@ -19,42 +33,29 @@ from pathlib import Path
 import numpy as np
 from matplotlib.figure import Figure
 
-from PySide6.QtCore import Qt, QElapsedTimer, QTimer
+from PySide6.QtCore import QElapsedTimer, QEvent, Qt, QTimer
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout,
-    QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton, QSizePolicy,
-    QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QGridLayout,
+    QHBoxLayout, QLabel, QMessageBox, QPushButton, QSizePolicy, QTabWidget,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from . import bsm_figures, hig_peaks, ml_figures, settings, severity
+from . import (
+    bsm_figures, hig_peaks, ml_figures, model_measures, settings, severity,
+)
 from .bsm_model import (
     default_vcrit, recompute_mortality, recompute_mortality_at_vcrit,
 )
 from .canvas import FigureCanvas
 from .cards import MetaCard, RingCard, Spinner
-from .layout import hsplit, scroll_page, Section
+from .layout import scroll_area, Section, when_visible
 from .tables import fill_acceleration_table
-from .theme import CARD_H2, CARD_W2, PALETTE, PINK, muted_label, style
+from .theme import PALETTE, PINK, muted_label, style
 
-FIG_MIN_W, FIG_MIN_H = 320, 300
+CARD_MAX_W = 430                # each of the Dataset and Model boxes
+BUTTON_W, BUTTON_H = 180, 40
+REPORT_FIG_H = 380
 _VCRIT_MIN, _VCRIT_MAX, _VCRIT_STEP = 2.0, 10.0, 0.25
-# matches every saved bsm_config file's own eel_vcrit (input_data/
-# BSM_config/*.txt) - not 2.0, which was never anyone's actual value,
-# just an unrelated guess this spinbox happened to start at
-_EEL_VCRIT_DEFAULT = 8.0
-
-
-class _NumItem(QTableWidgetItem):
-    """Table item that sorts by a numeric key rather than its display text."""
-
-    def __init__(self, text, key):
-        super().__init__(text)
-        self._key = key
-
-    def __lt__(self, other):
-        if isinstance(other, _NumItem):
-            return self._key < other._key
-        return super().__lt__(other)
 
 
 def _model_version(path):
@@ -65,157 +66,173 @@ def _model_version(path):
     return m.group(1).replace("_", ".") if m else None
 
 
+def _performance(metrics):
+    """One row's value: "Accuracy = 0.959, Sensitivity = 0.966, ..." -
+    the measures a model has saved, by the names used everywhere
+    (model_measures; None if none)."""
+    parts = []
+    for name in ("Accuracy", "Sensitivity", "Specificity", "ROC AUC"):
+        v = model_measures.value(metrics, name)
+        if v is not None:
+            parts.append(f"{name} = {float(v):.3f}")
+    return ", ".join(parts) or None
+
+
+def model_card_rows(s):
+    """The Model card: each model and its out-of-fold performance (a
+    multiclass model trained before 29 October 2026 has no ROC AUC or
+    specificity saved - the latter comes from its confusion matrix)."""
+    bm = s.bin_metrics or {}
+    channels = bm.get("channels") or []
+    rows = [
+        ("Binary model",       s.bin_model_path.name if s.bin_model_path else None),
+        ("Model type",         bm.get("model")),
+        ("Version",            _model_version(s.bin_model_path)),
+        ("Mode",               "Binary + multiclass" if s.mc_model_path
+                               else ("Binary only" if s.bin_model_path else None)),
+        ("Channels",           f"{len(channels)} ({', '.join(channels[:3])}"
+                               f"{'…' if len(channels) > 3 else ''})"
+                               if channels else None),
+        ("Training samples",   bm.get("n_samples")),
+        ("Binary performance", _performance(bm)),
+    ]
+    if s.mc_model_path:
+        rows += [
+            ("Multiclass model",       s.mc_model_path.name),
+            ("Classes",                ", ".join(s.class_names or []) or None),
+            ("Multiclass performance", _performance(s.mc_metrics)),
+        ]
+    elif s.bin_model_path:
+        rows.append(("Multiclass model", "not found (binary only)"))
+    return rows
+
+
+def dataset_card_rows(s):
+    m = s.dataset_meta
+    if not m:
+        return [("Dataset", "No dataset loaded")]
+    sr = m.get("sampling_rate_hz")
+    seq = None
+    if m.get("seq_len_min") is not None:
+        if m["seq_len_min"] == m["seq_len_max"]:
+            seq = f"{m['seq_len_max']} samples"
+            if sr:
+                seq += f" ({m['seq_len_max'] / sr * 1000:.0f} ms)"
+        else:
+            seq = f"{m['seq_len_min']}-{m['seq_len_max']} samples (varying)"
+    req = set(s.required_channels())
+    n_chan_present = (len([c for c in m.get("columns", []) if c in req])
+                      if req else None)
+    return [
+        ("Dataset",       m.get("name")),
+        ("Source",        s.dataset_source),
+        ("Recordings",    m.get("n_files")),
+        ("Sensor rows",   f"{m.get('n_rows'):,}" if m.get("n_rows") else None),
+        ("Treatments",    f"{len(m['treatments'])} "
+                          f"({', '.join(m['treatments'])})"
+                          if m.get("treatments") else None),
+        ("Sampling rate", f"{sr} Hz" if sr else None),
+        ("Window length", seq),
+        ("Model channels",
+         f"{n_chan_present}/{len(req)} present" if req else None),
+        ("Annotations",   s.annotation_status()),
+    ]
+
+
+# ── mortality (BSM) ──────────────────────────────────────────────────────────
+# Scaly and eel each come from their own BSM run (BSMState.results):
+# collision exposure differs by species (Leff_m / Leff_t), not just the
+# mortality regression.
+def mortality_text(bsm):
+    results = bsm.results if bsm else {}
+    lines = []
+    for species in ("scaly", "eel"):
+        res = results.get(species)
+        if res is None:
+            continue
+        out = recompute_mortality(res, species, eel_vcrit=bsm.eel_vcrit,
+                                  threshold=None)
+        lines.append(
+            f"{species}: Pm={out['Pm'] * 100:.2f}%, "
+            f"S={out['S'] * 100:.2f}% (Cen Pco {res['Pco_tip'] * 100:.2f}%)")
+    return ("\n".join(lines) if lines else
+            "Run the Blade strike calculator first.")
+
+
+def draw_mortality(fig, bsm):
+    results = bsm.results if bsm else {}
+    vcrit_vals = np.arange(_VCRIT_MIN, _VCRIT_MAX + 1e-9, _VCRIT_STEP)
+    series = []
+    for species in ("scaly", "eel"):
+        res = results.get(species)
+        if res is None:
+            series.append((species, None, None, None, None))
+            continue
+        pm_vals = np.array([
+            recompute_mortality_at_vcrit(res, species, float(v))["Pm"] * 100
+            for v in vcrit_vals])
+        default_v = default_vcrit(res, species, eel_vcrit=bsm.eel_vcrit)
+        default_pm = recompute_mortality_at_vcrit(
+            res, species, default_v)["Pm"] * 100
+        series.append((species, vcrit_vals, pm_vals, default_v, default_pm))
+    treatment = bsm.mortality_treatment if bsm else None
+    title = f"Treatment: {treatment}" if treatment else "No treatment selected"
+    bsm_figures.draw_vcrit_sweep(fig, series, title=title)
+
 
 # ═════════════════════════════════════════════════════════════════════════════
-class PredictTab(QWidget):
-    """The Predict tab, bound to `state`."""
+class AdvancedFeaturesWindow(QDialog):
+    """Model mode, the decision threshold, HIG peak analysis and the blade
+    strike mortality inputs - a window that doesn't block (shown, not
+    exec'd), like Annotations and notes, gone when its page is."""
 
-    def __init__(self, state, main_window, goto_inspect=None, bsm_state=None):
-        super().__init__()
+    def __init__(self, page, owner, state, bsm_state=None):
+        super().__init__(owner)
+        self.page = page
         self.state = state
-        self.main_window = main_window
-        self._goto_inspect = goto_inspect
-        self.bsm_state = bsm_state
-
-        self._elapsed = QElapsedTimer()
-        self._tick = QTimer()
-        self._tick.setInterval(500)
-        self._tick.timeout.connect(self._update_elapsed)
-
-        self.fig_bin = Figure(figsize=(4.3, 3.4), dpi=100)
-        self.canvas_bin = FigureCanvas(self.fig_bin)
-        self.fig_mc = Figure(figsize=(4.3, 3.4), dpi=100)
-        self.canvas_mc = FigureCanvas(self.fig_mc)
-        self.fig_vcrit = Figure(figsize=(4.3, 3.4), dpi=100)
-        self.canvas_vcrit = FigureCanvas(self.fig_vcrit)
-        # the HIG peak analysis figure (three panels, a full row)
-        self.fig_sev = Figure(figsize=(8.6, 3.4), dpi=100)
-        self.canvas_sev = FigureCanvas(self.fig_sev)
-        self.fig_acc = Figure(figsize=(4.3, 3.4), dpi=100)
-        self.canvas_acc = FigureCanvas(self.fig_acc)
-        self.fig_nadir = Figure(figsize=(4.3, 3.4), dpi=100)
-        self.canvas_nadir = FigureCanvas(self.fig_nadir)
-        for c in (self.canvas_bin, self.canvas_sev, self.canvas_mc,
-                  self.canvas_vcrit, self.canvas_acc, self.canvas_nadir):
-            c.setMinimumSize(FIG_MIN_W, FIG_MIN_H)
-            c.setSizePolicy(QSizePolicy.Policy.Expanding,
-                            QSizePolicy.Policy.Expanding)
-
-        self._eel_vcrit_synced = False  # see _on_bsm_results()
-
-        self._build(self)
-        self._connect_state()
-        self._refresh_model()
-        self._refresh_dataset()
+        self.bsm = bsm_state
+        self.setWindowTitle("Advanced features")
+        self._build()
+        state.config_changed.connect(self._refresh_config)
+        state.run_finished.connect(self._refresh_treatments)
+        if bsm_state is not None:
+            bsm_state.calculated_all.connect(self._refresh_mortality)
+            bsm_state.mortality_changed.connect(self._refresh_mortality)
         self._refresh_config()
-        self._refresh_validation()
-        if self.bsm_state is not None:
-            self.bsm_state.calculated_all.connect(self._on_bsm_results)
-            self._recalculate_mortality()
-            self._run_vcrit_sweep()
+        self._refresh_treatments()
+        self._refresh_mortality()
+        self.setMinimumWidth(440)
+        # it belongs to the page: gone when the page is (another page, or
+        # the window closed or minimised)
+        page.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj is self.page and event.type() == QEvent.Type.Hide:
+            self.hide()
+        return super().eventFilter(obj, event)
+
+    def bring_up(self):
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
     # ── layout ───────────────────────────────────────────────────────────────
-    def _build(self, frame):
-        outer = QVBoxLayout(frame)
-        outer.setContentsMargins(0, 0, 0, 0)
+    def _build(self):
+        v = QVBoxLayout(self)
+        v.setContentsMargins(14, 12, 14, 12)
+        v.setSpacing(8)
 
-        tabs = QTabWidget()
-        outer.addWidget(tabs)
-
-        tab1 = QWidget()
-        self._build_setup_tab(tab1)
-        tabs.addTab(tab1, "Model, dataset and run")
-
-        tab2 = QWidget()
-        self._build_results_tab(tab2)
-        tabs.addTab(tab2, "Results")
-
-        ml_figures.draw_strike_rate(self.fig_bin, None, dark=True)
-        ml_figures.draw_peak_summary(self.fig_sev, None, dark=True)
-        ml_figures.draw_region(self.fig_mc, None, [], dark=True)
-        ml_figures.draw_acc_centred(self.fig_acc, None, "acc", dark=True)
-        ml_figures.draw_acc_centred(self.fig_nadir, None, "nadir", dark=True)
-
-
-    def _build_setup_tab(self, frame):
-        v = scroll_page(frame)
-
-        # ── row 1: model + dataset cards (hsplit: fills the width, the
-        # boundary can be dragged) ───────────────────────────────────────
-        grp_model = Section("Model")
-        mv = QVBoxLayout(grp_model)
-        mv.setSpacing(8)
-        self.card_model = MetaCard("Deployed model")
-        mv.addWidget(self.card_model)
-
-        perf_row = QHBoxLayout()
-        perf_row.setSpacing(6)
-        self.ring_acc  = RingCard("Accuracy",    w=CARD_W2, h=CARD_H2)
-        self.ring_sens = RingCard("Sensitivity", w=CARD_W2, h=CARD_H2)
-        self.ring_spec = RingCard("Specificity", w=CARD_W2, h=CARD_H2)
-        self.ring_auc  = RingCard("ROC AUC",     w=CARD_W2, h=CARD_H2)
-        for r in (self.ring_acc, self.ring_sens, self.ring_spec, self.ring_auc):
-            perf_row.addWidget(r, stretch=1)
-        mv.addLayout(perf_row)
-
-        sel_row = QHBoxLayout()
-        lab_bin_sel = QLabel("Binary")
-        style(lab_bin_sel, role="muted")
-        self.cmb_bin_model = QComboBox()
-        self.cmb_bin_model.currentIndexChanged.connect(self._on_bin_model_picked)
-        sel_row.addWidget(lab_bin_sel)
-        sel_row.addWidget(self.cmb_bin_model, stretch=1)
-        lab_mc_sel = QLabel("Multiclass")
-        style(lab_mc_sel, role="muted")
-        self.cmb_mc_model = QComboBox()
-        self.cmb_mc_model.currentIndexChanged.connect(self._on_mc_model_picked)
-        sel_row.addWidget(lab_mc_sel)
-        sel_row.addWidget(self.cmb_mc_model, stretch=1)
-        mv.addLayout(sel_row)
-
-        mdl_btn_row = QHBoxLayout()
-        self.btn_models = QPushButton("Change models folder…")
-        self.btn_models.clicked.connect(self._change_models_folder)
-        self.lbl_models_dir = QLabel("")
-        style(self.lbl_models_dir, role="muted")
-        self.lbl_models_dir.setWordWrap(True)
-        mdl_btn_row.addWidget(self.btn_models)
-        mdl_btn_row.addWidget(self.lbl_models_dir, stretch=1)
-        mv.addLayout(mdl_btn_row)
-
-        grp_data = Section("Dataset")
-        dv = QVBoxLayout(grp_data)
-        dv.setSpacing(8)
-        self.card_dataset = MetaCard("Curated sensor dataset")
-        dv.addWidget(self.card_dataset)
-
-        ds_btn_row = QHBoxLayout()
-        self.btn_load_csv = QPushButton("Load dataset CSV…")
-        self.btn_load_csv.clicked.connect(self._load_csv)
-        ds_btn_row.addWidget(self.btn_load_csv)
-        ds_btn_row.addStretch()
-        dv.addLayout(ds_btn_row)
-        v.addWidget(hsplit(grp_model, grp_data))
-
-        # ── row 2: configuration + run ──────────────────────────────────────
-        grp_cfg = Section("Prediction configuration")
-        gv = QVBoxLayout(grp_cfg)
-        gv.setSpacing(8)
-
-        mode_row = QHBoxLayout()
-        lab_mode = QLabel("Model mode")
-        style(lab_mode, role="muted")
+        grp = Section("Prediction")
+        g = QGridLayout(grp)
+        g.setVerticalSpacing(8)
+        g.setColumnStretch(1, 1)
+        g.addWidget(muted_label("Model mode"), 0, 0)
         self.cmb_mode = QComboBox()
         self.cmb_mode.currentIndexChanged.connect(self._on_mode_changed)
-        mode_row.addWidget(lab_mode)
-        mode_row.addWidget(self.cmb_mode, stretch=1)
-        gv.addLayout(mode_row)
+        g.addWidget(self.cmb_mode, 0, 1, 1, 2)
 
         self.lbl_thresh = QLabel("Decision threshold: -")
-        style(self.lbl_thresh)
-        gv.addWidget(self.lbl_thresh)
-
-        th_row = QHBoxLayout()
+        g.addWidget(self.lbl_thresh, 1, 0, 1, 3)
         self.chk_override = QCheckBox("Override deployed threshold")
         self.chk_override.toggled.connect(self._on_override_toggled)
         self.spin_thresh = QDoubleSpinBox()
@@ -224,19 +241,15 @@ class PredictTab(QWidget):
         self.spin_thresh.setSingleStep(0.01)
         self.spin_thresh.setEnabled(False)
         self.spin_thresh.valueChanged.connect(self._on_threshold_edited)
-        th_row.addWidget(self.chk_override)
-        th_row.addWidget(self.spin_thresh)
-        th_row.addStretch()
-        gv.addLayout(th_row)
-
+        g.addWidget(self.chk_override, 2, 0, 1, 2)
+        g.addWidget(self.spin_thresh, 2, 2)
         self.lbl_override_note = QLabel(
             "⚠ You are overriding the deployed model threshold.")
         style(self.lbl_override_note, tone="warn")
         self.lbl_override_note.setVisible(False)
-        gv.addWidget(self.lbl_override_note)
+        g.addWidget(self.lbl_override_note, 3, 0, 1, 3)
 
         self.chk_hig_peaks = QCheckBox("HIG peak analysis")
-        self.chk_hig_peaks.setChecked(self.state.hig_peaks)
         self.chk_hig_peaks.setToolTip(
             "Find the acceleration events in each recording's high-g "
             f"magnitude: peaks of at least {hig_peaks.HEIGHT_G:.0f} g with "
@@ -246,294 +259,46 @@ class PredictTab(QWidget):
             f"collision probability (an event of {hig_peaks.COLLISION_G} g "
             "or more). Measured, alongside the model's prediction.")
         self.chk_hig_peaks.toggled.connect(self.state.set_hig_peaks)
-        gv.addWidget(self.chk_hig_peaks)
+        g.addWidget(self.chk_hig_peaks, 4, 0, 1, 3)
+        v.addWidget(grp)
 
-        # ── mortality inputs: from the BSM run, independent of the
-        # prediction above. Scaly and eel are shown together; only eel's
+        # the mortality inputs: from the BSM run, independent of the
+        # prediction. Scaly and eel are shown together; only eel's
         # critical velocity is an input (scaly's regression sets its own
-        # floor). ────────────────────────────────────────────────────────
-        mort_row = QHBoxLayout()
+        # floor).
+        grp_bsm = Section("Blade strike model")
+        b = QGridLayout(grp_bsm)
+        b.setVerticalSpacing(8)
+        b.setColumnStretch(1, 1)
+        b.addWidget(muted_label("Treatment"), 0, 0)
         self.cmb_mortality_treatment = QComboBox()
-        self.cmb_mortality_treatment.addItem("None", None)
-        self.cmb_mortality_treatment.currentIndexChanged.connect(
-            self._on_mortality_inputs_changed)
         self.cmb_mortality_treatment.setToolTip(
             "Which pump condition the mortality plot represents - a "
             "label only, since the BSM run itself has no per-treatment "
             "input; populated from the current prediction's treatments.")
-        mort_row.addWidget(muted_label("Treatment"))
-        mort_row.addWidget(self.cmb_mortality_treatment)
+        self.cmb_mortality_treatment.currentIndexChanged.connect(
+            self._on_treatment_picked)
+        b.addWidget(self.cmb_mortality_treatment, 0, 1)
+        b.addWidget(muted_label("Eel critical velocity"), 1, 0)
         self.spin_eel_vcrit = QDoubleSpinBox()
         self.spin_eel_vcrit.setRange(0.0, 50.0)
         self.spin_eel_vcrit.setDecimals(2)
-        self.spin_eel_vcrit.setValue(_EEL_VCRIT_DEFAULT)
         self.spin_eel_vcrit.setSuffix(" m/s")
-        self.spin_eel_vcrit.valueChanged.connect(self._on_mortality_inputs_changed)
-        mort_row.addWidget(muted_label("Eel critical velocity"))
-        mort_row.addWidget(self.spin_eel_vcrit)
-        mort_row.addStretch()
-        gv.addLayout(mort_row)
+        self.spin_eel_vcrit.valueChanged.connect(self._on_vcrit_edited)
+        b.addWidget(self.spin_eel_vcrit, 1, 1)
         self.lbl_mortality = QLabel("")
         style(self.lbl_mortality, role="strong")
         self.lbl_mortality.setWordWrap(True)
-        gv.addWidget(self.lbl_mortality)
-
-        gv.addStretch()
-
-        grp_run = Section("Run")
-        rv = QVBoxLayout(grp_run)
-        rv.setSpacing(8)
-        run_row = QHBoxLayout()
-        self.btn_run = QPushButton("Run prediction")
-        self.btn_run.setMinimumHeight(36)
-        self.btn_run.setEnabled(False)
-        self.btn_run.clicked.connect(self.state.run_prediction)
-        self.spinner = Spinner(size=26)
-        self.spinner.setVisible(False)
-        run_row.addWidget(self.btn_run, stretch=1)
-        run_row.addWidget(self.spinner)
-        rv.addLayout(run_row)
-
-        self.lbl_run_status = QLabel("")
-        self.lbl_run_status.setWordWrap(True)
-        style(self.lbl_run_status, role="muted")
-        self.lbl_run_status.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse)
-        rv.addWidget(self.lbl_run_status)
-
-        self.btn_low_conf = QPushButton("Inspect low-confidence predictions →")
-        self.btn_low_conf.setVisible(False)
-        self.btn_low_conf.clicked.connect(self._inspect_low_conf)
-        rv.addWidget(self.btn_low_conf)
-        rv.addStretch()
-        v.addWidget(hsplit(grp_cfg, grp_run))
-
+        b.addWidget(self.lbl_mortality, 2, 0, 1, 2)
+        grp_bsm.setVisible(self.bsm is not None)
+        v.addWidget(grp_bsm)
         v.addStretch()
 
-    def _build_results_tab(self, frame):
-        v = scroll_page(frame)
-
-        # ── row 3: prediction summary cards | results table, side by side ──
-        # the cards stacked three to a row, the table beside them
-        grp_sum = Section("Prediction summary")
-        sv = QVBoxLayout(grp_sum)
-        grid = QGridLayout()
-        grid.setSpacing(8)
-        self.card_recordings = RingCard("Recordings (by treatment)", w=170)
-        self.card_strikes    = RingCard("Predicted strikes", w=170)
-        self.card_rate       = RingCard("Strike rate", w=170)
-        self.card_conf       = RingCard("Mean confidence", w=170)
-        self.card_regions    = RingCard("Strike classes", w=170)
-        # the HIG peak analysis beside the model's verdict, shown while its
-        # box is ticked (_refresh_hig_visibility)
-        self.card_severity   = MetaCard("HIG peak events")
-        self.card_severe     = RingCard(
-            f"Collisions (≥ {hig_peaks.COLLISION_G} g)", w=170)
-        self.card_severity.setToolTip(
-            "Acceleration events within 0.1 s of the nadir (HIG peak "
-            "analysis), and the recordings with a collision - an event "
-            f"of {hig_peaks.COLLISION_G} g or more.")
-        for i, c in enumerate((self.card_recordings, self.card_strikes,
-                               self.card_rate, self.card_conf,
-                               self.card_regions, self.card_severity,
-                               self.card_severe)):
-            grid.addWidget(c, i // 3, i % 3)
-        sv.addLayout(grid)
-        sv.addStretch()
-
-        # ── row 4: results table ────────────────────────────────────────────
-        grp_tbl = Section("Results by treatment")
-        tv = QVBoxLayout(grp_tbl)
-        self.tbl = QTableWidget(0, 0)
-        self.tbl.verticalHeader().setVisible(False)
-        self.tbl.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.tbl.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.tbl.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.tbl.setSortingEnabled(True)
-        self.tbl.setMinimumHeight(160)
-        self.tbl.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents)
-        self.tbl.horizontalHeader().setStretchLastSection(True)
-        self.tbl.itemSelectionChanged.connect(self._on_treatment_selected)
-        tv.addWidget(self.tbl)
-        v.addWidget(hsplit((grp_sum, 2), (grp_tbl, 3)))
-
-        # ── row 5: figures ──────────────────────────────────────────────────
-        grp_figs = Section("Prediction figures")
-        fv = QVBoxLayout(grp_figs)
-        # the model's strike rate and strike location, the HIG peak figure,
-        # then mortality (_refresh_hig_visibility lays them out)
-        self._figs = QGridLayout()
-        self._figs.setSpacing(8)
-        fv.addLayout(self._figs)
-        v.addWidget(grp_figs)
-
-        # ── row 6: HIG peak analysis ────────────────────────────────────────
-        grp_hig = self.grp_hig = Section("HIG peak analysis")
-        hv = QVBoxLayout(grp_hig)
-        hv.setSpacing(8)
-        self.lbl_hig_status = muted_label(
-            "Tick HIG peak analysis (Model, dataset and run) and run a "
-            "prediction.")
-        self.lbl_hig_status.setWordWrap(True)
-        hv.addWidget(self.lbl_hig_status)
-        self.tbl_acc = QTableWidget(0, 0)
-        self.tbl_acc.setProperty("noRowNumbers", True)   # its own header rows
-        self.tbl_acc.horizontalHeader().setVisible(False)
-        self.tbl_acc.verticalHeader().setVisible(False)
-        self.tbl_acc.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.tbl_acc.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        fill_acceleration_table(self.tbl_acc, None)
-        hv.addWidget(self.tbl_acc)
-        self.lbl_acc_notes = muted_label("\n".join(hig_peaks.TABLE_NOTES))
-        self.lbl_acc_notes.setWordWrap(True)
-        hv.addWidget(self.lbl_acc_notes)
-        centred = QGridLayout()
-        centred.setSpacing(8)
-        centred.addWidget(self.canvas_acc, 0, 0)
-        centred.addWidget(self.canvas_nadir, 0, 1)
-        hv.addLayout(centred)
-        v.addWidget(grp_hig)
-
-        v.addStretch()
-
-    # ── state wiring ─────────────────────────────────────────────────────────
-    def _connect_state(self):
-        s = self.state
-        s.models_changed.connect(self._refresh_model)
-        s.dataset_changed.connect(self._refresh_dataset)
-        s.validation_changed.connect(self._refresh_validation)
-        s.config_changed.connect(self._refresh_config)
-        s.run_started.connect(self._on_run_started)
-        s.run_finished.connect(self._on_run_finished)
-        s.run_failed.connect(self._on_run_failed)
-
-    # ── model card ───────────────────────────────────────────────────────────
-    def _refresh_model(self):
-        s = self.state
-        bm = s.bin_metrics or {}
-        perf = bm.get("out_of_fold_performance", {})
-
-        rows = [
-            ("Binary model",     s.bin_model_path.name if s.bin_model_path else None),
-            ("Model type",       bm.get("model")),
-            ("Version",          _model_version(s.bin_model_path)),
-            ("Mode",             "Binary + multiclass" if s.mc_model_path
-                                 else ("Binary only" if s.bin_model_path else None)),
-            ("Channels",         f"{bm.get('n_channels')} "
-                                 f"({', '.join(bm.get('channels', [])[:3])}…)"
-                                 if bm.get("channels") else None),
-            ("Input window",     f"{bm.get('max_sequence_length')} samples"
-                                 if bm.get("max_sequence_length") else None),
-            ("Training samples", bm.get("n_samples")),
-            ("Deployed threshold",
-                                 f"{s.deployed_threshold:.4f}"
-                                 if s.deployed_threshold is not None else None),
-        ]
-        if s.mc_model_path:
-            mm = s.mc_metrics or {}
-            rows += [
-                ("Multiclass model", s.mc_model_path.name),
-                ("Classes",          s.class_names),
-                ("Multiclass accuracy",
-                 f"{mm.get('out_of_fold_performance', {}).get('overall_accuracy'):.3f}"
-                 if mm.get("out_of_fold_performance", {}).get("overall_accuracy")
-                 is not None else None),
-            ]
-        elif s.bin_model_path:
-            rows.append(("Multiclass model", "not found (binary-only mode)"))
-        self.card_model.set_rows(rows)
-
-        if s.bin_model_path and bm.get("channels"):
-            tip = "Model channels:\n" + "\n".join(bm["channels"])
-            self.card_model.setToolTip(tip)
-
-        for ring, key in ((self.ring_acc, "overall_accuracy"),
-                          (self.ring_sens, "sensitivity"),
-                          (self.ring_spec, "specificity"),
-                          (self.ring_auc, "roc_auc")):
-            val = perf.get(key)
-            if val is None:
-                ring.clear()
-            else:
-                ring.set_value(float(val))
-
-        self.lbl_models_dir.setText(str(s.models_dir))
-
-        self.cmb_bin_model.blockSignals(True)
-        self.cmb_bin_model.clear()
-        for p in s.bin_candidates:
-            self.cmb_bin_model.addItem(p.name, str(p))
-        idx = self.cmb_bin_model.findData(
-            str(s.bin_model_path) if s.bin_model_path else None)
-        if idx >= 0:
-            self.cmb_bin_model.setCurrentIndex(idx)
-        self.cmb_bin_model.setEnabled(self.cmb_bin_model.count() > 1)
-        self.cmb_bin_model.blockSignals(False)
-
-        self.cmb_mc_model.blockSignals(True)
-        self.cmb_mc_model.clear()
-        self.cmb_mc_model.addItem("(none - binary only)", None)
-        for p in s.mc_candidates:
-            self.cmb_mc_model.addItem(p.name, str(p))
-        idx = self.cmb_mc_model.findData(
-            str(s.mc_model_path) if s.mc_model_path else None)
-        self.cmb_mc_model.setCurrentIndex(idx if idx >= 0 else 0)
-        self.cmb_mc_model.setEnabled(len(s.mc_candidates) > 0)
-        self.cmb_mc_model.blockSignals(False)
-
-    # ── dataset card ─────────────────────────────────────────────────────────
-    def _refresh_dataset(self):
-        s = self.state
-        m = s.dataset_meta
-        if not m:
-            self.card_dataset.set_rows([("Dataset", "No dataset loaded")])
-            return
-
-        sr = m.get("sampling_rate_hz")
-        seq = None
-        if m.get("seq_len_min") is not None:
-            if m["seq_len_min"] == m["seq_len_max"]:
-                seq = f"{m['seq_len_max']} samples"
-                if sr:
-                    seq += f" ({m['seq_len_max'] / sr * 1000:.0f} ms)"
-            else:
-                seq = f"{m['seq_len_min']}–{m['seq_len_max']} samples (varying)"
-
-        req = set(s.required_channels())
-        n_chan_present = (len([c for c in m.get("columns", []) if c in req])
-                          if req else None)
-
-        self.card_dataset.set_rows([
-            ("Dataset",       m.get("name")),
-            ("Source",        s.dataset_source),
-            ("Recordings",    m.get("n_files")),
-            ("Sensor rows",   f"{m.get('n_rows'):,}" if m.get("n_rows") else None),
-            ("Treatments",    f"{len(m['treatments'])} "
-                              f"({', '.join(m['treatments'])})"
-                              if m.get("treatments") else None),
-            ("Sampling rate", f"{sr} Hz" if sr else None),
-            ("Window length", seq),
-            ("Model channels",
-             f"{n_chan_present}/{len(req)} present" if req else None),
-            ("Annotations",   s.annotation_status()),
-        ])
-
-    # ── validation ───────────────────────────────────────────────────────────
-    def _refresh_validation(self):
-        # no persistent compatibility panel - Run itself triggers validate()
-        # and surfaces any failure (see PredictionState.run_prediction);
-        # this only needs to keep the button from being double-clicked
-        # mid-run, not pre-emptively gate on readiness.
-        self.btn_run.setEnabled(not self.state.running)
-
-    # ── configuration ────────────────────────────────────────────────────────
+    # ── prediction configuration ─────────────────────────────────────────────
     def _refresh_config(self):
         s = self.state
         labels = {"binary": "Binary (strike / no strike)",
                   "multiclass": "Multiclass (strike → region class)"}
-
         self.cmb_mode.blockSignals(True)
         self.cmb_mode.clear()
         for m in s.available_modes:
@@ -571,43 +336,11 @@ class PredictTab(QWidget):
         self.chk_hig_peaks.blockSignals(True)
         self.chk_hig_peaks.setChecked(s.hig_peaks)
         self.chk_hig_peaks.blockSignals(False)
-        self._refresh_hig_visibility()
-
-    def _refresh_hig_visibility(self):
-        """The HIG output - its two cards, its figure and the HIG peak
-        analysis section - shows only while HIG peak analysis is ticked.
-        The model's figures two to a row, the HIG figure (three panels) a
-        row of its own under the first two."""
-        on = self.state.hig_peaks
-        for w in (self.card_severity, self.card_severe, self.grp_hig):
-            w.setVisible(on)
-        self.canvas_sev.setVisible(on)
-        while self._figs.count():
-            self._figs.takeAt(0)
-        self._figs.addWidget(self.canvas_bin, 0, 0)
-        self._figs.addWidget(self.canvas_mc, 0, 1)
-        if on:
-            self._figs.addWidget(self.canvas_sev, 1, 0, 1, 2)
-        self._figs.addWidget(self.canvas_vcrit, 2 if on else 1, 0)
 
     def _on_mode_changed(self):
         mode = self.cmb_mode.currentData()
         if mode:
             self.state.set_mode(mode)
-
-    def _on_bin_model_picked(self):
-        path = self.cmb_bin_model.currentData()
-        if not path:
-            return
-        ok, msg = self.state.select_bin_model(path)
-        if not ok:
-            self.state.status.emit(f"Could not switch binary model: {msg}", 6000)
-
-    def _on_mc_model_picked(self):
-        path = self.cmb_mc_model.currentData()
-        ok, msg = self.state.select_mc_model(path)
-        if not ok:
-            self.state.status.emit(f"Could not switch multiclass model: {msg}", 6000)
 
     def _on_override_toggled(self, checked):
         # the spinbox shows the deployed threshold while unchecked, so
@@ -619,123 +352,244 @@ class PredictTab(QWidget):
         if self.chk_override.isChecked():
             self.state.set_threshold_override(True, value)
 
-    # ── model / dataset pickers ──────────────────────────────────────────────
-    def _change_models_folder(self):
-        s = self.state
-        start = str(s.models_dir if Path(s.models_dir).exists() else Path.cwd())
-        path = QFileDialog.getExistingDirectory(
-            self.main_window, "Select models folder", start)
-        if not path:
+    # ── mortality inputs ─────────────────────────────────────────────────────
+    def _refresh_treatments(self):
+        """The treatments of the current prediction (the plot's label)."""
+        if self.bsm is None:
             return
-        ok, msg = s.load_models_from_dir(path)
-        s.status.emit(msg, 6000)
-        if not ok:
-            QMessageBox.warning(self.main_window, "Model loading", msg)
+        summary = self.state.summary
+        names = (sorted(summary["treatment"].astype(str).unique())
+                 if summary is not None and len(summary) else [])
+        cmb = self.cmb_mortality_treatment
+        cmb.blockSignals(True)
+        cmb.clear()
+        cmb.addItem("None", None)
+        for name in names:
+            cmb.addItem(name, name)
+        cmb.blockSignals(False)
+        if self.bsm.mortality_treatment not in names + [None]:
+            self.bsm.set_mortality_treatment(None)
+        self._refresh_mortality()
 
-    def _load_csv(self):
+    def _refresh_mortality(self, *_args):
+        if self.bsm is None:
+            return
+        cmb = self.cmb_mortality_treatment
+        cmb.blockSignals(True)
+        idx = cmb.findData(self.bsm.mortality_treatment)
+        cmb.setCurrentIndex(idx if idx >= 0 else 0)
+        cmb.blockSignals(False)
+        self.spin_eel_vcrit.blockSignals(True)
+        self.spin_eel_vcrit.setValue(self.bsm.eel_vcrit)
+        self.spin_eel_vcrit.blockSignals(False)
+        self.lbl_mortality.setText(mortality_text(self.bsm))
+
+    def _on_treatment_picked(self):
+        self.bsm.set_mortality_treatment(self.cmb_mortality_treatment.currentData())
+
+    def _on_vcrit_edited(self, value):
+        self.bsm.set_eel_vcrit(value)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+class PredictPanel(QWidget):
+    """The Predict page (see the module docstring), bound to `state`.
+    `owner` is the window its dialogs belong to; `goto_inspect` (the
+    toolkit's) adds the "Inspect low confidence" shortcut - StrikeWorks
+    has no Inspect."""
+
+    def __init__(self, state, owner, bsm_state=None, goto_inspect=None):
+        super().__init__()
+        self.state = state
+        self.owner = owner
+        self._goto_inspect = goto_inspect
+
+        self._elapsed = QElapsedTimer()
+        self._tick = QTimer(self)
+        self._tick.setInterval(500)
+        self._tick.timeout.connect(self._update_elapsed)
+
+        self._build()
+        self.advanced = AdvancedFeaturesWindow(self, owner, state, bsm_state)
+        self.btn_advanced.clicked.connect(self.advanced.bring_up)
+
+        s = state
+        s.models_changed.connect(self._refresh_model)
+        s.dataset_changed.connect(self._refresh_dataset)
+        s.validation_changed.connect(self._sync_run_button)
+        s.config_changed.connect(self._refresh_collisions)
+        s.run_started.connect(self._on_run_started)
+        s.run_finished.connect(self._on_run_finished)
+        s.run_failed.connect(self._on_run_failed)
+        self._refresh_model()
+        self._refresh_dataset()
+        self._show_results()
+
+    # ── layout ───────────────────────────────────────────────────────────────
+    def _build(self):
+        v = QVBoxLayout(self)
+        # (8, and the spinner no taller than the status line: the page
+        # fits StrikeWorks's window at 690 px high)
+        v.setSpacing(8)
+        # equal stretch above and below keeps the block centred
+        v.addStretch(1)
+
+        cards_row = QHBoxLayout()
+        cards_row.setSpacing(16)
+        cards_row.addStretch()
+        self.card_dataset = MetaCard()
+        self.card_model = MetaCard()
+        self.card_model.setToolTip(
+            "The default models (Settings). Performance is out-of-fold "
+            "(cross-validation); the multiclass sensitivity and "
+            "specificity are averaged over its classes.")
+        for title, card in (("Dataset", self.card_dataset),
+                            ("Model", self.card_model)):
+            grp = Section(title)
+            grp.setMaximumWidth(CARD_MAX_W)
+            QVBoxLayout(grp).addWidget(card)
+            cards_row.addWidget(grp, stretch=1)
+        cards_row.addStretch()
+        v.addLayout(cards_row)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        self.btn_load_dataset = QPushButton("Load dataset CSV…")
+        self.btn_load_dataset.clicked.connect(self.load_dataset_csv)
+        self.btn_run_predict = QPushButton("Run prediction")
+        self.btn_run_predict.clicked.connect(self.run)
+        self.btn_advanced = QPushButton("Advanced features")
+        self.btn_advanced.setToolTip(
+            "Model mode, the decision threshold, HIG peak analysis and the "
+            "blade strike model's inputs, in a window that stays open.")
+        for btn in (self.btn_load_dataset, self.btn_run_predict,
+                    self.btn_advanced):
+            btn.setMinimumSize(BUTTON_W, BUTTON_H)
+            btn_row.addWidget(btn)
+        btn_row.addStretch()
+        v.addLayout(btn_row)
+
+        status_row = QHBoxLayout()
+        status_row.addStretch()
+        self.spinner = Spinner(size=18)
+        self.spinner.setVisible(False)
+        status_row.addWidget(self.spinner)
+        self.lbl_status = QLabel("")
+        self.lbl_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_status.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        status_row.addWidget(self.lbl_status)
+        status_row.addStretch()
+        v.addLayout(status_row)
+
+        # the toolkit's shortcut into Inspect (_on_run_finished)
+        self.btn_low_conf = QPushButton("")
+        self.btn_low_conf.setVisible(False)
+        self.btn_low_conf.clicked.connect(self._inspect_low_conf)
+        v.addWidget(self.btn_low_conf, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        rings = QHBoxLayout()
+        rings.setSpacing(16)
+        rings.addStretch()
+        self.card_predicted_strikes = RingCard("Predicted strikes")
+        self.card_predicted_strikes.setToolTip(
+            "Recordings predicted a strike; the strike rate in the centre.")
+        rings.addWidget(self.card_predicted_strikes)
+        self.card_strike_classes = RingCard("Strike classes")
+        rings.addWidget(self.card_strike_classes)
+        # the HIG peak analysis, shown while it's ticked (Advanced features)
+        self.card_collisions = RingCard(f"Collisions (≥ {hig_peaks.COLLISION_G} g)")
+        rings.addWidget(self.card_collisions)
+        rings.addStretch()
+        v.addLayout(rings)
+
+        v.addStretch(1)
+
+    # ── cards ────────────────────────────────────────────────────────────────
+    def _refresh_model(self):
+        self.card_model.set_rows(model_card_rows(self.state))
+
+    def _refresh_dataset(self):
+        self.card_dataset.set_rows(dataset_card_rows(self.state))
+        self._sync_run_button()
+
+    def _sync_run_button(self):
+        s = self.state
+        self.btn_run_predict.setEnabled(s.dataset_df is not None and not s.running)
+
+    # ── dataset and run ──────────────────────────────────────────────────────
+    def load_dataset_csv(self):
         path, _ = QFileDialog.getOpenFileName(
-            self.main_window, "Load dataset CSV", str(settings.get_input_data_dir()),
+            self.owner, "Load dataset CSV", str(settings.get_input_data_dir()),
             "CSV files (*.csv)")
         if not path:
             return
         ok, msg = self.state.load_dataset_csv(path)
-        self.state.status.emit(msg, 6000)
-        if not ok:
-            QMessageBox.warning(self.main_window, "Dataset loading", msg)
+        style(self.lbl_status, role="muted", tone=None if ok else "bad")
+        self.lbl_status.setText(msg)
 
-    # ── run lifecycle ────────────────────────────────────────────────────────
+    def run(self):
+        self.state.run_prediction()
+
     def _on_run_started(self):
-        n = self.state.dataset_meta.get("n_files", "?")
-        self.btn_run.setEnabled(False)
-        self.btn_run.setText("Running…")
+        self.btn_run_predict.setEnabled(False)
+        self.btn_run_predict.setText("Running…")
         self.btn_low_conf.setVisible(False)
         self.spinner.start()
         self._elapsed.start()
         self._tick.start()
-        style(self.lbl_run_status, tone="accent")
-        self.lbl_run_status.setText(f"Predicting {n} recordings…")
+        style(self.lbl_status, tone="accent")
+        self._update_elapsed()
 
     def _update_elapsed(self):
-        secs = self._elapsed.elapsed() // 1000
         n = self.state.dataset_meta.get("n_files", "?")
-        self.lbl_run_status.setText(
-            f"Predicting {n} recordings…  {secs} s elapsed")
+        self.lbl_status.setText(f"Predicting {n} recordings…  "
+                                f"{self._elapsed.elapsed() // 1000} s elapsed")
 
     def _stop_run_ui(self):
         self._tick.stop()
         self.spinner.stop()
-        self.btn_run.setText("Run prediction")
-        self.btn_run.setEnabled(True)
+        self.btn_run_predict.setText("Run prediction")
+        self._sync_run_button()
 
     def _on_run_finished(self):
+        secs = self._elapsed.elapsed() / 1000 if self._elapsed.isValid() else None
         self._stop_run_ui()
         s = self.state
-        meta = s.run_meta
-        n = meta.get("n_files", 0)
-        k = meta.get("n_strike", 0)
-        rate = meta.get("strike_rate", 0.0) * 100
-        secs = self._elapsed.elapsed() / 1000
-        style(self.lbl_run_status, tone="ok")
-        peaks_ = meta.get("hig_peaks") or {}
-        severity_ = meta.get("severity") or {}
-        if peaks_:
-            severe_line = (f"\n{peaks_['n_collision']} with a collision "
-                           f"(≥ {peaks_['collision_g']} g at the nadir)")
-        elif severity_:
-            severe_line = (f"\n{severity_['n_severe']} severe (HIG peak > "
-                           f"{severity_['severe_g']} g)")
-        else:
-            severe_line = ""
-        self.lbl_run_status.setText(
-            f"Prediction complete ({secs:.1f} s)\n"
-            f"{n} recordings processed\n"
-            f"{k} strikes detected\n"
-            f"{rate:.1f}% predicted strike rate" + severe_line)
+        n = s.run_meta.get("n_files", 0)
+        style(self.lbl_status, role="strong", tone="ok")
+        self.lbl_status.setText(
+            f"Blade strike predicted: {n} recordings"
+            + (f" in {secs:.1f} s" if secs is not None else ""))
 
-        # low-confidence shortcut into Inspect
-        if s.predictions is not None and "confidence" in s.predictions.columns:
+        # the toolkit's low-confidence shortcut into Inspect
+        if (self._goto_inspect and s.predictions is not None
+                and "confidence" in s.predictions.columns):
             n_low = int((s.predictions["confidence"]
                          < s.low_conf_threshold).sum())
-            if n_low and self._goto_inspect:
+            if n_low:
                 self.btn_low_conf.setText(f"Inspect low confidence ({n_low}) →")
                 self.btn_low_conf.setToolTip(
                     f"{n_low} prediction(s) below confidence "
                     f"{s.low_conf_threshold:.2f} - open them in Inspect")
                 self.btn_low_conf.setVisible(True)
-
-        self._populate_summary_cards()
-        self._populate_table()
-        ml_figures.draw_strike_rate(self.fig_bin, s.summary, dark=True)
-        self.canvas_bin.draw()
-        ml_figures.draw_peak_summary(
-            self.fig_sev, s.acc_summary, s.predictions, dark=True,
-            note=None if s.acc_summary is not None else (
-                "No HIG channel in this dataset"
-                if (s.run_meta or {}).get("hig_peaks_requested")
-                else "HIG peak analysis was off for this run"))
-        self.canvas_sev.draw()
-        self._populate_hig_peaks()
-        mc_run = s.run_meta.get("mode") == "multiclass"
-        ml_figures.draw_region(self.fig_mc, s.summary,
-                               s.class_names if mc_run else [], dark=True)
-        self.canvas_mc.draw()
-        self._refresh_mortality_treatments()
-        s.status.emit(f"Prediction complete - {k} strikes in {n} recordings.",
-                      6000)
+        self._show_results()
 
     def _on_run_failed(self, msg):
         self._stop_run_ui()
-        style(self.lbl_run_status, tone="bad")
+        style(self.lbl_status, tone="bad")
         msg = msg.strip() or "Unknown error"
         if msg.startswith("Prediction is not ready"):
             # a pre-flight compatibility failure - short, already itemised
             # by validate(), and expected (missing dataset, wrong mode) -
-            # the status line is enough, no need to interrupt with a modal
-            self.lbl_run_status.setText(f"✗ {msg}")
+            # the status line is enough
+            self.lbl_status.setText(f"✗ {msg}")
             return
         first = msg.splitlines()[-1]
-        self.lbl_run_status.setText(f"✗ Prediction failed: {first}")
-        dlg = QMessageBox(self.main_window)
+        self.lbl_status.setText(f"✗ Prediction failed: {first}")
+        if not self.isVisible():
+            return      # the other app's page - it reports there
+        dlg = QMessageBox(self.owner)
         dlg.setWindowTitle("Prediction error")
         dlg.setIcon(QMessageBox.Icon.Critical)
         dlg.setText("The prediction worker failed.\n\n"
@@ -743,238 +597,212 @@ class PredictTab(QWidget):
         dlg.setDetailedText(msg)
         dlg.exec()
 
-    # ── summary cards ────────────────────────────────────────────────────────
-    def _populate_summary_cards(self):
+    # ── result rings ─────────────────────────────────────────────────────────
+    def _show_results(self):
         s = self.state
         df = s.summary
-        if df is None or not len(df):
-            for c in (self.card_recordings, self.card_strikes, self.card_rate,
-                      self.card_conf, self.card_regions, self.card_severe):
-                c.clear()
-            self.card_severity.set_rows([])
-            return
-
-        n_total  = int(df["n"].sum())
-        n_strike = int(df["n_strike"].sum())
-
-        self.card_recordings.set_segments([
-            (str(r["treatment"]), int(r["n"]), PALETTE[i % len(PALETTE)])
-            for i, (_, r) in enumerate(df.iterrows())
-        ])
-        self.card_strikes.set_segments([
-            ("Strike",    n_strike,           PINK),
-            ("No strike", n_total - n_strike, PALETTE[0]),
-        ])
-        rate = n_strike / n_total if n_total else 0.0
-        self.card_rate.set_value(rate, f"{rate * 100:.1f}%")
-
-        if s.predictions is not None and "confidence" in s.predictions.columns:
-            conf = float(s.predictions["confidence"].mean())
-            self.card_conf.set_value(conf, f"{conf:.3f}")
+        if df is not None and len(df):
+            n_total = int(df["n"].sum())
+            n_strike = int(df["n_strike"].sum())
+            rate = n_strike / n_total if n_total else 0.0
+            self.card_predicted_strikes.set_segments([
+                ("Strike", n_strike, PINK),
+                ("No strike", n_total - n_strike, PALETTE[0]),
+            ], f"{rate * 100:.1f}%")
         else:
-            self.card_conf.clear()
+            self.card_predicted_strikes.clear()
 
-        mc_run = s.run_meta.get("mode") == "multiclass"
-        have = mc_run and s.class_names and all(
-            f"n_{cn}" in df.columns for cn in s.class_names)
-        self.card_regions.setVisible(bool(have))
-        if have:
-            self.card_regions.set_segments([
+        have_classes = (s.run_meta.get("mode") == "multiclass" and df is not None
+                        and len(df) and s.class_names
+                        and all(f"n_{cn}" in df.columns for cn in s.class_names))
+        self.card_strike_classes.setVisible(bool(have_classes))
+        if have_classes:
+            self.card_strike_classes.set_segments([
                 (cn, int(df[f"n_{cn}"].sum()), PALETTE[i % len(PALETTE)])
                 for i, cn in enumerate(s.class_names)
             ])
         else:
-            self.card_regions.clear()
+            self.card_strike_classes.clear()
+        self._refresh_collisions()
 
+    def _refresh_collisions(self):
+        """The Collisions ring: shown only while HIG peak analysis is
+        ticked, filled when the last run did the analysis."""
+        s = self.state
+        self.card_collisions.setVisible(s.hig_peaks)
         acc = s.acc_summary
         if acc is None or not len(acc):
-            self.card_severity.set_rows([])
-            self.card_severe.clear()
-        else:
-            total = acc.iloc[-1]       # the "All recordings" row, or the only one
-            self.card_severity.set_rows(
-                [(f"Events ≥ {g} g", int(total[f"n_events_{g}g"]))
-                 for g in hig_peaks.THRESHOLDS_G]
-                + [("Collisions", f"{int(total['n_collision'])} of "
-                                  f"{int(total['n_sensors'])} recordings")])
-            self.card_severe.setToolTip(
-                "Share of recordings with an event of "
+            self.card_collisions.clear()
+            self.card_collisions.setToolTip(
+                f"Recordings with an acceleration event of "
                 f"{hig_peaks.COLLISION_G} g or more within 0.1 s of the "
-                f"nadir (95% CI {total['ci_lo'] * 100:.1f}-"
-                f"{total['ci_hi'] * 100:.1f}%).")
-            rate = float(total["collision_rate"])
-            self.card_severe.set_value(rate, f"{rate * 100:.1f}%")
-
-    # ── HIG peak analysis ────────────────────────────────────────────────────
-    def _populate_hig_peaks(self):
-        s = self.state
-        fill_acceleration_table(self.tbl_acc, s.acc_summary)
-        if s.acc_summary is not None:
-            traces = s.collision_traces()
-            n = 0 if traces is None else traces["file"].nunique()
-            events = s.peak_events
-            n_events = (int(events["in_roi"].astype(bool).sum())
-                        if events is not None and len(events) else 0)
-            self.lbl_hig_status.setText(
-                f"{n_events} acceleration events within ±0.1 s of the nadir; "
-                f"{n} recording(s) with a collision. "
-                "The figures show every recording with a collision, its "
-                "time normalised so the peak acceleration (left) or the "
-                "nadir (right) sits at 0.5; the line is the median.")
-            note = None
-        else:
-            traces = None
-            note = ("Not run - HIG peak analysis was off"
-                    if not (s.run_meta or {}).get("hig_peaks_requested")
-                    else "No HIG channel in this dataset")
-            self.lbl_hig_status.setText(
-                f"{note}. Tick HIG peak analysis (Model, dataset and run) "
-                "and run again." if note.startswith("Not run") else note + ".")
-        ml_figures.draw_acc_centred(self.fig_acc, traces, "acc", dark=True,
-                                    note=note)
-        ml_figures.draw_acc_centred(self.fig_nadir, traces, "nadir", dark=True,
-                                    note=note)
-        self.canvas_acc.draw()
-        self.canvas_nadir.draw()
-
-    # ── results table ────────────────────────────────────────────────────────
-    def _populate_table(self):
-        s = self.state
-        df = s.summary
-        mc_run = s.run_meta.get("mode") == "multiclass"
-        class_names = s.class_names if (mc_run and s.class_names and df is not None
-                                        and all(f"n_{cn}" in df.columns
-                                                for cn in s.class_names)) else []
-
-        # severity columns only without the peak analysis (its own table)
-        measured = severity.available(df) and s.acc_summary is None
-        headers = (["Treatment", "N", "Strikes", "No strike", "Strike rate",
-                    "95% CI", "Mean prob", "Mean conf"]
-                   + list(class_names)
-                   + (severity.TABLE_HEADERS if measured else []))
-
-        self.tbl.setSortingEnabled(False)
-        self.tbl.clear()
-        self.tbl.setColumnCount(len(headers))
-        self.tbl.setHorizontalHeaderLabels(headers)
-        self.tbl.setRowCount(0 if df is None else len(df))
-        if df is None:
-            self.tbl.setSortingEnabled(True)
+                "nadir (HIG peak analysis). Measured, not predicted.")
             return
+        total = acc.iloc[-1]       # the "All recordings" row, or the only one
+        k, n_rec = int(total["n_collision"]), int(total["n_sensors"])
+        rate = float(total["collision_rate"])
+        self.card_collisions.set_segments([
+            ("Collision", k, PINK), ("No collision", n_rec - k, PALETTE[0]),
+        ], f"{rate * 100:.1f}%")
+        self.card_collisions.setToolTip(
+            f"Recordings with an acceleration event of "
+            f"{hig_peaks.COLLISION_G} g or more within 0.1 s of the nadir "
+            f"(HIG peak analysis; 95% CI {total['ci_lo'] * 100:.1f}-"
+            f"{total['ci_hi'] * 100:.1f}%). Measured, not predicted.")
 
-        for row, (_, r) in enumerate(df.iterrows()):
-            n_strike = int(r["n_strike"])
-            items = [
-                QTableWidgetItem(str(r["treatment"])),
-                _NumItem(str(int(r["n"])), int(r["n"])),
-                _NumItem(str(n_strike), n_strike),
-                _NumItem(str(int(r["n_no_strike"])), int(r["n_no_strike"])),
-                _NumItem(f"{r['strike_rate'] * 100:.1f}%", float(r["strike_rate"])),
-                _NumItem(f"{r['ci_lo'] * 100:.1f}% – {r['ci_hi'] * 100:.1f}%",
-                         float(r["ci_lo"])),
-                _NumItem(f"{r['mean_prob']:.3f}", float(r["mean_prob"])),
-                _NumItem(f"{r['mean_conf']:.3f}", float(r["mean_conf"])),
-            ]
-            for cn in class_names:
-                nc = int(r[f"n_{cn}"])
-                pct = nc / n_strike * 100 if n_strike else 0
-                items.append(_NumItem(f"{nc} ({pct:.0f}%)", nc))
-            if measured:
-                sort_keys = [int(r[f"n_over_{g}g"]) for g in severity.THRESHOLDS_G]
-                sort_keys += [float(r["severe_ci_lo"]), int(r["n_strike_severe"])]
-                items += [_NumItem(text, key) for text, key in
-                          zip(severity.table_values(r), sort_keys)]
-
-            for col, item in enumerate(items):
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.tbl.setItem(row, col, item)
-        self.tbl.setSortingEnabled(True)
-
-    def _on_treatment_selected(self):
-        items = self.tbl.selectedItems()
-        if items:
-            self.state.select_treatment(self.tbl.item(items[0].row(), 0).text())
-
-    # ── navigation ───────────────────────────────────────────────────────────
     def _inspect_low_conf(self):
         if self._goto_inspect:
             self._goto_inspect("low_conf")
 
-    # ── mortality (BSM) ─────────────────────────────────────────────────────
-    # Scaly and eel each come from their own BSM run (BSMState.results):
-    # collision exposure differs by species (Leff_m / Leff_t), not just the
-    # mortality regression.
-    def _on_bsm_results(self, results):
-        # the first BSM run this page ever sees sets the spinbox to that
-        # run's own eel_vcrit (whatever the Calculator's config actually
-        # said, e.g. 8 m/s - not an arbitrary guess) rather than leaving
-        # it at a hardcoded default; after that, live overrides here are
-        # respected and never silently overwritten by a later Calculate
-        eel_res = results.get("eel")
-        if not self._eel_vcrit_synced and eel_res is not None:
-            self._eel_vcrit_synced = True
-            self.spin_eel_vcrit.blockSignals(True)
-            self.spin_eel_vcrit.setValue(eel_res["params"]["eel_vcrit"])
-            self.spin_eel_vcrit.blockSignals(False)
-        self._recalculate_mortality()
-        self._run_vcrit_sweep()
 
-    def _on_mortality_inputs_changed(self, *_args):
-        self._recalculate_mortality()
-        self._run_vcrit_sweep()
+# ═════════════════════════════════════════════════════════════════════════════
+class ResultsPanel(QWidget):
+    """The Results page (see the module docstring): redrawn when it's
+    next shown after a run, or a blade strike calculation, changes it."""
 
-    def _recalculate_mortality(self):
-        results = self.bsm_state.results if self.bsm_state else {}
-        eel_vcrit = self.spin_eel_vcrit.value()
-        lines = []
-        for species in ("scaly", "eel"):
-            res = results.get(species)
-            if res is None:
-                continue
-            out = recompute_mortality(res, species, eel_vcrit=eel_vcrit,
-                                      threshold=None)
-            lines.append(
-                f"{species}: Pm={out['Pm'] * 100:.2f}%, "
-                f"S={out['S'] * 100:.2f}% (Cen Pco {res['Pco_tip'] * 100:.2f}%)")
-        self.lbl_mortality.setText(
-            "\n".join(lines) if lines else
-            "Run a Blade Strike Modelling calculation first.")
+    def __init__(self, state, bsm_state=None):
+        super().__init__()
+        self.state = state
+        self.bsm = bsm_state
+        self._build()
+        self._stale = True
+        when_visible(self, self._refresh_if_stale, "results")
+        state.run_finished.connect(self._mark_stale)
+        if bsm_state is not None:
+            bsm_state.calculated_all.connect(self._mark_stale)
+            bsm_state.mortality_changed.connect(self._mark_stale)
 
-    def _run_vcrit_sweep(self):
-        results = self.bsm_state.results if self.bsm_state else {}
-        eel_vcrit = self.spin_eel_vcrit.value()
-        vcrit_vals = np.arange(_VCRIT_MIN, _VCRIT_MAX + 1e-9, _VCRIT_STEP)
-        series = []
-        for species in ("scaly", "eel"):
-            res = results.get(species)
-            if res is None:
-                series.append((species, None, None, None, None))
-                continue
-            pm_vals = np.array([
-                recompute_mortality_at_vcrit(res, species, float(v))["Pm"] * 100
-                for v in vcrit_vals])
-            default_v = default_vcrit(res, species, eel_vcrit=eel_vcrit)
-            default_pm = recompute_mortality_at_vcrit(
-                res, species, default_v)["Pm"] * 100
-            series.append((species, vcrit_vals, pm_vals, default_v, default_pm))
-        treatment = self.cmb_mortality_treatment.currentData()
-        title = f"Treatment: {treatment}" if treatment else "No treatment selected"
-        bsm_figures.draw_vcrit_sweep(self.fig_vcrit, series, title=title)
-        self.canvas_vcrit.draw()
+    def _build(self):
+        v = QVBoxLayout(self)
+        v.setSpacing(10)
 
-    # ── mortality treatment picker (label only - see cmb_mortality_
-    # treatment's tooltip; BSM has no per-treatment input) ──────────────────
-    def _refresh_mortality_treatments(self):
-        summary = self.state.summary
-        names = (sorted(summary["treatment"].astype(str).unique())
-                 if summary is not None and len(summary) else [])
-        cmb = self.cmb_mortality_treatment
-        current = cmb.currentData()
-        cmb.blockSignals(True)
-        cmb.clear()
-        cmb.addItem("None", None)
-        for name in names:
-            cmb.addItem(name, name)
-        idx = cmb.findData(current) if current else 0
-        cmb.setCurrentIndex(idx if idx >= 0 else 0)
-        cmb.blockSignals(False)
+        self.tbl_results = QTableWidget(0, 0)
+        self.tbl_results.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.tbl_results.setMinimumHeight(150)
+        v.addWidget(self.tbl_results)
+
+        # the HIG peak analysis table, as in the reports
+        self.tbl_acc = QTableWidget(0, 0)
+        self.tbl_acc.setProperty("noRowNumbers", True)   # its own header rows
+        self.tbl_acc.horizontalHeader().setVisible(False)
+        self.tbl_acc.verticalHeader().setVisible(False)
+        self.tbl_acc.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.tbl_acc.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        v.addWidget(self.tbl_acc)
+        self.lbl_acc_notes = muted_label("\n".join(hig_peaks.TABLE_NOTES))
+        self.lbl_acc_notes.setWordWrap(True)
+        v.addWidget(self.lbl_acc_notes)
+
+        # the two model figures side by side; the HIG peak figure (three
+        # panels) the full width under them; the acceleration centred on
+        # the peak and on the nadir; then mortality, half width
+        grp_figs = Section("")
+        fv = QGridLayout(grp_figs)
+        fv.setColumnStretch(0, 1)
+        fv.setColumnStretch(1, 1)
+        self.canvases = {}
+        for key, size, row, col, span in (
+                ("bin", (4.3, 3.2), 0, 0, 1), ("mc", (4.3, 3.2), 0, 1, 1),
+                ("peaks", (8.6, 3.2), 1, 0, 2),
+                ("acc", (4.3, 3.2), 2, 0, 1), ("nadir", (4.3, 3.2), 2, 1, 1),
+                ("mortality", (4.3, 3.2), 3, 0, 1)):
+            canvas = FigureCanvas(Figure(figsize=size, dpi=100))
+            canvas.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                 QSizePolicy.Policy.Expanding)
+            canvas.setMinimumHeight(REPORT_FIG_H)
+            fv.addWidget(canvas, row, col, 1, span)
+            self.canvases[key] = canvas
+        v.addWidget(grp_figs, stretch=1)
+
+    def _mark_stale(self, *_args):
+        self._stale = True
+        when_visible(self, self._refresh_if_stale, "results")
+
+    def _refresh_if_stale(self):
+        if self._stale:
+            self.refresh()
+
+    def refresh(self):
+        self._stale = False
+        s = self.state
+        df = s.summary
+        mc_run = s.run_meta.get("mode") == "multiclass"
+        class_names = (s.class_names if mc_run and s.class_names
+                       and df is not None
+                       and all(f"n_{cn}" in df.columns for cn in s.class_names)
+                       else [])
+        # severity columns only without the HIG peak analysis (its own table)
+        measured = severity.available(df) and s.acc_summary is None
+        headers = (["Treatment", "N", "Strikes", "No strike", "Strike rate",
+                    "95% CI", "Mean prob", "Mean conf"] + list(class_names)
+                   + (severity.TABLE_HEADERS if measured else []))
+        self.tbl_results.setColumnCount(len(headers))
+        self.tbl_results.setHorizontalHeaderLabels(headers)
+        self.tbl_results.setRowCount(0 if df is None else len(df))
+        if df is not None:
+            for row, (_, r) in enumerate(df.iterrows()):
+                n_strike = int(r["n_strike"])
+                vals = [
+                    str(r["treatment"]), str(int(r["n"])), str(n_strike),
+                    str(int(r["n_no_strike"])),
+                    f"{r['strike_rate'] * 100:.1f}%",
+                    f"{r['ci_lo'] * 100:.1f}% - {r['ci_hi'] * 100:.1f}%",
+                    f"{r['mean_prob']:.3f}", f"{r['mean_conf']:.3f}",
+                ]
+                for cn in class_names:
+                    nc = int(r[f"n_{cn}"])
+                    pct = nc / n_strike * 100 if n_strike else 0
+                    vals.append(f"{nc} ({pct:.0f}%)")
+                if measured:
+                    vals += severity.table_values(r)
+                for col, val in enumerate(vals):
+                    self.tbl_results.setItem(row, col, QTableWidgetItem(val))
+        self.tbl_results.resizeColumnsToContents()
+
+        c = self.canvases
+        ml_figures.draw_strike_rate(c["bin"].figure, df, dark=True)
+        ml_figures.draw_region(c["mc"].figure, df,
+                               class_names if mc_run else [], dark=True)
+        drawn = ["bin", "mc"]
+
+        have_peaks = s.acc_summary is not None
+        for w in (self.tbl_acc, self.lbl_acc_notes,
+                  c["peaks"], c["acc"], c["nadir"]):
+            w.setVisible(have_peaks)
+        if have_peaks:
+            fill_acceleration_table(self.tbl_acc, s.acc_summary)
+            ml_figures.draw_peak_summary(c["peaks"].figure, s.acc_summary,
+                                         s.predictions, dark=True)
+            traces = s.collision_traces()
+            ml_figures.draw_acc_centred(c["acc"].figure, traces, "acc", dark=True)
+            ml_figures.draw_acc_centred(c["nadir"].figure, traces, "nadir",
+                                        dark=True)
+            drawn += ["peaks", "acc", "nadir"]
+
+        # once a blade strike model has been calculated this session
+        have_bsm = bool(self.bsm and self.bsm.results)
+        c["mortality"].setVisible(have_bsm)
+        if have_bsm:
+            draw_mortality(c["mortality"].figure, self.bsm)
+            drawn.append("mortality")
+        for key in drawn:
+            c[key].draw()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+class PredictTab(QWidget):
+    """Model prediction > Predict: the shared Predict and Results pages,
+    as two tabs."""
+
+    def __init__(self, state, main_window, goto_inspect=None, bsm_state=None):
+        super().__init__()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs)
+        self.predict = PredictPanel(state, main_window, bsm_state,
+                                    goto_inspect=goto_inspect)
+        self.results = ResultsPanel(state, bsm_state)
+        self.tabs.addTab(scroll_area(self.predict), "Predict")
+        self.tabs.addTab(scroll_area(self.results), "Results")

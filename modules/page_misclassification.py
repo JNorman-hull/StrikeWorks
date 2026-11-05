@@ -213,7 +213,6 @@ class MisclassificationPage(Page):
             QAbstractItemView.SelectionMode.SingleSelection)
         self.tbl_misclass.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Interactive)
-        self.tbl_misclass.setSortingEnabled(True)
         lv.addWidget(self.tbl_misclass, stretch=1)
         return left
 
@@ -335,7 +334,6 @@ class MisclassificationPage(Page):
         self._populate_misclassified()
 
     def _populate_misclassified(self):
-        self.tbl_misclass.setSortingEnabled(False)
         self.tbl_misclass.setRowCount(0)
         self._rows = []
         self._matches_by_file = {}
@@ -344,7 +342,6 @@ class MisclassificationPage(Page):
 
         if self._entry is None:
             self.lbl_source.setText("No models found.")
-            self.tbl_misclass.setSortingEnabled(True)
             return
 
         self._rows = _misclassified_rows(self._entry)
@@ -360,16 +357,14 @@ class MisclassificationPage(Page):
             self.tbl_misclass.setItem(r, 0, item_file)
             self.tbl_misclass.setItem(r, 1, QTableWidgetItem(str(row["true"])))
             self.tbl_misclass.setItem(r, 2, QTableWidgetItem(str(row["pred"])))
-            conf_item = QTableWidgetItem(f'{row["confidence"]:.3f}')
-            conf_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.tbl_misclass.setItem(r, 3, conf_item)
+            self.tbl_misclass.setItem(
+                r, 3, QTableWidgetItem(f'{row["confidence"]:.3f}'))
             self.tbl_misclass.setItem(
                 r, 4, QTableWidgetItem(str(row["treatment"])))
             video_item = QTableWidgetItem("…")
             video_item.setData(Qt.ItemDataRole.UserRole, row["file"])
             self.tbl_misclass.setItem(r, 5, video_item)
         self.tbl_misclass.resizeColumnsToContents()
-        self.tbl_misclass.setSortingEnabled(True)
         if self._video_index is None:
             self._start_video_index()
         else:
@@ -392,7 +387,6 @@ class MisclassificationPage(Page):
         each row found by its own file (the table is sortable)."""
         index = self._video_index or {}
         self._matches_by_file = {}
-        self.tbl_misclass.setSortingEnabled(False)
         for r in range(self.tbl_misclass.rowCount()):
             item = self.tbl_misclass.item(r, 5)
             if item is None:
@@ -405,7 +399,6 @@ class MisclassificationPage(Page):
         for row in self._rows:
             row["video_matches"] = self._matches_by_file.get(str(row["file"]), [])
         self.tbl_misclass.resizeColumnToContents(5)
-        self.tbl_misclass.setSortingEnabled(True)
 
     def _on_misclass_double_clicked(self, item):
         if item.column() != 5:

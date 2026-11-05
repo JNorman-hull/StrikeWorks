@@ -4,9 +4,9 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""CSV and PNG export for blade strike modelling results, shared by
-Analysis and reporting and the central report (report_center.py),
-including the two fixed-size report figures.
+"""CSV and PNG export for blade strike calculator results, for the
+central report (report_center.py), including the two fixed-size report
+figures.
 """
 import csv
 from pathlib import Path

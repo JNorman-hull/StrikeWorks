@@ -127,24 +127,25 @@ QTableWidget::item {
 	gridline-color: @grid;
 }
 QTableWidget::item:selected { background-color: @selection; color: @on_selection; }
+/* headers drawn as the HIG peak analysis table draws its header rows: as
+   cells - no colour of their own, the table's showing through (a card in
+   StrikeWorks; the page in the toolkit, whose page stack makes everything
+   on it transparent - ui_main.py's stackedWidget) - and its grid lines */
+QHeaderView { background: transparent; }
 QHeaderView::section {
-	background-color: @header;
-	color: @header_text;
-	max-width: 30px;
+	background: transparent;
+	color: @text;
 	border: none;
-	border-bottom: 1px solid @grid;
 	border-right: 1px solid @grid;
+	border-bottom: 1px solid @grid;
+	padding: 3px 5px;
 }
-QTableWidget::horizontalHeader { background-color: @header; }
-QHeaderView::section:horizontal {
-	border: 1px solid @header;
-	background-color: @header;
-	padding: 3px;
-	border-top-left-radius: 7px;
-	border-top-right-radius: 7px;
+QTableCornerButton::section {
+	background: transparent;
+	border: none;
+	border-right: 1px solid @grid;
+	border-bottom: 1px solid @grid;
 }
-QHeaderView::section:vertical { border: 1px solid @grid; }
-QTableCornerButton::section { background-color: @header; border: none; }
 
 /* Lists and trees */
 QListWidget, QListView, QTreeWidget, QTreeView {
@@ -170,6 +171,9 @@ QLineEdit {
 }
 QLineEdit:hover { border: 2px solid @input_hover; }
 QLineEdit:focus { border: 2px solid @input_focus; }
+/* as on the toolkit's pages (its page stack is transparent) - in a
+   dialog a spin box would otherwise be drawn white */
+QAbstractSpinBox { background: transparent; }
 
 QPlainTextEdit {
 	background-color: @field;
@@ -395,6 +399,8 @@ QGroupBox[role="plain"]::title {
 *[role="lead"] { font-size: 13px; }
 *[role="tagline"] { color: @muted; font-size: 28px; font-style: italic; }
 *[role="panel"] { background: @card; border: 1px solid @border; border-radius: 5px; padding: 8px; }
+/* a border round a group of controls (the Train page's Model box) */
+QFrame[role="box"] { border: 1px solid @border; border-radius: 5px; }
 *[role="placeholder"] { color: @muted; background-color: @placeholder; border-radius: 5px; }
 *[role="bare"] { background: transparent; }
 QScrollArea[role="bare"] { border: none; background: transparent; }

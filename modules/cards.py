@@ -56,11 +56,12 @@ class RingCard(QFrame):
         self._empty    = False
         self.update()
 
-    def set_segments(self, segments):
-        """segments: [(label, count, colour), ...]"""
+    def set_segments(self, segments, centre_text=""):
+        """segments: [(label, count, colour), ...]; `centre_text` (e.g. the
+        strike rate) in the ring's centre."""
         self._segments = segments
         self._value    = None
-        self._centre   = ""
+        self._centre   = centre_text
         self._empty    = len(segments) == 0
         self.update()
 
@@ -123,6 +124,11 @@ class RingCard(QFrame):
                               Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
                 p.drawArc(rx, ry, self.RING_D, self.RING_D, angle, -span)
                 angle -= span
+            if self._centre:
+                p.setFont(QFont("Segoe UI", 11))
+                p.setPen(QColor(TEXT))
+                p.drawText(rx, ry, self.RING_D, self.RING_D,
+                           Qt.AlignmentFlag.AlignCenter, self._centre)
 
             lf = QFont("Segoe UI", 9)
             p.setFont(lf)

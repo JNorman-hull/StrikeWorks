@@ -15,7 +15,7 @@ from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QLabel, QSizePolicy, QSplashScreen, QWidget
 
-from . import settings, theme
+from . import settings
 from .theme import CARD_BG, MUTED
 
 # relative to this file rather than the working directory, so it still
@@ -23,18 +23,15 @@ from .theme import CARD_BG, MUTED
 # sit in _internal/)
 ICON_PATH = Path(__file__).parent.parent / "icon.ico"   # built from icon.png
 # the app's logo - StrikeWorks with the University of Hull beside it, the
-# one logo the app shows (the sidebar's small badge aside): white for a dark
-# background, navy (`_dark`) for a light one; the 300 dpi files for the big
-# ones (Home, Finished, the splash, About), the 96 dpi files for the small
-# ones (StrikeWorks's bottom bar, the toolkit's sidebar)
+# one logo the app shows (the sidebar's small badge aside), white, for the
+# dark theme (a light theme would need a navy one); the 300 dpi file for
+# the big ones (Home, Finished, the splash, About), the 96 dpi file for
+# the small ones (StrikeWorks's bottom bar, the toolkit's sidebar)
 _LOGOS = Path(__file__).parent.parent / "images"
 
 
-def logo_path(large=True, on_dark=None):
-    if on_dark is None:
-        on_dark = theme.P["dark"]
-    return _LOGOS / (f"strikeworks_uoh{'' if on_dark else '_dark'}_"
-                     f"{300 if large else 96}.png")
+def logo_path(large=True):
+    return _LOGOS / f"strikeworks_uoh_{300 if large else 96}.png"
 
 
 def _drawn_rect(pix):
@@ -51,10 +48,10 @@ def _drawn_rect(pix):
                  int(ys.max() - ys.min() + 1))
 
 
-def logo_pixmap(width=None, height=None, large=True, on_dark=None):
+def logo_pixmap(width=None, height=None, large=True):
     """The logo cropped to its drawing, scaled to `width` or `height` px;
     a null pixmap if the file is missing."""
-    pix = QPixmap(str(logo_path(large, on_dark)))
+    pix = QPixmap(str(logo_path(large)))
     if pix.isNull():
         return pix
     pix = pix.copy(_drawn_rect(pix))
@@ -78,10 +75,10 @@ def icon_pixmap(size):
         Qt.TransformationMode.SmoothTransformation)
 
 
-def logo_label(width=None, height=None, large=True, on_dark=None):
+def logo_label(width=None, height=None, large=True):
     """A QLabel showing the logo (`logo_pixmap`), centred; None if the file
     is missing."""
-    pix = logo_pixmap(width, height, large, on_dark)
+    pix = logo_pixmap(width, height, large)
     if pix.isNull():
         return None
     label = QLabel()
@@ -122,9 +119,9 @@ class ScaledLogo(QWidget):
     narrower space - the toolkit's sidebar - and not drawn at all once
     narrower than `min_width` (the sidebar collapsed to its icon strip)."""
 
-    def __init__(self, max_width, min_width=120, on_dark=True):
+    def __init__(self, max_width, min_width=120):
         super().__init__()
-        self._source = logo_pixmap(large=False, on_dark=on_dark)
+        self._source = logo_pixmap(large=False)
         self._max, self._min = max_width, min_width
         self._pix = QPixmap()
         ratio = (self._source.height() / self._source.width()

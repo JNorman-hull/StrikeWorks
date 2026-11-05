@@ -798,7 +798,7 @@ class Ui_MainWindow(object):
         self.titleLeftApp.setText(QCoreApplication.translate("MainWindow", u"StrikeWorks", None))
         self.toggleButton.setText(QCoreApplication.translate("MainWindow", u"Hide", None))
         self.btn_home.setText(QCoreApplication.translate("MainWindow", u"Home", None))
-        self.btn_bsm.setText(QCoreApplication.translate("MainWindow", u"Blade strike modelling", None))
+        self.btn_bsm.setText(QCoreApplication.translate("MainWindow", u"Blade strike calculator", None))
         self.btn_setup_deploy.setText(QCoreApplication.translate("MainWindow", u"Setup and deploy", None))
         self.btn_sensor.setText(QCoreApplication.translate("MainWindow", u"Sensor processing", None))
         self.btn_annotation.setText(QCoreApplication.translate("MainWindow", u"Validate and annotate", None))

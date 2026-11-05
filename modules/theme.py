@@ -56,8 +56,6 @@ STRIKEWORKS = {
     "highlight": LIGHT_BLUE, "on_highlight": NAVY, "highlight_text": LIGHT_BLUE,
     "selection": NAVY, "on_selection": "#ffffff", "link": LIGHT_BLUE,
     "tooltip_bg": "rgba(33, 37, 43, 180)", "tooltip_text": "#ffffff",
-    # tables
-    "header": "#21252b", "header_text": "#dddddd",
     # inputs
     "input": "#21252b", "input_border": "#21252b", "input_hover": "#404758",
     "input_focus": "#5b657c", "field": "#1b1d23",
@@ -88,56 +86,10 @@ STRIKEWORKS = {
     "dark": True,
 }
 
-# University of Hull brand palette (brand.hull.ac.uk): the Core, low
-# intensity look - white, Ink Blue in support, Mid and Light Blue
-# alongside, Chartreuse and the secondary colours as accents - with the
-# brand's 80/60/40/20/10 % tints for UI detail. Status text uses darker
-# shades of the palette's hues so it passes WCAG AA on white.
-INK, MID, LIGHT, CHARTREUSE = "#0e1647", "#274fe9", "#96d8f1", "#dcf488"
-PINK_2, GREEN_2, ORANGE_2, LAVENDER_2 = "#e6b2db", "#90dcba", "#eabc77", "#a99fee"
-HULL = {
-    "label": "University of Hull",
-    "bg": "#ffffff", "border": "#cfd0da", "card": "#f5fbfe", "grid": "#e7e8ed",
-    "text": INK, "muted": "#6e7391", "disabled_text": "#9fa2b5",
-    "placeholder": "#e7e8ed", "empty": "#e7e8ed", "session_box": "#cfd0da",
-    "sidebar": INK, "sidebar_text": "#ffffff", "sidebar_subtle": LIGHT,
-    "sidebar_caption": LIGHT, "sidebar_hover": "#323963",
-    "sidebar_selected": "#262d59", "sidebar_panel": "#1a2250",
-    "sidebar_line": "#262d59", "sidebar_toggle": "#0a1036",
-    "titlebar": INK, "titlebar_hover": "#323963", "titlebar_pressed": "#0a1036",
-    "statusbar": INK,
-    "accent": MID, "accent_hover": "#5272ed", "accent_pressed": "#1e3fc0",
-    "on_accent": "#ffffff", "accent_text": MID,
-    "highlight": CHARTREUSE, "on_highlight": INK, "highlight_text": "#9c2f7a",
-    "selection": LIGHT, "on_selection": INK, "link": MID,
-    "tooltip_bg": INK, "tooltip_text": "#ffffff",
-    "header": INK, "header_text": "#ffffff",
-    "input": "#ffffff", "input_border": "#cfd0da", "input_hover": "#9fa2b5",
-    "input_focus": MID, "field": "#ffffff",
-    "combo_divider": "#cfd0da", "combo_button": INK,
-    "popup": "#ffffff", "popup_text": INK, "popup_selection": "#d5eff9",
-    "track": "#e7e8ed", "track_end": "#cfd0da", "track_hover": "#cfd0da",
-    "handle": "#9fa2b5",
-    "indicator": "#ffffff", "indicator_border": "#9fa2b5",
-    "indicator_hover": "#6e7391", "indicator_checked": MID,
-    "radio_checked": MID,
-    "button": "#e7e8ed", "button_text": INK, "button_hover": "#cfd0da",
-    "button_hover_border": "#cfd0da", "button_pressed": "#b7b9c8",
-    "button_pressed_border": "#b7b9c8",
-    "primary": CHARTREUSE, "on_primary": INK, "primary_hover": "#c3d980",
-    "alternative": MID, "on_alternative": "#ffffff",
-    "console": INK, "console_text": "#ffffff",
-    "ok": "#1e7a50", "warn": "#9a5b00", "bad": "#c0282f", "info": MID,
-    "palette": [MID, PINK_2, ORANGE_2, GREEN_2, LAVENDER_2, LIGHT],
-    "figure_palette": [MID, PINK_2, ORANGE_2, GREEN_2, LAVENDER_2, INK],
-    "screen_bg": "#ffffff", "screen_axes": "#ffffff", "screen_fg": INK,
-    "screen_grid": LIGHT, "plot_fg": INK,
-    "trace": INK, "trace2": MID, "nadir": "#9a5b00",
-    "region_fill": (150, 216, 241, 70), "region_edge": (39, 79, 233, 110),
-    "dark": False,
-}
-
-THEMES = {"strikeworks": STRIKEWORKS, "hull": HULL}
+# one theme for now; Settings > Appearance lists whatever is here, and a
+# light one would set "dark": False (white plots - and it would need a
+# navy logo: startup.logo_path)
+THEMES = {"strikeworks": STRIKEWORKS}
 NAME = settings.get_theme() if settings.get_theme() in THEMES else "strikeworks"
 P = THEMES[NAME]
 

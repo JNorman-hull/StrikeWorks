@@ -33,8 +33,10 @@ from matplotlib.figure import Figure
 
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
-    QMenu, QToolButton,
+    QToolButton,
 )
+
+from .layout import popup_menu
 
 CM_PER_INCH = 2.54
 DEFAULT_WIDTH_CM = 16.0
@@ -212,7 +214,8 @@ def add_export_button(toolbar_layout, get_export_data, parent, file_stub="plot")
     btn.setText("Export ▾")
     btn.setToolTip("Save the plot as an image, zoomed as it is now")
     btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-    menu = QMenu(btn)
+    menu = popup_menu()
+    btn.export_menu = menu       # (the button doesn't keep it)
     act_png = menu.addAction("Export as PNG (300 dpi)…")
     act_svg = menu.addAction("Export as SVG…")
     btn.setMenu(menu)

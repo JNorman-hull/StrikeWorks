@@ -15,7 +15,7 @@ in the app under **About**.
 The app opens as **StrikeWorks**, a guided window: Deploy > Process >
 Validate > Predict > Report. **Development toolkit** (its bottom-left
 button, behind a password - `devmode_123`) opens the full app, where the
-same steps have their own pages alongside blade strike modelling, study
+same steps have their own pages alongside the blade strike calculator, study
 design and model training; its sidebar's **Go to StrikeWorks** goes back.
 Deploy, Process and Validate run the same code in both:
 
@@ -55,12 +55,12 @@ read as Run 1. `modules/raw_layout.py` is the one definition of this.
 
 | Section | Pages |
 |---|---|
-| Mathematical blade strike modelling | **Calculator** (CEN 2025 collision and mortality, scaly and eel together), **Analysis and reporting** (results and sensitivity figures, report export) |
+| Blade strike calculator | One page, no section panel, two tabs: **Calculator** (CEN 2025 collision and mortality, scaly and eel together, each species' collision probability; Advanced options set the sensitivity sweeps' Q and N ranges and Q step, as multiples of the design value) and **Advanced analysis** ("Advanced model outputs": both species' results table and output cards, the results and sensitivity figures; the report is in Export and report) |
 | Setup and deploy | **Sensor configuration**, **Study design** (Wilson-interval sample size), **Create and edit deployment** |
 | Sensor processing | **Raw data processing** (filters, summary cards, file inventory, console) |
 | Validate and annotate | **Annotate** (the same page as StrikeWorks's Validate step - `modules/page_annotate.py` - the library's filters, the validation screen and an Annotations and notes window), **Export animations** (sensor graph synced onto high-speed video) |
 | Model training | **Train** (training dataset, labelling, inputs, cross-validation, and one Model box: train, final model, deploy), **Evaluate**, **Misclassification analysis** |
-| Model prediction | **Predict**, **Inspect**, **Model comparison** (model vs BSM collision and mortality per treatment) |
+| Model prediction | **Predict** (two tabs, Predict and Results - the same pages as StrikeWorks's Predict and Report steps, `modules/ml_tab_predict.py`), **Inspect**, **Model comparison** (model vs BSM collision and mortality per treatment) |
 | Export and report | one dialog that builds a single HTML report from any page's section |
 
 Pages built but hidden for now are listed in `ROADMAP.md`.
@@ -94,13 +94,13 @@ overrides the location.
 ### Themes
 
 Settings > Appearance chooses the theme, applied the next time the app
-starts: **StrikeWorks (dark)**, or **University of Hull** (the brand's
-Core, low-intensity look: white pages, Ink Blue sidebar, Chartreuse and
-Mid Blue accents, brand colours in charts). The app's one logo is
-StrikeWorks with the University of Hull beside it (`images/strikeworks_uoh_*.png`),
-in the same places in both themes - the loading splash, StrikeWorks's Home
+starts. There is one, **StrikeWorks (dark)** (the University of Hull
+theme was removed on 29 October 2026); the selector stays for any added
+to `theme.THEMES` later. The app's one logo is StrikeWorks with the
+University of Hull beside it (`images/strikeworks_uoh_*.png`), in the
+same places throughout - the loading splash, StrikeWorks's Home
 and Finished steps and bottom bar, the toolkit's Home and the foot of its
-sidebar, About - white on dark backgrounds, navy (`_dark`) on light; the
+sidebar, About - in white, for the dark theme; the
 300 dpi files for the big ones, 96 dpi for the small (`startup.logo_label`,
 `startup.ScaledLogo`). The small badge at the top of the toolkit's sidebar
 stays.
@@ -188,8 +188,8 @@ how many of its strikes were hard hits. It appears in the Predict results
 (`severity_summary.csv`; `hig_peak_g`, `severity`, `severe_strike` in
 `predictions.csv`). The thresholds are in `modules/severity.py`.
 
-**HIG peak analysis** (the *HIG peak analysis* box on Predict and on
-StrikeWorks's Predict step - one setting, ticked by default) goes further: it finds every acceleration event in each
+**HIG peak analysis** (the *HIG peak analysis* box in Predict's
+**Advanced features** - one setting, ticked by default) goes further: it finds every acceleration event in each
 recording's HIG magnitude - peaks of at least 95 g with a prominence of
 25 g, at least 2 ms apart, each typed collision or shear by how long it
 stays above 70 % of its height - the peak finder of the original R
@@ -197,10 +197,11 @@ analysis (`modules/hig_peaks.py`; tested against it). Events are counted
 within ±0.1 s of the nadir, the whole of a dataset's 200 ms window; a
 recording with an event of 400 g or more there has a **collision**, and
 the collision probability is the share of recordings with one (Wilson 95%
-CI). Predict's results then show the event and collision cards, the peak
+CI). Predict then shows the collision ring (the collision probability in
+its centre) and Results the peak
 figure (a: each recording's peak acceleration as a box plot; b: events
-over 95, 200 and 400 g; c: collision probability, 0-100%) and
-an **HIG peak analysis** section: the acceleration table (event counts,
+over 95, 200 and 400 g; c: collision probability, 0-100%), the
+acceleration table (event counts,
 collision probability, and the minimum, maximum and IQR of the events'
 acceleration) and the acceleration- and nadir-aligned figures of every
 recording with a collision. The reports carry the same table and figures

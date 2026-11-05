@@ -4,38 +4,38 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Analysis and reporting (Mathematical blade strike modelling).
+"""Advanced analysis (Blade strike calculator's second tab - Calculator's
+"Advanced model outputs").
 
   - Figures: the headline results as one 4-panel figure ((a) scaly
     collision, (b) scaly mortality, (c) eel collision, (d) eel mortality)
     and the sensitivity sweeps as another ((a)/(b) collision probability
     vs shaft speed / relative fish velocity, (c)/(d) mortality vs the
-    same), one line per flow rate Q.
-  - The Results table and "Blade strike output" card Calculator shows.
-  - "Generate report...": CSV, every figure as PNG and an HTML report
-    (equations, tables, figures) in one folder.
+    same), one line per flow rate Q - over the ranges in Calculator's
+    Advanced options (`BSMState.sweep_options`).
+  - The Results table and the "Blade strike output" cards, scaly and eel.
 
-Follows `BSMState.calculated`, so it shows the latest result however it
-was produced.
+The report is Export and report's Blade strike calculator section
+(report_center.bsm_section). Follows `BSMState`, so it shows the latest
+result however it was produced.
 """
 from matplotlib.figure import Figure
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QPushButton, QSizePolicy, QTableWidget,
-    QTableWidgetItem, QVBoxLayout,
+    QApplication, QHBoxLayout, QSizePolicy, QTableWidget, QTableWidgetItem,
+    QVBoxLayout,
 )
 
-from . import bsm_figures, bsm_io, win_utils
+from . import bsm_figures
 from .bsm_model import sensitivity_sweeps
 from .bsm_state import output_card_rows
 from .canvas import FigureCanvas
 from .cards import MetaCard
-from .layout import (
-    centred, Page, scroll_page, Section, when_visible,
-)
-from .theme import style
+from .layout import centred, Page, scroll_page, Section, when_visible
+from .tables import fit_height
 
-_NODIALOG = QFileDialog.Option.DontUseNativeDialog
+_SPECIES = (("scaly", "Scaly"), ("eel", "Eel"))
 
 
 class BSMAnalysisPage(Page):
@@ -44,37 +44,25 @@ class BSMAnalysisPage(Page):
         super().__init__(main_window)
         self.bsm_state = bsm_state
         self.last_result = None
-        self.sweeps = None           # bsm_model.sensitivity_sweeps() of last_result
+        # bsm_model.sensitivity_sweeps() of last_result at the current
+        # sweep options - None until worked out (when the figure's shown)
+        self.sweeps = None
 
         self._build(self)
-        self._draw_blank()
         bsm_state.calculated.connect(self.update_from_result)
-        bsm_state.calculated_all.connect(self._draw_results)
-        if bsm_state.results:
-            self._draw_results(bsm_state.results)
-        if bsm_state.last_result is not None:
-            self.update_from_result(bsm_state.last_result)
+        bsm_state.calculated_all.connect(self._show_results)
+        bsm_state.sweep_options_changed.connect(self._options_changed)
+        self._show_results(bsm_state.results)
+        self.update_from_result(bsm_state.last_result)
 
     # ── layout ───────────────────────────────────────────────────────────────
     def _build(self, frame):
         v = scroll_page(frame)
-
         v.addWidget(self._figures_group())
-
         row = QHBoxLayout()
         row.addWidget(self._results_group(), stretch=1)
         row.addWidget(self._output_group(), stretch=1)
         v.addLayout(row)
-
-        self.btn_report = QPushButton("Generate report...")
-        self.btn_report.setEnabled(False)
-        style(self.btn_report, role="primary")
-        self.btn_report.clicked.connect(self._generate_report)
-        report_row = QHBoxLayout()
-        report_row.addStretch()
-        report_row.addWidget(self.btn_report)
-        v.addLayout(report_row)
-
 
     def _figures_group(self):
         g = Section("Figures")
@@ -109,96 +97,85 @@ class BSMAnalysisPage(Page):
     def _results_group(self):
         g = Section("Results")
         v = QVBoxLayout(g)
-        self.results_tbl = QTableWidget(2, 5)
+        self.results_tbl = QTableWidget(0, 6)
         self.results_tbl.setHorizontalHeaderLabels(
-            ["Method", "Pco (%)", "fMR (%)", "Pm (%)", "S (%)"])
+            ["Species", "Method", "Pco (%)", "fMR (%)", "Pm (%)", "S (%)"])
         self.results_tbl.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.results_tbl.setMaximumHeight(95)
+        fit_height(self.results_tbl)
         v.addWidget(self.results_tbl)
+        v.addStretch()
         return g
 
     def _output_group(self):
         g = Section("Blade strike output")
-        v = QVBoxLayout(g)
-        self.card_output = MetaCard("Blade strike output")
-        v.addWidget(self.card_output)
+        row = QHBoxLayout(g)
+        row.setSpacing(10)
+        self.cards = {}
+        for species, title in _SPECIES:
+            self.cards[species] = MetaCard(title)
+            row.addWidget(self.cards[species], stretch=1)
         return g
 
-    def _draw_blank(self):
-        self._draw_results({})
-        self._draw_sweeps(None)
-
+    # ── both species: table, cards, results figure ──────────────────────────
     # Figures are drawn when their canvas is on screen: rendering both takes
     # about a second, which would otherwise be spent at start-up.
-    def _draw_results(self, results):
-        """Both species' headline results (Calculator runs scaly and eel
-        every time - BSMState.calculated_all)."""
+    def _show_results(self, results):
+        """Both species' results (Calculator runs scaly and eel every time
+        - BSMState.calculated_all)."""
+        results = results or {}
+        rows = []
+        for species, title in _SPECIES:
+            res = results.get(species)
+            self.cards[species].set_rows(output_card_rows(res) if res else [])
+            if res is None:
+                continue
+            rows.append((title, "CEN", res["Pco_tip"], res["fMR_tip"],
+                         res["Pm"], res["S"]))
+            if "Pco_obs" in res:
+                rows.append((title, "Observed", res["Pco_obs"], res["fMR_tip"],
+                             res["Pm_obs"], res["S_obs"]))
+        tbl = self.results_tbl
+        tbl.setRowCount(len(rows))
+        for r, (title, method, *values) in enumerate(rows):
+            cells = [title, method] + [f"{v * 100:.4f}" for v in values]
+            for c, text in enumerate(cells):
+                tbl.setItem(r, c, QTableWidgetItem(text))
+        tbl.resizeColumnsToContents()
+        fit_height(tbl)
+
         def draw():
             bsm_figures.draw_results_panels(self.fig_results, results, dark=True)
             self.canvas_results.draw()
         when_visible(self.canvas_results, draw, key="figure")
 
-    def _draw_sweeps(self, sweeps, title=None):
-        def draw():
-            bsm_figures.draw_sweep_panels(self.fig_sweeps, sweeps, dark=True,
-                                          title=title)
-            self.canvas_sweeps.draw()
-        when_visible(self.canvas_sweeps, draw, key="figure")
-
+    # ── the sweeps (scaly, the Calculator's single result) ──────────────────
     def update_from_result(self, res):
         self.last_result = res
-        self._update_table(res)
-        self.card_output.set_rows(output_card_rows(res))
-        try:
-            self.sweeps = sensitivity_sweeps(res["params"])
-        except Exception as e:
-            self.sweeps = None
-            self.status.emit(f"Sensitivity sweep failed: {e}", 6000)
-            return
-        self._draw_sweeps(
-            self.sweeps,
-            title=bsm_figures.sweep_panels_title(res["params"]["species"],
-                                                 res["params"]))
-        self.btn_report.setEnabled(True)
+        self.sweeps = None
+        self._draw_sweeps()
 
-    def _update_table(self, res):
-        has_obs = "Pco_obs" in res
-        self.results_tbl.setItem(0, 0, QTableWidgetItem("CEN"))
-        for j, v in enumerate([res["Pco_tip"], res["fMR_tip"], res["Pm"], res["S"]],
-                              start=1):
-            self.results_tbl.setItem(0, j, QTableWidgetItem(f"{v * 100:.4f}"))
-        self.results_tbl.setRowHidden(1, not has_obs)
-        if has_obs:
-            self.results_tbl.setItem(1, 0, QTableWidgetItem("Observed"))
-            for j, v in enumerate(
-                    [res["Pco_obs"], res["fMR_tip"], res["Pm_obs"], res["S_obs"]],
-                    start=1):
-                self.results_tbl.setItem(1, j, QTableWidgetItem(f"{v * 100:.4f}"))
+    def _options_changed(self):
+        self.sweeps = None
+        self._draw_sweeps()
 
-    # ── report ───────────────────────────────────────────────────────────────
-    def _generate_report(self):
-        if self.last_result is None:
-            self.status.emit("Nothing to report - calculate first.", 4000)
-            return
-        dirpath = QFileDialog.getExistingDirectory(
-            self, "Generate report to folder...", "", _NODIALOG)
-        if not dirpath:
-            return
-        # the central report's Blade strike modelling section on its own,
-        # plus the results table as CSV
-        from pathlib import Path
-        from . import report_center
-        out = Path(dirpath)
-        try:
-            results = self.bsm_state.results or {
-                self.last_result["params"]["species"]: self.last_result}
-            bsm_io.export_results(results, out)
-            _doc, warnings = report_center.assemble(
-                [report_center.bsm_section(self.main_window)], out, {"bsm"})
-        except Exception as e:
-            self.status.emit(f"Report failed: {e}", 6000)
-            return
-        win_utils.open_folder(out)
-        self.status.emit(f"Report generated in {out}"
-                         + (f" ({'; '.join(warnings)})" if warnings else ""),
-                         5000)
+    def _draw_sweeps(self):
+        """Worked out and drawn once the figure is on screen - a slider
+        dragged on Calculator costs nothing until then."""
+        def draw():
+            res = self.last_result
+            if res is not None and self.sweeps is None:
+                QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+                try:
+                    self.sweeps = sensitivity_sweeps(
+                        res["params"], **self.bsm_state.sweep_options)
+                except Exception as e:
+                    self.status.emit(f"Sensitivity sweep failed: {e}", 6000)
+                finally:
+                    QApplication.restoreOverrideCursor()
+            title = (bsm_figures.sweep_panels_title(res["params"]["species"],
+                                                    res["params"])
+                     if res is not None and self.sweeps else None)
+            bsm_figures.draw_sweep_panels(self.fig_sweeps, self.sweeps,
+                                          dark=True, title=title)
+            self.canvas_sweeps.draw()
+        when_visible(self.canvas_sweeps, draw, key="figure")

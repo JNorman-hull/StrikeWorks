@@ -86,20 +86,34 @@ def pad_time_series(ts, target_length):
     return np.vstack([ts, np.tile(ts[-1], (n_pad, 1))])
 
 
-def derive_strike_type(row, cfg):
+def derive_strike_type(row, cfg, columns=None):
     """A recording's strike type, for the performance breakdown
-    (`performance_by_strike_type`): a no-strike recording's own target
-    value; a strike's first non-blank value in the breakdown columns the
-    user chose (`breakdown_columns`, in order - e.g. direct / hub_1 /
-    surface), else its target value. Values are used as they are."""
+    (`performance_by_strike_type`; the variable's name is the user's,
+    `breakdown_name`): a no-strike recording's own target value; a
+    strike's first non-blank value in the breakdown columns the user chose
+    (`breakdown_columns`, or `columns` - the multiclass model's own - in
+    order, e.g. direct / hub_1 / surface), else its target value. Values
+    are used as they are."""
     target = str(row[cfg["target_column"]])
     if target == str(cfg["negative_class"]):
         return target
-    for col in cfg.get("breakdown_columns") or []:
+    if columns is None:
+        columns = cfg.get("breakdown_columns") or []
+    for col in columns:
         value = row.get(col)
         if value is not None and pd.notna(value) and str(value).strip():
             return str(value).strip()
     return target
+
+
+def _by_strike_type(res):
+    """Out-of-fold accuracy for each strike type (`strike_type`, from
+    the model's breakdown columns) - empty without any."""
+    if "strike_type" not in res.columns:
+        return {}
+    return {st: {"n_files": int(grp["file"].count()),
+                 "accuracy": float(grp["correct"].mean())}
+            for st, grp in res.groupby("strike_type")}
 
 
 def prepare_data(cfg, kind):
@@ -181,10 +195,16 @@ def prepare_data(cfg, kind):
         df["region"] = df[rcol].map(level_key)
 
         agg = {"region": "first"}
-        for col in ["treatment", tcol] + list(cfg.get("breakdown_columns") or []):
+        mc_cols = list(cfg.get("mc_breakdown_columns") or [])
+        for col in (["treatment", tcol] + list(cfg.get("breakdown_columns") or [])
+                    + mc_cols):
             if col and col in df.columns:
                 agg[col] = "first"
         file_metadata = df.groupby("file").agg(agg).reset_index()
+        # the multiclass model's own breakdown (its ticked columns)
+        if mc_cols:
+            file_metadata["strike_type"] = file_metadata.apply(
+                lambda r: derive_strike_type(r, cfg, mc_cols), axis=1)
 
         region_to_class = {level_key(k): int(v)
                            for k, v in cfg["region_to_class"].items()}
@@ -283,6 +303,32 @@ def _sigmoid(scores):
     return 1 / (1 + np.exp(-np.clip(scores, -500, 500)))
 
 
+def macro_specificity(cm):
+    """Each class's specificity against the rest, averaged - from a
+    confusion matrix (rows the true class, columns the predicted, as
+    sklearn's). None when there's nothing to average."""
+    cm = np.asarray(cm, dtype=float)
+    if cm.ndim != 2 or not cm.size:
+        return None
+    tp = np.diag(cm)
+    fp = cm.sum(axis=0) - tp
+    tn = cm.sum() - cm.sum(axis=1) - fp
+    spec = [t / (t + f) for t, f in zip(tn, fp) if t + f > 0]
+    return float(np.mean(spec)) if spec else None
+
+
+def _macro_one_vs_rest(y, probs, score):
+    """`score` (ROC AUC, average precision) of each class against the
+    rest, from its probability column, averaged; classes with no positive
+    or no negative recording are left out. None if none is left."""
+    vals = []
+    for i in range(probs.shape[1]):
+        yi = (np.asarray(y) == i).astype(int)
+        if 0 < yi.sum() < len(yi):
+            vals.append(float(score(yi, probs[:, i])))
+    return float(np.mean(vals)) if vals else None
+
+
 def _softmax(scores):
     if scores.ndim == 1:
         scores = np.column_stack([-scores, scores])
@@ -324,6 +370,8 @@ def provenance_section(cfg, data, t0, kind):
         "target_column":    cfg["target_column"],
         "negative_class":   cfg.get("negative_class"),
         "breakdown_columns": list(cfg.get("breakdown_columns") or []),
+        "mc_breakdown_columns": list(cfg.get("mc_breakdown_columns") or []),
+        "breakdown_name":   cfg.get("breakdown_name") or "strike_type",
         "include_values":   cfg.get("include_values"),
         "n_missing_target_excluded": data["n_missing_target"],
         "class_weighting":  cfg.get("class_weighting", "balanced"),
@@ -512,11 +560,8 @@ def run_cv_binary(cfg, data, out_dir, cv_idx, t0):
             "confusion_matrix": {"tn": m["tn"], "fp": m["fp"],
                                  "fn": m["fn"], "tp": m["tp"]},
         },
-        "performance_by_strike_type": {
-            st: {"n_files": int(grp["file"].count()),
-                 "accuracy": float(grp["correct"].mean())}
-            for st, grp in res.groupby("strike_type")
-        } if "strike_type" in res.columns else {},
+        "performance_by_strike_type": _by_strike_type(res),
+        "breakdown_name": cfg.get("breakdown_name") or "strike_type",
         "misclassified": {"total": int(len(mis)),
                           "false_positives": n_fp,
                           "false_negatives": n_fn},
@@ -527,8 +572,10 @@ def run_cv_binary(cfg, data, out_dir, cv_idx, t0):
 # ── multiclass CV (port of 05_multiclass_collapsed.py) ───────────────────────
 
 def run_cv_multiclass(cfg, data, out_dir, cv_idx, t0):
-    from sklearn.metrics import (accuracy_score, confusion_matrix,
-                                 precision_recall_fscore_support)
+    from sklearn.metrics import (accuracy_score, average_precision_score,
+                                 confusion_matrix, matthews_corrcoef,
+                                 precision_recall_fscore_support,
+                                 roc_auc_score)
 
     X, y = data["X"], data["y"]
     fm = data["file_metadata"]
@@ -544,7 +591,8 @@ def run_cv_multiclass(cfg, data, out_dir, cv_idx, t0):
     oof_probs = np.zeros((len(y), n_classes))
     fold_assignment = np.zeros(len(y), dtype=int)
     cv_metrics = {"accuracy": [], "macro_precision": [],
-                  "macro_recall": [], "macro_f1": []}
+                  "macro_recall": [], "macro_specificity": [],
+                  "macro_f1": []}
 
     for fold, (tr, te) in enumerate(cv_idx):
         log(f"##FOLD {fold + 1} {n_folds}")
@@ -561,9 +609,13 @@ def run_cv_multiclass(cfg, data, out_dir, cv_idx, t0):
         acc = accuracy_score(y[te], preds)
         p, r, f1, _ = precision_recall_fscore_support(
             y[te], preds, average="macro", zero_division=0)
+        spec = macro_specificity(confusion_matrix(
+            y[te], preds, labels=range(n_classes)))
         for k, v in (("accuracy", acc), ("macro_precision", p),
-                     ("macro_recall", r), ("macro_f1", f1)):
-            cv_metrics[k].append(float(v))
+                     ("macro_recall", r), ("macro_specificity", spec),
+                     ("macro_f1", f1)):
+            if v is not None:
+                cv_metrics[k].append(float(v))
         log(f"Fold {fold + 1}/{n_folds}: train={len(tr)}, test={len(te)} | "
             f"Accuracy={acc:.3f}, Macro-F1={f1:.3f}")
 
@@ -573,6 +625,12 @@ def run_cv_multiclass(cfg, data, out_dir, cv_idx, t0):
     prec_ma, rec_ma, f1_ma, _ = precision_recall_fscore_support(
         y, oof_preds, average="macro", zero_division=0)
     cm = confusion_matrix(y, oof_preds, labels=range(n_classes))
+    # the binary model's other measures, each class against the rest and
+    # averaged (macro) - all but its threshold, which has no counterpart
+    spec_ma = macro_specificity(cm)
+    auc_ma = _macro_one_vs_rest(y, oof_probs, roc_auc_score)
+    pr_auc_ma = _macro_one_vs_rest(y, oof_probs, average_precision_score)
+    mcc = float(matthews_corrcoef(y, oof_preds))
 
     log(f"\nOverall Accuracy: {overall_acc:.3f} | Macro-F1: {f1_ma:.3f}")
     log(f"{'Class':14s} {'Precision':>10} {'Recall':>10} {'F1':>10} {'Support':>9}")
@@ -649,7 +707,11 @@ def run_cv_multiclass(cfg, data, out_dir, cv_idx, t0):
             "overall_accuracy": float(overall_acc),
             "macro_precision": float(prec_ma),
             "macro_recall": float(rec_ma),
+            "macro_specificity": spec_ma,
             "macro_f1": float(f1_ma),
+            "macro_roc_auc": auc_ma,
+            "macro_pr_auc": pr_auc_ma,
+            "mcc": mcc,
             "confusion_matrix": cm.tolist(),
             "per_class_metrics": {
                 class_names[i]: {
@@ -660,6 +722,8 @@ def run_cv_multiclass(cfg, data, out_dir, cv_idx, t0):
                 } for i in range(n_classes)
             },
         },
+        "performance_by_strike_type": _by_strike_type(res),
+        "breakdown_name": cfg.get("breakdown_name") or "strike_type",
         "misclassified": {
             "total": int(len(mis)),
             "by_true_class": {

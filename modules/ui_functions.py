@@ -145,8 +145,9 @@ class UIFunctions:
                 if getattr(self, "_maximized", False):
                     UIFunctions.maximize_restore(self)
                 if event.buttons() == Qt.LeftButton:
-                    self.move(self.pos() + event.globalPos() - self.dragPos)
-                    self.dragPos = event.globalPos()
+                    pos = event.globalPosition().toPoint()
+                    self.move(self.pos() + pos - self.dragPos)
+                    self.dragPos = pos
                     event.accept()
             self.ui.titleRightInfo.mouseMoveEvent = move_window
 

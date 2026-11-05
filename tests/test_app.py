@@ -76,6 +76,25 @@ class AppStarts(unittest.TestCase):
         self.assertFalse(dialog.logos.isVisible())
         dialog.hide()
 
+    def test_new_deployment_is_a_link_not_a_list_item(self):
+        """"New deployment" under the Deployment list starts a blank one -
+        the list itself only holds deployments - and the Remove column
+        fits its buttons."""
+        from modules.deployment_editor import NEW_DEPLOYMENT
+        editor = self.window.simple_mode_dialog.editor
+        editor.refresh()
+        combo = editor.cmb_deployment
+        self.assertEqual(combo.findData(NEW_DEPLOYMENT), -1)
+        editor._new_deployment()
+        self.assertEqual(combo.currentIndex(), -1)
+        self.assertEqual(combo.placeholderText(), "New deployment")
+        self.assertEqual(editor.deployment_id(), "")
+        table = editor.treatment_table
+        self.assertEqual(table.rowCount(), 1)
+        btn = table.cellWidget(0, table._REMOVE_COL)
+        self.assertGreaterEqual(table.columnWidth(table._REMOVE_COL),
+                                btn.sizeHint().width())
+
     def test_windows_fit_the_screen_work_area(self):
         """Both windows, title bar and borders included, inside the screen
         without the taskbar (win_utils.fit_to_screen) - here the off-screen

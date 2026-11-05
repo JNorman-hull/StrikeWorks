@@ -44,6 +44,7 @@
     "target_column": "passage_type",
     "negative_class": "no_contact",
     "region_column": "concentric_pump_region",
-    "breakdown_columns": ["leading_type", "other_type"]
+    "breakdown_columns": ["leading_type", "other_type"],
+    "mc_breakdown_columns": ["leading_type", "other_type"]
   }
 }

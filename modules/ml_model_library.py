@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import ml_report, ml_train_figures
+from . import ml_report, ml_train_figures, model_measures
 
 _STEM_RE = re.compile(r"^(binary|multiclass)(\d+(?:_\d+)*)$")
 
@@ -201,6 +201,38 @@ def session_entries(state):
 
 
 # ── model report ─────────────────────────────────────────────────────────────
+def grouped_table_html(columns, rows):
+    """A table with its measures grouped under a heading row (as the HIG
+    peak analysis table): `columns` [(group, name)], `rows` [(label,
+    cells)] - model_measures.summary_table's shape."""
+    esc, bord, ink = ml_report._esc, ml_report._BORD, ml_report._DARK
+    th = (f"border-bottom:2px solid {bord};padding:4px 8px;"
+          f"text-align:center;color:{ink};")
+    td = f"border-bottom:1px solid {bord};padding:3px 8px;text-align:center;"
+    top = f"<th rowspan='2' style='{th}'></th>"
+    second = ""
+    i = 0
+    while i < len(columns):
+        group = columns[i][0]
+        span = 1
+        while i + span < len(columns) and group \
+                and columns[i + span][0] == group:
+            span += 1
+        if group:
+            top += f"<th colspan='{span}' style='{th}'>{esc(group)}</th>"
+            second += "".join(f"<th style='{th}'>{esc(name)}</th>"
+                              for _g, name in columns[i:i + span])
+        else:
+            top += f"<th rowspan='2' style='{th}'>{esc(columns[i][1])}</th>"
+        i += span
+    body = "".join(
+        "<tr>" + f"<td style='{td}text-align:left;'>{esc(label)}</td>"
+        + "".join(f"<td style='{td}'>{esc(c)}</td>" for c in cells) + "</tr>"
+        for label, cells in rows)
+    return (f"<table cellspacing='0' cellpadding='0' style='margin:6px 0;'>"
+            f"<tr>{top}</tr><tr>{second}</tr>{body}</table>")
+
+
 def build_model_report_html(entry, image_paths=None, embed_images=False,
                             app_version=""):
     """Model evaluation report for one model, in the report style used by
@@ -241,45 +273,17 @@ def build_model_report_html(entry, image_paths=None, embed_images=False,
         ]
     h.append(kv(rows))
 
-    # ── performance ──────────────────────────────────────────────────────────
-    h.append(f"<h2 style='color:{dark};'>Out-of-fold performance</h2>")
-    labels = {"roc_auc": "ROC-AUC", "pr_auc": "PR-AUC",
-              "overall_accuracy": "Accuracy", "sensitivity": "Sensitivity",
-              "specificity": "Specificity", "precision": "Precision",
-              "f1_score": "F1-score", "mcc": "MCC", "FNR": "FNR",
-              "FPR": "FPR", "optimal_threshold": "Optimal threshold",
-              "macro_precision": "Macro precision",
-              "macro_recall": "Macro recall", "macro_f1": "Macro F1"}
-    rows = [(labels[k], f"{perf[k]:.4f}") for k in labels if k in perf]
-    h.append(kv(rows) if rows else f"<p style='color:#64748b;'>{na}</p>")
-
-    ho = m.get("holdout_performance")
-    if ho:
-        h.append(f"<h3 style='color:{dark};'>Hold-out test set</h3>")
-        h.append(kv([(k.replace("_", " "),
-                      f"{v:.4f}" if isinstance(v, float) else v)
-                     for k, v in ho.items()]))
-
-    # ── cross-validation ─────────────────────────────────────────────────────
-    cv = m.get("cross_validation", {})
-    if cv:
-        h.append(f"<h2 style='color:{dark};'>Cross-validation</h2>")
-        keys = sorted(k[5:] for k in cv if k.startswith("mean_"))
-        rows = [[k, f"{cv[f'mean_{k}']:.4f}", f"{cv.get(f'std_{k}', 0):.4f}"]
-                for k in keys]
-        h.append(f"<p>{cv.get('n_folds', '?')}-fold stratified "
-                 "cross-validation.</p>")
-        h.append(table(["Metric", "Mean", "SD"], rows))
-
-    # ── per-class / confusion ────────────────────────────────────────────────
-    per_class = perf.get("per_class_metrics")
-    if per_class:
-        h.append(f"<h2 style='color:{dark};'>Per-class performance</h2>")
-        rows = [[cn, f"{d['precision']:.3f}", f"{d['recall']:.3f}",
-                 f"{d['f1_score']:.3f}", d["support"]]
-                for cn, d in per_class.items()]
-        h.append(table(["Class", "Precision", "Recall", "F1", "Support"],
-                       rows))
+    # ── performance: Evaluate's two tables ───────────────────────────────────
+    h.append(f"<h2 style='color:{dark};'>Performance</h2>")
+    columns, rows = model_measures.summary_table(m)
+    h.append(grouped_table_html(columns, rows))
+    if not model_measures.is_binary(m):
+        h.append(f"<p style='color:#64748b;'>"
+                 f"{esc(model_measures.AVERAGED_NOTE)}</p>")
+    class_rows = model_measures.class_table(m)
+    if class_rows:
+        h.append(f"<h2 style='color:{dark};'>Performance by class</h2>")
+        h.append(table(model_measures.CLASS_HEADERS, class_rows))
 
     cm = perf.get("confusion_matrix")
     if isinstance(cm, dict):
@@ -296,8 +300,9 @@ def build_model_report_html(entry, image_paths=None, embed_images=False,
 
     by_type = m.get("performance_by_strike_type")
     if by_type:
-        h.append(f"<h2 style='color:{dark};'>Performance by strike type</h2>")
-        h.append(table(["Strike type", "N", "Accuracy"],
+        name = m.get("breakdown_name") or "strike type"
+        h.append(f"<h2 style='color:{dark};'>Performance by {name}</h2>")
+        h.append(table([name, "n", "Accuracy"],
                        [[st, d["n_files"], f"{d['accuracy']:.3f}"]
                         for st, d in by_type.items()]))
 

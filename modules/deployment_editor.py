@@ -16,10 +16,13 @@ deployments exactly the same way.
                       is recorded on the deployment's plan
                       (deployment_index.SENSOR_CONFIG_COL), so reopening a
                       deployment restores it.
-  Deployment        - pick an existing deployment or "New deployment…",
-                      and its site/ID/machine fields.
+  Deployment        - pick an existing deployment (or "New deployment"
+                      under the list), and its site/ID/machine fields.
   Treatments        - one table row per treatment (conditions + number of
                       runs); a new deployment starts with "Treatment 1".
+
++ Add treatment, Create & open data folder and Update are one row under
+the treatments table, with the folder's recording count below it.
 
 Create & open data folder - only for a deployment whose folder doesn't
 exist yet: saves the plan and builds raw_sens_data/<deployment>/<treatment>/
@@ -40,7 +43,7 @@ deployment) asks: Save and continue / Continue / Cancel -
 import os
 import shutil
 
-from PySide6.QtCore import QEvent, Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout,
@@ -52,7 +55,6 @@ from . import raw_layout, sensor_config, settings
 from .cards import MetaCard
 from .layout import scroll_area, Section
 from .library_widgets import library_picker, show_library_path
-from .tables import style_table
 from .theme import muted_label, style
 
 NEW_DEPLOYMENT = "__new__"
@@ -79,7 +81,6 @@ class TreatmentTable(QTableWidget):
         super().__init__(0, len(headers), parent)
         self.setHorizontalHeaderLabels(headers)
         self.verticalHeader().setVisible(False)
-        style_table(self)
         self.itemChanged.connect(lambda _i: self.changed.emit())
 
     def add_row(self, values=None, orig_name=None):
@@ -107,6 +108,8 @@ class TreatmentTable(QTableWidget):
         self.setCellWidget(row, self._REMOVE_COL, btn_remove)
 
         self.resizeColumnsToContents()
+        # (a cell widget doesn't count towards its column's width)
+        self.setColumnWidth(self._REMOVE_COL, btn_remove.sizeHint().width() + 10)
         self.changed.emit()
 
     def _remove_row_with_widget(self, btn):
@@ -255,8 +258,21 @@ class DeploymentEditor(QWidget):
         grp_dep = Section("Deployment")
         dv = QVBoxLayout(grp_dep)
         self.cmb_deployment = QComboBox()
+        # shown while a new deployment is being set up (no item current)
+        self.cmb_deployment.setPlaceholderText("New deployment")
         self.cmb_deployment.currentIndexChanged.connect(self._on_deployment_combo)
         dv.addWidget(self.cmb_deployment)
+        dep_actions = QHBoxLayout()
+        btn_new_deployment = QPushButton("New deployment")
+        btn_new_deployment.setFlat(True)
+        style(btn_new_deployment, role="link")
+        btn_new_deployment.setToolTip(
+            "Start a new deployment: fill in its details and treatments, "
+            "then Create & open data folder.")
+        btn_new_deployment.clicked.connect(self._new_deployment)
+        dep_actions.addWidget(btn_new_deployment)
+        dep_actions.addStretch()
+        dv.addLayout(dep_actions)
         form = QGridLayout()
         form.setColumnStretch(1, 1)
         self.dep_edits = {}
@@ -269,8 +285,6 @@ class DeploymentEditor(QWidget):
         dv.addLayout(form)
         lv.addWidget(grp_dep)
         lv.addStretch()
-        self._left = left
-        self._grp_dep = grp_dep
 
         # the left column scrolls internally rather than forcing its host
         # window taller (four stacked sections)
@@ -283,21 +297,14 @@ class DeploymentEditor(QWidget):
         self.treatment_table = TreatmentTable()
         self.treatment_table.changed.connect(self._on_edited)
         rv.addWidget(self.treatment_table, stretch=1)
-        add_row = QHBoxLayout()
+
+        # + Add treatment, Create and Update in one row under the table
+        # (always in view), all one size
+        btn_row = QHBoxLayout()
         self.btn_add_treatment = QPushButton("+ Add treatment")
         self.btn_add_treatment.clicked.connect(lambda: self.add_treatment())
-        add_row.addWidget(self.btn_add_treatment)
-        add_row.addStretch()
-        self.lbl_treatment_summary = QLabel("")
-        style(self.lbl_treatment_summary, role="muted")
-        add_row.addWidget(self.lbl_treatment_summary)
-        rv.addLayout(add_row)
-
-        # Create / Update live under the table (always in view), not at the
-        # foot of the scrolling left column
-        btn_row = QHBoxLayout()
-        self.btn_create = QPushButton("Create && open\ndata folder")
-        self.btn_create.setMinimumHeight(40)
+        btn_row.addWidget(self.btn_add_treatment)
+        self.btn_create = QPushButton("Create && open data folder")
         self.btn_create.setToolTip(
             "Save this deployment and build its folders - one per treatment, "
             "each with Run 1..N and a VIDEO folder per run - then open it in "
@@ -305,14 +312,19 @@ class DeploymentEditor(QWidget):
         self.btn_create.clicked.connect(lambda: self.apply(open_folder=True))
         btn_row.addWidget(self.btn_create)
         self.btn_update = QPushButton("Update")
-        self.btn_update.setMinimumHeight(40)
         self.btn_update.setToolTip(
             "Save changes to this deployment and make its folders match: "
             "renames carry the folder and already-processed sensors with "
             "them, removed treatments/runs remove their folders.")
         self.btn_update.clicked.connect(lambda: self.apply(open_folder=False))
         btn_row.addWidget(self.btn_update)
+        size = self.btn_create.sizeHint()
+        for btn in (self.btn_add_treatment, self.btn_create, self.btn_update):
+            btn.setFixedSize(size.width(), max(size.height(), 32))
         btn_row.addStretch()
+        self.lbl_treatment_summary = QLabel("")
+        style(self.lbl_treatment_summary, role="muted")
+        btn_row.addWidget(self.lbl_treatment_summary)
         rv.addLayout(btn_row)
         self.lbl_hint = QLabel("")
         self.lbl_hint.setWordWrap(True)
@@ -320,35 +332,9 @@ class DeploymentEditor(QWidget):
         self.lbl_files_found = QLabel("")
         style(self.lbl_files_found, tone="ok")
         rv.addWidget(self.lbl_files_found)
-        # the Treatments box ends where the left column's last box does
-        # (_match_treatments_height) instead of running on down the page
-        row.addWidget(grp_tr, stretch=3, alignment=Qt.AlignmentFlag.AlignTop)
-        self._grp_tr = grp_tr
-        left.installEventFilter(self)
-
-    def eventFilter(self, obj, event):
-        if obj is self._left and event.type() in (QEvent.Type.Resize,
-                                                  QEvent.Type.LayoutRequest):
-            QTimer.singleShot(0, self._match_treatments_height)
-        return super().eventFilter(obj, event)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        QTimer.singleShot(0, self._match_treatments_height)
-
-    def _match_treatments_height(self):
-        """Treatments box: top level with the Session library box, bottom
-        level with the Deployment box - never taller than the editor
-        itself (a short window scrolls the left column), never shorter
-        than its own table and buttons need."""
-        if not self._grp_dep.isVisible():
-            return
-        bottom = self._grp_dep.mapTo(
-            self, self._grp_dep.rect().bottomLeft()).y() + 1
-        height = max(self._grp_tr.minimumSizeHint().height(),
-                     min(bottom, self.height()))
-        if self._grp_tr.height() != height or self._grp_tr.minimumHeight() != height:
-            self._grp_tr.setFixedHeight(height)
+        # full height: the table takes the room, the buttons and the
+        # folder's recording count sit at the foot of the page
+        row.addWidget(grp_tr, stretch=3)
 
     # ── public ───────────────────────────────────────────────────────────────
     @property
@@ -382,15 +368,20 @@ class DeploymentEditor(QWidget):
         self._loaded_for = self._lib_root
 
     def select_deployment(self, ident):
-        """Programmatic pick (demo runner): an existing deployment by ID,
-        or NEW_DEPLOYMENT."""
-        idx = self.cmb_deployment.findData(ident)
-        if idx < 0:
-            idx = self.cmb_deployment.findData(NEW_DEPLOYMENT)
+        """An existing deployment by ID, or NEW_DEPLOYMENT (also for an ID
+        that isn't there) - the list then shows "New deployment"."""
+        idx = self.cmb_deployment.findData(ident) if ident else -1
         self._loading = True
         self.cmb_deployment.setCurrentIndex(idx)
         self._loading = False
-        self._show_deployment(self.cmb_deployment.currentData())
+        self._show_deployment(self.cmb_deployment.currentData()
+                              if idx >= 0 else NEW_DEPLOYMENT)
+
+    def _new_deployment(self):
+        """New deployment (under the list), once any unsaved changes are
+        dealt with."""
+        if self.confirm_leave():
+            self.select_deployment(NEW_DEPLOYMENT)
 
     def set_sensor(self, key):
         idx = self.cmb_sensor.findData(key)
@@ -500,11 +491,14 @@ class DeploymentEditor(QWidget):
         for dep in self._deployments:
             self.cmb_deployment.addItem(
                 di.describe_deployment(dep), dep.get(di.DEPLOYMENT_COL, ""))
-        self.cmb_deployment.addItem("New deployment…", NEW_DEPLOYMENT)
+        # the one asked for, else the first; none at all is a new one
         idx = self.cmb_deployment.findData(select) if select else 0
-        self.cmb_deployment.setCurrentIndex(max(0, idx))
+        if idx < 0 and self.cmb_deployment.count():
+            idx = 0
+        self.cmb_deployment.setCurrentIndex(idx)
         self._loading = False
-        self._show_deployment(self.cmb_deployment.currentData())
+        self._show_deployment(self.cmb_deployment.currentData()
+                              if idx >= 0 else NEW_DEPLOYMENT)
 
     def _on_deployment_combo(self, *_args):
         if self._loading:
@@ -515,7 +509,7 @@ class DeploymentEditor(QWidget):
         # happens below only once they've agreed to leave
         self._loading = True
         self.cmb_deployment.setCurrentIndex(
-            max(0, self.cmb_deployment.findData(self._combo_ident)))
+            self.cmb_deployment.findData(self._combo_ident or NEW_DEPLOYMENT))
         self._loading = False
         if not self.confirm_leave():
             return
@@ -686,6 +680,8 @@ class DeploymentEditor(QWidget):
     def _set_hint(self, text, tone):
         self.lbl_hint.setText(text)
         style(self.lbl_hint, tone=tone)
+        # no blank line between the buttons and the recording count
+        self.lbl_hint.setVisible(bool(text))
 
     def _refresh_files_found(self):
         """How many recordings the loaded deployment's folder holds (one

@@ -254,26 +254,39 @@ def mortality_from_strike_rate(res, strike_rate):
     return float(min(1.0, max(0.0, 2 / (p["r"] + p["bh"]) * strike_rate
                                * integral)))
 
-# ── sensitivity sweeps (Analysis and reporting, the BSM report) ─────────────
-SWEEP_Q_MULTIPLIERS = (0.6, 0.8, 1.0, 1.2, 1.4, 1.6)
-SWEEP_N_SPAN = (0.6, 1.4)       # shaft-speed sweep bounds, x the design N
+# ── sensitivity sweeps (Advanced analysis, the BSM report) ──────────────────
+# the defaults of Calculator's Advanced options, each x the design value
+SWEEP_Q_SPAN = (0.6, 1.6)       # flow-rate lines from / to...
+SWEEP_Q_STEP = 0.2              # ...this far apart (and the design Q)
+SWEEP_N_SPAN = (0.6, 1.4)       # shaft-speed sweep bounds
+SWEEP_SLIDER_SPAN = (0.2, 2.0)  # what the options' sliders offer
 SWEEP_N_POINTS = 41
 SWEEP_WF_SPAN = 3.5             # relative fish velocity, +/- m/s
 SWEEP_WF_STEP = 0.1
 
 
-def sensitivity_sweeps(params):
-    """Collision and mortality probability against shaft speed N and
-    against relative fish velocity wf, one line per flow rate Q (the
-    design Q x SWEEP_Q_MULTIPLIERS) - every sweep holds the rest of
-    `params` at its design value. One `compute()` per point gives both
+def sweep_q_multipliers(q_span=SWEEP_Q_SPAN, q_step=SWEEP_Q_STEP):
+    """The flow-rate lines, as multiples of the design Q: `q_span` in
+    `q_step`s, and the design Q itself (1.0) whether or not a step
+    lands on it."""
+    lo, hi = q_span
+    steps = np.arange(lo, hi + q_step * 1e-6, q_step)
+    return sorted({round(float(m), 6) for m in steps} | {1.0})
+
+
+def sensitivity_sweeps(params, q_span=SWEEP_Q_SPAN, q_step=SWEEP_Q_STEP,
+                       n_span=SWEEP_N_SPAN):
+    """Collision and mortality probability against shaft speed N (the
+    design N x `n_span`) and against relative fish velocity wf, one line
+    per flow rate Q (`sweep_q_multipliers`) - every sweep holds the
+    rest of `params` at its design value. One `compute()` per point gives both
     Pco and Pm, so the four sweeps cost two passes, not four.
 
     Returns {"pco_n", "pm_n", "pco_wf", "pm_wf"}: each {label: (x, y%)},
     plus "design_label" (the design-Q line's label) and "design"
     ({"N", "wf", "Q"} - where the design point sits on each x axis)."""
     design_q, design_n = params["Q"], params["N"]
-    lo, hi = SWEEP_N_SPAN
+    lo, hi = n_span
     n_vals = np.linspace(design_n * lo, design_n * hi, SWEEP_N_POINTS)
     wf_vals = np.round(np.arange(-SWEEP_WF_SPAN, SWEEP_WF_SPAN + 1e-9,
                                  SWEEP_WF_STEP), 10)
@@ -291,7 +304,7 @@ def sensitivity_sweeps(params):
             pco[i], pm[i] = r["Pco_tip"] * 100, r["Pm"] * 100
         return pco, pm
 
-    for mult in SWEEP_Q_MULTIPLIERS:
+    for mult in sweep_q_multipliers(q_span, q_step):
         q = design_q * mult
         is_design = abs(mult - 1.0) < 1e-9
         label = f"Q = {q:.3g} m³/s" + (" (design)" if is_design else "")

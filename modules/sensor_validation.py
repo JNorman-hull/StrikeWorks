@@ -19,9 +19,8 @@
 What's flagged, saving a window, Auto process all and the dataset export
 are validation_core.py's. The host gives the library, its sensors and how
 to find a sensor's video (`set_source`), and can hook into Save + Next
-(`save_values`: more columns for the index; `after_save`: more to do once
-it's written - the toolkit's running dataset) and the counts line
-(`counts_suffix`).
+(`save_values`: more columns for the index - the annotations) and the
+counts line (`counts_suffix`).
 """
 import subprocess
 
@@ -96,24 +95,19 @@ def open_video(parent, stem, matches):
 class ValidationView(QWidget):
     """The validation screen (see the module docstring). `top`: a widget of
     the host's above the list; `extra_buttons`: buttons of the host's under
-    the plot, before Save and export; `confirm_export`: ask before
-    exporting while flagged sensors are still unreviewed (StrikeWorks asks
-    when leaving the step instead)."""
+    the plot, before Save and export."""
 
     sensor_loaded = Signal(str)                  # the stem now shown
     index_changed = Signal()                     # this view wrote the index
     export_done = Signal(object, object, str)    # DatasetExporter.finished
     status = Signal(str, int)
 
-    def __init__(self, parent_window, top=None, extra_buttons=(),
-                 confirm_export=False):
+    def __init__(self, parent_window, top=None, extra_buttons=()):
         super().__init__()
         self.parent_window = parent_window       # the dialogs' parent
         self.save_values = None     # (stem) -> {column: value}, with Save + Next
-        self.after_save = None      # (stem, window_df) -> message, may raise
         self.counts_suffix = None   # (stems) -> str, under the counts
         self.export_name = None     # () -> the exported dataset's name
-        self._confirm_export = confirm_export
         self._lib_root = None
         self._files = []            # [{"stem", "path"}]
         self._export_all = True
@@ -654,8 +648,8 @@ class ValidationView(QWidget):
     def save_and_next(self):
         """Save + Next (Ctrl+V): saves the window as reviewed by a person -
         which clears the sensor's flag - with the host's own columns
-        (`save_values`), then the host's own step (`after_save`), and loads
-        the next sensor (validation_core.next_after_save)."""
+        (`save_values`), and loads the next sensor
+        (validation_core.next_after_save)."""
         if (not self._stem or self._lib_root is None or self._df is None
                 or not self.btn_save_next.isEnabled()):
             return                   # nothing loaded, or still loading
@@ -676,13 +670,6 @@ class ValidationView(QWidget):
                 index_df.loc[mask, col] = value
         self._write_index(index_df)
         message = f"Saved {stem}."
-        if self.after_save is not None:
-            try:
-                message = self.after_save(stem, self.window_df()) or message
-            except Exception as e:
-                QMessageBox.critical(self.parent_window, "Save error", str(e))
-                self.refresh_list()
-                return
         self.refresh_list()
         self.lbl_status.setText(message)
         self.status.emit(message, 4000)
@@ -736,7 +723,9 @@ class ValidationView(QWidget):
         self.sensor_list.setFocus()
 
     # ── Save and export ──────────────────────────────────────────────────────
-    def save_and_export(self):
+    def save_and_export(self, confirm=True):
+        """Asks first while flagged sensors are unreviewed - unless
+        `confirm` is False (StrikeWorks's Next has just asked)."""
         if self._lib_root is None or self.exporter.running:
             return
         stems = [f["stem"] for f in self._files]
@@ -744,7 +733,7 @@ class ValidationView(QWidget):
             # (an empty selection would export the whole library)
             self.lbl_status.setText("No sensors listed to export.")
             return
-        if self._confirm_export and self.parent_window.isVisible():
+        if confirm and self.parent_window.isVisible():
             outstanding = vc.outstanding_flagged(stems, self._status)
             if outstanding:
                 n_flagged = vc.status_counts(stems, self._status)["flagged"]

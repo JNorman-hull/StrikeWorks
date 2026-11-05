@@ -7,7 +7,8 @@
 """Central reporting hub - one place every page's report comes from.
 
 Before this module, six pages each built their own report widget in their
-own format: BSM (Analysis and reporting), Model training > Evaluate, Model
+own format: BSM (Analysis and reporting, now Blade strike calculator's
+Advanced analysis), Model training > Evaluate, Model
 prediction > Report, Misclassification, Annotate (a Markdown outlier), plus
 Study design, Raw data processing and Biological interpretation which had
 no report at all. That is one thing to keep consistent per page instead of
@@ -31,6 +32,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import ml_report, settings
+from .tables import table_rows
 
 _HR = "<hr style='margin:32px 0;border:none;border-top:2px solid #cbd5e1;'/>"
 
@@ -177,7 +179,7 @@ def bsm_section(window, formats=("png",), dpi=300):
     bsm_state = getattr(window, "bsm_state", None)
     res = bsm_state.last_result if bsm_state is not None else None
     available = res is not None and sens is not None
-    reason = "" if available else "Run a calculation on Calculator first."
+    reason = "" if available else "Run the Blade strike calculator first."
 
     def build(out_dir):
         from . import bsm_figures, bsm_io
@@ -198,6 +200,7 @@ def bsm_section(window, formats=("png",), dpi=300):
         # 4-panel results figure (12 x 12 cm) for both species, and one
         # 4-panel sensitivity figure (20 x 16 cm) per species
         try:
+            bsm_io.export_results(results, fig_dir)
             p = bsm_io.save_results_panels(
                 results, fig_dir / "bsm_results_panels", formats, dpi)
             if p:
@@ -213,11 +216,13 @@ def bsm_section(window, formats=("png",), dpi=300):
             if res_species is None:
                 continue
             try:
-                # the page's own sweeps when they're for this very result,
-                # else computed here (~3 s per species)
+                # the page's own sweeps when they're for this very result
+                # (None once the options change), else computed here at
+                # Calculator's Advanced options (~1 s per species)
                 sweeps = (getattr(sens, "sweeps", None)
                           if getattr(sens, "last_result", None) is res_species
-                          else None) or sensitivity_sweeps(res_species["params"])
+                          else None) or sensitivity_sweeps(
+                              res_species["params"], **bsm_state.sweep_options)
                 bsm_io.export_sweeps_csv(sweeps, fig_dir,
                                          f"sensitivity_sweeps_{species}")
                 p = bsm_io.save_sweep_panels(
@@ -244,7 +249,7 @@ def bsm_section(window, formats=("png",), dpi=300):
                                      captions=captions, widths_cm=widths)
         return {"html": html, "warnings": problems}
 
-    return ReportSection("bsm", "Blade strike modelling (mathematical)",
+    return ReportSection("bsm", "Blade strike calculator",
                          available, reason, build)
 
 
@@ -275,12 +280,7 @@ def study_design_section(window, formats=("png",), dpi=300):
             h.append("<p>" + "<br>".join(
                 esc(line) for line in precision.result_text().splitlines())
                 + "</p>")
-        t = precision.tbl_sweep
-        rows = [[t.item(r, c).text() if t.item(r, c) else ""
-                 for c in range(t.columnCount())]
-                for r in range(t.rowCount())]
-        headers = [t.horizontalHeaderItem(c).text()
-                  for c in range(t.columnCount())]
+        headers, rows = table_rows(precision.tbl_sweep)
         if rows:
             h.append(table(headers, rows))
         fig_dir = out_dir / "study_design_figures"
@@ -708,7 +708,7 @@ def biological_section(window, formats=("png",), dpi=300):
     bio = getattr(window, "model_comparison_page", None)
     bsm_state = getattr(bio, "bsm_state", None) if bio is not None else None
     available = bsm_state is not None and bsm_state.last_result is not None
-    reason = "" if available else "Run a Blade Strike Modelling calculation first."
+    reason = "" if available else "Run the Blade strike calculator first."
 
     def build(out_dir):
         if bio is None:
@@ -722,12 +722,7 @@ def biological_section(window, formats=("png",), dpi=300):
         h.append(f"<h1 style='color:{dark};'>Model Comparison Report</h1>")
         h.append(f"<h2 style='color:{dark};'>Comparison: ML vs Blade Strike "
                  "Modelling</h2>")
-        t = bio.tbl_compare
-        rows = [[t.item(r, c).text() if t.item(r, c) else ""
-                 for c in range(t.columnCount())]
-                for r in range(t.rowCount())]
-        headers = [t.horizontalHeaderItem(c).text()
-                  for c in range(t.columnCount())]
+        headers, rows = table_rows(bio.tbl_compare)
         h.append(table(headers, rows) if rows else
                 "<p style='color:#64748b;'>No comparison data available.</p>")
         if bio.lbl_manual.text():

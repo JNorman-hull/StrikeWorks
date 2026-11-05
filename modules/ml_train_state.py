@@ -157,8 +157,11 @@ class TrainingState(QObject):
         self.region_column = None            # any level column, not just region
         self.region_groups = []              # [{"name", "levels": [key]}]
         # columns a strike's type is read from, for the performance
-        # breakdown (train_worker.derive_strike_type)
+        # breakdown (train_worker.derive_strike_type) - the binary model's
+        # and the multiclass model's own - and the derived variable's name
         self.breakdown_columns = []
+        self.mc_breakdown_columns = []
+        self.breakdown_name = "strike_type"
 
         # variables
         self.channels = canonical_channels()
@@ -268,6 +271,9 @@ class TrainingState(QObject):
         self.train_multiclass = self.region_column is not None
         self.breakdown_columns = [c for c in d.get("breakdown_columns") or []
                                   if c in self.breakdown_candidates()]
+        self.mc_breakdown_columns = [
+            c for c in d.get("mc_breakdown_columns") or []
+            if c in self.breakdown_candidates()]
 
         # keep only channels that exist; fall back to the canonical defaults
         present = [c for c in self.channels if c in df.columns]
@@ -476,6 +482,8 @@ class TrainingState(QObject):
             self._default_negative()
             self.breakdown_columns = [c for c in self.breakdown_columns
                                       if c != self.target_column]
+            self.mc_breakdown_columns = [c for c in self.mc_breakdown_columns
+                                         if c != self.target_column]
         # anything that changes which levels exist rebuilds the grouping;
         # a new class column starts it again
         if {"target_column", "negative_class", "region_column",
@@ -596,6 +604,8 @@ class TrainingState(QObject):
             "negative_class": self.negative_class,
             "positive_label": self.positive_label or "blade_strike",
             "breakdown_columns": list(self.breakdown_columns),
+            "mc_breakdown_columns": list(self.mc_breakdown_columns),
+            "breakdown_name": self.breakdown_name or "strike_type",
             "include_values": (sorted(self.include_values)
                                if self.include_values is not None else None),
             "channels": list(self.channels),

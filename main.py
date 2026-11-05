@@ -37,17 +37,15 @@ if len(sys.argv) > 2 and sys.argv[1] == "--worker":
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QLabel, QMainWindow, QPushButton, QTableWidget,
-    QVBoxLayout,
+    QApplication, QFrame, QLabel, QMainWindow, QPushButton, QVBoxLayout,
 )
 
-from modules import settings, startup, table_copy, theme, win_utils
+from modules import settings, startup, tables, theme, win_utils
 from modules.bsm_state import BSMState
 from modules.dev_console import DevConsole, install_capture
 from modules.layout import scroll_area, when_visible
 from modules.page_annotate import AnnotationPage
-from modules.page_bsm_analysis import BSMAnalysisPage
-from modules.page_bsm_calculator import CalculatorPage
+from modules.page_bsm import BladeStrikePage
 from modules.page_dataset import DatasetPage
 from modules.page_deployment import DeploymentPage
 from modules.page_export_animations import ExportAnimationsPage
@@ -63,7 +61,6 @@ from modules.page_simple_mode import SimpleModeDialog
 from modules.page_stub import StubPage
 from modules.plot_widgets import configure_pyqtgraph
 from modules.session_state import SessionState
-from modules.tables import style_table
 from modules.theme import set_flag
 from modules.ui_config import UIConfig
 from modules.ui_functions import UIFunctions
@@ -83,9 +80,6 @@ def _print_status(msg, _ms=0):
 class MainWindow(QMainWindow):
     # Sidebar sections: panel title, sub-menu buttons, top-level button.
     _PANEL_SECTIONS = {
-        "bsm": ("Mathematical blade strike modelling",
-                ("btn_bsm_calculator", "btn_bsm_sensitivity"),
-                "btn_bsm"),
         "setup_deploy": ("Setup and deploy",
                          ("btn_prepare", "btn_study_design",
                           "btn_initiate_deployment"),
@@ -129,13 +123,16 @@ class MainWindow(QMainWindow):
         "btn_ml_prediction":       ("ml_prediction_page", 0),
         "btn_inspect_pred":        ("ml_prediction_page", 1),
         "btn_biological":          ("model_comparison_page", None),
-        # Mathematical blade strike modelling
-        "btn_bsm_calculator":      ("bsm_calculator_page", None),
-        "btn_bsm_sensitivity":     ("bsm_analysis_page", None),
+        # Blade strike calculator - a sidebar button of its own, no
+        # section panel (its page has tabs)
+        "btn_bsm":                 ("bsm_page", None),
     }
 
     # built but not offered in the sidebar for now (ROADMAP.md, "Hidden for now")
     _HIDDEN_PAGES = ("btn_data_analysis", "btn_dataset")
+    # main.ui's old Blade strike panel buttons (Calculator, Analysis and
+    # reporting): the page has tabs now (page_bsm.py)
+    _RETIRED_BUTTONS = ("btn_bsm_calculator", "btn_bsm_sensitivity")
 
     # greyed out until Home's "Advanced mode" enables them
     _SIDEBAR_NAV_BUTTONS = (
@@ -145,8 +142,10 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        # the theme's stylesheet, for every window the app opens
+        # the theme's stylesheet, for every window the app opens, and
+        # every table's look, sort/filter and copy (tables.py)
         theme.apply(QApplication.instance())
+        tables.install(QApplication.instance())
         self.ui = ui = Ui_MainWindow()
         ui.setupUi(self)
         # the taskbar tells the two windows apart
@@ -209,12 +208,12 @@ class MainWindow(QMainWindow):
             lambda _p: self.ml_prediction_page.state.load_models_from_dir(
                 self.ml_prediction_page.state.models_dir))
 
-        # Calculator runs the BSM; Analysis and reporting and Model
-        # comparison follow its result through the shared BSMState
-        self.bsm_calculator_page = self._page(
-            CalculatorPage(self, self.bsm_state))
-        self.bsm_analysis_page = self._page(
-            BSMAnalysisPage(self, self.bsm_state))
+        # Blade strike calculator: Calculator runs the BSM; Advanced
+        # analysis and Model comparison follow its result through the
+        # shared BSMState
+        self.bsm_page = self._page(BladeStrikePage(self, self.bsm_state))
+        self.bsm_calculator_page = self.bsm_page.calculator
+        self.bsm_analysis_page = self.bsm_page.analysis
         self.model_comparison_page = self._page(ModelComparisonPage(
             self, self.bsm_state, self.ml_prediction_page.state))
 
@@ -231,7 +230,7 @@ class MainWindow(QMainWindow):
         self._panel_mode = "sensor"
         self._panel_btn = ui.btn_sensor
         self._configure_panel("sensor")
-        for name in self._HIDDEN_PAGES:
+        for name in self._HIDDEN_PAGES + self._RETIRED_BUTTONS:
             getattr(ui, name).setVisible(False)
         for mode, (_label, _names, top_btn) in self._PANEL_SECTIONS.items():
             getattr(ui, top_btn).clicked.connect(
@@ -247,9 +246,6 @@ class MainWindow(QMainWindow):
             lambda: UIFunctions.toggleRightBox(self, True))
         ui.btn_about.clicked.connect(self.openAbout)
         ui.btn_adjustments.clicked.connect(self.openSettings)
-
-        for tbl in self.findChildren(QTableWidget):
-            style_table(tbl)
 
         self.show_page(self.home_page)
         self.setSelected(ui.btn_home)
@@ -418,6 +414,11 @@ class MainWindow(QMainWindow):
             top_btn = self._PANEL_SECTIONS[section][2]
             UIFunctions.resetStyle(self, top_btn)
             self.setSelected(getattr(ui, top_btn))
+        else:
+            # a sidebar button of its own: no section panel to show
+            UIFunctions.resetStyle(self, btn_name)
+            if ui.extraLeftBox.width() > 0:
+                UIFunctions.toggleLeftBox(self, True)
 
     def submenuButtonClick(self):
         self.navigate_to(self.sender().objectName())
@@ -429,11 +430,17 @@ class MainWindow(QMainWindow):
 
     def openSettings(self):
         models_before = settings.get_models_dir()
+        defaults_before = (settings.get_default_model(),
+                           settings.get_default_mc_model())
         SettingsDialog(self).exec()
         # Home owns library discovery; the libraries folder may have changed
         self.home_page._refresh_library_combo()
         if settings.get_models_dir() != models_before:
             self._on_models_dir_changed(models_before)
+        elif (settings.get_default_model(),
+              settings.get_default_mc_model()) != defaults_before:
+            # a new default model: Model prediction switches to it
+            self.ml_prediction_page.state.use_default_models()
 
     def _on_models_dir_changed(self, old_dir):
         """Settings' models folder changed: every model page still on the
@@ -447,7 +454,7 @@ class MainWindow(QMainWindow):
                      key="models")
         state = self.ml_prediction_page.state
         if Path(state.models_dir) == Path(old_dir):
-            ok, msg = state.load_models_from_dir(new_dir)
+            ok, msg = state.use_default_models()
             if not ok:
                 # nothing deployed there yet: point at it anyway, keeping
                 # the model already loaded
@@ -479,7 +486,7 @@ class MainWindow(QMainWindow):
 
     def mousePressEvent(self, event):
         # the custom title bar drags the window from here
-        self.dragPos = event.globalPos()
+        self.dragPos = event.globalPosition().toPoint()
 
 
 def _run_demo(mode, log_path=None):
@@ -522,7 +529,6 @@ if __name__ == "__main__":
     startup.ensure_default_folders()
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(str(startup.ICON_PATH)))
-    table_copy.install(app)
     if _option("--demo") is not None:
         sys.exit(_run_demo(_option("--demo"), _option("--log")))
     splash = startup.build_splash()

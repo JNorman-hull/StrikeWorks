@@ -181,14 +181,22 @@ class PredictionState(QObject):
                list(p.parent.glob("*metrics*.json"))
         return hits[0] if hits else None
 
-    def load_models_from_dir(self, d):
-        """Find the binary*.joblib / multiclass*.joblib models in `d`.
+    @staticmethod
+    def _default_model(candidates, pinned, stem):
+        """The model pinned in Settings when it's among `candidates`, else
+        `stem` ('binary1' / 'multiclass1'), else the newest."""
+        if pinned is not None and Path(pinned) in candidates:
+            return Path(pinned)
+        return (next((p for p in candidates if p.stem == stem), None)
+                or max(candidates, key=lambda p: p.stat().st_mtime))
 
-        When a folder holds several variants (binary1_1, binary1_2, ...) the
-        alphabetically-first of each is selected by default - `bin_candidates`
-        / `mc_candidates` expose the rest so a caller (Predict's model
-        selector) can switch via `select_bin_model`/`select_mc_model` without
-        re-browsing the folder.
+    def load_models_from_dir(self, d):
+        """Find the binary*.joblib / multiclass*.joblib models in `d` and
+        select one of each: the one already selected if it's there (a
+        rescan, e.g. after a deploy), else the default (`_default_model`).
+        `bin_candidates` / `mc_candidates` expose the rest so a caller
+        (Predict's model selector) can switch via `select_bin_model`/
+        `select_mc_model` without re-browsing the folder.
 
         Returns (ok, message). On success the models_changed signal fires and
         validation is re-run.
@@ -199,8 +207,15 @@ class PredictionState(QObject):
         if not self._bin_candidates:
             return False, f"No binary*.joblib found in {d}"
 
+        def pick(candidates, current, pinned, stem):
+            if current is not None and Path(current) in candidates:
+                return Path(current)
+            return self._default_model(candidates, pinned, stem)
+
         self.models_dir = d
-        ok, msg = self._apply_bin_model(self._bin_candidates[0])
+        ok, msg = self._apply_bin_model(pick(
+            self._bin_candidates, self.bin_model_path,
+            settings.get_default_model(), "binary1"))
         if not ok:
             return False, msg
 
@@ -208,7 +223,9 @@ class PredictionState(QObject):
         # binary-only rather than failing the whole load
         mc_note = ""
         if self._mc_candidates:
-            ok, msg = self._apply_mc_model(self._mc_candidates[0])
+            ok, msg = self._apply_mc_model(pick(
+                self._mc_candidates, self.mc_model_path,
+                settings.get_default_mc_model(), "multiclass1"))
             if not ok:
                 mc_note = f" ({msg})"
         else:
@@ -269,25 +286,26 @@ class PredictionState(QObject):
         return list(self._mc_candidates)
 
     def use_default_models(self):
-        """Load the models folder (Settings) and pick its default models:
-        the ones pinned in Settings, else 'binary1' / 'multiclass1', else
-        the newest. Rescans every time, since an earlier load may have
-        pointed `models_dir` elsewhere."""
-        self.load_models_from_dir(settings.get_models_dir())
+        """Load the models folder (Settings) and select its default models
+        (`_default_model`) - a model pinned in Settings from another folder
+        is used too, and joins the candidates. Rescans every time, since an
+        earlier load may have pointed `models_dir` elsewhere. Returns the
+        folder load's (ok, message)."""
+        result = self.load_models_from_dir(settings.get_models_dir())
         for candidates, pinned, stem, current, select in (
-                (self.bin_candidates, settings.get_default_model(), "binary1",
+                (self._bin_candidates, settings.get_default_model(), "binary1",
                  self.bin_model_path, self.select_bin_model),
-                (self.mc_candidates, settings.get_default_mc_model(),
+                (self._mc_candidates, settings.get_default_mc_model(),
                  "multiclass1", self.mc_model_path, self.select_mc_model)):
+            if (pinned is not None and Path(pinned).exists()
+                    and Path(pinned) not in candidates):
+                candidates.append(Path(pinned))
             if not candidates:
                 continue
-            if pinned is not None and Path(pinned) in candidates:
-                chosen = Path(pinned)
-            else:
-                chosen = (next((p for p in candidates if p.stem == stem), None)
-                          or max(candidates, key=lambda p: p.stat().st_mtime))
+            chosen = self._default_model(candidates, pinned, stem)
             if current != chosen:
                 select(chosen)
+        return result
 
     def select_bin_model(self, path):
         """Switch to a different binary model already found in models_dir."""

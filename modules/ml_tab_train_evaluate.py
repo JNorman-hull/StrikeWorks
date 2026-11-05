@@ -10,8 +10,13 @@ Evaluates either a model trained in this session or any model already
 deployed in the models folder (discovered by ``ml_model_library``), so a
 previously deployed model can be reviewed without retraining it.
 
-Shows performance cards, the CV mean±SD table, the evaluation figures and
-performance stratification, and exports a complete model report.
+Top to bottom: the model; one performance table (out-of-fold,
+cross-validation mean ± SD, hold-out - model_measures, the names used
+everywhere); performance by class and by treatment; the figures - a
+binary model's ROC, precision-sensitivity, confusion matrix | predicted
+probability, accuracy by strike type; a multiclass model's ROC,
+confusion matrix | sensitivity by class, predicted probability |
+accuracy by strike type. The model report is in Export and report.
 """
 from pathlib import Path
 
@@ -19,21 +24,32 @@ from matplotlib.figure import Figure
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
-    QMessageBox, QPushButton, QSizePolicy, QSplitter, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QComboBox, QHBoxLayout, QPushButton, QSizePolicy,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from . import ml_model_library, ml_train_figures, settings
+from . import ml_model_library, ml_train_figures, model_measures, settings
 from .canvas import FigureCanvas
-from .ml_tab_predict import _NumItem
-from .cards import MetaCard, RingCard
-from .layout import (
-    hsplit, scroll_page, Section, when_visible,
-)
-from .theme import CARD_H2, CARD_W2, style
+from .layout import scroll_page, Section, when_visible
+from .tables import fill_table_width, fit_height
+from .theme import muted_label
 
-FIG_MIN_W, FIG_MIN_H = 300, 250
+# as wide as Model training's dataset row (Load training dataset… and
+# Recently used…)
+SELECTOR_W = 303
+FIG_MIN_W = 240
+FIG_H = 300                      # 20% taller than the 250 they were
+
+# the figures' rows, each figure with its share of the row: a binary
+# model's in thirds, a multiclass model's in halves, its last two thirds
+# wide (None: the gap beside it)
+_FIGURE_ROWS = {
+    True: ((("roc", 1), ("pr", 1), ("confusion", 1)),
+           (("probability", 1), ("by_type", 2))),
+    False: ((("roc", 1), ("confusion", 1)),
+            (("by_class", 1), ("probability", 1)),
+            (("by_type", 2), (None, 1))),
+}
 
 
 class EvaluateTab(QWidget):
@@ -46,17 +62,22 @@ class EvaluateTab(QWidget):
         self.models_dir = Path(models_dir or settings.get_models_dir())
         self._entries = []
         self._entry = None
+        self._grid_binary = None         # the figure layout shown
 
         self.figures = {}
         self.canvases = {}
-        for name in ("fig1", "fig2", "fig3", "fig4", "fig5"):
-            fig = Figure(figsize=(4.2, 3.4), dpi=100)
+        for role in ("roc", "pr", "confusion", "probability", "by_class",
+                     "by_type"):
+            fig = Figure(figsize=(4.2, 3.0), dpi=100)
             canvas = FigureCanvas(fig)
-            canvas.setMinimumSize(FIG_MIN_W, FIG_MIN_H)
-            canvas.setSizePolicy(QSizePolicy.Policy.Expanding,
-                                 QSizePolicy.Policy.Expanding)
-            self.figures[name] = fig
-            self.canvases[name] = canvas
+            canvas.setMinimumWidth(FIG_MIN_W)
+            canvas.setFixedHeight(FIG_H)
+            # widths from the grid's equal columns alone, not the figures'
+            # own preferred sizes
+            canvas.setSizePolicy(QSizePolicy.Policy.Ignored,
+                                 QSizePolicy.Policy.Fixed)
+            self.figures[role] = fig
+            self.canvases[role] = canvas
 
         self._build(self)
         if state is not None:
@@ -67,159 +88,147 @@ class EvaluateTab(QWidget):
     def _build(self, frame):
         v = scroll_page(frame)
 
-        # ── model source ────────────────────────────────────────────────────
+        # ── the model (where it's from: the list's tooltip) ────────────────
         sel_row = QHBoxLayout()
-        lab_sel = QLabel("Model")
-        style(lab_sel, role="muted")
+        sel_row.addWidget(muted_label("Model"))
         self.cmb_model = QComboBox()
-        self.cmb_model.setSizePolicy(QSizePolicy.Policy.Expanding,
-                                     QSizePolicy.Policy.Fixed)
+        self.cmb_model.setFixedWidth(SELECTOR_W)
         self.cmb_model.currentIndexChanged.connect(self._on_model_changed)
+        sel_row.addWidget(self.cmb_model)
         btn_refresh = QPushButton("Refresh")
         btn_refresh.clicked.connect(self.reload_sources)
-        btn_folder = QPushButton("Models folder…")
-        btn_folder.clicked.connect(self._change_models_dir)
-        self.btn_report = QPushButton("Export model report…")
-        self.btn_report.clicked.connect(self._export_report)
-        sel_row.addWidget(lab_sel)
-        sel_row.addWidget(self.cmb_model, stretch=1)
         sel_row.addWidget(btn_refresh)
-        sel_row.addWidget(btn_folder)
-        sel_row.addWidget(self.btn_report)
+        sel_row.addStretch()
         v.addLayout(sel_row)
 
-        self.lbl_source = QLabel("")
-        style(self.lbl_source, role="muted")
-        self.lbl_source.setWordWrap(True)
-        v.addWidget(self.lbl_source)
-
-        # ── performance cards | CV summary, side by side ────────────────────
-        # the rings stacked three to a row with the Details card under them,
-        # so the pair shares one row instead of two full-width ones
-        grp_perf = Section("Performance (out-of-fold)")
+        # ── one table: out-of-fold, cross-validation, hold-out ─────────────
+        grp_perf = Section("Performance")
         pv = QVBoxLayout(grp_perf)
-        pv.setSpacing(8)
-        grid = QGridLayout()
-        grid.setSpacing(8)
-        self.rings = []
-        for i in range(5):
-            ring = RingCard("", w=CARD_W2 + 30, h=CARD_H2)
-            self.rings.append(ring)
-            grid.addWidget(ring, i // 3, i % 3)
-        pv.addLayout(grid)
-        self.card_detail = MetaCard("Details")
-        pv.addWidget(self.card_detail)
-        pv.addStretch()
+        pv.setSpacing(4)
+        self.tbl_summary = QTableWidget(0, 0)
+        self.tbl_summary.setProperty("noRowNumbers", True)  # its own header rows
+        self.tbl_summary.horizontalHeader().setVisible(False)
+        self.tbl_summary.verticalHeader().setVisible(False)
+        self.tbl_summary.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        pv.addWidget(self.tbl_summary)
+        self.lbl_averaged = muted_label(model_measures.AVERAGED_NOTE)
+        self.lbl_averaged.setWordWrap(True)
+        pv.addWidget(self.lbl_averaged)
+        v.addWidget(grp_perf)
 
-        grp_cv = Section("Cross-validation (mean ± SD across folds)")
-        cv = QVBoxLayout(grp_cv)
-        self.tbl_cv = self._make_table(["Metric", "Mean", "SD"])
-        self.tbl_cv.setMinimumHeight(190)
-        cv.addWidget(self.tbl_cv)
-        v.addWidget(hsplit(grp_perf, grp_cv))
+        # ── by class | by treatment ────────────────────────────────────────
+        grp_class = Section("Performance by class")
+        cv = QHBoxLayout(grp_class)
+        cv.setSpacing(10)
+        self.tbl_class = self._make_table(model_measures.CLASS_HEADERS)
+        self.tbl_tx = self._make_table(["Treatment", "n", "Accuracy"])
+        for tbl in (self.tbl_class, self.tbl_tx):
+            cv.addWidget(tbl, stretch=1)
+        v.addWidget(grp_class)
 
-        # ── figures ─────────────────────────────────────────────────────────
+        # ── figures (_layout_figures places them for the model) ────────────
         grp_figs = Section("Evaluation figures")
-        fg = QVBoxLayout(grp_figs)
-        row1 = QSplitter(Qt.Orientation.Horizontal)
-        row1.setChildrenCollapsible(False)
-        for key in ("fig1", "fig2", "fig3"):
-            row1.addWidget(self.canvases[key])
-        row1.setSizes([1000, 1000, 1000])
-        row2 = QSplitter(Qt.Orientation.Horizontal)
-        row2.setChildrenCollapsible(False)
-        row2.addWidget(self.canvases["fig4"])
-        row2.addWidget(self.canvases["fig5"])
-        row2.setSizes([1000, 2000])
-        figs_split = QSplitter(Qt.Orientation.Vertical)
-        figs_split.setChildrenCollapsible(False)
-        figs_split.addWidget(row1)
-        figs_split.addWidget(row2)
-        figs_split.setSizes([1, 1])
-        fg.addWidget(figs_split)
+        self.fig_rows = QVBoxLayout(grp_figs)
+        self.fig_rows.setSpacing(8)
         v.addWidget(grp_figs)
-
-        # ── stratification ──────────────────────────────────────────────────
-        split3 = QSplitter(Qt.Orientation.Horizontal)
-        split3.setChildrenCollapsible(False)
-        grp_type = Section("Performance by strike type / class")
-        tv = QVBoxLayout(grp_type)
-        self.tbl_type = self._make_table(["Strike type", "N", "Accuracy"])
-        self.tbl_type.setMinimumHeight(160)
-        tv.addWidget(self.tbl_type)
-        split3.addWidget(grp_type)
-
-        grp_tx = Section("Performance by treatment")
-        xv = QVBoxLayout(grp_tx)
-        self.tbl_tx = self._make_table([])
-        self.tbl_tx.setMinimumHeight(160)
-        xv.addWidget(self.tbl_tx)
-        split3.addWidget(grp_tx)
-
-        grp_report = Section("Model report")
-        rv = QVBoxLayout(grp_report)
-        self.btn_report2 = QPushButton("Generate model report")
-        self.btn_report2.setMinimumHeight(36)
-        self.btn_report2.clicked.connect(self._export_report)
-        rv.addWidget(self.btn_report2)
-        rv.addStretch()
-        split3.addWidget(grp_report)
-
-        split3.setStretchFactor(0, 1)
-        split3.setStretchFactor(1, 1)
-        split3.setStretchFactor(2, 1)
-        split3.setSizes([1000, 1000, 1000])
-        v.addWidget(split3)
         v.addStretch()
 
+        self._layout_figures(True)
         ml_train_figures.draw_all(self.figures, None, None, None, dark=True)
 
+    def _layout_figures(self, binary):
+        if binary == self._grid_binary:
+            return
+        self._grid_binary = binary
+        while self.fig_rows.count():
+            row = self.fig_rows.takeAt(0).layout()
+            while row.count():
+                row.takeAt(0)
+        for canvas in self.canvases.values():
+            canvas.setVisible(False)
+        for figures in _FIGURE_ROWS[binary]:
+            row = QHBoxLayout()
+            row.setSpacing(8)
+            for role, share in figures:
+                if role is None:
+                    row.addStretch(share)
+                else:
+                    row.addWidget(self.canvases[role], stretch=share)
+                    self.canvases[role].setVisible(True)
+            self.fig_rows.addLayout(row)
 
     @staticmethod
     def _make_table(headers):
         tbl = QTableWidget(0, len(headers))
-        if headers:
-            tbl.setHorizontalHeaderLabels(headers)
+        tbl.setProperty("noRowNumbers", True)
+        tbl.setHorizontalHeaderLabels(headers)
         tbl.verticalHeader().setVisible(False)
         tbl.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        tbl.setSortingEnabled(True)
-        tbl.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents)
-        tbl.horizontalHeader().setStretchLastSection(True)
+        # as big as its rows and columns - no scrolling
+        tbl.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         return tbl
 
     @staticmethod
     def _fill(tbl, headers, rows):
-        tbl.setSortingEnabled(False)
+        """Rows of text, in the model's own order; the table as big as
+        its rows and columns need, then filling its share of the width."""
         tbl.clear()
         tbl.setColumnCount(len(headers))
         tbl.setHorizontalHeaderLabels(headers)
         tbl.setRowCount(len(rows))
         for r, row in enumerate(rows):
-            for c, cell in enumerate(row):
-                if isinstance(cell, tuple):
-                    item = _NumItem(cell[0], cell[1])
-                else:
-                    item = QTableWidgetItem(str(cell))
-                if c >= 1:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                tbl.setItem(r, c, item)
-        tbl.setSortingEnabled(True)
+            for c, text in enumerate(row):
+                tbl.setItem(r, c, QTableWidgetItem(str(text)))
+        tbl.resizeColumnsToContents()
+        tbl.setMinimumWidth(tbl.horizontalHeader().length()
+                            + 2 * tbl.frameWidth())
+        fit_height(tbl)
+        fill_table_width(tbl)
+
+    def _fill_summary(self, metrics):
+        """model_measures.summary_table in the HIG peak analysis table's
+        layout: a heading row over each group of measures, then a row per
+        source (out-of-fold, cross-validation, hold-out)."""
+        columns, rows = model_measures.summary_table(metrics)
+        tbl = self.tbl_summary
+        tbl.clearSpans()
+        tbl.clear()
+        tbl.setColumnCount(1 + len(columns))
+        tbl.setRowCount(2 + len(rows))
+
+        def put(r, c, text):
+            tbl.setItem(r, c, QTableWidgetItem(text))
+
+        put(0, 0, "")
+        tbl.setSpan(0, 0, 2, 1)
+        i = 0
+        while i < len(columns):
+            group = columns[i][0]
+            span = 1
+            while group and i + span < len(columns) \
+                    and columns[i + span][0] == group:
+                span += 1
+            if group:
+                put(0, 1 + i, group)
+                if span > 1:
+                    tbl.setSpan(0, 1 + i, 1, span)
+                for k in range(span):
+                    put(1, 1 + i + k, columns[i + k][1])
+            else:
+                put(0, 1 + i, columns[i][1])
+                tbl.setSpan(0, 1 + i, 2, 1)
+            i += span
+        for r, (label, cells) in enumerate(rows, start=2):
+            put(r, 0, label)
+            for c, text in enumerate(cells, start=1):
+                put(r, c, text)
+        tbl.resizeColumnsToContents()
+        fill_table_width(tbl)
+        fit_height(tbl)
 
     # ── model sources ────────────────────────────────────────────────────────
-    def _change_models_dir(self):
-        path = QFileDialog.getExistingDirectory(
-            self.main_window, "Select models folder", str(self.models_dir))
-        if path:
-            self.models_dir = Path(path)
-            self._custom_models_dir = True
-            self.reload_sources()
-
     def follow_default_models_dir(self):
-        """Settings' models folder changed - follow it, unless a folder
-        was picked here by hand."""
-        if getattr(self, "_custom_models_dir", False):
-            return
+        """Settings' models folder changed - follow it."""
         new = Path(settings.get_models_dir())
         if new != self.models_dir:
             self.models_dir = new
@@ -252,8 +261,6 @@ class EvaluateTab(QWidget):
         idx = self.cmb_model.currentIndex()
         self._entry = (self._entries[idx]
                        if 0 <= idx < len(self._entries) else None)
-        self.btn_report.setEnabled(self._entry is not None)
-        self.btn_report2.setEnabled(self._entry is not None)
         self._refresh()
 
     # ── refresh ──────────────────────────────────────────────────────────────
@@ -262,154 +269,47 @@ class EvaluateTab(QWidget):
         m = entry.metrics if entry else {}
         cv_predictions = entry.cv_predictions if entry else None
         curves = entry.curves if entry else None
-        perf = m.get("out_of_fold_performance", {})
-        binary = "roc_auc" in perf or not m
+        binary = model_measures.is_binary(m) or not m
 
+        # where the model is from: the list's tooltip
         if entry is None:
-            self.lbl_source.setText(
-                f"No models found in {self.models_dir}. Train a model, or "
-                "point at a different models folder.")
+            tip = (f"No models found in {self.models_dir}. Train a model, or "
+                   "choose another models folder in Settings.")
         elif entry.source == "deployed":
-            extra = ("" if entry.cv_predictions is not None else
-                     "  Cross-validation predictions are not available for "
-                     "this model, so the per-recording "
-                     "figures are omitted.")
-            self.lbl_source.setText(
-                f"Deployed model: {entry.model_path}{extra}")
+            tip = f"Deployed model: {entry.model_path}"
+            if entry.cv_predictions is None:
+                tip += ("\nCross-validation predictions are not available "
+                        "for this model, so the per-recording figures are "
+                        "omitted.")
         else:
-            self.lbl_source.setText(
-                "Cross-validation results from the model trained in this "
-                "session.")
+            tip = ("Cross-validation results from the model trained in this "
+                   "session.")
+        self.cmb_model.setToolTip(tip)
 
-        # rings
-        if binary:
-            specs = [("ROC-AUC", "roc_auc"), ("PR-AUC", "pr_auc"),
-                     ("Accuracy", "overall_accuracy"),
-                     ("Sensitivity", "sensitivity"),
-                     ("Specificity", "specificity")]
-        else:
-            specs = [("Accuracy", "overall_accuracy"),
-                     ("Macro precision", "macro_precision"),
-                     ("Macro recall", "macro_recall"),
-                     ("Macro F1", "macro_f1"), ("", None)]
-        for ring, (title, key) in zip(self.rings, specs):
-            ring.set_title(title)
-            # a multiclass model has four metrics - no empty fifth ring
-            ring.setVisible(bool(title))
-            val = perf.get(key) if key else None
-            if val is None:
-                ring.clear()
-            else:
-                ring.set_value(float(val))
+        self._fill_summary(m)
+        self.lbl_averaged.setVisible(not binary)
+        self._fill(self.tbl_class, model_measures.CLASS_HEADERS,
+                   model_measures.class_table(m))
+        self._fill_treatments(binary, cv_predictions)
 
-        # detail card
-        rows = []
-        if binary:
-            for key, label in (("precision", "Precision"),
-                               ("f1_score", "F1-Score"), ("mcc", "MCC"),
-                               ("FNR", "FNR"), ("FPR", "FPR"),
-                               ("optimal_threshold", "Optimal threshold")):
-                if key in perf:
-                    rows.append((label, f"{perf[key]:.3f}"))
-        else:
-            for cn, pm in perf.get("per_class_metrics", {}).items():
-                rows.append((cn, f"P={pm['precision']:.2f} "
-                                 f"R={pm['recall']:.2f} "
-                                 f"F1={pm['f1_score']:.2f} "
-                                 f"(n={pm['support']})"))
-        ho = m.get("holdout_performance")
-        if ho:
-            txt = f"n={ho.get('n_test')}, accuracy={ho.get('accuracy'):.3f}"
-            if "roc_auc" in ho:
-                txt += f", AUC={ho['roc_auc']:.3f}"
-            if "macro_f1" in ho:
-                txt += f", macro-F1={ho['macro_f1']:.3f}"
-            rows.append(("Hold-out test set", txt))
-        if m.get("n_samples"):
-            rows.append(("Training observations", m["n_samples"]))
-        self.card_detail.set_rows(rows)
-
-        # CV table
-        cv = m.get("cross_validation", {})
-        cv_rows = []
-        for key in sorted(k[5:] for k in cv if k.startswith("mean_")):
-            mean, std = cv.get(f"mean_{key}"), cv.get(f"std_{key}")
-            cv_rows.append([key, (f"{mean:.3f}", mean), (f"{std:.3f}", std)])
-        if "n_folds" in cv:
-            cv_rows.insert(0, ["n_folds", (str(cv["n_folds"]),
-                                           cv["n_folds"]), ("-", 0)])
-        self._fill(self.tbl_cv, ["Metric", "Mean", "SD"], cv_rows)
-
-        # figures
+        self._layout_figures(binary)
         ml_train_figures.draw_all(self.figures, m or None, cv_predictions,
                                   curves, dark=True)
-        for canvas in self.canvases.values():
-            canvas.draw()
+        for figures in _FIGURE_ROWS[binary]:
+            for role, _share in figures:
+                if role is not None:
+                    self.canvases[role].draw()
 
-        self._refresh_stratification(binary, m, cv_predictions)
-
-    def _refresh_stratification(self, binary, metrics, df):
-        m = metrics or {}
-
-        by_type = m.get("performance_by_strike_type", {})
-        type_rows = [[st, (str(d["n_files"]), d["n_files"]),
-                      (f"{d['accuracy']:.3f}", d["accuracy"])]
-                     for st, d in by_type.items()]
-        if not type_rows and df is not None and "true_class" in df.columns:
-            for cn, grp in df.groupby("true_class"):
-                type_rows.append([cn, (str(len(grp)), len(grp)),
-                                  (f"{grp['correct'].mean():.3f}",
-                                   grp["correct"].mean())])
-        if not type_rows:
-            per_class = m.get("out_of_fold_performance", {}).get(
-                "per_class_metrics", {})
-            type_rows = [[cn, (str(d["support"]), d["support"]),
-                          (f"{d['recall']:.3f}", d["recall"])]
-                         for cn, d in per_class.items()]
-        self._fill(self.tbl_type,
-                   ["Strike type / class", "N", "Accuracy / recall"],
-                   type_rows)
-
-        tx_rows = []
+    def _fill_treatments(self, binary, df):
+        rows = []
         if df is not None and "treatment" in df.columns:
             for tx, grp in df.groupby("treatment"):
-                n = len(grp)
-                acc = float(grp["correct"].mean())
+                row = [str(tx), len(grp), f"{grp['correct'].mean():.3f}"]
                 if binary:
-                    tx_rows.append([
-                        str(tx), (str(n), n),
-                        (f"{acc:.3f}", acc),
-                        (f"{grp['y_true'].mean() * 100:.1f}%",
-                         float(grp["y_true"].mean())),
-                        (f"{grp['y_pred'].mean() * 100:.1f}%",
-                         float(grp["y_pred"].mean())),
-                    ])
-                else:
-                    tx_rows.append([str(tx), (str(n), n), (f"{acc:.3f}", acc)])
-        headers = (["Treatment", "N", "Accuracy", "True strike rate",
-                    "Predicted strike rate"] if binary
-                   else ["Treatment", "N strikes", "Accuracy"])
-        self._fill(self.tbl_tx, headers, tx_rows)
-
-    # ── report ───────────────────────────────────────────────────────────────
-    def _export_report(self):
-        if self._entry is None:
-            return
-        dirpath = QFileDialog.getExistingDirectory(
-            self.main_window, "Export model report to folder…", "")
-        if not dirpath:
-            return
-        app_version = getattr(self.state, "app_version", "") if self.state \
-            else ""
-        try:
-            out = ml_model_library.export_model_report(
-                self._entry, dirpath, app_version=app_version)
-        except Exception as e:
-            QMessageBox.critical(self.main_window, "Export failed", str(e))
-            return
-        if self.state is not None:
-            self.state.status.emit(f"Model report exported to {out}", 6000)
-        QMessageBox.information(
-            self.main_window, "Model report",
-            f"Report written to:\n\n{out}\n\n"
-            + "\n".join(f"  • {p.name}" for p in sorted(out.glob('*'))))
+                    row += [f"{grp['y_true'].mean() * 100:.1f}%",
+                            f"{grp['y_pred'].mean() * 100:.1f}%"]
+                rows.append(row)
+        headers = (["Treatment", "n", "Accuracy"]
+                   + (["True strike rate", "Predicted strike rate"]
+                      if binary else []))
+        self._fill(self.tbl_tx, headers, rows)

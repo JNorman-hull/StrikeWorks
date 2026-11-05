@@ -85,3 +85,54 @@ class SettingsFileTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DefaultModelsTest(unittest.TestCase):
+    """The default models pinned in Settings are the ones selected - at
+    start-up, on a folder change, even from another folder - and a rescan
+    keeps the model already selected."""
+
+    def setUp(self):
+        from support import qt_app
+        qt_app()
+        self.dir = temp_dir()
+        self._saved = settings.SETTINGS_FILE
+        settings.SETTINGS_FILE = self.dir / "settings.json"
+        self.models = self.dir / "models"
+        self.other = self.dir / "elsewhere"
+        for folder, names in ((self.models, ("binary1", "binary1_4")),
+                              (self.other, ("binary2",))):
+            folder.mkdir()
+            (folder / "performance_metrics.json").write_text("{}")
+            for name in names:
+                (folder / f"{name}.joblib").write_text("")
+        settings.set_models_dir(self.models)
+
+    def tearDown(self):
+        settings.SETTINGS_FILE = self._saved
+
+    def _state(self):
+        from modules.ml_state import PredictionState
+        return PredictionState()
+
+    def test_unpinned_is_binary1(self):
+        state = self._state()
+        state.use_default_models()
+        self.assertEqual(state.bin_model_path.stem, "binary1")
+
+    def test_pinned_in_the_folder(self):
+        settings.set_default_model(self.models / "binary1_4.joblib")
+        state = self._state()
+        state.use_default_models()
+        self.assertEqual(state.bin_model_path.stem, "binary1_4")
+        # a rescan (after a deploy) keeps what's selected
+        state.select_bin_model(self.models / "binary1.joblib")
+        state.load_models_from_dir(self.models)
+        self.assertEqual(state.bin_model_path.stem, "binary1")
+
+    def test_pinned_from_another_folder(self):
+        settings.set_default_model(self.other / "binary2.joblib")
+        state = self._state()
+        state.use_default_models()
+        self.assertEqual(state.bin_model_path.stem, "binary2")
+        self.assertIn(self.other / "binary2.joblib", state.bin_candidates)

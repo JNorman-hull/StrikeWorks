@@ -120,18 +120,30 @@ class Pages(unittest.TestCase):
 
     def test_strikeworks_validate_is_the_same_page(self):
         """StrikeWorks's Validate step is Validate and annotate itself -
-        filters, Annotations and notes - with its own saving: Save + Next
-        doesn't add to the running dataset, Save and export doesn't ask."""
+        filters, Annotations and notes, the export's name."""
         from modules.page_annotate import AnnotationPage
-        toolkit = self.window.annotation_page
         page = self.window.simple_mode_dialog.validate_page
         self.assertIs(type(page), AnnotationPage)
         self.assertIs(self.window.simple_mode_dialog.validation, page.view)
-        self.assertIsNotNone(page.lib_selector)
-        self.assertIsNone(page.view.after_save)
-        self.assertIsNotNone(toolkit.view.after_save)
-        self.assertFalse(page.view._confirm_export)
-        self.assertTrue(toolkit.view._confirm_export)
+        self.assertEqual(page.view.export_name, page._export_name)
+
+    def test_deployment_filter_waits_for_the_scan(self):
+        """select_deployment before the library's scan applies once the
+        scan has filled the filter in (StrikeWorks's Validate step)."""
+        from modules import raw_layout
+        sel = self.window.simple_mode_dialog.validate_page.lib_selector
+        tree = raw_layout.RawTree()
+        tree.locations = {"S1": ("DEP_A", "T1", "1", None),
+                          "S2": ("DEP_B", "T1", "1", None)}
+        sel._tree = None
+        sel.select_deployment("DEP_B")
+        self.assertIsNone(sel.wanted_deployment())
+        sel._scan_gen += 1
+        sel._apply_tree(sel._scan_gen, tree)
+        self.assertEqual(sel.wanted_deployment(), "DEP_B")
+        sel.select_deployment("DEP_A")       # scanned: straight away
+        self.assertEqual(sel.wanted_deployment(), "DEP_A")
+        sel.cmb_deployment.setCurrentIndex(0)
 
     def test_annotations_window_closes_with_its_page(self):
         page = self.window.annotation_page

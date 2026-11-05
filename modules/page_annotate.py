@@ -5,12 +5,15 @@
 #
 # ///////////////////////////////////////////////////////////////
 """Validate and annotate (Development toolkit), and StrikeWorks's Validate
-step - the same page in both (`for_strikeworks`): the validation screen
+step - the same page, behaving the same, in both: the validation screen
 (sensor_validation.ValidationView) with the library's Deployment /
 Treatment / Run filters above its sensor list and an "Annotations and
-notes" window. Only the saving differs: in StrikeWorks, Save + Next doesn't
-add to the running dataset and Save and export doesn't ask first - the
-step's Next continues with the export instead (page_simple_mode.py).
+notes" window. Save and export asks first while flagged sensors are
+unreviewed, and exports the sensors listed as `<library>_<deployment
+filter>_<timestamp>.csv` (validation_core.DatasetExporter - which also
+updates the library's running dataset, behind "In dataset"). StrikeWorks
+then takes the export on to Predict itself (`for_strikeworks`,
+page_simple_mode.py).
 
 A sensor's deployment and treatment are the folders its raw file sits in,
 `raw_sens_data/<deployment>/<treatment>/[Run n/]`, which need not match a
@@ -18,14 +21,11 @@ planned deployment; a missing level shows as "(ungrouped)". Video is
 `<treatment>/VIDEO/<stem>_vid_*.mp4`, matched case-insensitively.
 
 The Annotations and notes window stays open beside the main one and
-follows the sensor shown. Save + Next saves what's in it with the window,
-and adds the sensor's window to the library's running dataset,
-`processed_sens_data/model_features.csv` (`dataset_build.standardise`),
-replacing its block if it's already there; opening a library reads that
-file back, so review resumes where it stopped. Annotations are optional
-per sensor ("No annotations for this sensor"). "Save annotations" saves
-them without moving on; "Import annotations CSV…" stamps a spreadsheet of
-annotations onto the index.
+follows the sensor shown. Save + Next saves what's in it to the sensor
+index with the window; Save and export takes the annotations into the
+dataset. Annotations are optional per sensor ("No annotations for this
+sensor"). "Save annotations" saves them without moving on; "Import
+annotations CSV…" stamps a spreadsheet of annotations onto the index.
 """
 from datetime import datetime
 from pathlib import Path
@@ -41,12 +41,11 @@ from PySide6.QtWidgets import (
 
 from . import annotation_schema as asch
 from . import deployment_index as di
-from . import sensor_config, settings
+from . import settings
 from . import raw_layout
 from . import validation_core as vc
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
 from .cards import MetaCard
-from .dataset_build import META_COLS, standardise
 from .inventory_widgets import notifier as inventory_notifier
 from .layout import discard_widget, Page, scroll_page, Section, when_visible
 from .library_widgets import LibrarySelector
@@ -265,8 +264,8 @@ class AnnotationsWindow(QDialog):
 
 class AnnotationPage(Page):
     """Validate and annotate > Annotate - and, `for_strikeworks`, StrikeWorks's
-    Validate step (`main_window` is then the StrikeWorks window, which sets
-    `view.export_name` and takes the export from `view.export_done`)."""
+    Validate step (`main_window` is then the StrikeWorks window, which takes
+    the export on to Predict from `view.export_done`)."""
 
     def __init__(self, main_window, session_state=None, for_strikeworks=False):
         super().__init__(main_window)
@@ -282,25 +281,15 @@ class AnnotationPage(Page):
                                    "window that stays open and follows it.")
         btn_annotations.clicked.connect(self.annotations.bring_up)
         self.view = ValidationView(main_window, top=self.lib_selector,
-                                   extra_buttons=(btn_annotations,),
-                                   confirm_export=not for_strikeworks)
+                                   extra_buttons=(btn_annotations,))
         self.view.save_values = self.annotations.save_values
         self.view.counts_suffix = self._counts_suffix
-        if for_strikeworks:
-            self.view.btn_save_next.setToolTip(
-                f"Save + Next ({vc.SAVE_NEXT_KEYS}) records your review of "
-                "this sensor's window - clearing its flag - with any "
-                "annotations or notes in the Annotations and notes window, "
-                "and moves on to the next sensor in the list.")
-        else:
-            self.view.after_save = self._after_save
-            self.view.export_name = self._export_name
-            self.view.btn_save_next.setToolTip(
-                f"Save + Next ({vc.SAVE_NEXT_KEYS}) records your review of "
-                "this sensor's window - clearing its flag - with any "
-                "annotations or notes in the Annotations and notes window, "
-                "adds the window to the dataset when it's annotated, and "
-                "moves on to the next sensor in the list.")
+        self.view.export_name = self._export_name
+        self.view.btn_save_next.setToolTip(
+            f"Save + Next ({vc.SAVE_NEXT_KEYS}) records your review of this "
+            "sensor's window - clearing its flag - with any annotations or "
+            "notes in the Annotations and notes window, and moves on to the "
+            "next sensor in the list.")
 
         self._build(self)
         self._connect()
@@ -410,7 +399,7 @@ class AnnotationPage(Page):
         self.view.index_changed.emit()      # tells the host; reloads it here
         self._populate_sensor_table()
 
-    # ── the running dataset (resume support) ─────────────────────────────────
+    # ── the running dataset ("In dataset") ──────────────────────────────────
     def _dataset_path(self):
         return self.lib_root / raw_layout.DATASET_REL
 
@@ -443,40 +432,12 @@ class AnnotationPage(Page):
         dep = self.lib_selector.wanted_deployment()
         return self.lib_root.name + (f"_{dep}" if dep else "")
 
-    # ── Save + Next's own step: annotations into the running dataset ─────────
-    def _after_save(self, stem, window):
-        """With annotations entered, the sensor's window joins the running
-        dataset (replacing its block if it's there already); without, Save +
-        Next was just the review."""
-        self._load_index()
-        if not self.annotations.annotated():
-            return f"Reviewed {stem} (no annotations entered)."
-        target_rows = sensor_config.active().window_samples(self.view.win_sec)
-        block = standardise(window, target_rows)
-        if block is None:
-            raise ValueError(
-                f"Only {len(window)} rows in the window (expected "
-                f"~{target_rows}) - too far from the sensor's boundary.")
-        block = block.copy()
-        block.insert(0, "file", stem)
-        meta = self.index_row(stem)
-        at = 1
-        for col in META_COLS:
-            if self._index_df is not None and col in self._index_df.columns:
-                block.insert(at, col, meta.get(col, "") if meta is not None else "")
-                at += 1
-        for name, value in self.annotations.values().items():
-            block[name] = value
-        vc.merge_into_running_dataset(self.lib_root, block)
-        self._dataset_stems.add(stem)
-        return f"Saved {stem} ({len(self._dataset_stems)} in dataset)."
-
     def _on_export_done(self, df, path, _message):
         if df is None:
             return
-        # (StrikeWorks takes its export on itself - _on_extract_done)
+        settings.add_recent_training_dataset(path)
+        # (StrikeWorks takes its export to Predict itself - _on_extract_done)
         if not self.for_strikeworks:
-            settings.add_recent_training_dataset(path)
             self.main_window.ml_prediction_page.on_dataset_ready(
                 df, f"Annotate - {path.stem}")
         self._load_dataset_stems()

@@ -6,10 +6,9 @@
 # ///////////////////////////////////////////////////////////////
 """Prediction figures, drawn onto any matplotlib Figure. Two presentations:
 
-  dark=True   the on-screen look, in the theme's canvas colours (dark for
-              the StrikeWorks theme, white for the University of Hull
-              one). Empty figures still draw their expected axes (labels,
-              limits, grid) so the panels read as live plots awaiting data.
+  dark=True   the on-screen look, in the theme's canvas colours. Empty
+              figures still draw their expected axes (labels, limits,
+              grid) so the panels read as live plots awaiting data.
   dark=False  publication styling on white, for every exported figure.
 
 Both use the theme's figure palette.

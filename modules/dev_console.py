@@ -227,10 +227,6 @@ class DevConsole(QDialog):
         v.setContentsMargins(12, 12, 12, 12)
         v.setSpacing(8)
 
-        title = QLabel("Console")
-        style(title, role="heading")
-        v.addWidget(title)
-
         grp_demo = Section("Demo")
         dv = QHBoxLayout(grp_demo)
         from .dev_runner import available_demos
@@ -274,14 +270,6 @@ class DevConsole(QDialog):
         v.addWidget(self.log, stretch=1)
 
         cap = capture()
-        if cap is not None and cap.log_path is not None:
-            lbl_file = QLabel(f"Saved as it goes to {cap.log_path}")
-            style(lbl_file, role="muted")
-            lbl_file.setWordWrap(True)
-            lbl_file.setTextInteractionFlags(
-                Qt.TextInteractionFlag.TextSelectableByMouse)
-            v.addWidget(lbl_file)
-
         row = QHBoxLayout()
         btn_clear = QPushButton("Clear")
         btn_clear.setToolTip("Clear this window (the log file keeps "
@@ -293,6 +281,8 @@ class DevConsole(QDialog):
         row.addWidget(btn_save)
         if cap is not None and cap.log_path is not None:
             btn_folder = QPushButton("Open logs folder")
+            # the log is saved as it goes
+            btn_folder.setToolTip(f"This session's log: {cap.log_path}")
             btn_folder.clicked.connect(self._open_logs_folder)
             row.addWidget(btn_folder)
         row.addStretch()

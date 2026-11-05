@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
 )
 
 from . import raw_layout, settings
-from .ml_tab_predict import _NumItem
 from .cards import ProbBars
 from .layout import Section
 from .theme import (
@@ -138,7 +137,6 @@ class InspectTab(QWidget):
         self.tbl.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.tbl.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.tbl.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.tbl.setSortingEnabled(True)
         self.tbl.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.ResizeToContents)
         self.tbl.horizontalHeader().setStretchLastSection(True)
@@ -438,7 +436,6 @@ class InspectTab(QWidget):
         sev_col = headers.index("Severity") if have_sev else -1
 
         self._updating_table = True
-        self.tbl.setSortingEnabled(False)
         self.tbl.clear()
         self.tbl.setColumnCount(len(headers))
         self.tbl.setHorizontalHeaderLabels(headers)
@@ -447,7 +444,6 @@ class InspectTab(QWidget):
         if df is None:
             self.lbl_count.setText("No prediction run yet.")
             self._updating_table = False
-            self.tbl.setSortingEnabled(True)
             return
 
         total = len(s.predictions)
@@ -462,22 +458,20 @@ class InspectTab(QWidget):
             ]
             if have_sev:
                 peak = r.get("hig_peak_g")
-                items.append(_NumItem(f"{peak:.0f}" if pd.notna(peak) else "-",
-                                      float(peak) if pd.notna(peak) else -1.0))
+                items.append(QTableWidgetItem(
+                    f"{peak:.0f}" if pd.notna(peak) else "-"))
                 items.append(QTableWidgetItem(str(r.get("severity", "-"))))
             items += [
-                _NumItem(f"{r['probability_strike']:.3f}",
-                         float(r["probability_strike"])),
-                _NumItem(f"{r['confidence']:.3f}", float(r["confidence"])),
+                QTableWidgetItem(f"{r['probability_strike']:.3f}"),
+                QTableWidgetItem(f"{r['confidence']:.3f}"),
             ]
             if have_mc:
                 region = r.get("predicted_region", "")
                 rc = r.get("region_confidence")
                 items.append(QTableWidgetItem(
                     str(region) if isinstance(region, str) and region else "-"))
-                items.append(_NumItem(
-                    f"{rc:.3f}" if pd.notna(rc) else "-",
-                    float(rc) if pd.notna(rc) else -1.0))
+                items.append(QTableWidgetItem(
+                    f"{rc:.3f}" if pd.notna(rc) else "-"))
             if have_gt:
                 gt_strike, gt_label, _gt_cls = s.ground_truth_for(r)
                 if gt_strike is None:
@@ -495,15 +489,12 @@ class InspectTab(QWidget):
             low = float(r["confidence"]) < s.low_conf_threshold
             severe = have_sev and int(r.get("severe_strike", 0)) == 1
             for col, item in enumerate(items):
-                if col >= 2:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if low and col == conf_col:
                     item.setForeground(pg.mkColor(WARN))
                 if severe and col == sev_col:
                     item.setForeground(pg.mkColor(BAD))
                 self.tbl.setItem(row, col, item)
 
-        self.tbl.setSortingEnabled(True)
         self._updating_table = False
         self._reselect_current()
 

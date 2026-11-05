@@ -1,7 +1,8 @@
-"""Reports: the central report's figures come out at their fixed sizes,
-Analysis and reporting's own button writes the same BSM section, and the
-model evaluation report keeps every figure in a folder past Windows' path
-limit and covers the models ticked in Export and report."""
+"""Reports: the central report's figures come out at their fixed sizes
+(and the blade strike results as CSV, as Advanced analysis's old Generate
+report wrote them), and the model evaluation report keeps every figure in
+a folder past Windows' path limit and covers the models ticked in Export
+and report."""
 import shutil
 import unittest
 from pathlib import Path
@@ -110,6 +111,7 @@ class Reports(unittest.TestCase):
         self.assertEqual(warnings, [])
         self.assertEqual(_size_cm(out / "bsm_figures" / "bsm_results_panels.png"),
                          (12.0, 12.0))
+        self.assertTrue((out / "bsm_figures" / "bsm_results.csv").exists())
         for species in ("scaly", "eel"):
             self.assertEqual(
                 _size_cm(out / "bsm_figures" / f"sensitivity_sweeps_{species}.png"),
@@ -146,19 +148,6 @@ class Reports(unittest.TestCase):
                 dlg.close()
                 dlg.deleteLater()
                 pump(50)
-
-    def test_analysis_page_report(self):
-        from PySide6.QtWidgets import QFileDialog
-        out = temp_dir("bsm_report_")
-        original = QFileDialog.getExistingDirectory
-        QFileDialog.getExistingDirectory = staticmethod(lambda *a, **k: str(out))
-        try:
-            self.window.bsm_analysis_page._generate_report()
-        finally:
-            QFileDialog.getExistingDirectory = original
-        self.assertTrue((out / "report.html").exists())
-        self.assertTrue((out / "bsm_results.csv").exists())
-        self.assertTrue((out / "bsm_figures" / "bsm_results_panels.png").exists())
 
 
 if __name__ == "__main__":

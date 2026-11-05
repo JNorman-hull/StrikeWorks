@@ -369,7 +369,7 @@
                    <string notr="true">background-image: url(:/icons/images/icons/cil-chart-line.png);</string>
                   </property>
                   <property name="text">
-                   <string>Blade strike modelling</string>
+                   <string>Blade strike calculator</string>
                   </property>
                  </widget>
                 </item>

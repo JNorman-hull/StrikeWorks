@@ -130,6 +130,27 @@ def draw_results_panels(fig, results, dark=False):
     _finish_layout(fig, dark)
 
 
+def draw_collision_panels(fig, results, dark=False):
+    """Calculator's figure: each species' collision probability side by
+    side - scaly fish, then eel - CEN (and Observed, with its Wilson 95%
+    CI, when observed counts were entered). `results` as for
+    `draw_results_panels`."""
+    fig.clear()
+    fg = fg_colour(dark)
+    for ax, species in zip(fig.subplots(1, 2), ("scaly", "eel")):
+        res = (results or {}).get(species)
+        if res is None:
+            ax.set_xticks([])
+            _awaiting(ax, "Not calculated")
+            _bar_style(ax, dark, "Collision probability (%)", fontsize=8)
+        else:
+            _pco_bars(ax, res, dark, value_fs=7, ylabel_fs=8)
+        ax.set_title(f"{SPECIES_TITLES[species]} - collision", fontsize=9,
+                     color=fg)
+        ax.tick_params(labelsize=8)
+    _finish_layout(fig, dark)
+
+
 def _quiet_tight_layout(fig, rect=None):
     """tight_layout, skipped while a canvas is still tiny (before it's
     first laid out on screen) and without its "cannot make Axes small
@@ -219,7 +240,7 @@ def draw_sweep_panels(fig, sweeps, dark=False, title=None):
         _panel_letter(ax, letter, dark)
         if not sweeps:
             ax.set_xticks([])
-            _awaiting(ax, "Run a Blade Strike Modelling calculation first")
+            _awaiting(ax, "Run the Blade strike calculator first")
             style_axes(fig, ax, dark)
             continue
         if x_key == "wf":
@@ -296,7 +317,7 @@ def draw_vcrit_sweep(fig, series, dark=True, title=None):
     usable = [s for s in series if s[1] is not None and len(s[1])]
     if not usable:
         ax.set_xticks([])
-        _awaiting(ax, "Run a Blade Strike Modelling calculation first")
+        _awaiting(ax, "Run the Blade strike calculator first")
         style_axes(fig, ax, dark)
         fig.tight_layout()
         return

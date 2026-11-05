@@ -39,9 +39,10 @@ class MLPredictionPage(TabbedPage):
         self.tabs.addTab(self.tab_inspect, "Inspect")
         self.report_dialog = ReportDialog(self.state, main_window)
 
-        # auto-load the deployed models from the default folder (silent -
-        # a missing folder just leaves the compatibility check red)
-        ok, msg = self.state.load_models_from_dir(self.state.models_dir)
+        # auto-load the deployed models from the default folder, the default
+        # models (Settings) selected (silent - a missing folder just leaves
+        # the compatibility check red)
+        ok, msg = self.state.use_default_models()
         if ok:
             self.status.emit(msg, 4000)
 

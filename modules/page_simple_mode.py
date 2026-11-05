@@ -22,37 +22,28 @@ Each step uses the same pieces as the full app:
               validation, Save and export; the nadir line can be dragged,
               so a flagged sensor can be corrected by hand and re-saved
               with Save + Next.
-  Predict   - the shared PredictionState (window.ml_prediction_page.state).
-  Report    - ml_figures / ml_report.
+  Predict   - ml_tab_predict.PredictPanel (Model prediction > Predict's
+              own Predict tab, on the shared PredictionState).
+  Report    - ml_tab_predict.ResultsPanel (its Results tab); the
+              downloaded report is ml_report's.
 """
-
-from matplotlib.figure import Figure
-
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontMetrics, QIcon
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QFileDialog, QGridLayout, QHBoxLayout,
-    QInputDialog, QLabel, QLayout, QLineEdit, QListWidget, QListWidgetItem,
-    QMessageBox, QPushButton, QSizePolicy, QStackedWidget, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QDialog, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLayout,
+    QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+    QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from . import (
-    hig_peaks, ml_figures, ml_report, settings, severity,
-    win_utils,
-)
+from . import ml_report, settings, win_utils
 from . import validation_core as vc
-from .canvas import FigureCanvas
 from .deployment_editor import DeploymentEditor
 from .edition import simple_only
 from .inventory_widgets import FileInventory
-from .cards import MetaCard, RingCard
-from .layout import Section, scroll_area
+from .layout import scroll_area
+from .ml_tab_predict import PredictPanel, ResultsPanel
 from .page_annotate import AnnotationPage
-from .tables import fill_acceleration_table
-from .theme import (
-    PALETTE, PINK, muted_label, style,
-)
+from .theme import style
 from .startup import ICON_PATH, logo_label
 
 # the "Development toolkit" button's password: a door for the people who
@@ -87,9 +78,6 @@ _TITLES = {
     4: "Predict blade strike from sensor data…",
     5: "Report blade strike from sensor data…",
 }
-
-# the Output step's figures: their height on screen
-REPORT_FIG_H = 380
 
 # the logo's size: on Home and Finished (width), in the bottom bar (height)
 BIG_LOGO_W = 520
@@ -144,12 +132,6 @@ class SimpleModeDialog(QDialog):
         self._built_dataset_path = None
 
         self._build()
-        state = self.window.ml_prediction_page.state
-        state.run_finished.connect(self._on_predict_finished)
-        state.run_failed.connect(self._on_predict_failed)
-        # the HIG peak analysis box follows Predict's (one shared setting)
-        state.config_changed.connect(self._on_prediction_config_changed)
-        self._on_prediction_config_changed()
         self.window.session_state.library_changed.connect(
             self._on_session_library_changed_simple)
 
@@ -249,7 +231,7 @@ class SimpleModeDialog(QDialog):
         self.btn_dev_toolkit = QPushButton("Development toolkit")
         self.btn_dev_toolkit.setAutoDefault(False)
         self.btn_dev_toolkit.setToolTip(
-            "The full app: blade strike modelling, annotation, model "
+            "The full app: the blade strike calculator, annotation, model "
             "training and the rest (password protected).")
         self.btn_dev_toolkit.clicked.connect(self._go_development_toolkit)
         nav.addWidget(self.btn_dev_toolkit, alignment=bottom)
@@ -317,7 +299,8 @@ class SimpleModeDialog(QDialog):
                 # advancing happens once the export actually finishes -
                 # _on_extract_done, guarded by _advance_after_export
                 self._advance_after_export = True
-                self.validation.save_and_export()
+                # (_confirm_leave_validate has just asked about flagged ones)
+                self.validation.save_and_export(confirm=False)
                 return
             self._refresh_predict_step()
         elif idx == 4:
@@ -462,32 +445,12 @@ class SimpleModeDialog(QDialog):
     def _build_deployment_page(self):
         page = QWidget()
         v = QVBoxLayout(page)
-        v.setSpacing(10)
+        # edge to edge, as on Process and Validate
+        v.setContentsMargins(0, 0, 0, 0)
         # the same editor as Create and edit deployment
         self.editor = DeploymentEditor(self.window, self.window.session_state)
         v.addWidget(self.editor, stretch=1)
         return page
-
-    def _on_prediction_config_changed(self):
-        state = self.window.ml_prediction_page.state
-        self.chk_hig_peaks.blockSignals(True)
-        self.chk_hig_peaks.setChecked(state.hig_peaks)
-        self.chk_hig_peaks.blockSignals(False)
-        self._refresh_hig_card()
-
-    def _refresh_hig_card(self):
-        """The collisions card: shown only while HIG peak analysis is
-        ticked, filled when the last run did the analysis."""
-        state = self.window.ml_prediction_page.state
-        self.card_severity.setVisible(state.hig_peaks)
-        acc = state.acc_summary
-        if acc is None or not len(acc):
-            self.card_severity.clear()
-            return
-        total = acc.iloc[-1]       # the "All recordings" row, or the only one
-        k, n_rec = int(total["n_collision"]), int(total["n_sensors"])
-        self.card_severity.set_segments([
-            ("Collision", k, PINK), ("No collision", n_rec - k, PALETTE[0])])
 
     def _on_session_library_changed_simple(self, path):
         self._lib_root = path
@@ -496,7 +459,8 @@ class SimpleModeDialog(QDialog):
     def _build_process_inventory_page(self):
         page = QWidget()
         v = QVBoxLayout(page)
-        v.setSpacing(8)
+        # edge to edge, as on Deploy and Validate
+        v.setContentsMargins(0, 0, 0, 0)
         # the same inventory as Raw data processing
         self.inventory = FileInventory(inventory_title="", log_title="")
         v.addWidget(self.inventory, stretch=1)
@@ -513,13 +477,12 @@ class SimpleModeDialog(QDialog):
     # ── page 3: process (validate/segment) ──────────────────────────────────
     def _build_process_validate_page(self):
         """The Development toolkit's Validate and annotate page itself
-        (page_annotate.py), with StrikeWorks's saving: Next continues with
-        the export, named after the deployment picked on Deploy."""
+        (page_annotate.py); Next continues to Predict with its export."""
         self.validate_page = AnnotationPage(
             self, self.window.session_state, for_strikeworks=True)
         self.validate_page.setContentsMargins(0, 0, 0, 0)
         self.validation = self.validate_page.view
-        self.validation.export_name = lambda: self.editor.deployment_id()
+        self._validate_deployment = None    # the Deploy deployment last shown
         self.validation.index_changed.connect(self._on_validation_written)
         self.validation.export_done.connect(self._on_extract_done)
         return self.validate_page
@@ -529,8 +492,13 @@ class SimpleModeDialog(QDialog):
 
     def _refresh_validate_step(self):
         """Re-list the library's processed sensors (Process may have just
-        added some)."""
+        added some), filtered to the deployment picked on Deploy whenever
+        that changes - a filter changed here stays until it does."""
         self._lib_root = self.window.session_state.library
+        dep_dir = self.editor.deployment_dir()
+        if dep_dir is not None and dep_dir.name != self._validate_deployment:
+            self._validate_deployment = dep_dir.name
+            self.validate_page.lib_selector.select_deployment(dep_dir.name)
         self.validate_page.refresh()
 
     def _on_extract_done(self, df, path, _message):
@@ -551,279 +519,28 @@ class SimpleModeDialog(QDialog):
 
     # ── page 4: predict ──────────────────────────────────────────────────────
     def _build_predict_page(self):
-        """One centred column (simple_spec/Predict.png): the dataset card,
-        Load / Run, the status line, then the "Predicted strikes" and
-        "Strike classes" rings."""
-        page = QWidget()
-        v = QVBoxLayout(page)
-        v.setSpacing(10)
-
-        # equal stretch above and below keeps the block centred
-        v.addStretch(1)
-
-        grp_ds = Section("Dataset")
-        grp_ds.setMaximumWidth(430)
-        dv = QVBoxLayout(grp_ds)
-        self.card_predict_dataset = MetaCard()
-        dv.addWidget(self.card_predict_dataset)
-        ds_row = QHBoxLayout()
-        ds_row.addStretch()
-        ds_row.addWidget(grp_ds)
-        ds_row.addStretch()
-        v.addLayout(ds_row)
-
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        self.btn_load_dataset = QPushButton("Load dataset CSV…")
-        self.btn_load_dataset.setMinimumSize(180, 40)
-        self.btn_load_dataset.clicked.connect(self._load_dataset_csv)
-        btn_row.addWidget(self.btn_load_dataset)
-        self.btn_run_predict = QPushButton("Run prediction")
-        self.btn_run_predict.setMinimumSize(180, 40)
-        self.btn_run_predict.clicked.connect(self._run_predict)
-        btn_row.addWidget(self.btn_run_predict)
-        btn_row.addStretch()
-        v.addLayout(btn_row)
-
-        state = self.window.ml_prediction_page.state
-        chk_row = QHBoxLayout()
-        chk_row.addStretch()
-        self.chk_hig_peaks = QCheckBox("HIG peak analysis")
-        self.chk_hig_peaks.setChecked(state.hig_peaks)
-        self.chk_hig_peaks.setToolTip(
-            "Count the acceleration events in each recording's high-g "
-            f"magnitude (peaks of at least {hig_peaks.HEIGHT_G:.0f} g) within "
-            "0.1 s of the nadir, and the recordings with a collision (an "
-            f"event of {hig_peaks.COLLISION_G} g or more). Measured, "
-            "alongside the model's prediction.")
-        self.chk_hig_peaks.toggled.connect(state.set_hig_peaks)
-        chk_row.addWidget(self.chk_hig_peaks)
-        chk_row.addStretch()
-        v.addLayout(chk_row)
-
-        self.lbl_predict_status = QLabel("")
-        style(self.lbl_predict_status, role="muted")
-        self.lbl_predict_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        v.addWidget(self.lbl_predict_status)
-
-        self.lbl_predict_done = QLabel("")
-        style(self.lbl_predict_done, role="strong", tone="ok")
-        self.lbl_predict_done.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        v.addWidget(self.lbl_predict_done)
-
-        cards_row = QHBoxLayout()
-        cards_row.setSpacing(16)
-        cards_row.addStretch()
-        self.card_predicted_strikes = RingCard("Predicted strikes")
-        cards_row.addWidget(self.card_predicted_strikes)
-        self.card_strike_classes = RingCard("Strike classes")
-        cards_row.addWidget(self.card_strike_classes)
-        # the HIG peak analysis, shown while its box is ticked
-        self.card_severity = RingCard(f"Collisions (≥ {hig_peaks.COLLISION_G} g)")
-        self.card_severity.setToolTip(
-            f"Recordings with an acceleration event of "
-            f"{hig_peaks.COLLISION_G} g or more within 0.1 s of the nadir "
-            "(HIG peak analysis). Measured, not predicted.")
-        cards_row.addWidget(self.card_severity)
-        cards_row.addStretch()
-        v.addLayout(cards_row)
-
-        v.addStretch(1)
-        return page
+        """Model prediction's own Predict page (ml_tab_predict.PredictPanel)."""
+        self.predict_panel = PredictPanel(
+            self.window.ml_prediction_page.state, self,
+            bsm_state=self.window.bsm_state)
+        return self.predict_panel
 
     def _refresh_predict_step(self):
-        state = self.window.ml_prediction_page.state
-        state.use_default_models()
-        self._refresh_predict_dataset_card()
-        self.btn_run_predict.setEnabled(state.dataset_df is not None)
-
-    def _load_dataset_csv(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self.window, "Load dataset CSV", str(settings.get_input_data_dir()),
-            "CSV files (*.csv)")
-        if not path:
-            return
-        state = self.window.ml_prediction_page.state
-        ok, msg = state.load_dataset_csv(path)
-        self.lbl_predict_status.setText(msg)
-        self._refresh_predict_dataset_card()
-        self.btn_run_predict.setEnabled(ok)
-
-    def _refresh_predict_dataset_card(self):
-        state = self.window.ml_prediction_page.state
-        m = state.dataset_meta
-        if not m:
-            self.card_predict_dataset.set_rows([("Dataset", "No dataset loaded")])
-            return
-        sr = m.get("sampling_rate_hz")
-        seq = None
-        if m.get("seq_len_min") is not None:
-            if m["seq_len_min"] == m["seq_len_max"]:
-                seq = f"{m['seq_len_max']} samples"
-                if sr:
-                    seq += f" ({m['seq_len_max'] / sr * 1000:.0f} ms)"
-            else:
-                seq = f"{m['seq_len_min']}-{m['seq_len_max']} samples (varying)"
-        req = set(state.required_channels())
-        n_chan_present = (len([c for c in m.get("columns", []) if c in req])
-                          if req else None)
-        self.card_predict_dataset.set_rows([
-            ("Dataset",       m.get("name")),
-            ("Source",        state.dataset_source),
-            ("Recordings",    m.get("n_files")),
-            ("Sensor rows",   f"{m.get('n_rows'):,}" if m.get("n_rows") else None),
-            ("Treatments",    f"{len(m['treatments'])} "
-                              f"({', '.join(m['treatments'])})"
-                              if m.get("treatments") else None),
-            ("Sampling rate", f"{sr} Hz" if sr else None),
-            ("Window length", seq),
-            ("Model channels",
-             f"{n_chan_present}/{len(req)} present" if req else None),
-            ("Annotations",   state.annotation_status()),
-        ])
+        # Settings' default models, in case they changed
+        self.window.ml_prediction_page.state.use_default_models()
 
     def _run_predict(self):
-        state = self.window.ml_prediction_page.state
-        self.btn_run_predict.setEnabled(False)
-        self.lbl_predict_status.setText("Running…")
-        style(self.lbl_predict_status, tone="accent")
-        state.run_prediction()
-
-    def _on_predict_finished(self):
-        state = self.window.ml_prediction_page.state
-        self.btn_run_predict.setEnabled(True)
-        meta = state.run_meta
-        n = meta.get("n_files", 0)
-        style(self.lbl_predict_status, tone="ok")
-        self.lbl_predict_status.setText(f"Predicting {n} recordings… done.")
-        self.lbl_predict_done.setText("Blade strike predicted")
-        df = state.summary
-        if df is not None and len(df):
-            n_total = int(df["n"].sum())
-            n_strike = int(df["n_strike"].sum())
-            self.card_predicted_strikes.set_segments([
-                ("Strike", n_strike, PINK),
-                ("No strike", n_total - n_strike, PALETTE[0]),
-            ])
-
-        mc_run = meta.get("mode") == "multiclass"
-        have_classes = (mc_run and df is not None and len(df) and state.class_names
-                        and all(f"n_{cn}" in df.columns for cn in state.class_names))
-        self.card_strike_classes.setVisible(bool(have_classes))
-        if have_classes:
-            self.card_strike_classes.set_segments([
-                (cn, int(df[f"n_{cn}"].sum()), PALETTE[i % len(PALETTE)])
-                for i, cn in enumerate(state.class_names)
-            ])
-        else:
-            self.card_strike_classes.clear()
-
-        self._refresh_hig_card()
-
-    def _on_predict_failed(self, msg):
-        self.btn_run_predict.setEnabled(True)
-        style(self.lbl_predict_status, tone="bad")
-        self.lbl_predict_status.setText(f"Prediction failed: {msg.splitlines()[-1]}")
+        self.predict_panel.run()
 
     # ── page 5: report ───────────────────────────────────────────────────────
     def _build_report_page(self):
-        page = QWidget()
-        v = QVBoxLayout(page)
-        v.setSpacing(10)
-
-        self.tbl_report = QTableWidget(0, 0)
-        self.tbl_report.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.tbl_report.setMinimumHeight(150)
-        v.addWidget(self.tbl_report)
-
-        # the HIG peak analysis table, as in the reports
-        self.tbl_report_acc = QTableWidget(0, 0)
-        self.tbl_report_acc.setProperty("noRowNumbers", True)   # its own header rows
-        self.tbl_report_acc.horizontalHeader().setVisible(False)
-        self.tbl_report_acc.verticalHeader().setVisible(False)
-        self.tbl_report_acc.setEditTriggers(
-            QTableWidget.EditTrigger.NoEditTriggers)
-        self.tbl_report_acc.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        v.addWidget(self.tbl_report_acc)
-        self.lbl_report_acc_notes = muted_label(
-            "\n".join(hig_peaks.TABLE_NOTES))
-        self.lbl_report_acc_notes.setWordWrap(True)
-        v.addWidget(self.lbl_report_acc_notes)
-
-        # the two model figures side by side, the HIG peak figure (three
-        # panels) the full width under them
-        grp_figs = Section("")
-        fv = QGridLayout(grp_figs)
-        self.fig_report_bin = Figure(figsize=(4.3, 3.2), dpi=100)
-        self.canvas_report_bin = FigureCanvas(self.fig_report_bin)
-        self.fig_report_mc = Figure(figsize=(4.3, 3.2), dpi=100)
-        self.canvas_report_mc = FigureCanvas(self.fig_report_mc)
-        self.fig_report_peaks = Figure(figsize=(8.6, 3.2), dpi=100)
-        self.canvas_report_peaks = FigureCanvas(self.fig_report_peaks)
-        for c in (self.canvas_report_bin, self.canvas_report_mc,
-                  self.canvas_report_peaks):
-            c.setSizePolicy(QSizePolicy.Policy.Expanding,
-                            QSizePolicy.Policy.Expanding)
-            c.setMinimumHeight(REPORT_FIG_H)
-        fv.addWidget(self.canvas_report_bin, 0, 0)
-        fv.addWidget(self.canvas_report_mc, 0, 1)
-        fv.addWidget(self.canvas_report_peaks, 1, 0, 1, 2)
-        v.addWidget(grp_figs, stretch=1)
-        return page
+        """Model prediction's own Results page (ml_tab_predict.ResultsPanel)."""
+        self.results_panel = ResultsPanel(
+            self.window.ml_prediction_page.state, self.window.bsm_state)
+        return self.results_panel
 
     def _refresh_report_step(self):
-        state = self.window.ml_prediction_page.state
-        df = state.summary
-        mc_run = state.run_meta.get("mode") == "multiclass"
-        class_names = (state.class_names if mc_run and state.class_names
-                       and df is not None
-                       and all(f"n_{cn}" in df.columns for cn in state.class_names)
-                       else [])
-        # severity columns only without the HIG peak analysis (its own table)
-        measured = severity.available(df) and state.acc_summary is None
-        headers = (["Treatment", "N", "Strikes", "No strike", "Strike rate",
-                    "95% CI", "Mean prob", "Mean conf"] + list(class_names)
-                   + (severity.TABLE_HEADERS if measured else []))
-        self.tbl_report.setColumnCount(len(headers))
-        self.tbl_report.setHorizontalHeaderLabels(headers)
-        self.tbl_report.setRowCount(0 if df is None else len(df))
-        if df is not None:
-            for row, (_, r) in enumerate(df.iterrows()):
-                n_strike = int(r["n_strike"])
-                vals = [
-                    str(r["treatment"]), str(int(r["n"])), str(n_strike),
-                    str(int(r["n_no_strike"])),
-                    f"{r['strike_rate'] * 100:.1f}%",
-                    f"{r['ci_lo'] * 100:.1f}% - {r['ci_hi'] * 100:.1f}%",
-                    f"{r['mean_prob']:.3f}", f"{r['mean_conf']:.3f}",
-                ]
-                for cn in class_names:
-                    nc = int(r[f"n_{cn}"])
-                    pct = nc / n_strike * 100 if n_strike else 0
-                    vals.append(f"{nc} ({pct:.0f}%)")
-                if measured:
-                    vals += severity.table_values(r)
-                for col, val in enumerate(vals):
-                    self.tbl_report.setItem(row, col, QTableWidgetItem(val))
-        self.tbl_report.resizeColumnsToContents()
-
-        ml_figures.draw_strike_rate(self.fig_report_bin, df, dark=True)
-        self.canvas_report_bin.draw()
-        ml_figures.draw_region(self.fig_report_mc, df,
-                               class_names if mc_run else [], dark=True)
-        self.canvas_report_mc.draw()
-
-        have_peaks = state.acc_summary is not None
-        for w in (self.tbl_report_acc, self.lbl_report_acc_notes,
-                  self.canvas_report_peaks):
-            w.setVisible(have_peaks)
-        if have_peaks:
-            fill_acceleration_table(self.tbl_report_acc, state.acc_summary)
-            ml_figures.draw_peak_summary(self.fig_report_peaks,
-                                         state.acc_summary, state.predictions,
-                                         dark=True)
-            self.canvas_report_peaks.draw()
+        self.results_panel.refresh()
 
     def _processing_review_rows(self):
         """How Validate went for this library (validation_core) - fed
