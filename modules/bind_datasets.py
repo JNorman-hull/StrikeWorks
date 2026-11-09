@@ -19,21 +19,30 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
 
-from . import settings
+from . import recording_rate, settings
 from .theme import style
+
+
+class MixedDataError(ValueError):
+    """Datasets that can't be stacked: more than one sensor or frequency."""
 
 
 def bind_csvs(paths):
     """(stacked DataFrame, columns_differ). Rows are stacked in file order,
     each tagged with its source file (`_bind_source`); a column missing
-    from some files is kept and left blank there."""
+    from some files is kept and left blank there. Raises MixedDataError
+    unless they all hold one sensor at one rate, as one model needs."""
     frames, column_sets = [], set()
     for path in paths:
         df = pd.read_csv(path, low_memory=False)
         column_sets.add(frozenset(df.columns))
         df.insert(0, "_bind_source", Path(path).name)
         frames.append(df)
-    return pd.concat(frames, ignore_index=True, sort=False), len(column_sets) > 1
+    joined = pd.concat(frames, ignore_index=True, sort=False)
+    problem = recording_rate.dataset_problem(joined)
+    if problem:
+        raise MixedDataError(problem)
+    return joined, len(column_sets) > 1
 
 
 class BindTrainingData(QWidget):
@@ -88,6 +97,8 @@ class BindTrainingData(QWidget):
         self.lbl_status.setText(
             message if message is not None
             else (f"{len(self._paths)} file(s) queued." if self._paths else ""))
+        # no empty line under the buttons: they line up with what's beside them
+        self.lbl_status.setVisible(bool(self.lbl_status.text()))
 
     def _add_files(self):
         start = str(self._start_dir() if callable(self._start_dir)
@@ -112,6 +123,9 @@ class BindTrainingData(QWidget):
     def _bind(self):
         try:
             joined, columns_differ = bind_csvs(self._paths)
+        except MixedDataError as e:
+            QMessageBox.warning(self, "These datasets can't be bound", str(e))
+            return
         except Exception as e:
             QMessageBox.critical(self, "Could not read file", str(e))
             return

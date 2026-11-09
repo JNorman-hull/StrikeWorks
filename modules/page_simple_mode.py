@@ -301,6 +301,8 @@ class SimpleModeDialog(QDialog):
                 self._advance_after_export = True
                 # (_confirm_leave_validate has just asked about flagged ones)
                 self.validation.save_and_export(confirm=False)
+                # (not started if asked which frequency and cancelled)
+                self._advance_after_export = self.validation.exporter.running
                 return
             self._refresh_predict_step()
         elif idx == 4:

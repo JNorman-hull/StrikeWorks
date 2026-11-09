@@ -23,6 +23,19 @@ place named alongside it.
 
 ## Open
 
+**Editable HIG bands.** Predict's Advanced features lets HIG peak analysis's
+detection settings be changed (peak height, prominence, minimum gap, the
+shear rule), but shows the event bands (95, 200, 400 g) and the collision /
+severe value (400 g) greyed out. They come from RAPID at 2000 Hz, so the EEL
+tag - at other rates and filters - may want different ones. Making them
+editable means everything named after them follows the run's own values
+instead of fixed numbers: the `n_events_<g>g` and `n_over_<g>g` columns,
+severity's bands and table headers, the Collisions card, the HIG figures'
+labels and the report text (`hig_peaks.py`, `severity.py`,
+`predict_worker.py`, `ml_figures.py`, `ml_report.py`, `ml_tab_predict.py`),
+and the two copies of the bands (`hig_peaks.THRESHOLDS_G`, and
+`predict_worker.SEVERITY_THRESHOLDS_G` / `severity.py`) become one.
+
 **Low-magnitude contacts called strikes.** On the Pentair dataset (66
 recordings, different pump conditions from the training data; on OneDrive,
 `RAPID_libraries\Pentair\StrikeWorks_user_output\Pentair__20260930_134246.csv`)

@@ -39,6 +39,22 @@ class FindPeaks(unittest.TestCase):
         self.assertEqual(list(peaks["duration_samples"]), [2, 2, 22])
         self.assertAlmostEqual(peaks["peak_time_s"].iloc[0], 10.025)
 
+    def test_detection_settings(self):
+        # the defaults the app ships are the module's own
+        import json
+        from pathlib import Path
+        shipped = json.loads((Path(__file__).parent.parent / "config"
+                              / "default_settings.json").read_text())
+        self.assertEqual(hp.detection(shipped["hig_peak_analysis"]), hp.DETECTION_DEFAULTS)
+        self.assertEqual(hp.detection({"height_g": "260", "other": 1})["height_g"], 260.0)
+        # a higher peak height leaves only the 300 g peaks
+        peaks = hp.find_peaks(_signal(), _time(400), height=260)
+        self.assertEqual(list(peaks["peak_index"]), [50, 300])
+        # a lower shear share keeps the narrow 300 g peak above it longer
+        peaks = hp.find_peaks(_signal(), _time(400), shear_fraction=0.1, shear_s=0.002)
+        self.assertEqual(list(peaks["peak_type"]), ["shear", "shear", "shear"])
+        self.assertEqual(hp.parameters({"height_g": 260})["height_g"], 260.0)
+
     def test_nothing_to_find(self):
         self.assertEqual(len(hp.find_peaks(np.zeros(400), _time(400))), 0)
         self.assertEqual(len(hp.find_peaks([1.0, 2.0], _time(2))), 0)

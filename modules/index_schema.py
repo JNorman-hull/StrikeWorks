@@ -75,6 +75,7 @@ SCHEMA = [
     ("pres_min.time.", None, "pres_min[time]"),
     ("HIG_max.g.", None, "HIG_max[g]"),
     ("HIG_max.time.", None, "HIG_max[time]"),
+    ("sampling_rate_hz", None, "sampling_rate_hz"),
     ("messages", None, "messages"),
 ]
 

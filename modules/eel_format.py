@@ -27,13 +27,22 @@ format-specification.md shipped alongside the first EEL library):
          pressure 10000 and the rest zero from E10) and is discarded.
 
 Both streams count the same master clock, so they co-register exactly -
-no cross-correlation or drift model. The sample rate lives in the
-deployment's .log (`Samplerate`), read when it's beside the files; without
-one, the configuration's timestamp clock is used.
+no cross-correlation or drift model. The tag records at 2000, 2500 or
+5000 Hz, and each recording's rate comes from its own HIG header
+(`read_header`); the processed CSV is written at that rate, so its row count
+and time step always follow the file, not the configuration. A file with no
+rate in its header (firmware before E10) takes the configuration's timestamp
+clock, and the IMP tick step still has to agree with it.
 
-Channel names and units match RAPID's, so a dataset mixes both devices:
-higacc_*_g (g), inacc_*_ms (m/s2 - EEL's g x 9.80665), rot_*_degs (deg/s),
-pressure_kpa, temp_c, battery_v.
+Channel names and units match RAPID's: higacc_*_g (g), inacc_*_ms (m/s2 -
+EEL's g x 9.80665), rot_*_degs (deg/s), pressure_kpa, temp_c, battery_v.
+The rates and pressure datum differ, so the two devices don't share a dataset
+or a model (recording_rate.py).
+
+The first contiguous run of HIG ticks is the ring buffer flushed at record
+start, not an event, so it doesn't count as the recording's acceleration peak
+(`startup_end_s`). A recording with no events after it has its nadir at its
+lowest pressure.
 
 Firmware generation (spec 4.3) is detected from the data: on gen-1 the
 gyroscope Y field is a copy of accelerometer Z and the whole gyro block
@@ -41,8 +50,6 @@ fails plausibility, so the rot_* channels are written as 0 with a warning
 rather than published; gen-2 gyros are real and written as measured.
 Every rule applied is reported in the sensor's index messages.
 """
-import csv
-
 from pathlib import Path
 
 import numpy as np
@@ -84,24 +91,39 @@ def _records(path, dtype):
     return np.frombuffer(raw[:n * dtype.itemsize].tobytes(), dtype=dtype), residual
 
 
-def samplerate_from_log(hig_path):
-    """`Samplerate` for this deployment from its .log (spec 5), or None.
+def read_header(hig_path):
+    """The E10 HIG header as {"filter_hz", "samplerate", "trigger_g"}, or None
+    for a file without one. Record 0 at tick 0 holds them in ax/ay/az (spec 3,
+    "The header record"), told apart by the sample rate being one the tag
+    offers. Reads only that one record."""
+    try:
+        with open(hig_path, "rb") as fh:
+            raw = fh.read(HIG_DTYPE.itemsize)
+    except OSError:
+        return None
+    if len(raw) < HIG_DTYPE.itemsize:
+        return None
+    rec = np.frombuffer(raw, dtype=HIG_DTYPE)[0]
+    if rec["tick"] != 0 or int(rec["ay"]) not in VALID_SAMPLERATES:
+        return None
+    return {"filter_hz": int(rec["ax"]), "samplerate": int(rec["ay"]),
+            "trigger_g": int(rec["az"])}
 
-    The log is `<device><MMDD>.log` beside the data - one row per deployment
-    that day, joined on `Filename`. It's a superset of the data (rows with
-    no files are normal), so any log in the folder whose row matches is
-    used."""
-    stem = Path(hig_path).stem
-    for log in Path(hig_path).parent.glob("*.log"):
-        try:
-            with open(log, newline="", encoding="utf-8", errors="ignore") as fh:
-                for row in csv.DictReader(fh):
-                    if str(row.get("Filename", "")).strip() == stem:
-                        rate = int(float(row.get("Samplerate", "") or 0))
-                        return rate if rate > 0 else None
-        except (OSError, ValueError, csv.Error):
-            continue
-    return None
+
+def recording_rate(hig_path):
+    """The sample rate this recording's HIG header states, or None."""
+    header = read_header(hig_path)
+    return header["samplerate"] if header else None
+
+
+def startup_end_s(hig):
+    """When the start-up burst ends: the time of the last sample of the first
+    contiguous run of ticks, or None if the file doesn't start with one."""
+    ticks = hig["tick"].to_numpy()
+    if not len(ticks) or ticks[0] > 1:
+        return None
+    breaks = np.where(np.diff(ticks) != 1)[0]
+    return float(hig["time_s"].iloc[breaks[0] if len(breaks) else len(ticks) - 1])
 
 
 def _event_note(rec, samplerate):
@@ -290,34 +312,33 @@ def _on_grid(imp, hig, out_rate, imp_method="linear", hig_method="nearest"):
 def process_eel(paths, out_dir, config):
     """The EEL parser - `sensor_config.PARSERS["eel_imp_hig"]`."""
     hig_path, imp_path = Path(paths[".hig"]), Path(paths[".imp"])
-    rate = samplerate_from_log(hig_path)
-    notes = []
-    configured = float(config.timebase_hz) if config is not None else 5000.0
-    if rate is None:
-        rate = configured
-        notes.append(f"No deployment .log beside the files - {rate:g} Hz "
-                     "sample rate from the sensor configuration")
-    elif rate != configured:
-        notes.append(f"Sample rate {rate} Hz from the deployment .log "
-                     f"(configuration says {configured:g} Hz)")
-    if int(rate) not in VALID_SAMPLERATES:
-        notes.append(f"Unusual sample rate {rate:g} Hz (the tag writes 2000, "
-                     "2500 or 5000)")
+    rate = recording_rate(hig_path)
+    if rate is not None:
+        notes = [f"Sample rate {rate} Hz from the HIG header"]
+    else:
+        rate = float(config.timebase_hz) if config is not None else 5000.0
+        notes = [f"No sample rate in the HIG header - {rate:g} Hz from the "
+                 "sensor configuration"]
+        if int(rate) not in VALID_SAMPLERATES:
+            notes.append(f"Unusual sample rate {rate:g} Hz (the tag writes "
+                         "2000, 2500 or 5000)")
 
     hig, hig_notes = read_hig(hig_path, rate)
     imp, imp_notes = read_imp(imp_path, rate)
     notes += hig_notes + imp_notes
 
-    out_rate = float(config.output_rate_hz) if config is not None else rate
+    # written at the recording's own rate: on any other grid the HIG samples,
+    # placed in their nearest slot, would alternate with zeros
     combined = _on_grid(
-        imp, hig, out_rate,
+        imp, hig, rate,
         imp_method=config.method(".imp", "linear") if config else "linear",
         hig_method=config.method(".hig", "nearest") if config else "nearest")
 
     combined, summary = rf.post_process_combined(
-        combined, fs=out_rate,
+        combined, fs=rate,
         magnitudes=(config.magnitudes if config is not None else None),
-        nadir_method=(config.nadir_method if config is not None else None))
+        nadir_method=(config.nadir_method if config is not None else None),
+        events_from_s=startup_end_s(hig))
     msg = summary.get("messages", "")
     summary["messages"] = "; ".join(
         ([msg] if msg and msg != "No warnings" else []) + ["EEL: " + n for n in notes])

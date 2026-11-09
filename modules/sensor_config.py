@@ -29,6 +29,11 @@ Three different rates matter, and conflating them is the easy mistake:
 ``output_rate_hz``
     The uniform grid the processed CSV is written on - 2000 Hz for RAPID.
 
+A device whose files state their own rate (the EEL tag's HIG header) is
+written at the rate of each recording instead, whatever is configured here:
+``SensorConfig.recording_rate`` answers for any recording. Later stages read
+the rate from the processed data itself (recording_rate.py).
+
 A file's ``method`` says how it gets onto that grid. The 100 Hz .imp
 channels are interpolated up to 2000 Hz. The .hig channels are already at 2000 Hz
 but arrive in bursts around events (about 29% of a typical run, with gaps
@@ -193,6 +198,11 @@ class SensorConfig:
     # how the passage nadir is found (rapid_functions.NADIR_METHODS)
     nadir_method: str = DEFAULT_NADIR_METHOD
 
+    # how far pressure lags acceleration in the processed CSV, seconds:
+    # corrected for when Export animations lines the two up. Not shown in
+    # Sensor configuration.
+    pressure_offset_s: float = 0.01
+
     # the code point for the device's reader (see PARSERS)
     parser: str = "rapid_imp_hig"
 
@@ -223,13 +233,21 @@ class SensorConfig:
         return s.method if s else default
 
     def window_samples(self, seconds: float) -> int:
-        """Rows in `seconds` of processed signal at this sensor's rate.
-
-        The window length itself is a downstream decision (Validate chooses
-        it, Dataset creation follows); the sample count it turns into is a
-        property of the sensor, which is why it is answered here.
-        """
+        """Rows in `seconds` of processed signal at this sensor's configured
+        rate, for showing in Sensor configuration."""
         return int(round(float(seconds) * self.output_rate_hz))
+
+    @property
+    def rate_in_file(self) -> bool:
+        """Whether this sensor's files state their own rate."""
+        return self.parser in RATE_READERS
+
+    def recording_rate(self, paths: dict) -> float:
+        """The rate one recording is processed at, `paths` as a parser takes
+        them: what its file states, otherwise the configured output rate.
+        Opens a file only for a sensor whose files state their rate."""
+        read = RATE_READERS.get(self.parser)
+        return (read(paths) if read else None) or self.output_rate_hz
 
     def compiled_pattern(self):
         """The filename pattern, or None when it does not compile."""
@@ -371,11 +389,13 @@ BUILTIN = {
         key="micro_eel",
         name="Micro-EEL",
         description=(
-            "EEL tag - a .HIG high-g stream (event-triggered, 5000 Hz) and a "
-            ".IMP IMU/pressure stream (100 Hz) on one master clock, decoded "
-            "per the EEL Tag Binary Format Specification v1.1.0: header "
-            "records discarded, re-emitted HIG records removed, sample rate "
-            "from the deployment .log when it's beside the files."),
+            "EEL tag - a .HIG high-g stream (event-triggered; 2000, 2500 or "
+            "5000 Hz) and a .IMP IMU/pressure stream (100 Hz) on one master "
+            "clock, decoded per the EEL Tag Binary Format Specification "
+            "v1.1.0: header records discarded, re-emitted HIG records "
+            "removed. Each recording's rate comes from its HIG header and "
+            "its processed CSV is written at that rate; the rates set here "
+            "are only used for a file with no rate in its header."),
         timebase_hz=5000.0,
         output_rate_hz=5000.0,
         sources=[
@@ -388,6 +408,7 @@ BUILTIN = {
         filename_pattern=EEL_FNAME_PATTERN,
         magnitudes=list(MAGNITUDE_KEYS),
         nadir_method=DEFAULT_NADIR_METHOD,
+        pressure_offset_s=0.0,      # one master clock: no offset to correct
         parser="eel_imp_hig",
     ),
 }
@@ -425,6 +446,15 @@ def _parse_eel(paths, out_dir, config):
     return eel_format.process_eel(paths, out_dir, config)
 
 
+def _eel_rate(paths):
+    """The rate in an EEL recording's HIG header, or None (no file, or no
+    rate in it)."""
+    if ".hig" not in paths:
+        return None
+    from . import eel_format
+    return eel_format.recording_rate(paths[".hig"])
+
+
 def _parse_unconfigured(paths, out_dir, config):
     raise NotImplementedError(
         f"'{config.name}' has no parser yet. Write its reader, register it "
@@ -437,6 +467,12 @@ PARSERS = {
     "rapid_imp_hig": _parse_rapid,
     "eel_imp_hig": _parse_eel,
     "unconfigured": _parse_unconfigured,
+}
+
+
+#: parser name -> callable(paths) -> the rate one recording states, or None
+RATE_READERS = {
+    "eel_imp_hig": _eel_rate,
 }
 
 

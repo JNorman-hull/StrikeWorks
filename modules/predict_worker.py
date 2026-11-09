@@ -198,6 +198,8 @@ def main():
     ap.add_argument("--out",         required=True)
     ap.add_argument("--threshold",   type=float, default=None)
     ap.add_argument("--hig-peaks",   action="store_true")
+    ap.add_argument("--hig-settings", default=None,
+                    help="JSON: hig_peaks detection settings over its defaults")
     # legacy single-model flags (binary only)
     ap.add_argument("--model",       default=None)
     ap.add_argument("--metrics",     default=None)
@@ -261,6 +263,7 @@ def main():
             results[f"prob_{cn}"] = mc_probs[:, i].round(4)
 
     # ---- HIG severity (measured, independent of the model) ----
+    hig_settings = json.loads(args.hig_settings) if args.hig_settings else None
     peaks, hig_source = (_hig_peaks(df, file_meta) if args.hig_peaks
                          else (None, None))
     if peaks is not None:
@@ -271,7 +274,7 @@ def main():
     # ---- HIG peak analysis (measured events around the nadir) ----
     acc_summary = None
     if args.hig_peaks:
-        events, per_file = hig_peaks.analyse(df, file_meta["file"])
+        events, per_file = hig_peaks.analyse(df, file_meta["file"], hig_settings)
         if events is not None:
             results = results.join(per_file, on="file")
             treatments = (file_meta.set_index("file")["treatment"]
@@ -380,7 +383,7 @@ def main():
                                                "severe_strike"].sum()),
         },
         "hig_peaks": None if acc_summary is None else {
-            **hig_peaks.parameters(),
+            **hig_peaks.parameters(hig_settings),
             "n_events": int(results["n_events"].sum()),
             "n_collision": int(results["collision"].sum()),
         },

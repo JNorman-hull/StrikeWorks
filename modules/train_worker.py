@@ -51,6 +51,11 @@ import joblib
 import numpy as np
 import pandas as pd
 
+try:
+    from . import recording_rate
+except ImportError:          # run as a script from source (worker_launch.py)
+    import recording_rate
+
 
 # the GUI reads this stream as UTF-8; make that explicit so symbols like
 # "±" survive regardless of the Windows locale codepage
@@ -127,6 +132,14 @@ def prepare_data(cfg, kind):
     df = pd.read_csv(cfg["data"], low_memory=False)
     log(f"Rows: {len(df)}")
     log(f"Unique files: {df['file'].nunique()}")
+
+    # a model is for one sensor at one rate, and says which
+    problem = recording_rate.dataset_problem(df)
+    if problem:
+        raise ValueError(problem)
+    trained_on = recording_rate.identity(df)
+    log("Sensor and frequency: " + recording_rate.describe(
+        trained_on[recording_rate.SENSOR_COL], trained_on[recording_rate.RATE_FIELD]))
 
     tcol = cfg["target_column"]
     if tcol not in df.columns:
@@ -248,7 +261,7 @@ def prepare_data(cfg, kind):
     return dict(X=X, y=y, file_metadata=file_metadata, channels=channels,
                 max_length=max_length, class_names=class_names,
                 n_unlabelled=n_unlabelled, n_missing_target=n_missing_target,
-                lengths=lengths)
+                lengths=lengths, trained_on=trained_on)
 
 
 def sample_weights(cfg, y, class_names, kind):
@@ -375,6 +388,7 @@ def provenance_section(cfg, data, t0, kind):
         "include_values":   cfg.get("include_values"),
         "n_missing_target_excluded": data["n_missing_target"],
         "class_weighting":  cfg.get("class_weighting", "balanced"),
+        "decision_threshold": cfg.get("decision_threshold"),
         "split_mode":       cfg.get("split_mode", "cv_only"),
         "test_size":        cfg.get("test_size"),
         "n_folds":          cfg["n_folds"],
@@ -417,6 +431,9 @@ def run_cv_binary(cfg, data, out_dir, cv_idx, t0):
     fm = data["file_metadata"]
     weights, weight_map = sample_weights(cfg, y, data["class_names"],
                                          "binary")
+    # the user's decision threshold, or None: picked from the ROC (Youden's J)
+    fixed = cfg.get("decision_threshold")
+    fixed = float(fixed) if fixed is not None else None
 
     n_folds = int(cfg["n_folds"])
     log(f"\n{n_folds}-Fold Stratified Cross-Validation")
@@ -436,7 +453,8 @@ def run_cv_binary(cfg, data, out_dir, cv_idx, t0):
         probs = _sigmoid(pipe.decision_function(X[te]))
 
         fpr_f, tpr_f, thr_f = roc_curve(y[te], probs)
-        opt_thr = thr_f[np.argmax(tpr_f - fpr_f)]
+        opt_thr = (fixed if fixed is not None
+                   else thr_f[np.argmax(tpr_f - fpr_f)])
         preds = (probs >= opt_thr).astype(int)
 
         oof_probs[te] = probs
@@ -460,6 +478,10 @@ def run_cv_binary(cfg, data, out_dir, cv_idx, t0):
     pr_auc = auc(rec_curve, prec_curve)
     optimal_idx = int(np.argmax(tpr - fpr))
     optimal_threshold = float(thresholds[optimal_idx])
+    if fixed is not None:
+        # the user's threshold; the ROC curve marks the point nearest it
+        optimal_threshold = fixed
+        optimal_idx = int(np.argmin(np.abs(thresholds - fixed)))
     final_preds = (oof_probs >= optimal_threshold).astype(int)
     m = binary_metrics_from_preds(y, final_preds)
 
@@ -471,7 +493,8 @@ def run_cv_binary(cfg, data, out_dir, cv_idx, t0):
     log(f"  Precision:         {m['precision']:.3f}")
     log(f"  F1-Score:          {m['f1']:.3f}")
     log(f"  MCC:               {m['mcc']:.3f}")
-    log(f"  Optimal threshold: {optimal_threshold:.3f}")
+    log(f"  {'Fixed threshold:  ' if fixed is not None else 'Optimal threshold:'} "
+        f"{optimal_threshold:.3f}")
 
     log(f"\nCV summary (mean ± std, {n_folds} folds):")
     for k in cv_metrics:
@@ -532,6 +555,7 @@ def run_cv_binary(cfg, data, out_dir, cv_idx, t0):
 
     metrics = {
         "model": "MiniRocket + RidgeClassifierCV (Binary)",
+        **data["trained_on"],
         "n_samples": int(len(y)),
         "n_strikes": int(y.sum()),
         "n_no_strikes": int((y == 0).sum()),
@@ -557,6 +581,7 @@ def run_cv_binary(cfg, data, out_dir, cv_idx, t0):
             "FNR": float(m["fn"] / (m["fn"] + m["tp"])) if (m["fn"] + m["tp"]) else 0.0,
             "FPR": float(m["fp"] / (m["fp"] + m["tn"])) if (m["fp"] + m["tn"]) else 0.0,
             "optimal_threshold": optimal_threshold,
+            "threshold_selection": "fixed" if fixed is not None else "youden",
             "confusion_matrix": {"tn": m["tn"], "fp": m["fp"],
                                  "fn": m["fn"], "tp": m["tp"]},
         },
@@ -682,6 +707,7 @@ def run_cv_multiclass(cfg, data, out_dir, cv_idx, t0):
     metrics = {
         "model": ("MiniRocket + RidgeClassifierCV "
                   f"(collapsed: {cfg.get('collapse_desc', '')})"),
+        **data["trained_on"],
         "target": f"{cfg['region_column']} (collapsed)",
         # the annotation column the classes come from, for prediction's
         # ground-truth comparison (ml_state.ground_truth_for)
@@ -861,6 +887,7 @@ def _final_one_model(cfg, kind, out_dir):
 
     model_config = {
         "target_kind": kind,
+        **data["trained_on"],
         "channels": data["channels"],
         "n_channels": len(data["channels"]),
         "max_sequence_length": int(data["max_length"]),

@@ -43,6 +43,13 @@ ALL_LABEL = "All recordings"
 NOT_RECORDED_LABEL = "Not recorded"
 CHANNEL = "higacc_mag_g"
 
+#: the detection settings Predict's Advanced features can change, and their
+#: defaults (config/default_settings.json's "hig_peak_analysis" holds the
+#: same). The event bands and the collision value stay fixed (ROADMAP.md).
+DETECTION_DEFAULTS = {"height_g": HEIGHT_G, "prominence_g": PROMINENCE_G,
+                      "interpeak_s": INTERPEAK_S, "shear_s": SHEAR_S,
+                      "shear_fraction": SHEAR_FRACTION}
+
 PEAK_COLUMNS = ["file", "peak_number", "peak_time_s", "time_from_nadir_s",
                 "peak_g", "peak_type", "duration_samples", "in_roi"]
 
@@ -51,11 +58,20 @@ FILE_COLUMNS = ["n_events"] + [f"n_events_{g}g" for g in THRESHOLDS_G[1:]] + [
     "max_event_g", "collision", "collision_g", "collision_time_s"]
 
 
-def parameters():
+def detection(settings=None):
+    """The detection settings: `settings` ({name: value}, any of
+    DETECTION_DEFAULTS' names) over the defaults."""
+    out = dict(DETECTION_DEFAULTS)
+    for name, value in (settings or {}).items():
+        if name in out and value is not None:
+            out[name] = float(value)
+    return out
+
+
+def parameters(settings=None):
     """The analysis settings, for run_meta.json and the report."""
-    return {"channel": CHANNEL, "height_g": HEIGHT_G,
-            "prominence_g": PROMINENCE_G, "interpeak_s": INTERPEAK_S,
-            "shear_s": SHEAR_S, "thresholds_g": list(THRESHOLDS_G),
+    return {"channel": CHANNEL, **detection(settings),
+            "thresholds_g": list(THRESHOLDS_G),
             "collision_g": COLLISION_G, "nadir_window_s": NADIR_WINDOW_S}
 
 
@@ -67,7 +83,8 @@ def sample_rate(time):
 
 
 def find_peaks(acc, time, height=HEIGHT_G, prominence=PROMINENCE_G,
-               interpeak_s=INTERPEAK_S, shear_s=SHEAR_S):
+               interpeak_s=INTERPEAK_S, shear_s=SHEAR_S,
+               shear_fraction=SHEAR_FRACTION):
     """The acceleration events in one recording, as a DataFrame of
     peak_number, peak_index, peak_time_s, peak_g, peak_type ("collision" /
     "shear") and duration_samples, in time order."""
@@ -108,7 +125,7 @@ def find_peaks(acc, time, height=HEIGHT_G, prominence=PROMINENCE_G,
     # 4. how long it stays above 70 % of its height
     rows = []
     for number, p in enumerate(kept, start=1):
-        level = SHEAR_FRACTION * acc[p]
+        level = shear_fraction * acc[p]
         left = p
         while left > 0 and acc[left] >= level:
             left -= 1
@@ -136,14 +153,16 @@ def hig_magnitude(df):
     return None
 
 
-def analyse(df, files=None):
+def analyse(df, files=None, settings=None):
     """Peak events and per-recording results for a dataset.
 
     Returns (events, per_file): `events` has PEAK_COLUMNS, one row per
     event; `per_file` is indexed by file (in `files` order when given) with
     FILE_COLUMNS - counts and the largest event within the region of
     interest, and the collision (1/0) with its size and time, the one
-    closest to the nadir. (None, None) when the dataset has no HIG."""
+    closest to the nadir. `settings`: the detection settings (`detection`).
+    (None, None) when the dataset has no HIG."""
+    d = detection(settings)
     mag = hig_magnitude(df)
     if mag is None:
         return None, None
@@ -157,7 +176,10 @@ def analyse(df, files=None):
         rec = rec.sort_values("time_s", kind="stable")
         time = rec["time_s"].values
         nadir_t = time[len(time) // 2]
-        peaks = find_peaks(rec["acc"].values, time)
+        peaks = find_peaks(rec["acc"].values, time, height=d["height_g"],
+                           prominence=d["prominence_g"],
+                           interpeak_s=d["interpeak_s"], shear_s=d["shear_s"],
+                           shear_fraction=d["shear_fraction"])
         if len(peaks):
             peaks.insert(0, "file", file_id)
             peaks["time_from_nadir_s"] = peaks["peak_time_s"] - nadir_t

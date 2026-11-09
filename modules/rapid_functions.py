@@ -38,16 +38,21 @@ NADIR_SEARCH_SEC = 1.5
 # The passage nadir is the moment every downstream window is cut around, so
 # how it is found matters. Methods are looked up by name, so another one is
 # a function plus an entry in NADIR_METHODS. A method takes the combined
-# frame, the peak-acceleration index and the output rate, and returns
+# frame, the peak-acceleration index (None when the recording has no
+# acceleration event) and the output rate, and returns
 # (index, time, value, warnings).
 
 def nadir_pressure_min_near_peak(data, acc_max_index, fs):
-    """Lowest pressure within 1.5 s of the acceleration peak."""
+    """Lowest pressure within 1.5 s of the acceleration peak, or in the whole
+    recording when it has no peak to search around."""
     warnings = []
-    half = int(round(NADIR_SEARCH_SEC * float(fs)))
-    window_start = max(0, acc_max_index - half)
-    window_end = min(len(data) - 1, acc_max_index + half)
-    pressure_window = data["pressure_kpa"].iloc[window_start:window_end]
+    if acc_max_index is None:
+        pressure_window = data["pressure_kpa"]
+    else:
+        half = int(round(NADIR_SEARCH_SEC * float(fs)))
+        window_start = max(0, acc_max_index - half)
+        window_end = min(len(data) - 1, acc_max_index + half)
+        pressure_window = data["pressure_kpa"].iloc[window_start:window_end]
     idx = pressure_window.idxmin()
     if pressure_window.nunique() <= 1:
         warnings.append("PRES: Pressure fault identified (unchanging values)")
@@ -371,13 +376,17 @@ def parse_filename_info(filename, config=None):
         'time_deploy': time_deploy
     }
 
-def post_process_combined(data, fs=FS, magnitudes=None, nadir_method=None):
+def post_process_combined(data, fs=FS, magnitudes=None, nadir_method=None,
+                          events_from_s=None):
     """Apply post-processing to the combined dataset.
 
     `fs` is the rate of the combined series, used for the duration and by
     the nadir method. `magnitudes` selects which three-axis magnitudes are
     written (all of them by default); `nadir_method` names an entry in
-    NADIR_METHODS.
+    NADIR_METHODS. `events_from_s`, from a device that records something
+    other than events at the start, is when its events can begin: earlier
+    high-g samples don't count as the peak, and with nothing after it the
+    recording has no peak at all (HIG_max 0 g, no time).
     """
     wanted = set(MAGNITUDES) if magnitudes is None else set(magnitudes)
 
@@ -412,9 +421,15 @@ def post_process_combined(data, fs=FS, magnitudes=None, nadir_method=None):
     duration = f"{int(minutes):02}:{int(seconds):02}"
     
     # Find max acceleration time
-    acc_max_index = data[peak_name].idxmax()
-    acc_max_time = data["time_s"][acc_max_index]
-    max_acc_g_force = data[peak_name].iloc[acc_max_index]
+    peak_values = data[peak_name]
+    if events_from_s is not None:
+        peak_values = peak_values[data["time_s"] > events_from_s]
+    if events_from_s is not None and not (len(peak_values) and peak_values.max() > 0):
+        acc_max_index, acc_max_time, max_acc_g_force = None, None, 0.0
+    else:
+        acc_max_index = peak_values.idxmax()
+        acc_max_time = data["time_s"][acc_max_index]
+        max_acc_g_force = data[peak_name].iloc[acc_max_index]
     
     warnings = []
     
@@ -451,7 +466,8 @@ def post_process_combined(data, fs=FS, magnitudes=None, nadir_method=None):
         "HIG_max[g]": max_acc_g_force,
         "HIG_max[time]": acc_max_time,
         "messages": warning_message,
-        "bad_sens": bad_sens
+        "bad_sens": bad_sens,
+        "sampling_rate_hz": int(round(float(fs))),
     }
     
     return data, summary_info

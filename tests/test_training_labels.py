@@ -32,6 +32,11 @@ _LABELS = (
        for ot, r in zip(["hub_0", "hub_1", "hub_2", "surface"], [2, 3, 4, None])])
 
 
+def TrainTab_(state):
+    from modules.ml_tab_train_configure import TrainTab
+    return TrainTab(state, None)
+
+
 class Labelling(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -87,6 +92,68 @@ class Labelling(unittest.TestCase):
         tab = TrainTab(state, None)
         self.addCleanup(lambda: (tab.deleteLater(), pump(50)))
         return state, tab
+
+    def _annotated(self):
+        """Six recordings, two rows each: main and position annotations,
+        numbers as numbers, some recordings with no value."""
+        rows = []
+        for n, (passage, leading, region, location) in enumerate(
+                [("no_contact", "", "", ""), ("no_contact", "", "", 2),
+                 ("leading_edge", "direct", 2, 1), ("leading_edge", "indirect", 10, 1),
+                 ("leading_edge", "direct", 2, ""), ("other", "", 3, 2)]):
+            for t in (0.0, 0.0005):
+                rows.append({"file": f"S{n}", "time_s": t, "treatment": "A" if n < 3 else "B",
+                             "pressure_kpa": 100.0, "passage_type": passage,
+                             "leading_type": leading, "concentric_pump_region": region,
+                             "strike_location": location})
+        path = self.dir / "annotated.csv"
+        pd.DataFrame(rows).to_csv(path, index=False)
+        return path
+
+    def test_annotation_counts(self):
+        from modules.ml_train_state import NOT_ANNOTATED, TrainingState
+        state = TrainingState()
+        state.load_dataset_csv(self._annotated())
+        counts = {var.name: rows for var, rows in state.annotation_counts()}
+        # main variables first, then position; only those the dataset has
+        self.assertEqual(list(counts), ["passage_type", "leading_type",
+                                        "concentric_pump_region", "strike_location"])
+        self.assertEqual(counts["passage_type"],
+                         [("leading_edge", 3), ("no_contact", 2), ("other", 1)])
+        # numbers as written, in number order; a blank is "Not annotated"
+        self.assertEqual(counts["concentric_pump_region"],
+                         [("2", 2), ("3", 1), ("10", 1), (NOT_ANNOTATED, 2)])
+        self.assertEqual(counts["strike_location"],
+                         [("1", 2), ("2", 2), (NOT_ANNOTATED, 2)])
+        for rows in counts.values():
+            self.assertEqual(sum(n for _v, n in rows), 6)
+        only = {var.name: rows for var, rows in state.annotation_counts(["S0", "S1"])}
+        self.assertEqual(only["passage_type"], [("no_contact", 2)])
+
+    def test_annotation_summary_follows_the_table_filter(self):
+        from modules import tables
+        from modules.ml_tab_train_configure import _ClassDist
+        from modules.ml_train_state import TrainingState
+        state = TrainingState()
+        state.load_dataset_csv(self._annotated())
+        tab = TrainTab_(state)
+        self.addCleanup(lambda: (tab.deleteLater(), pump(50)))
+        self.assertTrue(tab.btn_annotation_summary.isEnabled())
+        window = tab.annotation_summary
+        window.bring_up()
+        pump(100)
+        self.assertIn("annotated.csv - 6 recording(s)", window.lbl_source.text())
+        dists = window.scroll.widget().findChildren(_ClassDist)
+        self.assertEqual(len(dists), 4)
+        self.assertEqual(dists[0]._rows, [("leading_edge", 3), ("no_contact", 2),
+                                          ("other", 1)])
+
+        tables.set_header_filter(tab.tbl_preview, "treatment", "B")
+        window.refresh()
+        self.assertIn("3 recording(s) of 6, filtered to treatment B", window.lbl_source.text())
+        dists = window.scroll.widget().findChildren(_ClassDist)
+        self.assertEqual(dists[0]._rows, [("leading_edge", 2), ("other", 1)])
+        window.hide()
 
     def test_typing_a_class_name_keeps_the_field(self):
         """Each keystroke reaches the state without the grouping being

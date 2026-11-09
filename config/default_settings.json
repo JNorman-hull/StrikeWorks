@@ -40,6 +40,13 @@
     ],
     "show_position": false
   },
+  "hig_peak_analysis": {
+    "height_g": 95,
+    "prominence_g": 25,
+    "interpeak_s": 0.002,
+    "shear_s": 0.0075,
+    "shear_fraction": 0.7
+  },
   "model_training": {
     "target_column": "passage_type",
     "negative_class": "no_contact",

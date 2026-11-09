@@ -329,6 +329,21 @@
   (`STRIKEWORKS_E2E=1`; 11-19 minutes on this machine on 6 October,
   where building the main window alone took 25 s).
 
+## EEL tag (November 2026)
+
+The tag records at 2000, 2500 or 5000 Hz, and StrikeWorks follows each
+recording's own rate from its HIG header through to prediction (README,
+"Sensor configurations"). Open:
+
+- Real files: `EEL_001-1030160046` is a 2000 Hz recording (160 Hz filter, 10 g
+  trigger) and `EEL-0010829034703` is a 5000 Hz bench file with no events, so
+  nothing yet checks 5000 Hz events or any 2500 Hz recording against real data.
+  Everything else has only run on `tools/make_eel_dummy.py`'s recordings.
+- Models: there are no EEL models. StrikeWorks's default models are RAPID's, so
+  Predict refuses an EEL dataset until an EEL model is trained and chosen.
+- The 95/200/400 g bands and the HIG flag come from RAPID at 2000 Hz. Whether
+  they mean the same at another rate and filter hasn't been looked at.
+
 ## What there is
 
 | Item | Where | Notes |

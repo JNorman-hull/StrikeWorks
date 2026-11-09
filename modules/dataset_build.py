@@ -13,8 +13,9 @@ deployment / treatment / run carried over from the sensor index.
   OPT_UNSEGMENTED  cut the window straight out of each full sensor CSV
                    around the index's nadir time
 
-The window is 200 ms; how many rows that is follows the sensor's output
-rate (400 at RAPID's 2000 Hz).
+The window is 200 ms; how many rows that is follows each recording's own
+rate (400 at 2000 Hz, 1000 at 5000 Hz). A dataset holds one sensor at one rate
+(recording_rate.py), so a build that would mix them stops with `error` set.
 """
 import re
 
@@ -23,20 +24,26 @@ import pandas as pd
 from PySide6.QtCore import QThread, Signal
 
 from . import deployment_index as di
-from . import sensor_config
+from . import recording_rate
 from .raw_layout import CSV_DIR, INDEX_REL, WINDOW_DIR
 
 WIN_SEC = 0.2
-TARGET_ROWS = 400        # fallback: 200 ms at 2000 Hz
 NADIR_COL = "pres_min.time."
 WIN_SUFFIX_RE = re.compile(r"_\d+ms$")
 BAD_SENS_COL = "bad_sens"
 
 # index columns carried into every dataset row
-META_COLS = ["deployment_id", "treatment", "run"]
+META_COLS = ["deployment_id", "treatment", "run", recording_rate.SENSOR_COL]
 
 OPT_UNSEGMENTED = 2
 OPT_SEGMENTED = 3
+
+
+def window_rows(time):
+    """Rows in the window at the rate of `time` (one recording's time_s), or
+    None if there's too little of it to tell."""
+    rate = recording_rate.time_rate(time)
+    return int(round(WIN_SEC * rate)) if rate else None
 
 
 def standardise(df, target):
@@ -55,18 +62,14 @@ class ExtractThread(QThread):
     log = Signal(str)
     done = Signal(int, int, int)   # n_ok, n_skip, n_rows
 
-    def __init__(self, root, option, selected_files, index_df, config=None):
+    def __init__(self, root, option, selected_files, index_df):
         super().__init__()
         self._root = root
         self._option = option
         self._selected_files = selected_files
         self._index_df = index_df
-        self._config = config or sensor_config.active()
         self._result_df = None
-
-    @property
-    def _target_rows(self):
-        return self._config.window_samples(WIN_SEC) or TARGET_ROWS
+        self.error = None
 
     @property
     def _win_suffix(self):
@@ -93,9 +96,13 @@ class ExtractThread(QThread):
                 df, n_ok, n_skip = self._run_unsegmented()
             else:
                 df, n_ok, n_skip = self._run_segmented()
+            problem = recording_rate.dataset_problem(df) if df is not None else None
+            if problem:
+                raise ValueError(problem)
             self._result_df = df
             self.done.emit(n_ok, n_skip, len(df) if df is not None else 0)
         except Exception as e:
+            self.error = str(e)
             self.log.emit(f"\nFATAL: {e}")
             self.done.emit(0, 0, 0)
 
@@ -181,7 +188,8 @@ class ExtractThread(QThread):
                 sliced = sensor[(sensor["time_s"] >= t_start)
                                 & (sensor["time_s"] <= t_end)].copy()
 
-                out = standardise(sliced, self._target_rows)
+                rows = window_rows(sensor["time_s"])
+                out = standardise(sliced, rows) if rows else None
                 if out is None:
                     self.log.emit(
                         f"  SKIP {stem} - only {len(sliced)} rows in window "
@@ -245,11 +253,12 @@ class ExtractThread(QThread):
 
             try:
                 win = pd.read_csv(win_path, low_memory=False)
-                out = standardise(win, self._target_rows)
+                rows = window_rows(win["time_s"])
+                out = standardise(win, rows) if rows else None
                 if out is None:
                     self.log.emit(
                         f"  SKIP {stem} - only {len(win)} rows "
-                        f"(expected >= {self._target_rows - 1})")
+                        f"(expected >= {(rows or 1) - 1})")
                     n_skip += 1
                     continue
 

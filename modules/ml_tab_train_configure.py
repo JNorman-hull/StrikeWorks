@@ -33,19 +33,20 @@ from pathlib import Path
 
 import pandas as pd
 
-from PySide6.QtCore import Qt, QElapsedTimer, QTimer
+from PySide6.QtCore import QEvent, Qt, QElapsedTimer, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QGridLayout,
+    QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFrame, QGridLayout,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QProgressBar,
     QPushButton, QRadioButton, QSizePolicy, QSpinBox, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from . import model_measures, settings
+from . import annotation_schema as asch
+from . import model_measures, recording_rate, settings
 from .bind_datasets import BindTrainingData
 from .cards import MetaCard, Spinner
-from .layout import hsplit, scroll_page, Section
+from .layout import hsplit, scroll_area, scroll_page, Section
 from .ml_tab_train_deploy import (
     ACTION_W, FIELD_W, DeploymentPanel, action_button, column,
 )
@@ -106,6 +107,89 @@ class _ClassDist(QWidget):
                 p.drawRoundedRect(self.LAB_W + self.NUM_W, y + 5, fill,
                                   self.ROW_H - 10, 3, 3)
         p.end()
+
+
+class AnnotationSummaryWindow(QDialog):
+    """How many recordings hold each value of each annotation variable, in
+    the class distributions' bars - over the recordings the preview table
+    shows, so its header filters narrow it. Doesn't block, like Model
+    information; re-reads the table each time it's brought up or comes back
+    to the front, and goes when the tab does."""
+
+    def __init__(self, tab, owner):
+        # (the tab, without a window - the tests: never parentless)
+        super().__init__(owner if owner is not None else tab)
+        self.tab = tab
+        self._shown_for = None
+        self.setWindowTitle("Annotation summary")
+        v = QVBoxLayout(self)
+        v.setContentsMargins(14, 12, 14, 12)
+        self.lbl_source = muted_label("", wrap=True)
+        v.addWidget(self.lbl_source)
+        self.scroll = scroll_area(QWidget())
+        v.addWidget(self.scroll, stretch=1)
+        self.resize(460, 620)
+        tab.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj is self.tab and event.type() == QEvent.Type.Hide:
+            self.hide()
+        return super().eventFilter(obj, event)
+
+    def event(self, event):
+        if event.type() == QEvent.Type.WindowActivate:
+            self.refresh()
+        return super().event(event)
+
+    def bring_up(self):
+        self.refresh()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def refresh(self):
+        """Redraw for what the table shows now - unless that hasn't changed,
+        so coming back to the window keeps its scroll position."""
+        state = self.tab.state
+        files = self.tab.shown_files()
+        filters = self.tab.preview_filters()
+        key = (id(state.dataset_df), tuple(files), tuple(sorted(filters.items())))
+        if key == self._shown_for:
+            return
+        self._shown_for = key
+
+        n_all = state.dataset_meta.get("n_files", len(files))
+        text = f"{state.dataset_meta.get('name', '')} - {len(files)} recording(s)"
+        if len(files) != n_all:
+            text += f" of {n_all}"
+        if filters:
+            text += ", filtered to " + ", ".join(
+                f"{k} {v or '(blank)'}" for k, v in filters.items())
+        self.lbl_source.setText(text)
+
+        body = QWidget()
+        style(body, role="bare")
+        bv = QVBoxLayout(body)
+        bv.setContentsMargins(0, 0, 8, 0)
+        counts = state.annotation_counts(files)
+        sections = {}
+        for var, rows in counts:
+            if var.group not in sections:
+                section = Section(asch.GROUP_LABELS.get(var.group, ""))
+                bv.addWidget(section)
+                sections[var.group] = QVBoxLayout(section)
+                sections[var.group].setSpacing(4)
+            sv = sections[var.group]
+            sv.addWidget(muted_label(
+                var.label if var.label == var.name else f"{var.label} ({var.name})"))
+            dist = _ClassDist()
+            dist.set_counts(rows)
+            sv.addWidget(dist)
+            sv.addSpacing(6)
+        if not counts:
+            bv.addWidget(muted_label("This dataset has no annotation columns."))
+        bv.addStretch()
+        self.scroll.setWidget(body)
 
 
 def _spin(lo, hi, value, step=None):
@@ -188,11 +272,12 @@ class TrainTab(QWidget):
         self.lbl_compat = QLabel("")
         style(self.lbl_compat, tone="ok")
         left.addWidget(self.lbl_compat)
-        # several datasets stacked into one - loaded straight away
+        left.addStretch()
+        # several datasets stacked into one - loaded straight away; at the
+        # bottom, so its buttons line up with Annotation summary's
         self.bind_widget = BindTrainingData()
         self.bind_widget.bound.connect(self._load_path)
         left.addWidget(self.bind_widget)
-        left.addStretch()
 
         self.tbl_preview = QTableWidget(0, 0)
         self.tbl_preview.setToolTip("The dataset's file-level metadata, one "
@@ -204,10 +289,37 @@ class TrainTab(QWidget):
             QHeaderView.ResizeMode.ResizeToContents)
         self.tbl_preview.horizontalHeader().setStretchLastSection(True)
         self.tbl_preview.setMinimumHeight(180)
+
+        self.annotation_summary = AnnotationSummaryWindow(self, self.main_window)
+        self.btn_annotation_summary = QPushButton("Annotation summary")
+        self.btn_annotation_summary.setToolTip(
+            "How many recordings hold each value of each annotation - of those "
+            "the table shows, so filter it first to look at a subset.")
+        self.btn_annotation_summary.setEnabled(False)
+        self.btn_annotation_summary.clicked.connect(self.annotation_summary.bring_up)
+        right_w = QWidget()
+        right = QVBoxLayout(right_w)
+        right.setContentsMargins(0, 0, 0, 0)
+        right.setSpacing(8)
+        right.addWidget(self.tbl_preview, stretch=1)
+        summary_row = QHBoxLayout()
+        summary_row.addStretch()
+        summary_row.addWidget(self.btn_annotation_summary)
+        right.addLayout(summary_row)
         # the left side starts as narrow as it can be; widths beyond go to
         # the preview
-        row.addWidget(hsplit((left_w, 0), (self.tbl_preview, 1)))
+        row.addWidget(hsplit((left_w, 0), (right_w, 1)))
         return grp
+
+    def shown_files(self):
+        """The recordings the preview table shows - its header filters applied."""
+        t = self.tbl_preview
+        return [t.item(r, 0).text() for r in range(t.rowCount())
+                if not t.isRowHidden(r) and t.item(r, 0) is not None]
+
+    def preview_filters(self):
+        """{column: value} the preview table's header filters hold."""
+        return dict(getattr(self.tbl_preview, "_header_filters", {}))
 
     def _labelling_section(self):
         """The binary target and its values' coding, the multiclass class
@@ -344,7 +456,7 @@ class TrainTab(QWidget):
         return grp
 
     def _weights_section(self):
-        """Class weights, and each class's weight."""
+        """Class weights, each class's weight and the decision threshold."""
         grp = Section("Class weights")
         wv = QVBoxLayout(grp)
         wv.setSpacing(6)
@@ -363,6 +475,26 @@ class TrainTab(QWidget):
         self.lbl_weights = QLabel("")
         style(self.lbl_weights, role="muted")
         wv.addWidget(self.lbl_weights)
+        t_row = QHBoxLayout()
+        t_row.setSpacing(8)
+        self.chk_fixed_thr = QCheckBox("Fixed decision threshold")
+        self.chk_fixed_thr.setToolTip(
+            "Unticked, the binary model's threshold is picked from "
+            "cross-validation (Youden's J). Ticked, it's this value: "
+            "cross-validation is scored at it and the model keeps it.")
+        self.spin_fixed_thr = QDoubleSpinBox()
+        self.spin_fixed_thr.setRange(0.01, 0.99)
+        self.spin_fixed_thr.setDecimals(2)
+        self.spin_fixed_thr.setSingleStep(0.05)
+        self.spin_fixed_thr.setValue(0.5)
+        self.spin_fixed_thr.setFixedWidth(FIELD_W)
+        self.spin_fixed_thr.setEnabled(False)
+        self.chk_fixed_thr.toggled.connect(self._threshold_changed)
+        self.spin_fixed_thr.valueChanged.connect(self._threshold_changed)
+        t_row.addWidget(self.chk_fixed_thr)
+        t_row.addWidget(self.spin_fixed_thr)
+        t_row.addStretch()
+        wv.addLayout(t_row)
         wv.addStretch()
         return grp
 
@@ -641,6 +773,10 @@ class TrainTab(QWidget):
             self._rebuild_breakdown_checks()
             self._rebuild_channel_checks()
             self._fill_preview()
+            self.btn_annotation_summary.setEnabled(s.dataset_df is not None)
+            if self.annotation_summary.isVisible():
+                # once the table's filters are back on
+                QTimer.singleShot(0, self.annotation_summary.refresh)
         finally:
             self._updating = False
         self._refresh_all()
@@ -894,6 +1030,13 @@ class TrainTab(QWidget):
             class_weighting="balanced" if self.rb_w_balanced.isChecked()
             else "none")
 
+    def _threshold_changed(self):
+        fixed = self.chk_fixed_thr.isChecked()
+        self.spin_fixed_thr.setEnabled(fixed)
+        if not self._updating:
+            self.state.update(
+                fixed_threshold=self.spin_fixed_thr.value() if fixed else None)
+
     def _model_changed(self):
         if self._updating:
             return
@@ -931,6 +1074,8 @@ class TrainTab(QWidget):
             ("Channels",             m.get("n_channel_candidates")),
             ("Treatments",           len(m.get("treatments", []))
                                      if m.get("treatments") else None),
+            ("Sensor",               recording_rate.sensor_name(
+                m["identity"][recording_rate.SENSOR_COL]) if m.get("identity") else None),
             ("Sampling rate",        f"{m['sampling_rate_hz']:,} Hz"
                                      if m.get("sampling_rate_hz") else None),
             ("Sequence range",       seq),

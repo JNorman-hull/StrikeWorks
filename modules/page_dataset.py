@@ -16,8 +16,8 @@ Annotate's "Save and export" builds the dataset instead).
       Binds the saved window files in ``processed_sens_data/nadir_window``,
       keeping only sensors in the index with ``bad_sens == N``.
 
-The window is 200 ms; its row count follows the selected sensor's output
-rate (400 rows for RAPID at 2000 Hz).
+The window is 200 ms; its row count follows each recording's own rate (400
+rows at 2000 Hz, 1000 at 5000 Hz).
 """
 from pathlib import Path
 
@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import deployment_index as di
-from . import sensor_config, settings
+from . import settings
 from .bind_datasets import BindTrainingData
 from .canvas import FigureCanvas
 from .dataset_build import (
@@ -355,17 +355,14 @@ class DatasetPage(Page):
         self.canvas.draw()
         self.console_ds.clear()
 
-        cfg = sensor_config.active()
         half = WIN_SEC / 2
         label = {OPT_UNSEGMENTED: f"Unsegmented (auto nadir +/- {half:g} s)",
                  OPT_SEGMENTED: "Segmented (bind saved nadir windows)"}[option]
         n_sel = len(selected) if selected else "all"
-        self._log(f"Method: {label}\nFiles selected: {n_sel}\n"
-                  f"Sensor: {cfg.name} - {cfg.window_samples(WIN_SEC)} rows "
-                  f"per window at {cfg.output_rate_hz:g} Hz\n")
+        self._log(f"Method: {label}\nFiles selected: {n_sel}\n")
 
         self._thread = ExtractThread(
-            self._root, option, selected or set(), self._index, cfg)
+            self._root, option, selected or set(), self._index)
         self._thread.log.connect(self._log)
         self._thread.done.connect(self._on_done)
         self._thread.start()

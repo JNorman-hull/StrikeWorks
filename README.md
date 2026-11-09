@@ -76,8 +76,24 @@ reaches the grid. Two ship:
   at 2000 Hz in bursts around events, placed on the grid with the gaps
   filled with 0.
 * **EEL tag** (`micro_eel`) - 23-byte `.imp` and 11-byte `.hig` records on a
-  shared master clock; the sample rate comes from the recording's `.log`
+  shared master clock, at 2000, 2500 or 5000 Hz. Each recording's rate comes
+  from its HIG header and its processed CSV is written at that rate
   (`modules/eel_format.py`, per the EEL tag binary format specification).
+  The start-up burst at the front of a HIG file isn't an event, so it can't
+  place the nadir; a recording with no events has its nadir at its lowest
+  pressure.
+
+A processed recording's rate is in the index (`sampling_rate_hz`) and in its
+own time step, and everything after processing reads it from there, not from
+the selected sensor: a 200 ms window is 400 rows at 2000 Hz, 500 at 2500 Hz
+and 1000 at 5000 Hz. Raw data processing lists each recording's Frequency and
+asks what to process when a selection mixes them. A dataset holds one sensor
+at one frequency (Save and export asks which; binding and training refuse a
+mix), a model records both, and Predict refuses anything else, so each sensor
+and frequency needs its own models (`modules/recording_rate.py`).
+`tools/make_eel_dummy.py` writes a library of dummy EEL recordings at all
+three rates for trying this out; `tests/test_eel_pipeline.py` runs them
+through (`STRIKEWORKS_E2E=1` for training and prediction too).
 
 A new device is New or Duplicate in Sensor configuration plus a Save
 (kept in the settings file); only its reader is code, written and

@@ -407,7 +407,10 @@ def _threshold_text(state):
     if meta.get("threshold_overridden"):
         return (f"{thr:.4f} (user override; deployed "
                 f"{meta.get('deployed_threshold', '?')})")
-    return f"{thr:.4f} (deployed optimal threshold)"
+    perf = (state.bin_metrics or {}).get("out_of_fold_performance") or {}
+    how = ("fixed in training" if perf.get("threshold_selection") == "fixed"
+           else "optimal")
+    return f"{thr:.4f} (deployed {how} threshold)"
 
 
 def wrap_html_document(body_html, title="Blade Strike Analysis Report"):

@@ -41,7 +41,7 @@ from PySide6.QtGui import QKeySequence, QShortcut
 
 from . import annotation_schema as asch
 from . import deployment_index as di
-from . import raw_layout, sensor_config, settings
+from . import raw_layout, recording_rate, sensor_config, settings
 
 NADIR_T_COL = "pres_min.time."
 NADIR_V_COL = "pres_min.kPa."
@@ -56,8 +56,11 @@ WIN_SEC = 0.2
 WIN_DIR = raw_layout.WINDOW_DIR
 
 
-def sample_rate():
-    return sensor_config.active().output_rate_hz or 2000
+def data_rate(df):
+    """The rate of a processed sensor CSV, from its own time step - it's what
+    the CSV's rows mean, whichever sensor is selected."""
+    rate = recording_rate.time_rate(df["time_s"]) if "time_s" in df.columns else None
+    return rate or sensor_config.active().output_rate_hz
 
 
 def processed_sensor_files(lib_root):
@@ -82,8 +85,8 @@ def detect_nadir_idx(stem, df, time, pres, index_df):
     return len(df) // 2
 
 
-def window_bounds(nadir_idx, n, win_sec, fs=None):
-    half_n = int(round(win_sec / 2 * (fs or sample_rate())))
+def window_bounds(nadir_idx, n, win_sec, fs):
+    half_n = int(round(win_sec / 2 * fs))
     return max(0, nadir_idx - half_n), min(n - 1, nadir_idx + half_n)
 
 
@@ -289,7 +292,7 @@ def save_window(lib_root, index_df, stem, df, nadir_idx, win_sec,
     the window, validated, flagged, and - for a human's Save + next - user
     validated / user adjusted. The caller writes the index."""
     time, pres, hig = signals(df)
-    start, end = window_bounds(nadir_idx, len(df), win_sec)
+    start, end = window_bounds(nadir_idx, len(df), win_sec, data_rate(df))
     _write_window(lib_root, stem, df, start, end, win_sec)
 
     hig_max = (float(np.max(hig[start:end + 1]))
@@ -447,6 +450,27 @@ def import_annotations_csv(lib_root, csv_path):
     return int(sensors.sum()), names
 
 
+def window_rates(lib_root, stems=None):
+    """{stem: rate} for a library's saved windows (`stems` narrows them). The
+    index answers where it can, the window's own first rows where it can't."""
+    from .dataset_build import WIN_SUFFIX_RE
+    known = di.index_rates(di.read_index(lib_root))
+    rates = {}
+    for path in sorted((Path(lib_root) / WIN_DIR).glob("*.csv")):
+        stem = WIN_SUFFIX_RE.sub("", path.stem)
+        if stems is not None and stem not in stems:
+            continue
+        rate = known.get(stem)
+        if not rate:
+            try:
+                rate = data_rate(pd.read_csv(path, nrows=20))
+            except (OSError, ValueError) as e:
+                print(f"Could not read the rate of {path.name}: {e}")
+                continue
+        rates[stem] = float(rate)
+    return rates
+
+
 def merge_into_running_dataset(lib_root, df):
     """Replace these sensors' blocks in the library's running dataset
     (`processed_sens_data/model_features.csv`) with `df`'s. Annotate's
@@ -494,15 +518,15 @@ class DatasetExporter(QObject):
         self._lib_root = lib_root
         self._index_df = di.read_index(lib_root)
         self._thread = ExtractThread(lib_root, OPT_SEGMENTED,
-                                      set(selected or ()), self._index_df,
-                                      sensor_config.active())
+                                      set(selected or ()), self._index_df)
         self._thread.done.connect(self._on_done)
         self._thread.start()
 
     def _on_done(self, n_ok, n_skip, n_rows):
         df = self._thread.result if self._thread is not None else None
         if df is None or not len(df):
-            self.finished.emit(None, None, "Dataset build produced no rows.")
+            error = self._thread.error if self._thread is not None else None
+            self.finished.emit(None, None, error or "Dataset build produced no rows.")
             return
         df = join_annotations(df, self._index_df)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")

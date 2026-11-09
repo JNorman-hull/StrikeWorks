@@ -31,10 +31,14 @@ import pandas as pd
 
 from PySide6.QtCore import QObject, QThread, Signal
 
-from . import hig_peaks, model_labels, settings
+from . import hig_peaks, model_labels, recording_rate, settings
 from .worker_launch import worker_command
 
 _DEFAULT_LOW_CONF = 0.70
+
+
+# the settings file's section holding HIG peak analysis's detection settings
+HIG_SECTION = "hig_peak_analysis"
 
 
 # ── worker thread ────────────────────────────────────────────────────────────
@@ -44,13 +48,14 @@ class _WorkerThread(QThread):
 
     def __init__(self, bin_model, bin_metrics, mc_model, mc_metrics,
                  data_path, out_dir, threshold=None, df_to_write=None,
-                 hig_peaks=False):
+                 hig_peaks=False, hig_settings=None):
         super().__init__()
         self._bin_model, self._bin_metrics = bin_model, bin_metrics
         self._mc_model,  self._mc_metrics  = mc_model,  mc_metrics
         self._data, self._out = data_path, out_dir
         self._threshold = threshold
         self._hig_peaks = hig_peaks
+        self._hig_settings = hig_settings
         self._df_to_write = df_to_write   # in-memory dataset -> temp CSV
 
     def run(self):
@@ -74,6 +79,8 @@ class _WorkerThread(QThread):
             cmd += ["--threshold", str(self._threshold)]
         if self._hig_peaks:
             cmd.append("--hig-peaks")
+            if self._hig_settings:
+                cmd += ["--hig-settings", json.dumps(self._hig_settings)]
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             # the worker's own output, for the console (dev_console.py
@@ -141,6 +148,9 @@ class PredictionState(QObject):
         self.threshold_override   = 0.5
         self.low_conf_threshold   = _DEFAULT_LOW_CONF
         self.hig_peaks            = True         # HIG peak analysis (hig_peaks.py)
+        # its detection settings - Advanced features, kept in the settings
+        # file (defaults: config/default_settings.json)
+        self.hig_settings = hig_peaks.detection(settings.read_section(HIG_SECTION))
 
         # run / results
         self.running        = False
@@ -430,6 +440,8 @@ class PredictionState(QObject):
                 meta["sampling_rate_hz"] = round(1.0 / float(dt))
 
         meta["columns"]   = list(df.columns)
+        meta["data_problem"] = recording_rate.dataset_problem(df)
+        meta["identity"] = recording_rate.identity(df)
         return meta
 
     # ── validation ───────────────────────────────────────────────────────────
@@ -474,6 +486,23 @@ class PredictionState(QObject):
                     add("fail", f"'{col}' column present",
                         "Required by the prediction worker.")
 
+            # one sensor at one rate, the one the models were trained on
+            if self.dataset_meta.get("data_problem"):
+                add("fail", "One sensor and frequency",
+                    self.dataset_meta["data_problem"])
+            elif self.bin_metrics:
+                used = [("Binary model", self.bin_metrics)]
+                if self.mode == "multiclass" and self.mc_metrics:
+                    used.append(("Multiclass model", self.mc_metrics))
+                for label, metrics in used:
+                    problem = recording_rate.model_problem(
+                        metrics, self.dataset_meta["identity"])
+                    if problem:
+                        add("fail", f"{label} matches the dataset", problem)
+                    else:
+                        add("ok", f"{label} matches the dataset", recording_rate.describe(
+                            *recording_rate.model_identity(metrics)))
+
             # channels
             if self.bin_metrics:
                 req = self.required_channels()
@@ -515,6 +544,18 @@ class PredictionState(QObject):
 
     def set_hig_peaks(self, enabled):
         self.hig_peaks = bool(enabled)
+        self.config_changed.emit()
+
+    def set_hig_setting(self, name, value):
+        """One detection setting (a hig_peaks.DETECTION_DEFAULTS name)."""
+        self.hig_settings = hig_peaks.detection({**self.hig_settings, name: value})
+        settings.write_section(HIG_SECTION, dict(self.hig_settings))
+        self.config_changed.emit()
+
+    def reset_hig_settings(self):
+        """The shipped defaults back."""
+        self.hig_settings = hig_peaks.detection(settings.default_section(HIG_SECTION))
+        settings.write_section(HIG_SECTION, dict(self.hig_settings))
         self.config_changed.emit()
 
     def set_threshold_override(self, enabled, value=None):
@@ -568,7 +609,7 @@ class PredictionState(QObject):
             self.mc_model_path if use_mc else None,
             self.mc_metrics_path if use_mc else None,
             data_path, out_dir, threshold=threshold, df_to_write=df_to_write,
-            hig_peaks=self.hig_peaks)
+            hig_peaks=self.hig_peaks, hig_settings=self.hig_settings)
         self._thread.finished_ok.connect(self._on_worker_done)
         self._thread.failed.connect(self._on_worker_failed)
         self._thread.start()
@@ -592,10 +633,14 @@ class PredictionState(QObject):
 
     def _apply_results(self, out_dir):
         self.out_dir     = out_dir
-        self.predictions = pd.read_csv(out_dir / "predictions.csv")
+        # class names stay text: read as numbers, classes called "2" and "3"
+        # (a pump region's levels, say) would no longer match the model's own
+        self.predictions = pd.read_csv(out_dir / "predictions.csv",
+                                       dtype={"predicted_region": str})
         self.summary     = pd.read_csv(out_dir / "summary.csv")
         region = out_dir / "region_summary.csv"
-        self.region_summary = pd.read_csv(region) if region.exists() else None
+        self.region_summary = (pd.read_csv(region, dtype={"region": str})
+                               if region.exists() else None)
         sev = out_dir / "severity_summary.csv"
         self.severity_summary = pd.read_csv(sev) if sev.exists() else None
         peaks = out_dir / "hig_peaks.csv"

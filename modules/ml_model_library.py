@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import ml_report, ml_train_figures, model_measures
+from . import ml_report, ml_train_figures, model_measures, recording_rate
 
 _STEM_RE = re.compile(r"^(binary|multiclass)(\d+(?:_\d+)*)$")
 
@@ -259,6 +259,7 @@ def build_model_report_html(entry, image_paths=None, embed_images=False,
                    else f"Deployed model: {Path(entry.model_path).name}"),
         ("Version", entry.version or na),
         ("Training observations", m.get("n_samples", na)),
+        ("Trained on", recording_rate.describe(*recording_rate.model_identity(m))),
         ("Input channels", ", ".join(m.get("channels", [])) or na),
         ("Sequence length", f"{m.get('max_sequence_length', na)} samples"),
     ]

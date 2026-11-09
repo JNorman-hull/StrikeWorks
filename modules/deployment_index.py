@@ -96,6 +96,9 @@ TREATMENT_COLUMNS = [c for c, _ in TREATMENT_FIELDS]
 #: change; it only appears once a plan records one.
 SENSOR_CONFIG_COL = "sensor_config"
 
+#: the rate a recording's processed CSV is written at (index_schema)
+RATE_COL = "sampling_rate_hz"
+
 #: every column a treatment carries onto a sensor when one is assigned
 STAMPED_COLUMNS = (DEPLOYMENT_COLUMNS + TREATMENT_COLUMNS
                    + [RUN_COL, SENSOR_CONFIG_COL])
@@ -528,7 +531,16 @@ def restamp_deployment(root, deployment_id):
     return n
 
 
-def stamp_by_location(root, located):
+def index_rates(index_df):
+    """{file: rate} for the recordings an index has a rate for."""
+    if index_df is None or RATE_COL not in index_df.columns:
+        return {}
+    rates = pd.to_numeric(index_df[RATE_COL], errors="coerce")
+    known = rates.notna() & (rates > 0)
+    return dict(zip(index_df.loc[known, FILE_COL].astype(str), rates[known]))
+
+
+def stamp_by_location(root, located, sensor_key=None):
     """Label freshly processed recordings from where their raw files sit.
 
     `located` is [{"stem", "deployment", "treatment", "run"}, ...] (see
@@ -536,7 +548,9 @@ def stamp_by_location(root, located):
     with that deployment's saved plan - its deployment fields and the
     treatment's conditions - plus the run from the folder; a deployment or
     treatment with no saved plan still gets its name and run, so nothing
-    processed is ever left unlabelled. Returns rows changed."""
+    processed is ever left unlabelled. `sensor_key` is the configuration that
+    processed them, which is what their data came from whatever the plan
+    says. Returns rows changed."""
     groups = {}
     for f in located:
         key = (f.get("deployment", UNGROUPED), f.get("treatment", UNGROUPED),
@@ -558,5 +572,7 @@ def stamp_by_location(root, located):
         if treat and treat != UNGROUPED:
             values.update(plans[dep].get(treat, {}))
             values[TREATMENT_COL] = treat
+        if sensor_key:
+            values[SENSOR_CONFIG_COL] = sensor_key
         n += apply_treatment(root, stems, values, run=run)
     return n

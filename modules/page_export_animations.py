@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import deployment_index as di
-from . import sensor_config, video_sync
+from . import recording_rate, sensor_config, video_sync
 from .library_widgets import LibrarySelector
 from .session_state import OUTPUT_DIR_NAME
 from .layout import (
@@ -118,6 +118,7 @@ class ExportAnimationsPage(Page):
 
         self._df = None
         self._time = None
+        self._pressure_offset_s = sensor_config.active().pressure_offset_s
         self._cur_path = None
         self._cur_stem = ""
         self._nadir_idx = None
@@ -369,7 +370,7 @@ class ExportAnimationsPage(Page):
         self.ed_pump = QLineEdit()
         self.ed_shaft_speed = QLineEdit()
         self.ed_camera = QLineEdit("Chronos HD 2.1 (1000 fps)")
-        self.ed_sensor = QLineEdit("RAPID - pressure (100 Hz), acceleration (2000 Hz)")
+        self.ed_sensor = QLineEdit()        # _load_config fills it
         for row, (label, edit) in enumerate([
                 ("Pump", self.ed_pump),
                 ("Shaft speed", self.ed_shaft_speed),
@@ -903,10 +904,18 @@ class ExportAnimationsPage(Page):
             return f"{model} ({kind})"
         return model or kind
 
-    @staticmethod
-    def _sensor_default():
-        cfg = sensor_config.active()
-        return f"{cfg.name} ({cfg.output_rate_hz:g} Hz)"
+    def _sensor_of(self, row):
+        """The configuration behind an index row: the one that processed it,
+        else the one selected."""
+        key = str(row.get("sensor_config", "")) if row is not None else ""
+        return sensor_config.get(key) or sensor_config.active()
+
+    def _sensor_default(self, row):
+        """The sensor and the rate of the recording on show."""
+        cfg = self._sensor_of(row)
+        rate = (recording_rate.time_rate(self._df["time_s"])
+                if self._df is not None else None) or cfg.output_rate_hz
+        return f"{cfg.name} ({rate:g} Hz)"
 
     def _load_config(self):
         index_df = di.read_index(self._lib_root) if self._lib_root else None
@@ -923,7 +932,8 @@ class ExportAnimationsPage(Page):
         self.ed_pump.setText(cfg.get("pump") or self._pump_default_from_row(row))
         self.ed_shaft_speed.setText(cfg.get("shaft_speed") or treatment)
         self.ed_camera.setText(cfg.get("camera", self.ed_camera.text()))
-        self.ed_sensor.setText(cfg.get("sensor") or self._sensor_default())
+        self.ed_sensor.setText(cfg.get("sensor") or self._sensor_default(row))
+        self._pressure_offset_s = self._sensor_of(row).pressure_offset_s
         self.spin_nadir_frame.setValue(int(cfg.get("nadir_frame", 0)))
         self.spin_real_fps.setValue(int(cfg.get("real_fps", 1000)))
         self.spin_window.setValue(
@@ -1036,6 +1046,7 @@ class ExportAnimationsPage(Page):
         cfg = self._config_values()
         opts = video_sync.SyncOptions(
             real_fps=cfg["real_fps"], graph_window_s=cfg["graph_window_s"],
+            pressure_offset_s=self._pressure_offset_s,
             zoom=cfg["zoom"], add_labels=cfg["add_labels"],
             video_nudge_px=cfg["video_nudge_px"], logo_path=cfg["logo_path"],
             logo_opacity=cfg["logo_opacity"], channels=cfg["channels"],
@@ -1186,6 +1197,7 @@ class ExportAnimationsPage(Page):
         cfg = self._config_values()
         opts = video_sync.SyncOptions(
             real_fps=cfg["real_fps"], graph_window_s=cfg["graph_window_s"],
+            pressure_offset_s=self._pressure_offset_s,
             zoom=cfg["zoom"], add_labels=cfg["add_labels"],
             video_nudge_px=cfg["video_nudge_px"], logo_path=cfg["logo_path"],
             logo_opacity=cfg["logo_opacity"], channels=cfg["channels"],

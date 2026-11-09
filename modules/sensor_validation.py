@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import deployment_index as di
-from . import sensor_sort, settings
+from . import frequency_dialog, sensor_sort, settings
 from . import validation_core as vc
 from .cards import Spinner
 from .plot_style import (
@@ -605,7 +605,7 @@ class ValidationView(QWidget):
     def window_df(self):
         """The current sensor's ROI window, as Save + Next saves it."""
         start, end = vc.window_bounds(self._nadir_idx, len(self._df),
-                                      self._win_sec, vc.sample_rate())
+                                      self._win_sec, vc.data_rate(self._df))
         return self._df.iloc[start:end + 1].copy()
 
     @property
@@ -745,12 +745,18 @@ class ValidationView(QWidget):
                     QMessageBox.StandardButton.No)
                 if reply != QMessageBox.StandardButton.Yes:
                     return
+        selected = None if self._export_all else set(stems)
+        rates = vc.window_rates(self._lib_root, selected)
+        keep = frequency_dialog.choose_for_dataset(self.parent_window, rates)
+        if keep is None:
+            return
+        if len(keep) < len(rates):
+            selected = keep
         name = (self.export_name() if self.export_name is not None
                 else None) or self._lib_root.name
         self.btn_save_export.setEnabled(False)
         self.lbl_status.setText("Building dataset…")
-        self.exporter.start(self._lib_root, name,
-                            selected=None if self._export_all else set(stems))
+        self.exporter.start(self._lib_root, name, selected=selected)
 
     def _on_export_done(self, df, path, message):
         self.btn_save_export.setEnabled(True)

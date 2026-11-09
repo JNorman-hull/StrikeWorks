@@ -36,12 +36,13 @@ from matplotlib.figure import Figure
 from PySide6.QtCore import QElapsedTimer, QEvent, Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QGridLayout,
-    QHBoxLayout, QLabel, QMessageBox, QPushButton, QSizePolicy, QTabWidget,
+    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QSizePolicy, QTabWidget,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import (
-    bsm_figures, hig_peaks, ml_figures, model_measures, settings, severity,
+    bsm_figures, hig_peaks, ml_figures, model_measures, recording_rate, settings,
+    severity,
 )
 from .bsm_model import (
     default_vcrit, recompute_mortality, recompute_mortality_at_vcrit,
@@ -94,6 +95,8 @@ def model_card_rows(s):
                                f"{'…' if len(channels) > 3 else ''})"
                                if channels else None),
         ("Training samples",   bm.get("n_samples")),
+        ("Trained on",         recording_rate.describe(*recording_rate.model_identity(bm))
+                               if s.bin_model_path else None),
         ("Binary performance", _performance(bm)),
     ]
     if s.mc_model_path:
@@ -131,6 +134,8 @@ def dataset_card_rows(s):
         ("Treatments",    f"{len(m['treatments'])} "
                           f"({', '.join(m['treatments'])})"
                           if m.get("treatments") else None),
+        ("Sensor",        recording_rate.sensor_name(
+            m["identity"][recording_rate.SENSOR_COL]) if m.get("identity") else None),
         ("Sampling rate", f"{sr} Hz" if sr else None),
         ("Window length", seq),
         ("Model channels",
@@ -250,17 +255,10 @@ class AdvancedFeaturesWindow(QDialog):
         g.addWidget(self.lbl_override_note, 3, 0, 1, 3)
 
         self.chk_hig_peaks = QCheckBox("HIG peak analysis")
-        self.chk_hig_peaks.setToolTip(
-            "Find the acceleration events in each recording's high-g "
-            f"magnitude: peaks of at least {hig_peaks.HEIGHT_G:.0f} g with "
-            f"a prominence of {hig_peaks.PROMINENCE_G:.0f} g, at least "
-            f"{hig_peaks.INTERPEAK_S * 1000:g} ms apart. Counts them over "
-            "95, 200 and 400 g within 0.1 s of the nadir, and gives the "
-            f"collision probability (an event of {hig_peaks.COLLISION_G} g "
-            "or more). Measured, alongside the model's prediction.")
         self.chk_hig_peaks.toggled.connect(self.state.set_hig_peaks)
         g.addWidget(self.chk_hig_peaks, 4, 0, 1, 3)
         v.addWidget(grp)
+        v.addWidget(self._hig_section())
 
         # the mortality inputs: from the BSM run, independent of the
         # prediction. Scaly and eel are shown together; only eel's
@@ -295,6 +293,74 @@ class AdvancedFeaturesWindow(QDialog):
         v.addStretch()
 
     # ── prediction configuration ─────────────────────────────────────────────
+    # (setting, label, suffix, range, decimals, step, shown as: value x scale)
+    _HIG_FIELDS = (
+        ("height_g", "Peak height", " g", (1, 2000), 1, 5, 1),
+        ("prominence_g", "Prominence", " g", (0, 1000), 1, 5, 1),
+        ("interpeak_s", "Minimum gap between peaks", " ms", (0.1, 100), 1, 0.5, 1000),
+        ("shear_fraction", "Shear: share of the peak", " %", (1, 99), 0, 5, 100),
+        ("shear_s", "Shear: at least this long above it", " ms", (0.1, 100), 1, 0.5, 1000),
+    )
+
+    def _hig_section(self):
+        """HIG peak analysis's detection settings - and its event bands and
+        collision value, shown but fixed for now (ROADMAP.md)."""
+        grp = Section("HIG peak analysis")
+        h = QGridLayout(grp)
+        h.setVerticalSpacing(6)
+        h.setColumnStretch(1, 1)
+        self._hig_spins = {}
+        for row, (name, label, suffix, (lo, hi), decimals, step, scale) in enumerate(
+                self._HIG_FIELDS):
+            h.addWidget(muted_label(label), row, 0)
+            spin = QDoubleSpinBox()
+            spin.setRange(lo, hi)
+            spin.setDecimals(decimals)
+            spin.setSingleStep(step)
+            spin.setSuffix(suffix)
+            spin.valueChanged.connect(
+                lambda value, n=name, k=scale: self.state.set_hig_setting(n, value / k))
+            h.addWidget(spin, row, 1)
+            self._hig_spins[name] = (spin, scale)
+        row = len(self._HIG_FIELDS)
+        fixed = "Fixed for now - see ROADMAP.md, \"Editable HIG bands\"."
+        for text, value in (
+                ("Event bands", ", ".join(f"{g}" for g in hig_peaks.THRESHOLDS_G) + " g"),
+                ("Collision / severe", f"{hig_peaks.COLLISION_G} g")):
+            h.addWidget(muted_label(text), row, 0)
+            box = QLineEdit(value)
+            box.setReadOnly(True)
+            box.setEnabled(False)
+            box.setToolTip(fixed)
+            h.addWidget(box, row, 1)
+            row += 1
+        self.btn_hig_defaults = QPushButton("Defaults")
+        self.btn_hig_defaults.setToolTip("Put the detection settings back to "
+                                         "the shipped defaults.")
+        self.btn_hig_defaults.clicked.connect(self.state.reset_hig_settings)
+        h.addWidget(self.btn_hig_defaults, row, 1, Qt.AlignmentFlag.AlignRight)
+        return grp
+
+    def _refresh_hig(self):
+        s = self.state
+        d = s.hig_settings
+        for spin, _scale in self._hig_spins.values():
+            spin.setEnabled(s.hig_peaks)
+        for name, (spin, scale) in self._hig_spins.items():
+            spin.blockSignals(True)
+            spin.setValue(d[name] * scale)
+            spin.blockSignals(False)
+        self.btn_hig_defaults.setEnabled(s.hig_peaks)
+        self.chk_hig_peaks.setToolTip(
+            "Find the acceleration events in each recording's high-g "
+            f"magnitude: peaks of at least {d['height_g']:g} g with a "
+            f"prominence of {d['prominence_g']:g} g, at least "
+            f"{d['interpeak_s'] * 1000:g} ms apart. Counts them over "
+            + ", ".join(f"{g}" for g in hig_peaks.THRESHOLDS_G)
+            + f" g within {hig_peaks.NADIR_WINDOW_S:g} s of the nadir, and gives the "
+            f"collision probability (an event of {hig_peaks.COLLISION_G} g "
+            "or more). Measured, alongside the model's prediction.")
+
     def _refresh_config(self):
         s = self.state
         labels = {"binary": "Binary (strike / no strike)",
@@ -336,6 +402,7 @@ class AdvancedFeaturesWindow(QDialog):
         self.chk_hig_peaks.blockSignals(True)
         self.chk_hig_peaks.setChecked(s.hig_peaks)
         self.chk_hig_peaks.blockSignals(False)
+        self._refresh_hig()
 
     def _on_mode_changed(self):
         mode = self.cmb_mode.currentData()

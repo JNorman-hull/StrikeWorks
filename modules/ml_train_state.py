@@ -42,7 +42,8 @@ import pandas as pd
 from PySide6.QtCore import QObject, QThread, Signal
 
 from . import annotation_schema as asch
-from . import sensor_config, settings
+from . import recording_rate, sensor_config, settings
+from .sensor_sort import natural_key
 from .worker_launch import worker_command
 
 # next to the exe once packaged, the repo root from source
@@ -87,8 +88,9 @@ def level_key(value):
 # the settings file's section holding Model training's starting choices
 # (settings.read_section; shipped defaults in config/default_settings.json)
 _DEFAULTS_SECTION = "model_training"
-_NON_TARGET_COLS = {"file", "deployment_id", "run", "time_s"}
+_NON_TARGET_COLS = {"file", "deployment_id", "run", "time_s", "sensor_config"}
 _NON_CHANNEL_COLS = {"time_s", "run"}
+NOT_ANNOTATED = "Not annotated"
 
 
 class _StreamThread(QThread):
@@ -177,6 +179,9 @@ class TrainingState(QObject):
 
         # class balancing + model
         self.class_weighting = "balanced"    # "balanced" | "none"
+        # the binary model's decision threshold: None = picked by
+        # cross-validation (Youden's J), else the user's value (0-1)
+        self.fixed_threshold = None
         self.mr_seed = 42
         self.mr_n_jobs = -1
         self.alpha_min_exp = -3
@@ -302,6 +307,33 @@ class TrainingState(QObject):
                 out.append(col)
         return sorted(out)
 
+    def annotation_counts(self, files=None):
+        """[(variable, [(value, n)])]: recordings per value of each annotation
+        variable the dataset has - main ones, then position ones, each in
+        Manage variables' order. Counted once per recording, over `files`
+        (default every recording); one without a value is NOT_ANNOTATED."""
+        df = self.dataset_df
+        if df is None or "file" not in df.columns:
+            return []
+        per_file = df.groupby("file").first()
+        if files is not None:
+            per_file = per_file[per_file.index.astype(str).isin({str(f) for f in files})]
+        out = []
+        for group in (asch.MAIN_GROUP, asch.POSITION_GROUP):
+            for var in asch.all_variables(group):
+                if var.name not in per_file.columns:
+                    continue
+                values = per_file[var.name].map(
+                    lambda v: "" if pd.isna(v) else level_key(v))
+                counts = values[values != ""].value_counts()
+                rows = sorted(((str(k), int(n)) for k, n in counts.items()),
+                              key=lambda kv: natural_key(kv[0]))
+                missing = int((values == "").sum())
+                if missing:
+                    rows.append((NOT_ANNOTATED, missing))
+                out.append((var, rows))
+        return out
+
     def target_values(self):
         """Distinct file-level values of the target column."""
         df = self.dataset_df
@@ -355,6 +387,8 @@ class TrainingState(QObject):
         dt = first.diff().median()
         if pd.notna(dt) and dt > 0:
             meta["sampling_rate_hz"] = round(1.0 / float(dt))
+        meta["data_problem"] = recording_rate.dataset_problem(df)
+        meta["identity"] = recording_rate.identity(df)
         chan = [c for c in self.channel_candidates()]
         meta["n_channel_candidates"] = len(chan)
         meta["missing_in_channels"] = int(
@@ -515,6 +549,8 @@ class TrainingState(QObject):
 
         add("ok", "Training dataset",
             f"{self.dataset_meta.get('n_files')} unique recordings")
+        if self.dataset_meta.get("data_problem"):
+            add("fail", "One sensor and frequency", self.dataset_meta["data_problem"])
 
         if not self.channels:
             add("fail", "Input channels", "Select at least one channel.")
@@ -589,7 +625,9 @@ class TrainingState(QObject):
         add("ok", "Model",
             f"MiniRocket + RidgeClassifierCV, "
             f"{'balanced' if self.class_weighting == 'balanced' else 'no'} "
-            f"class weighting")
+            f"class weighting"
+            + (f", decision threshold fixed at {self.fixed_threshold:.2f}"
+               if self.fixed_threshold is not None else ""))
 
         self.checks = checks
         self.ready = not hard_fail and not self.running
@@ -613,6 +651,7 @@ class TrainingState(QObject):
             "padding": "repeat_last",
             "truncation": "truncate",
             "class_weighting": self.class_weighting,
+            "decision_threshold": self.fixed_threshold,
             "split_mode": self.split_mode,
             "test_size": float(self.test_size),
             "n_folds": int(self.n_folds),
@@ -796,7 +835,10 @@ class TrainingState(QObject):
             "test_size": tr.get("test_size"),
             "minirocket": tr.get("minirocket", na),
             "ridge": tr.get("ridge", na),
-            "threshold_selection": "Youden's J on out-of-fold ROC",
+            "threshold_selection": (
+                f"Fixed at {tr['decision_threshold']:.2f} by the user"
+                if tr.get("decision_threshold") is not None
+                else "Youden's J on out-of-fold ROC"),
             "binary_performance": bin_m.get("out_of_fold_performance", na),
             "multiclass_performance": (mc_m.get("out_of_fold_performance")
                                        if mc_m else None),

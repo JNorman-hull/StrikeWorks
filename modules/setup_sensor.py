@@ -512,9 +512,12 @@ class SensorTab(QWidget):
 
         live = sensor_config.active()
         self.card_summary.set_title(f"Current sensor: {live.name}")
+        per_file = "From each recording's file"
         self.card_summary.set_rows([
-            ("Timestamp clock", f"{live.timebase_hz:g} Hz"),
-            ("Output rate", f"{live.output_rate_hz:g} Hz"),
+            ("Timestamp clock", per_file if live.rate_in_file
+             else f"{live.timebase_hz:g} Hz"),
+            ("Output rate", per_file if live.rate_in_file
+             else f"{live.output_rate_hz:g} Hz"),
             ("Files per recording",
              f"{live.files_per_recording} "
              f"({', '.join(live.file_extensions)})"),
@@ -523,7 +526,8 @@ class SensorTab(QWidget):
             ("Parser", live.parser),
             ("Nadir", sensor_config.NADIR_METHOD_LABELS.get(
                 live.nadir_method, live.nadir_method)),
-            ("200 ms window", f"{live.window_samples(0.2)} samples"),
+            ("200 ms window", "Follows each recording's rate" if live.rate_in_file
+             else f"{live.window_samples(0.2)} samples"),
         ])
 
     # ── actions ──────────────────────────────────────────────────────────────

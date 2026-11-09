@@ -15,7 +15,7 @@ Sync logic
 
   For any encoded frame N: current_t = nadir_time_s + (N - nadir_frame) / real_fps
 
-real_fps, data_hz, the graph window and zoom, the pressure row offset,
+real_fps, the graph window and zoom, the sensor's pressure offset,
 the text overlay and an optional logo are all parameters (Export
 animations' render options). `process_video()` takes an optional
 `progress_cb(frame, total)` for the worker thread's progress.
@@ -62,16 +62,15 @@ DEFAULT_GRAPH_FRAC = 0.25
 class SyncOptions:
     """Every render setting."""
 
-    def __init__(self, real_fps=1000, data_hz=2000, graph_window_s=0.3,
-                zoom=1.0, pressure_row_offset=20, video_nudge_px=0,
+    def __init__(self, real_fps=1000, graph_window_s=0.3,
+                zoom=1.0, pressure_offset_s=0.01, video_nudge_px=0,
                 add_labels=True, logo_path=None, logo_opacity=1.0,
                 channels=None, layout="row", no_video=False,
                 graph_frac=DEFAULT_GRAPH_FRAC):
         self.real_fps = real_fps
-        self.data_hz = data_hz
         self.graph_window_s = graph_window_s
         self.zoom = zoom
-        self.pressure_row_offset = pressure_row_offset
+        self.pressure_offset_s = pressure_offset_s
         self.video_nudge_px = video_nudge_px
         self.add_labels = add_labels
         self.logo_path = logo_path
@@ -95,14 +94,14 @@ def build_cursor_arrays(nadir_time_s, df, nadir_frame, total_frames, opts,
     frames - used only for the live cursor annotation value on each
     frame's panel. `columns` defaults to every channel in `opts.channels`.
 
-    A pressure-named column gets the same row-offset correction the
-    original script applied for every column (pressure and acceleration
-    are logged a few rows apart on the same device) - every other column
+    A pressure-named column gets the sensor's offset correction (RAPID logs
+    pressure and acceleration 10 ms apart; the EEL tag's share a clock, so
+    its offset is 0) - every other column
     uses the acceleration-aligned time directly.
     """
     columns = columns or [c["column"] for c in opts.channels]
     times = df["time_s"].to_numpy(dtype=float)
-    pres_offset_s = opts.pressure_row_offset / opts.data_hz
+    pres_offset_s = opts.pressure_offset_s
     f_idx = np.arange(total_frames)
     acc_times = nadir_time_s + (f_idx - nadir_frame) / opts.real_fps
     pres_times = acc_times - pres_offset_s

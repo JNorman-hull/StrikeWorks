@@ -62,7 +62,7 @@ class PredictPages(unittest.TestCase):
         rows = dict(model_card_rows(state))
         self.assertEqual(list(rows), [
             "Binary model", "Model type", "Version", "Mode", "Channels",
-            "Training samples", "Binary performance", "Multiclass model",
+            "Training samples", "Trained on", "Binary performance", "Multiclass model",
             "Classes", "Multiclass performance"])
         self.assertEqual(rows["Version"], "1.2")
         self.assertEqual(rows["Training samples"], 565)
@@ -102,6 +102,28 @@ class PredictPages(unittest.TestCase):
         self.assertEqual(state.hig_peaks, not before)
         self.assertEqual(
             self.sw.predict_panel.advanced.chk_hig_peaks.isChecked(), not before)
+        state.set_hig_peaks(before)
+
+        # the detection settings: kept, put back by Defaults; the bands fixed
+        from modules import hig_peaks, settings
+        state.set_hig_peaks(True)
+        spin, _scale = advanced._hig_spins["height_g"]
+        self.assertTrue(spin.isEnabled())
+        spin.setValue(150)
+        self.assertEqual(state.hig_settings["height_g"], 150.0)
+        self.assertEqual(settings.read_section("hig_peak_analysis")["height_g"], 150.0)
+        advanced._hig_spins["interpeak_s"][0].setValue(5)
+        self.assertAlmostEqual(state.hig_settings["interpeak_s"], 0.005)
+        self.assertEqual(self.sw.predict_panel.advanced._hig_spins["height_g"][0].value(), 150)
+        advanced.btn_hig_defaults.click()
+        self.assertEqual(state.hig_settings, hig_peaks.DETECTION_DEFAULTS)
+        self.assertEqual(spin.value(), 95)
+        from PySide6.QtWidgets import QLineEdit
+        bands = [b for b in advanced.findChildren(QLineEdit) if b.isReadOnly()]
+        self.assertEqual([b.text() for b in bands], ["95, 200, 400 g", "400 g"])
+        self.assertTrue(all(not b.isEnabled() for b in bands))
+        state.set_hig_peaks(False)
+        self.assertFalse(spin.isEnabled())
         state.set_hig_peaks(before)
         self.tk.tabs.setCurrentIndex(1)    # the Predict page hidden
         pump(50)
