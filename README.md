@@ -83,6 +83,10 @@ reaches the grid. Two ship:
   place the nadir; a recording with no events has its nadir at its lowest
   pressure.
 
+Raw data processing reads each deployment's recordings as the sensor saved on
+that deployment, so RAPID and EEL libraries can sit side by side with no
+switching; the selected sensor only answers for a deployment with none saved.
+
 A processed recording's rate is in the index (`sampling_rate_hz`) and in its
 own time step, and everything after processing reads it from there, not from
 the selected sensor: a 200 ms window is 400 rows at 2000 Hz, 500 at 2500 Hz

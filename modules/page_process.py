@@ -20,7 +20,8 @@ Simple mode's Process step:
 
 A deployment's details are edited in Create and edit deployment, whose
 Update relabels sensors already processed. The file extensions, filename
-pattern and parser come from the active sensor configuration.
+pattern and parser come from the sensor saved on each recording's deployment
+(the selected sensor, for a deployment with none saved).
 """
 from pathlib import Path
 

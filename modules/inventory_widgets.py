@@ -23,9 +23,14 @@ up: from the index for a processed recording, otherwise from the recording's
 own file. A selection mixing frequencies asks what to process
 (frequency_dialog.py).
 
+A deployment's recordings are read as the sensor saved on that deployment
+(deployment_editor.py), whichever sensor is selected; the selected one only
+answers for a deployment with none saved. A batch can span deployments, so
+each record carries its own `config`.
+
 Processing itself is processing.py's `ProcessThread`, running the reader
-the sensor configuration names; its log streams into the console below
-the table.
+each recording's sensor configuration names; its log streams into the
+console below the table.
 """
 from collections import Counter
 from datetime import datetime
@@ -69,11 +74,12 @@ def scan_raw(lib_root, folder, config=None, tree=None):
     raw_sens_data), keyed by upper-case stem so its files pair however the
     device cased them, each tagged with its deployment/treatment/run.
 
+    `config` reads everything as that one sensor; without it, each recording
+    is read as its deployment's saved sensor, or the selected sensor for a
+    deployment with none saved.
+
     `tree` (a raw_layout.RawTree someone already built - Raw data
     processing's filter box has one) skips walking the folder again."""
-    cfg = config or sensor_config.active()
-    exts = [e.lower() for e in (cfg.required_extensions or [".imp"])]
-    primary = exts[0]
     raw_dir = raw_layout.raw_root(lib_root)
     if tree is None:
         if folder is None or not Path(folder).exists():
@@ -81,9 +87,17 @@ def scan_raw(lib_root, folder, config=None, tree=None):
         tree = raw_layout.scan_tree(raw_dir, folder)
 
     processed_names = {p.stem.upper() for p in raw_layout.processed_csvs(lib_root)}
+    saved = {} if config else di.deployment_sensors(lib_root)
+    fallback = config or sensor_config.active()
 
     records = []
     for stem_up in sorted(tree.files):
+        deployment, treatment, run, _p = tree.locations.get(
+            stem_up, (raw_layout.UNGROUPED, raw_layout.UNGROUPED,
+                      raw_layout.DEFAULT_RUN, None))
+        cfg = sensor_config.get(saved.get(deployment)) or fallback
+        exts = [e.lower() for e in (cfg.required_extensions or [".imp"])]
+        primary = exts[0]
         paths = {}
         for p in tree.files[stem_up]:
             paths.setdefault(p.suffix.lower(), p)
@@ -92,10 +106,8 @@ def scan_raw(lib_root, folder, config=None, tree=None):
             continue
         paths = {ext: paths[ext] for ext in exts if ext in paths}
         sensor, date, time = cfg.parse_stem(main_path.stem)
-        deployment, treatment, run, _p = tree.locations.get(
-            stem_up, (raw_layout.UNGROUPED, raw_layout.UNGROUPED,
-                      raw_layout.DEFAULT_RUN, None))
         records.append(dict(
+            config=cfg,
             stem=main_path.stem, stem_up=stem_up, sensor=sensor, date=date,
             time=time, complete=len(paths) == len(exts),
             # filled in afterwards for a sensor whose files state it
@@ -105,17 +117,25 @@ def scan_raw(lib_root, folder, config=None, tree=None):
     return records
 
 
+def _by_sensor(files):
+    """`files` grouped as {sensor key: records}."""
+    groups = {}
+    for f in files:
+        groups.setdefault(f["config"].key, []).append(f)
+    return groups
+
+
 class _InventoryScanThread(QThread):
     done = Signal(int, object)   # generation, records
 
-    def __init__(self, gen, lib_root, folder, config):
+    def __init__(self, gen, lib_root, folder):
         super().__init__()
-        self._args = (gen, lib_root, folder, config)
+        self._args = (gen, lib_root, folder)
 
     def run(self):
-        gen, lib_root, folder, config = self._args
+        gen, lib_root, folder = self._args
         try:
-            records = scan_raw(lib_root, folder, config)
+            records = scan_raw(lib_root, folder)
         except Exception as e:
             print(f"Could not scan {folder}: {e}")
             records = []
@@ -136,12 +156,12 @@ class _FrequencyThread(QThread):
     recordings - which are about to be needed anyway - get opened."""
     found = Signal(int, str, float)   # generation, stem (upper), rate
 
-    def __init__(self, gen, lib_root, files, config):
+    def __init__(self, gen, lib_root, files):
         super().__init__()
-        self._args = (gen, lib_root, files, config)
+        self._args = (gen, lib_root, files)
 
     def run(self):
-        gen, lib_root, files, config = self._args
+        gen, lib_root, files = self._args
         try:
             known = {stem.upper(): rate for stem, rate
                      in di.index_rates(di.read_index(lib_root)).items()}
@@ -154,7 +174,7 @@ class _FrequencyThread(QThread):
             rate = known.get(f["stem_up"]) if f["processed"] else None
             try:
                 self.found.emit(gen, f["stem_up"],
-                                float(rate or config.recording_rate(f["paths"])))
+                                float(rate or f["config"].recording_rate(f["paths"])))
             except Exception as e:
                 print(f"Could not read the frequency of {f['stem']}: {e}")
 
@@ -192,7 +212,6 @@ class FileInventory(QWidget):
         self._scan_threads = []
         self._frequency_threads = []
         self._row_of = {}
-        self._batch_key = None
         self._build(orientation, inventory_title, log_title, open_console)
 
     # ── layout ───────────────────────────────────────────────────────────────
@@ -311,8 +330,7 @@ class FileInventory(QWidget):
         self._spinner.start()
         self.lbl_counts.setText("Scanning folders…")
         self.btn_process.setEnabled(False)
-        thread = _InventoryScanThread(gen, self._lib_root, self._folder,
-                                      sensor_config.active())
+        thread = _InventoryScanThread(gen, self._lib_root, self._folder)
         thread.done.connect(self._apply_files)
         thread.finished.connect(lambda t=thread: self._scan_threads.remove(t)
                                 if t in self._scan_threads else None)
@@ -339,8 +357,7 @@ class FileInventory(QWidget):
                   if f["complete"] and f["frequency"] is None]
         if not wanted:
             return
-        thread = _FrequencyThread(gen, self._lib_root, wanted,
-                                  sensor_config.active())
+        thread = _FrequencyThread(gen, self._lib_root, wanted)
         thread.found.connect(self._on_frequency)
         thread.finished.connect(lambda: fill_table_width(self.table))
         thread.finished.connect(
@@ -422,11 +439,10 @@ class FileInventory(QWidget):
     def _choose_frequency(self, files):
         """`files`, narrowed to what the user chose if their frequencies are
         mixed; None if they cancelled."""
-        cfg = sensor_config.active()
         complete = [f for f in files if f["complete"]]
         for f in complete:
             if not f["frequency"]:      # selected before the column filled in
-                f["frequency"] = float(cfg.recording_rate(f["paths"]))
+                f["frequency"] = float(f["config"].recording_rate(f["paths"]))
         keep = frequency_dialog.choose_for_processing(
             self, {f["stem"]: f["frequency"] for f in complete})
         if keep is None:
@@ -445,13 +461,14 @@ class FileInventory(QWidget):
             style(self.lbl_status, role="strong", tone="warn")
             self.lbl_status.setText("No complete recordings selected.")
             return None
-        cfg = sensor_config.active()
         out_dir = self._lib_root / raw_layout.PROCESSED_DIR
         self.clear_log()
-        rates = sorted({f["frequency"] for f in complete if f.get("frequency")})
-        self.log(f"Sensor: {cfg.name}  ("
-                 + ", ".join(frequency_dialog.rate_text(r) for r in rates)
-                 + (", " if rates else "") + f"parser '{cfg.parser}')")
+        for group in _by_sensor(complete).values():
+            cfg = group[0]["config"]
+            rates = sorted({f["frequency"] for f in group if f.get("frequency")})
+            self.log(f"Sensor: {cfg.name}  ("
+                     + ", ".join(frequency_dialog.rate_text(r) for r in rates)
+                     + (", " if rates else "") + f"parser '{cfg.parser}')")
         if skipped:
             self.log(f"Note: {skipped} incomplete recording(s) skipped.")
         groups = Counter((f["deployment"], f["treatment"], f["run"])
@@ -463,12 +480,11 @@ class FileInventory(QWidget):
 
         self._batch = complete
         self._batch_done = []
-        self._batch_key = cfg.key
         style(self.lbl_status, role="strong", tone="accent")
         self.lbl_status.setText("Processing…")
         self.btn_process.setEnabled(False)
         self.btn_stop.setEnabled(True)
-        self._thread = ProcessThread(complete, out_dir, self._lib_root, cfg)
+        self._thread = ProcessThread(complete, out_dir, self._lib_root)
         self._thread.log.connect(self.log)
         self._thread.processed.connect(self._batch_done.append)
         self._thread.done.connect(self._on_done)
@@ -491,8 +507,8 @@ class FileInventory(QWidget):
         done = set(self._batch_done)
         located = [f for f in self._batch if f["stem"] in done]
         try:
-            n = di.stamp_by_location(self._lib_root, located,
-                                     sensor_key=self._batch_key)
+            n = sum(di.stamp_by_location(self._lib_root, group, sensor_key=key)
+                    for key, group in _by_sensor(located).items())
             if n:
                 self.log(f"\nLabelled {n} sensor(s) with the deployment, "
                          "treatment and run of the folder each came from.")

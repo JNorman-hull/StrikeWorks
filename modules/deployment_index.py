@@ -218,6 +218,13 @@ def deployments(root, df=None):
     return out
 
 
+def deployment_sensors(root, df=None):
+    """{deployment: sensor configuration key} for each deployment with one
+    saved. `df` - the index, if the caller has already read it."""
+    return {d[DEPLOYMENT_COL]: d[SENSOR_CONFIG_COL] for d in deployments(root, df)
+            if d.get(DEPLOYMENT_COL) and d.get(SENSOR_CONFIG_COL)}
+
+
 def describe_deployment(deployment) -> str:
     """One-line label for a deployment picker."""
     ident = deployment.get(DEPLOYMENT_COL, "").strip()

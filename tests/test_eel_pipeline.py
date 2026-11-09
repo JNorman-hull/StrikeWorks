@@ -131,6 +131,80 @@ class Inventory(unittest.TestCase):
         self.assertEqual(set(rows["sensor_config"]), {"micro_eel"})
 
 
+class DeploymentSensor(unittest.TestCase):
+    """A deployment is read as the sensor saved on it, not whichever sensor
+    this copy of the app happens to have selected."""
+
+    @classmethod
+    def setUpClass(cls):
+        qt_app()
+        isolate()
+        from modules import sensor_config
+        sensor_config._store = None
+        sensor_config.set_active("rapid")
+
+    def _select(self, key):
+        from modules import sensor_config
+        sensor_config.set_active(key)
+        self.addCleanup(sensor_config.set_active, "rapid")
+
+    def _saved_as(self, key):
+        """A one-rate library, its deployment saved as sensor `key`."""
+        from modules import deployment_index as di
+        lib = _library(rates=(2000,))
+        treatment = {**dummy.CONDITIONS, "treatment": "2000 Hz", "runs": 1}
+        di.save_plan(lib, dummy.DEPLOYMENT, [treatment], sensor_key=key)
+        return lib
+
+    def _inventory(self, lib):
+        from modules import inventory_widgets, raw_layout
+        inventory = inventory_widgets.FileInventory()
+        self.addCleanup(inventory.deleteLater)
+        inventory.set_source(lib, raw_layout.raw_root(lib))
+        inventory.refresh(block=True)
+        self.assertTrue(_wait(lambda: all(f["frequency"] for f in inventory.files)))
+        self.assertTrue(_wait(lambda: not inventory._frequency_threads))
+        return inventory
+
+    def test_saved_eel_is_read_as_eel_with_rapid_selected(self):
+        lib = _library(rates=(2000, 5000))
+        inventory = self._inventory(lib)
+        files = inventory.files
+        self.assertEqual({f["config"].key for f in files}, {"micro_eel"})
+        self.assertEqual(sorted({f["frequency"] for f in files}), [2000.0, 5000.0])
+        self.assertTrue(all(f["date"] and f["time"] for f in files))
+        self.assertEqual({f["sensor"] for f in files}, {"EEL_001"})
+
+    def test_processing_follows_the_deployment_and_leaves_the_selection_alone(self):
+        from modules import deployment_index as di
+        from modules import sensor_config
+        lib = _library(rates=(2000, 5000))
+        inventory = self._inventory(lib)
+        self.assertIsNotNone(inventory.process(list(inventory.files)))
+        self.assertTrue(_wait(lambda: not inventory.running, seconds=60))
+        pump(100)
+        rows = di.sensor_rows(di.read_index(lib))
+        self.assertEqual(len(rows), 2 * COUNT)
+        self.assertEqual(set(rows["sensor_config"]), {"micro_eel"})
+        self.assertEqual(set(pd.to_numeric(rows["sampling_rate_hz"])), {2000, 5000})
+        self.assertEqual(sensor_config.active_key(), "rapid")
+
+    def test_saved_rapid_is_read_as_rapid_with_eel_selected(self):
+        self._select("micro_eel")
+        files = self._inventory(self._saved_as("rapid")).files
+        self.assertEqual({f["config"].key for f in files}, {"rapid"})
+        self.assertEqual({f["frequency"] for f in files}, {2000.0})
+
+    def test_selected_sensor_answers_when_none_is_saved(self):
+        self._select("micro_eel")
+        files = self._inventory(self._saved_as(None)).files
+        self.assertEqual({f["config"].key for f in files}, {"micro_eel"})
+
+    def test_a_saved_sensor_that_no_longer_exists_falls_back(self):
+        files = self._inventory(self._saved_as("deleted_sensor")).files
+        self.assertEqual({f["config"].key for f in files}, {"rapid"})
+
+
 class Downstream(unittest.TestCase):
     """A processed library holding all three rates: Validate's windows, the
     dataset built from them and the HIG peak analysis."""

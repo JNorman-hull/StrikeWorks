@@ -4,7 +4,7 @@
 # development tool for underwater passive sensor devices.
 #
 # ///////////////////////////////////////////////////////////////
-"""Raw processing: each recording's raw files through the parser the
+"""Raw processing: each recording's raw files through the parser its
 sensor configuration names (sensor_config.PARSERS), into the library's
 processed_sens_data (processed CSV + sensor index row)."""
 from PySide6.QtCore import QThread, Signal
@@ -17,14 +17,15 @@ DONE_OK, DONE_ERRORS, DONE_STOPPED = 0, 1, 2
 
 
 class ProcessThread(QThread):
-    """Runs the sensor configuration's parser over a batch of
-    recordings off the GUI thread, logging each one. `request_stop()`
-    stops it before the next recording (the one in hand finishes)."""
+    """Runs each recording's parser over a batch off the GUI thread,
+    logging each one. A recording's own `config` says how it is read, and
+    `config` here answers for any without one. `request_stop()` stops it
+    before the next recording (the one in hand finishes)."""
     log = Signal(str)
     done = Signal(int)          # DONE_OK, DONE_ERRORS or DONE_STOPPED
     processed = Signal(str)     # stem of each successfully processed file
 
-    def __init__(self, files, out_dir, root, config):
+    def __init__(self, files, out_dir, root, config=None):
         super().__init__()
         self._files = files
         self._out_dir = out_dir
@@ -36,9 +37,6 @@ class ProcessThread(QThread):
         self._stop = True
 
     def run(self):
-        # the reader is whichever one the sensor configuration names
-        parse = sensor_config.get_parser(self._config.parser)
-
         n_ok = n_fail = 0
         for f in self._files:
             if self._stop:
@@ -47,7 +45,10 @@ class ProcessThread(QThread):
                 break
             self.log.emit(f"\n-- Processing: {f['stem']}")
             try:
-                _, summary = parse(f["paths"], self._out_dir, self._config)
+                # the reader is whichever one the sensor configuration names
+                config = f.get("config") or self._config
+                parse = sensor_config.get_parser(config.parser)
+                _, summary = parse(f["paths"], self._out_dir, config)
                 msg = summary.get("messages", "")
                 flag = ("  Flagged bad." if summary.get("bad_sens", "N") == "Y"
                         else "")

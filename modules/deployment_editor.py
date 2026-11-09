@@ -15,7 +15,8 @@ deployments exactly the same way.
                       deploy > Sensor configuration), RAPID by default. It
                       is recorded on the deployment's plan
                       (deployment_index.SENSOR_CONFIG_COL), so reopening a
-                      deployment restores it.
+                      deployment restores it and Raw data processing reads
+                      the deployment's recordings as that sensor.
   Deployment        - pick an existing deployment (or "New deployment"
                       under the list), and its site/ID/machine fields.
   Treatments        - one table row per treatment (conditions + number of
