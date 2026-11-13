@@ -1,26 +1,13 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""The sensor validation screen of Validate and annotate (page_annotate.py)
-- the Development toolkit's page and StrikeWorks's Validate step.
+"""The validation screen used by Validate and annotate and StrikeWorks's
+Validate step: the sensor list (Sort by, validation colours, Mark bad /
+Show bad, counts, Save + Next, Reset, Auto process all) beside the signal
+plot, with a draggable nadir line and the shaded ROI window.
 
-  left   the sensor list - Sort by, coloured by validation state (the
-         colours' key on hover) - Mark bad / Show bad, the counts, Save +
-         Next, Reset current sensor and Auto process all. A host can put
-         its own controls above the list (the library filters).
-  right  Left / Right channels, the loading spinner and Export over the
-         signal plot (drag the nadir line; the ROI window is shaded), then
-         ROI window, the status line, Open video, any buttons of the
-         host's own (Annotations and notes) and Save and export.
-
-What's flagged, saving a window, Auto process all and the dataset export
-are validation_core.py's. The host gives the library, its sensors and how
-to find a sensor's video (`set_source`), and can hook into Save + Next
-(`save_values`: more columns for the index - the annotations) and the
-counts line (`counts_suffix`).
+Flagging, window saving, Auto process all and the dataset export are
+validation_core's. The host supplies the library, sensors and video lookup
+(`set_source`), and can add controls above the list, buttons under the
+plot, index columns saved by Save + Next (`save_values`) and a suffix for
+the counts line (`counts_suffix`).
 """
 import subprocess
 
@@ -135,7 +122,7 @@ class ValidationView(QWidget):
         vc.install_save_next_shortcut(self, self.sensor_list, self.save_and_next)
         self._set_loaded_enabled(False)
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, top, extra_buttons):
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
@@ -282,7 +269,7 @@ class ValidationView(QWidget):
             b.setEnabled(enabled)
         self._refresh_video_button()
 
-    # ── source ───────────────────────────────────────────────────────────────
+    # source
     @property
     def lib_root(self):
         return self._lib_root
@@ -314,10 +301,6 @@ class ValidationView(QWidget):
             self.clear_sensor()
         self.refresh_list()
 
-    def set_video_lookup(self, video_lookup):
-        self._video_lookup = video_lookup
-        self._refresh_video_button()
-
     def read_index(self):
         return di.read_index(self._lib_root) if self._lib_root else None
 
@@ -330,7 +313,7 @@ class ValidationView(QWidget):
         vc.write_index(self._lib_root, index_df)
         self.index_changed.emit()
 
-    # ── the list ─────────────────────────────────────────────────────────────
+    # the list
     def refresh_list(self):
         """Re-list from the index - in Sort by's order, coloured by state,
         bad sensors only with Show bad - keeping the loaded one selected
@@ -381,7 +364,7 @@ class ValidationView(QWidget):
         elif stem != self._stem:
             self.load_sensor(stem)
 
-    # ── loading a sensor (in the background) ─────────────────────────────────
+    # loading a sensor (in the background)
     def load_sensor(self, stem):
         match = next((f for f in self._files if f["stem"] == stem), None)
         if match is None:
@@ -453,7 +436,7 @@ class ValidationView(QWidget):
         if self._stem:
             self.load_sensor(self._stem)
 
-    # ── the plot ─────────────────────────────────────────────────────────────
+    # the plot
     def _channel(self, key):
         if key is None or self._df is None:
             return None
@@ -567,7 +550,7 @@ class ValidationView(QWidget):
             self._time, left_label, self._channel(self._left_key),
             right_label, self._channel(self._right_key), self._pw, self._vb2)
 
-    # ── the nadir and the ROI window ─────────────────────────────────────────
+    # the nadir and the ROI window
     def _update_region(self, t):
         self._region.setRegion((t - self._win_sec / 2, t + self._win_sec / 2))
 
@@ -602,17 +585,11 @@ class ValidationView(QWidget):
         self._nadir_line.blockSignals(False)
         self._update_region(t_snap)
 
-    def window_df(self):
-        """The current sensor's ROI window, as Save + Next saves it."""
-        start, end = vc.window_bounds(self._nadir_idx, len(self._df),
-                                      self._win_sec, vc.data_rate(self._df))
-        return self._df.iloc[start:end + 1].copy()
-
     @property
     def win_sec(self):
         return self._win_sec
 
-    # ── marking bad ──────────────────────────────────────────────────────────
+    # marking bad
     def _is_bad(self, stem):
         return stem in self._status[3]
 
@@ -644,7 +621,7 @@ class ValidationView(QWidget):
         self.refresh_list()
         self.lbl_status.setText(f"{self._stem} marked {'bad' if bad else 'good'}.")
 
-    # ── Save + Next ──────────────────────────────────────────────────────────
+    # Save + Next
     def save_and_next(self):
         """Save + Next (Ctrl+V): saves the window as reviewed by a person -
         which clears the sensor's flag - with the host's own columns
@@ -681,7 +658,7 @@ class ValidationView(QWidget):
         # keep the arrow keys / Ctrl+V on the list after a button click
         self.sensor_list.setFocus()
 
-    # ── Auto process all ─────────────────────────────────────────────────────
+    # Auto process all
     def auto_process_all(self):
         """Starts Auto process all over the listed sensors in the background
         and returns the thread - or None with nothing to do."""
@@ -722,7 +699,7 @@ class ValidationView(QWidget):
             self.select(pending[0])
         self.sensor_list.setFocus()
 
-    # ── Save and export ──────────────────────────────────────────────────────
+    # Save and export
     def save_and_export(self, confirm=True):
         """Asks first while flagged sensors are unreviewed - unless
         `confirm` is False (StrikeWorks's Next has just asked)."""
@@ -764,7 +741,7 @@ class ValidationView(QWidget):
         self.status.emit(message, 6000)
         self.export_done.emit(df, path, message)
 
-    # ── video ────────────────────────────────────────────────────────────────
+    # video
     def _videos(self):
         if not self._stem or self._video_lookup is None:
             return []

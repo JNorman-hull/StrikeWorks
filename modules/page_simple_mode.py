@@ -1,31 +1,15 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""StrikeWorks (once "Simple mode"): the app itself - a guided, one-window
-walkthrough of Deploy > Process > Validate > Predict > Report, and the
-first thing the app shows, maximised (main.py opens it on launch). The
-Development toolkit (the full app, MainWindow) is behind the "Development
-toolkit" button at its lower left and a password (`_DEV_TOOLKIT_PASSWORD`);
-the Simple edition has no way in at all. Layout per simple_spec/*.png.
+"""StrikeWorks: the guided window - Deploy > Process > Validate > Predict >
+Report - opened maximised at start-up. The Development toolkit (MainWindow)
+is behind the button at its lower left and `_DEV_TOOLKIT_PASSWORD`; the
+Simple edition has no way in.
 
-Each step uses the same pieces as the full app:
+Each step is the toolkit's own widget:
 
-  Deploy    - deployment_editor.DeploymentEditor (Create and edit
-              deployment).
-  Process   - inventory_widgets.FileInventory (Raw data processing).
-  Validate  - page_annotate.AnnotationPage (Validate and annotate, with
-              StrikeWorks's saving): Auto process all, the weak-HIG flag
-              that points at the sensors worth a second look, user
-              validation, Save and export; the nadir line can be dragged,
-              so a flagged sensor can be corrected by hand and re-saved
-              with Save + Next.
-  Predict   - ml_tab_predict.PredictPanel (Model prediction > Predict's
-              own Predict tab, on the shared PredictionState).
-  Report    - ml_tab_predict.ResultsPanel (its Results tab); the
-              downloaded report is ml_report's.
+  Deploy    deployment_editor.DeploymentEditor
+  Process   inventory_widgets.FileInventory
+  Validate  page_annotate.AnnotationPage(for_strikeworks=True)
+  Predict   ml_tab_predict.PredictPanel
+  Report    ml_tab_predict.ResultsPanel; the download is ml_report's
 """
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontMetrics, QIcon
@@ -38,7 +22,7 @@ from PySide6.QtWidgets import (
 from . import ml_report, settings, win_utils
 from . import validation_core as vc
 from .deployment_editor import DeploymentEditor
-from .edition import simple_only
+from .startup import simple_only
 from .inventory_widgets import FileInventory
 from .layout import scroll_area
 from .ml_tab_predict import PredictPanel, ResultsPanel
@@ -50,10 +34,8 @@ from .startup import ICON_PATH, logo_label
 # develop models, not security - it is in the source
 _DEV_TOOLKIT_PASSWORD = "devmode_123"
 
-# The left step list: (label, indent level, stack page index or None).
-# None means a group heading - "Process" and "Report" are each a heading
-# over two real pages (file inventory/validate, report-view/download)
-# rather than a page of their own; clicking one opens its first sub-step.
+# the step list: (label, indent level, stack page index); None is a heading
+# ("Process", "Report") that opens its first sub-step
 _LIST_ITEMS = [
     ("Home",     0, 0),
     ("Deploy",   0, 1),
@@ -135,7 +117,7 @@ class SimpleModeDialog(QDialog):
         self.window.session_state.library_changed.connect(
             self._on_session_library_changed_simple)
 
-    # ── top-level layout ────────────────────────────────────────────────────
+    # top-level layout
     def _build(self):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(5, 5, 5, 5)
@@ -219,10 +201,8 @@ class SimpleModeDialog(QDialog):
         body.addLayout(right_col, stretch=1)
         outer.addLayout(body, stretch=1)
 
-        # the bottom bar: Development toolkit (Home) or the small logos
-        # (the other steps) on the left, the guidance line over Back / Next
-        # / Close on the right - all bottom-aligned, so the bar is no taller
-        # than the logos and the buttons sit where they do on Home
+        # bottom bar: Development toolkit (Home) or the small logos on the
+        # left, the guidance line over Back / Next / Close on the right
         bottom = Qt.AlignmentFlag.AlignBottom
         nav = QHBoxLayout()
         nav.setContentsMargins(10, 6, 10, 10)
@@ -280,7 +260,7 @@ class SimpleModeDialog(QDialog):
         self._lib_root = self.window.session_state.library
         # (the Deploy editor refreshes itself whenever it's shown)
 
-    # ── navigation ───────────────────────────────────────────────────────────
+    # navigation
     def _go_next(self):
         idx = self.stack.currentIndex()
         if idx == 1:
@@ -399,7 +379,7 @@ class SimpleModeDialog(QDialog):
         self.lbl_guidance.setText(_GUIDANCE.get(page, ""))
         self.lbl_title.setText(_TITLES.get(page, ""))
 
-    # ── page 0: welcome ──────────────────────────────────────────────────────
+    # page 0: welcome
     def _build_welcome_page(self):
         page = QWidget()
         v = QVBoxLayout(page)
@@ -439,11 +419,11 @@ class SimpleModeDialog(QDialog):
         if simple_only():
             return
         self.went_to_dev_toolkit = True
-        self.window.home_page._go_advanced()
+        self.window.expand_sidebar()
         self.window.showMaximized()
         self.reject()
 
-    # ── page 1: deployment ───────────────────────────────────────────────────
+    # page 1: deployment
     def _build_deployment_page(self):
         page = QWidget()
         v = QVBoxLayout(page)
@@ -457,7 +437,7 @@ class SimpleModeDialog(QDialog):
     def _on_session_library_changed_simple(self, path):
         self._lib_root = path
 
-    # ── page 2: process (file inventory) ────────────────────────────────────
+    # page 2: process (file inventory)
     def _build_process_inventory_page(self):
         page = QWidget()
         v = QVBoxLayout(page)
@@ -476,7 +456,7 @@ class SimpleModeDialog(QDialog):
         self.inventory.set_source(self._lib_root, self.editor.deployment_dir())
         self.inventory.refresh()      # in the background, behind a spinner
 
-    # ── page 3: process (validate/segment) ──────────────────────────────────
+    # page 3: process (validate/segment)
     def _build_process_validate_page(self):
         """The Development toolkit's Validate and annotate page itself
         (page_annotate.py); Next continues to Predict with its export."""
@@ -519,7 +499,7 @@ class SimpleModeDialog(QDialog):
             self.stack.setCurrentIndex(4)
             self._sync_step_highlight()
 
-    # ── page 4: predict ──────────────────────────────────────────────────────
+    # page 4: predict
     def _build_predict_page(self):
         """Model prediction's own Predict page (ml_tab_predict.PredictPanel)."""
         self.predict_panel = PredictPanel(
@@ -534,7 +514,7 @@ class SimpleModeDialog(QDialog):
     def _run_predict(self):
         self.predict_panel.run()
 
-    # ── page 5: report ───────────────────────────────────────────────────────
+    # page 5: report
     def _build_report_page(self):
         """Model prediction's own Results page (ml_tab_predict.ResultsPanel)."""
         self.results_panel = ResultsPanel(
@@ -545,13 +525,13 @@ class SimpleModeDialog(QDialog):
         self.results_panel.refresh()
 
     def _processing_review_rows(self):
-        """How Validate went for this library (validation_core) - fed
-        into the *downloaded* report, not this wizard's Report step."""
+        """How Validate went for this library (validation_core), for the
+        downloaded report."""
         return vc.processing_review_rows(
             [f["stem"] for f in self.validation.files],
             self.validation.read_index())
 
-    # ── page 6: finished ─────────────────────────────────────────────────────
+    # page 6: finished
     def _build_finished_page(self):
         page = QWidget()
         v = QVBoxLayout(page)

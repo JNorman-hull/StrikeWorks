@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Pieces shared by every page with a live signal plot (Annotate, Export
 animations, Misclassification analysis, Model prediction > Inspect).
 """

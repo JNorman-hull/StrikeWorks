@@ -1,10 +1,4 @@
 #!/usr/bin/env python
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Builds the packaged app into dist/StrikeWorks without touching its data.
 With --simple, builds the Simple edition - Simple mode only, the
 development toolkit locked - into dist/StrikeWorks_Simple instead.
@@ -51,9 +45,8 @@ WORK = ROOT / "build" / ("work_simple" if SIMPLE else "StrikeWorks")
 EXE = "StrikeWorks.exe"
 BUNDLE = "_internal"
 
-# folders builds before the app_root() fix wrote at run time inside
-# _internal - moved next to the exe (where the app now looks) rather than
-# deleted with the old bundle
+# folders that builds before the app_root() fix wrote inside _internal;
+# moved next to the exe rather than deleted with the old bundle
 RUNTIME_FOLDERS = ("training_runs", "bsm_results")
 
 # shipped with the app besides the models and BSM presets

@@ -1,32 +1,9 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Sensor configuration tab - pick the device this session works with.
-
-The selection becomes the app's ``sensor_config.SensorConfig``: raw import
-on Process reads it for the extensions to scan, the parser to run and the
-packet sizes to unpack, and Validate and Dataset creation read the output
-rate to know what a second of signal is worth in samples.
-
-The rates panel is the important part, because three different rates are
-easy to conflate: the counter clock the raw files are stamped from, the
-rate each file's channels actually arrive at, and the uniform grid the
-processed CSV is written on. RAPID's .imp channels arrive at 100 Hz and are
-interpolated up onto a 2000 Hz grid; the .hig channels arrive at 2000 Hz
-but only in bursts around events, so they are standardised onto the same
-grid with the gaps filled with 0. This tab states that rather than leaving
-it implicit in the parser.
-
-It also carries the computed channels - which three-axis sensors get a
-magnitude column - and the nadir detection method, both of which change
-what processing writes.
-
-Every field here is data, not code. A new device is a New (or Duplicate)
-plus a Save; only its reader needs writing, registered under
-``sensor_config.PARSERS``.
+"""Sensor configuration: choose and edit the device the session works with
+(sensor_config.SensorConfig) - the file extensions and packet sizes raw
+import reads, the parser, the three rates (counter clock, each file's
+native rate, the output grid), the magnitude channels and the nadir method.
+A new device is New (or Duplicate) and Save; only its reader needs code,
+registered in ``sensor_config.PARSERS``.
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -60,11 +37,11 @@ class SensorTab(QWidget):
         self._reload_list()
         self._load_into_widgets()
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, frame):
         v = scroll_page(frame)
 
-        # ── row 1: the session's sensor + what it means downstream ──────────
+        # row 1: the session's sensor + what it means downstream
         row1 = QHBoxLayout()
         row1.setSpacing(10)
 
@@ -139,7 +116,7 @@ class SensorTab(QWidget):
         row1.addWidget(self.card_summary, stretch=2)
         v.addLayout(row1)
 
-        # ── row 2: rates and raw files ──────────────────────────────────────
+        # row 2: rates and raw files
         grp_acq = Section("Rates and raw files")
         av = QVBoxLayout(grp_acq)
         av.setSpacing(6)
@@ -207,7 +184,7 @@ class SensorTab(QWidget):
         av.addWidget(self.lbl_rates)
         v.addWidget(grp_acq)
 
-        # ── row 3: channels + parser ────────────────────────────────────────
+        # row 3: channels + parser
         row3 = QHBoxLayout()
         row3.setSpacing(10)
 
@@ -269,20 +246,21 @@ class SensorTab(QWidget):
         for key, label in sensor_config.NADIR_METHOD_LABELS.items():
             self.cmb_nadir.addItem(label, key)
         self.cmb_nadir.currentIndexChanged.connect(self._touch)
+        self.cmb_nadir.currentIndexChanged.connect(self._show_nadir_note)
         nrow.addWidget(self.cmb_nadir, stretch=1)
         pv.addLayout(nrow)
 
-        nadir_note = muted_label(
-            "How the passage nadir is detected")
-        nadir_note.setWordWrap(True)
-        pv.addWidget(nadir_note)
+        self.lbl_nadir_note = muted_label("")
+        self.lbl_nadir_note.setWordWrap(True)
+        pv.addWidget(self.lbl_nadir_note)
+        self._show_nadir_note()
         pv.addStretch()
         row3.addWidget(grp_parser, stretch=1)
         v.addLayout(row3)
 
         v.addStretch()
 
-    # ── configuration list ───────────────────────────────────────────────────
+    # configuration list
     def _reload_list(self, select=None):
         select = select or self._cfg.key
         self._loading = True
@@ -317,7 +295,7 @@ class SensorTab(QWidget):
             | QMessageBox.StandardButton.Cancel)
         return answer == QMessageBox.StandardButton.Discard
 
-    # ── widgets <-> configuration ────────────────────────────────────────────
+    # widgets <-> configuration
     def _load_into_widgets(self):
         cfg = self._cfg
         self._loading = True
@@ -342,6 +320,7 @@ class SensorTab(QWidget):
             chk.setChecked(key in cfg.magnitudes)
         n = self.cmb_nadir.findData(cfg.nadir_method)
         self.cmb_nadir.setCurrentIndex(max(0, n))
+        self._show_nadir_note()
 
         self._rebuild_source_rows(cfg.sources)
         self._loading = False
@@ -372,7 +351,7 @@ class SensorTab(QWidget):
         cfg.parser = self.cmb_parser.currentData() or cfg.parser
         return cfg
 
-    # ── one row per raw file ─────────────────────────────────────────────────
+    # one row per raw file
     def _rebuild_source_rows(self, sources):
         was_loading = self._loading
         self._loading = True
@@ -449,7 +428,7 @@ class SensorTab(QWidget):
         self._rebuild_source_rows(cfg.sources)
         self._touch()
 
-    # ── channels ─────────────────────────────────────────────────────────────
+    # channels
     def _append_channel(self, name):
         item = QListWidgetItem(name)
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
@@ -473,7 +452,11 @@ class SensorTab(QWidget):
             self._append_channel(name)
         self._touch()
 
-    # ── state ────────────────────────────────────────────────────────────────
+    def _show_nadir_note(self, *_args):
+        self.lbl_nadir_note.setText(sensor_config.NADIR_METHOD_NOTES.get(
+            self.cmb_nadir.currentData(), ""))
+
+    # state
     def _touch(self, *_args):
         if self._loading:
             return
@@ -530,7 +513,7 @@ class SensorTab(QWidget):
              else f"{live.window_samples(0.2)} samples"),
         ])
 
-    # ── actions ──────────────────────────────────────────────────────────────
+    # actions
     def _save(self):
         cfg = self._collect()
         problems = cfg.problems()

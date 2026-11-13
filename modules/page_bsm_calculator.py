@@ -1,32 +1,15 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Calculator (Blade strike calculator's first tab): the fish, pump and
-blade inputs (or a saved `bsm_config` file picked from the list) and
-Calculate, under the list. Each species' output card and collision
-probability show beside them; "Advanced model outputs" opens the
-Advanced analysis tab (page_bsm_analysis.py).
+"""Calculator, the Blade strike calculator's first tab: fish, pump and blade
+inputs (or a saved bsm_config file), Calculate, and each species' output
+card and collision probability.
 
-Advanced options set that tab's sensitivity sweeps - Q and N ranges as
-multiples of the design value, and the Q step - in
-`BSMState.sweep_options`.
+Scaly and eel each have their own Lf/Bf (eel defaults 0.66 m / 0.08 m);
+the other inputs are shared and Calculate runs both species. A config file
+fills one species. Advanced options set the sweep ranges
+(`BSMState.sweep_options`).
 
-Scaly and eel have different body dimensions, so Fish has one Lf/Bf pair
-per species (eel defaults to 0.66 m / 0.08 m); everything else is shared.
-A config file describes one species and fills that species' fields.
-Calculate runs both, each into its own "Blade strike output" card.
-
-"Observed strike data" is built but hidden for now (ROADMAP.md, "Hidden
-for now"); `read_inputs()` still reads it and `bsm_model.compute()` still
-accepts it.
-
-Both results go to `BSMState.set_results()` (Model comparison, Predict's
-mortality panel, Advanced analysis). The scaly result also goes to
-`BSMState.set_result()`, which Advanced analysis's sweeps and
-`LATEST_RESULT_PATH` (Study design's "Load from BSM") use.
+Results go to `BSMState.set_results()`, and the scaly one to `set_result()`
+as well (Advanced analysis's sweeps, `LATEST_RESULT_PATH`). The hidden
+"Observed strike data" inputs are still read by `read_inputs()`.
 """
 import json
 from pathlib import Path
@@ -76,7 +59,7 @@ class CalculatorPage(Page):
         self._draw_collision(bsm_state.results)
         bsm_state.calculated_all.connect(self._draw_collision)
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, frame):
         outer = QHBoxLayout(frame)
         outer.setContentsMargins(4, 6, 4, 6)
@@ -92,11 +75,9 @@ class CalculatorPage(Page):
         lv.addWidget(self._pump_group())
         lv.addWidget(self._blade_group())
         lv.addWidget(self._advanced_group())
-        # "Observed strike data" is temporarily off the visible page (see
-        # module docstring) - built so read_inputs()/_validate() stay
-        # unchanged, just never attached to a layout here. Kept as an
-        # attribute (not just a local) so Qt doesn't garbage-collect the
-        # unparented Section and its children out from under us.
+        # "Observed strike data" is hidden (ROADMAP.md): built for
+        # read_inputs()/_validate() but not added to a layout; kept as an
+        # attribute so the unparented Section isn't garbage-collected
         self._observed_section = self._observed_group()
         lv.addStretch()
         scroll.setWidget(left)
@@ -163,9 +144,8 @@ class CalculatorPage(Page):
             self.status.emit(f"Could not load configuration: {e}", 6000)
             return
 
-        # the config file describes one species at a time (same shape the
-        # standalone Mathematical BSM scripts use) - route its lf/bf into
-        # whichever species' fields match, leave the other species alone
+        # a config file describes one species: its lf/bf go into that
+        # species' fields
         target_lf, target_bf = (
             (self.in_lf_eel, self.in_bf_eel) if p["species"] == "eel"
             else (self.in_lf_scaly, self.in_bf_scaly))
@@ -371,10 +351,8 @@ class CalculatorPage(Page):
         self.fig_collision = Figure(figsize=(6.0, 2.0), dpi=100)
         self.canvas_collision = FigureCanvas(self.fig_collision)
         self.canvas_collision.setMinimumHeight(120)
-        # its height whatever is left, never what it asks for: a canvas
-        # asks for the size it has, so once grown it would hold the page
-        # taller than a smaller window (the page is laid out at its
-        # preferred height - the cards wrap) and bring up its scrollbar
+        # takes whatever height is left: a canvas asks for the size it has,
+        # so once grown it would keep the page taller than the window
         self.canvas_collision.setSizePolicy(QSizePolicy.Policy.Expanding,
                                             QSizePolicy.Policy.Ignored)
         return self.canvas_collision
@@ -409,7 +387,7 @@ class CalculatorPage(Page):
         style(lab, role="subheading")
         return lab
 
-    # ── validation ───────────────────────────────────────────────────────────
+    # validation
     def _numeric_widgets(self):
         return ([self.in_lf_scaly, self.in_bf_scaly,
                  self.in_lf_eel, self.in_bf_eel]
@@ -448,7 +426,7 @@ class CalculatorPage(Page):
         self.chk_use_observed.toggled.connect(self._validate)
         self._validate()
 
-    # ── state in/out ─────────────────────────────────────────────────────────
+    # state in/out
     def read_inputs(self):
         """{"scaly": p, "eel": p} - one `bsm_model.compute()`-shaped dict
         per species, sharing every input except species/lf/bf."""
@@ -478,7 +456,7 @@ class CalculatorPage(Page):
                        bf=float(self.in_bf_eel.text())),
         }
 
-    # ── run ──────────────────────────────────────────────────────────────────
+    # run
     def calculate(self):
         # both species (each with its own Lf/Bf); scaly also goes to the
         # single-result API (LATEST_RESULT_PATH, the sweeps)

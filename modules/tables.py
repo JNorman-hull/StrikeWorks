@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Every table in the app, from one place: the look (the HIG peak
 analysis table's - headers drawn as its cells are, text centred), sorting
 and filtering from the column headers, right-click copy, sizing a table to
@@ -70,22 +64,13 @@ def set_up(tbl):
     header_menu(tbl)
 
 
-# ── the look ────────────────────────────────────────────────────────────────
+# the look
 def style_table(tbl: QTableWidget, row_numbers=True, columns=True):
-    """The one table look used everywhere in the app (themes/app.qss draws
-    the headers as the HIG table's own header cells), text centred unless
-    a cell says otherwise, and rows left user-resizable (drag a row
-    boundary) rather than a fixed grid. Row resizing needs a visible
-    vertical header to grab (Qt gives a hidden header no drag handle at
-    all), so `row_numbers` defaults to True.
-
-    `columns=True` (the default) also makes column widths user-draggable
-    (`Interactive`, matching the rows); the columns then fill the table's
-    width when it's first shown (fill_table_width). Pass `columns=False`
-    to leave a table's own column sizing alone.
-
-    A table whose `noRowNumbers` property is set never gets them - for one
-    whose first rows are its own headers.
+    """The app's table look, centred text and user-resizable rows. Row
+    resizing needs a visible vertical header, so `row_numbers` defaults to
+    True (a table with the `noRowNumbers` property never gets them).
+    `columns=True` makes columns draggable too, filling the table's width when
+    first shown; `columns=False` leaves column sizing alone.
     """
     if tbl.property("noRowNumbers"):
         row_numbers = False
@@ -97,18 +82,18 @@ def style_table(tbl: QTableWidget, row_numbers=True, columns=True):
         tbl.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Interactive)
         tbl.horizontalHeader().setStretchLastSection(False)
-        # Interactive columns start at Qt's generic default width (a
-        # freshly populated table looks squeezed into its left edge until
-        # dragged wider by hand) - fill_table_width() on first Show fixes
-        # that without giving up manual dragging afterward...
+        # Interactive columns start at Qt's default width; they are fitted
+        # each time the table is shown, until the user drags one
         tbl.installEventFilter(_TableFillOnShow.instance())
-        # ...as it does once a page has filled in new columns
         if not getattr(tbl, "_fits_new_columns", False):
             tbl._fits_new_columns = True
+            tbl.horizontalHeader().sectionResized.connect(
+                lambda *_a: _note_drag(tbl))
+            # ...and again once a page has filled in new columns
             timer = QTimer(tbl)
             timer.setSingleShot(True)
             timer.setInterval(0)
-            timer.timeout.connect(lambda: fill_table_width(tbl))
+            timer.timeout.connect(lambda: _fit_new_columns(tbl))
             tbl.model().columnsInserted.connect(lambda *_a: timer.start())
 
 
@@ -122,11 +107,24 @@ class _Centred(QStyledItemDelegate):
             option.displayAlignment = Qt.AlignmentFlag.AlignCenter
 
 
+#: set on a table once the user has dragged one of its columns
+DRAGGED = "columnsDragged"
+
+
+def _note_drag(tbl):
+    """A column resized with the mouse button down is the user's doing."""
+    if QApplication.mouseButtons() & Qt.MouseButton.LeftButton:
+        tbl.setProperty(DRAGGED, True)
+
+
+def _fit_new_columns(tbl):
+    tbl.setProperty(DRAGGED, False)
+    fill_table_width(tbl)
+
+
 class _TableFillOnShow(QObject):
-    """Singleton event filter: widens a table's columns to fill its
-    viewport the first time it becomes visible with data, then gets out
-    of the way - it only ever adds spare width, never fights a drag the
-    user makes afterward."""
+    """Event filter (one instance) that fills a table's width each time
+    it is shown, unless the user has set the column widths."""
     _shared = None
 
     @classmethod
@@ -136,17 +134,14 @@ class _TableFillOnShow(QObject):
         return cls._shared
 
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.Type.Show:
+        if event.type() == QEvent.Type.Show and not obj.property(DRAGGED):
             fill_table_width(obj)
         return False
 
 
 def fill_table_width(tbl: QTableWidget):
-    """Widen `tbl`'s (already `Interactive`) columns to fill its viewport
-    when their natural content width leaves space spare, so a populated
-    table reads full-width instead of needing a manual drag first. Safe
-    to call on an empty table (no columns to widen) or repeatedly (only
-    ever adds width, so it will not undo a user's own drag)."""
+    """Size `tbl`'s columns to their contents, then share any spare
+    viewport width between them."""
     n = tbl.columnCount()
     if n == 0:
         return
@@ -174,7 +169,7 @@ def fit_height(tbl: QTableWidget):
                        + 2 * tbl.frameWidth() + 2)
 
 
-# ── cells and headers as text ───────────────────────────────────────────────
+# cells and headers as text
 _NAME = Qt.ItemDataRole.UserRole         # a header's column name...
 _SHOWN = Qt.ItemDataRole.UserRole + 1    # ...and the text a filter gave it
 
@@ -216,7 +211,7 @@ def table_rows(tbl):
              for r in range(tbl.model().rowCount())])
 
 
-# ── right-click copy ────────────────────────────────────────────────────────
+# right-click copy
 def copy_menu(tbl, pos):
     """Copy highlighted cells / Copy entire table, at `pos` (global)."""
     menu = popup_menu(tbl)
@@ -265,7 +260,7 @@ def table_text(tbl):
     return "\n".join(lines)
 
 
-# ── sort and filter from the column headers ─────────────────────────────────
+# sort and filter from the column headers
 # Qt's tables sort on a header click but have no filter: a click on a
 # header opens a menu instead, with both.
 _MAX_LISTED = 50                 # more values than this aren't listed
@@ -444,7 +439,7 @@ def apply_header_filters(tbl):
     tbl._rows_filtered = hidden
 
 
-# ── the HIG peak analysis table ─────────────────────────────────────────────
+# the HIG peak analysis table
 def fill_acceleration_table(tbl, acc_summary):
     """The HIG peak analysis table in the report template's layout: two
     header rows (Event count / Collision probability / Acceleration over

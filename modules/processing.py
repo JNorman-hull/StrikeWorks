@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Raw processing: each recording's raw files through the parser its
 sensor configuration names (sensor_config.PARSERS), into the library's
 processed_sens_data (processed CSV + sensor index row)."""

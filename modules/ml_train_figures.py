@@ -1,20 +1,7 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Model-evaluation figures for the Model Training page.
-
-Ports of the figures produced by 01_binary_model.py and
-05_multiclass_collapsed.py, redrawn with pure matplotlib (no seaborn
-dependency) from the worker's outputs (performance_metrics.json,
-cv_curves.json, cv_predictions.csv) so the GUI never touches the model
-stack.
-
-dark=True gives the in-app themed presentation (empty figures still draw
-their expected axes); dark=False is the publication styling used for
-exported figures and reports.
+"""Model-evaluation figures, ported from 01_binary_model.py and
+05_multiclass_collapsed.py to plain matplotlib and drawn from the worker's
+outputs (performance_metrics.json, cv_curves.json, cv_predictions.csv).
+dark=True is the in-app style, dark=False the export style.
 """
 import numpy as np
 
@@ -35,7 +22,7 @@ def _base_axes(fig, dark, xlabel, ylabel, title):
     return ax
 
 
-# ── binary figures ───────────────────────────────────────────────────────────
+# binary figures
 
 def draw_roc(fig, curves, metrics, dark=False):
     fig.clear()
@@ -201,7 +188,7 @@ def draw_accuracy_by_type(fig, metrics, dark=False):
     fig.tight_layout()
 
 
-# ── multiclass figures ───────────────────────────────────────────────────────
+# multiclass figures
 
 def draw_confusion_multiclass(fig, metrics, dark=False):
     fig.clear()
@@ -334,11 +321,6 @@ def draw_ovr_roc(fig, cv_predictions, metrics, dark=False):
         _awaiting(ax, "Class probabilities unavailable")
     style_axes(fig, ax, dark)
     fig.tight_layout()
-
-
-# the figures each kind of model shows, by role (Evaluate lays them out)
-BINARY_FIGURES = ("roc", "pr", "confusion", "probability", "by_type")
-MULTICLASS_FIGURES = ("roc", "confusion", "by_class", "probability", "by_type")
 
 
 def draw_all(figures, metrics, cv_predictions, curves, dark=False):

@@ -1,12 +1,4 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# GUI built on the PyDracula template (MIT licence) - credit and link
-# available under Settings > About. See LICENSE.
-#
-# ///////////////////////////////////////////////////////////////
+# Based on the PyDracula template (MIT licence) - see LICENSE.
 
 import sys
 import os
@@ -62,14 +54,13 @@ from modules.page_stub import StubPage
 from modules.plot_widgets import configure_pyqtgraph
 from modules.session_state import SessionState
 from modules.theme import set_flag
-from modules.ui_config import UIConfig
-from modules.ui_functions import UIFunctions
+from modules.ui_functions import UIConfig, UIFunctions
 from modules.ui_main import Ui_MainWindow
 
 os.environ["QT_FONT_DPI"] = "96"  # consistent sizing at display scaling above 100 %
 
 # the full app's name, in its title bar and on the taskbar (StrikeWorks
-# itself is the Simple mode window)
+# itself is the guided window, page_simple_mode.py)
 TOOLKIT_NAME = "StrikeWorks (development toolkit)"
 
 
@@ -130,11 +121,10 @@ class MainWindow(QMainWindow):
 
     # built but not offered in the sidebar for now (ROADMAP.md, "Hidden for now")
     _HIDDEN_PAGES = ("btn_data_analysis", "btn_dataset")
-    # main.ui's old Blade strike panel buttons (Calculator, Analysis and
-    # reporting): the page has tabs now (page_bsm.py)
+    # main.ui's Blade strike panel buttons, unused: the page has tabs
     _RETIRED_BUTTONS = ("btn_bsm_calculator", "btn_bsm_sensitivity")
 
-    # greyed out until Home's "Advanced mode" enables them
+    # greyed out until expand_sidebar() enables them
     _SIDEBAR_NAV_BUTTONS = (
         "btn_bsm", "btn_setup_deploy", "btn_sensor", "btn_annotation",
         "btn_model_training", "btn_model_prediction", "btn_export_report",
@@ -171,10 +161,8 @@ class MainWindow(QMainWindow):
         # is only a reference for its demo runners, not its Qt parent
         self.dev_console = DevConsole(self)
 
-        # Every page builds its own contents (layout.Page) and is added to
-        # the page stack here, in a scroll area of its own (_page). Home
-        # first: it resolves the session library, which the pages below
-        # read while they're built.
+        # Home first: it resolves the session library the other pages read
+        # while they're built
         self._page_holders = {}
         self.session_state = SessionState(self)
         self.home_page = self._page(HomePage(self, self.session_state))
@@ -195,7 +183,7 @@ class MainWindow(QMainWindow):
         self.bsm_state = BSMState(self)
         self.ml_prediction_page = self._page(
             MLPredictionPage(self, self.bsm_state))
-        # Simple mode shares ml_prediction_page.state
+        # StrikeWorks shares ml_prediction_page.state
         self.simple_mode_dialog = SimpleModeDialog(self)
         self.ml_training_page = self._page(MLTrainingPage(self))
         self.misclassification_page = self._page(
@@ -255,7 +243,7 @@ class MainWindow(QMainWindow):
         ui.leftMenuBg.setMaximumWidth(UIConfig.MENU_COLLAPSED_WIDTH)
         self.set_sidebar_active(False)
 
-        # Not shown here: Simple mode opens first (see __main__). The
+        # Not shown here: StrikeWorks opens first (see __main__). The
         # taskbar fix has to run before the window's first show().
         win_utils.ensure_taskbar_button(self)
         # within the screen's work area (not under the taskbar), centred
@@ -279,7 +267,7 @@ class MainWindow(QMainWindow):
         return next((p for p, h in self._page_holders.items() if h is holder),
                     None)
 
-    # ── sidebar layout ──────────────────────────────────────────────────────
+    # sidebar layout
     def _order_panel_buttons(self):
         """extraTopMenu is one flat layout for every section; put the few
         buttons that main.ui has out of order in their place."""
@@ -330,12 +318,12 @@ class MainWindow(QMainWindow):
             getattr(self.ui, name).setEnabled(active)
 
     def expand_sidebar(self):
-        """Advanced mode: open the sidebar and enable its sections."""
+        """Open the sidebar and enable its sections."""
         self.ui.leftMenuBg.setMinimumWidth(UIConfig.MENU_WIDTH)
         self.ui.leftMenuBg.setMaximumWidth(UIConfig.MENU_WIDTH)
         self.set_sidebar_active(True)
 
-    # ── menu highlight and section panel ────────────────────────────────────
+    # menu highlight and section panel
     def setSelected(self, btn):
         set_flag(btn, "selected", True)
 
@@ -368,7 +356,7 @@ class MainWindow(QMainWindow):
         self._configure_panel(mode)
         UIFunctions.toggleLeftBox(self, True)
 
-    # ── navigation ──────────────────────────────────────────────────────────
+    # navigation
     def _go_home(self):
         ui = self.ui
         self.show_page(self.home_page)
@@ -423,7 +411,7 @@ class MainWindow(QMainWindow):
     def submenuButtonClick(self):
         self.navigate_to(self.sender().objectName())
 
-    # ── dialogs ─────────────────────────────────────────────────────────────
+    # dialogs
     def openAbout(self):
         from modules.about_dialog import AboutDialog
         AboutDialog(self).exec()
@@ -480,7 +468,7 @@ class MainWindow(QMainWindow):
         dlg.exec()
         return dlg.went_to_dev_toolkit
 
-    # ── window events ───────────────────────────────────────────────────────
+    # window events
     def resizeEvent(self, event):
         UIFunctions.resize_grips(self)
 
@@ -536,9 +524,9 @@ if __name__ == "__main__":
     app.processEvents()
     window = MainWindow()
     # close() rather than finish(window): finish() waits for the window to
-    # become visible, and it stays hidden behind Simple mode
+    # become visible, and it stays hidden behind StrikeWorks
     splash.close()
-    # Simple mode first; the full app only if the user asks for it
+    # StrikeWorks first; the toolkit only if the user asks for it
     if not window.openSimpleMode():
         sys.exit(0)
     sys.exit(app.exec())

@@ -1,30 +1,13 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Shared styling and static-image export for the live pyqtgraph plots
-(Annotate, Export animations, Misclassification analysis, Model
-prediction > Inspect, Segmentation).
+"""Styling and static export for the pyqtgraph signal plots.
 
-Margins
--------
-pyqtgraph only reserves space on a side with a *visible* axis, so with no
-top axis and the right axis hidden a curve can sit flush against the top
-and right edges. `reserve_top_margin` and `set_right_axis_active` keep the
-right axis always shown (blank until a second channel is plotted) and
-reserve a matching blank strip at the top.
+pyqtgraph reserves space only for visible axes, so `reserve_top_margin` and
+`set_right_axis_active` keep the right axis shown (blank until a second
+channel is plotted) and a matching strip at the top.
 
-Export
-------
-Export redraws what the plot shows - its time window and both axes' y
-ranges, as the user has zoomed them - with matplotlib in a print style:
-white background, black axes, the left channel black and the right
-channel red.
-`add_export_button` adds a toolbar button with PNG (300 dpi) / SVG; the
-caller supplies `get_export_data()`, which returns None when there is
-nothing to export yet.
+Export redraws the visible window - time range and both y ranges - with
+matplotlib in print style (white background, left channel black, right
+channel red). `add_export_button` adds PNG (300 dpi) / SVG export; the
+caller's `get_export_data()` returns None when there is nothing to export.
 """
 import numpy as np
 
@@ -48,7 +31,7 @@ EXPORT_LEFT_COLOR = "black"     # primary (left-axis) channel, e.g. pressure
 EXPORT_RIGHT_COLOR = "red"      # secondary (right-axis) channel, e.g. higacc
 
 
-# ── margins ──────────────────────────────────────────────────────────────────
+# margins
 # room above the plot for the side axes' top value ("1.0"), drawn centred on
 # its tick - half of it otherwise falls outside the plot and is cut off
 TOP_MARGIN_PX = 12
@@ -66,11 +49,9 @@ def reserve_top_margin(plot_item):
 
 
 def set_right_axis_active(plot_item, active):
-    """Toggle the right axis's *values*, not its presence - the margin it
-    reserves stays whether or not a second channel is currently plotted,
-    so the plot's right edge never presses flush against the widget. The
-    caller still sets the label itself (`plot_item.setLabel("right", ...)`)
-    when active, matching how the left/bottom labels are already set."""
+    """Show or blank the right axis's values. The axis keeps its margin
+    either way, so the plot's right edge stays clear of the widget's. The
+    caller sets the label (`plot_item.setLabel("right", ...)`)."""
     plot_item.showAxis("right")
     ax = plot_item.getAxis("right")
     ax.setStyle(showValues=active)
@@ -84,7 +65,7 @@ def pg_default_pen():
     return pg.mkPen(pg.getConfigOption("foreground"))
 
 
-# ── export ───────────────────────────────────────────────────────────────────
+# export
 class _ExportSizeDialog(QDialog):
     """Width/height in cm for a static plot export."""
 
@@ -170,14 +151,10 @@ def render_export_figure(width_cm, height_cm, dpi, series, x_label,
 
 def build_export_data(time, left_label, left_y, right_label, right_y,
                       plot_widget, right_view=None, x_label="Time (s)"):
-    """The common shape every page's `get_export_data()` needs: one left
-    (primary) channel and an optional right (secondary) one, coloured per
-    the EXPORT_LEFT_COLOR/EXPORT_RIGHT_COLOR convention above, over the
-    window `plot_widget` shows - its time range, its y range and, with a
-    right channel, the y range of `right_view` (the ViewBox the right axis
-    is linked to). Only the samples in that window are kept (one either
-    side, so the lines reach the edges). None if there's nothing plotted
-    yet."""
+    """What a page's `get_export_data()` returns: the left channel and an
+    optional right one over the window `plot_widget` shows (its time and y
+    ranges, and `right_view`'s y range), keeping only the samples in the
+    window plus one either side. None if nothing is plotted."""
     if time is None or left_y is None:
         return None
     (x0, x1), ylim = plot_widget.plotItem.vb.viewRange()

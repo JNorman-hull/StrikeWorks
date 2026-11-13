@@ -1,16 +1,6 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""The session library, shared by every page (set on Home), in the same
-shared-object pattern as `BSMState`, `PredictionState` and
-`TrainingState`. Pages with library filters follow `library_changed`.
-
-`output_dir()` is `<library>/StrikeWorks_user_output/`, the default place
-for reports, deployed models and synced video. Loading is unaffected:
-models and training data can still be loaded from anywhere.
+"""The session library, set on Home. Pages with library filters follow
+`library_changed`. `output_dir()` is the library's StrikeWorks_user_output/
+folder, the default for reports, deployed models and synced video.
 """
 from pathlib import Path
 
@@ -18,8 +8,7 @@ from PySide6.QtCore import QObject, Signal
 
 from . import settings
 
-#: the unified per-library output folder name (deployed models, reports,
-#: synced video default here when a session library is selected)
+#: each library's output folder (reports, deployed models, synced video)
 OUTPUT_DIR_NAME = "StrikeWorks_user_output"
 
 
@@ -51,14 +40,8 @@ class SessionState(QObject):
         self.set_library(None)
 
     def output_dir(self, create=False):
-        """`<library>/StrikeWorks_user_output/`, or None with no library
-        selected. Never creates the folder by default - callers that
-        actually write into it already do their own `mkdir(parents=True,
-        exist_ok=True)` right before writing (matching how every other
-        output path in this app works), so merely computing "where would
-        this go" - at page construction, in a resume-summary check -
-        shouldn't leave empty folders behind on disk. Pass `create=True`
-        only at an actual write site that doesn't already mkdir itself."""
+        """<library>/StrikeWorks_user_output/, or None with no library. Made
+        only with `create=True`; writers normally make it themselves."""
         if self._library is None:
             return None
         out = self._library / OUTPUT_DIR_NAME

@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Video / sensor sync for Export animations (no Qt).
 
 Sync logic
@@ -41,9 +35,7 @@ TEXT_PADDING = 20
 TIME_TOL = 0.001
 
 
-#: the two channels every export used before channels became
-#: configurable - still the default so an old saved config (no
-#: "channels" key) renders exactly as it always did
+#: default channels, also used for a saved config without "channels"
 DEFAULT_CHANNELS = [
     {"column": "pressure_kpa", "label": "Pressure (kPa)", "color": "black"},
     {"column": "higacc_mag_g", "label": "Acceleration magnitude (g)",
@@ -257,11 +249,8 @@ def overlay_logo(frame, logo, opacity):
 
 def render_preview_frame(video_path, df, nadir_time_s, nadir_frame, fields,
                          opts: SyncOptions, frame_idx):
-    """Composite exactly one frame - the same video crop + graph strip +
-    overlays `process_video` burns into every frame of the export - without
-    rendering the whole clip. Lets Export animations' "Generate preview
-    frame" sanity-check the sync frame/graph window/overlay settings
-    before committing to a full (slow) render.
+    """Composite one frame exactly as `process_video` would, for Export
+    animations' "Generate preview frame".
     """
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():

@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Bind training data - several datasets (a model_features.csv per library,
 typically) stacked into one training set, without merging the libraries
 themselves. Lives in Model training > Train's Training dataset box, which

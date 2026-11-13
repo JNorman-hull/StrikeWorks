@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """A slider with two handles - a low and a high value on one track (Qt
 has no such slider of its own). Drawn in the stylesheet's slider colours
 (themes/app.qss, QSlider): the track, the span between the handles in the
@@ -42,7 +36,7 @@ class RangeSlider(QWidget):
     def sizeHint(self):
         return QSize(160, _HANDLE_D + 6)
 
-    # ── values ──────────────────────────────────────────────────────────────
+    # values
     def _index(self, value):
         return max(0, min(self._n, round((value - self._min) / self._step)))
 
@@ -69,7 +63,7 @@ class RangeSlider(QWidget):
         if emit:
             self.valuesChanged.emit(*self.values())
 
-    # ── geometry ────────────────────────────────────────────────────────────
+    # geometry
     def _x(self, index):
         r = _HANDLE_D / 2
         return r + (self.width() - 2 * r) * index / max(self._n, 1)
@@ -97,7 +91,7 @@ class RangeSlider(QWidget):
             p.drawEllipse(QRectF(x - r, cy - r, _HANDLE_D, _HANDLE_D))
         p.end()
 
-    # ── mouse and keys ──────────────────────────────────────────────────────
+    # mouse and keys
     def mousePressEvent(self, event):
         x = event.position().x()
         d_lo, d_hi = (abs(x - self._x(i)) for i in self._pos)

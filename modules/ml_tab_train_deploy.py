@@ -1,30 +1,22 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Model deployment - the explicit accept / train-final / deploy workflow
-in the Train tab's Model box: (3) Train final model, the model version,
-(4) Deploy model and the Model information window. The Train tab lays the
-buttons out; the run's messages go to its one status line.
+"""Train final model, model version, Deploy model and the Model
+information window, in the Train tab's Model box.
 
-Cross-validation estimates performance; the final deployment model is a
-separate, deliberate step that retrains on all available training data.
-Deployment writes the model + metrics into the models folder under the
-binary*/multiclass* naming that Model Prediction auto-discovers, together
-with a fully self-describing package folder (model card, config, channels,
-CV predictions), then opens the models folder.
+The final model is retrained on all training data once the user has
+reviewed cross-validation. Deploying writes the model and metrics into the
+models folder (binary*/multiclass*, which Model prediction picks up) with a
+package folder (model card, config, channels, CV predictions), then opens
+the folder.
 """
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject
+from PySide6.QtCore import QObject
 from PySide6.QtWidgets import (
-    QDialog, QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
 
 from . import settings, win_utils
 from .cards import MetaCard
+from .layout import ToolWindow
 from .theme import muted_label, style
 
 # every button in the Model box: one size, one look - wide enough for
@@ -53,13 +45,12 @@ def column(heading):
     return w, v
 
 
-class ModelInfoWindow(QDialog):
-    """The run's model card, in a window that doesn't block (shown, not
-    exec'd), like Annotations and notes - gone when its page is."""
+class ModelInfoWindow(ToolWindow):
+    """The run's model card. Non-modal; hides with its page."""
 
     def __init__(self, page, owner):
         # (the page, without a window - the tests: never parentless)
-        super().__init__(owner if owner is not None else page)
+        super().__init__(owner if owner is not None else page, page)
         self.page = page
         self.setWindowTitle("Model information")
         v = QVBoxLayout(self)
@@ -67,17 +58,6 @@ class ModelInfoWindow(QDialog):
         self.card = MetaCard()
         v.addWidget(self.card)
         self.setMinimumWidth(460)
-        page.installEventFilter(self)
-
-    def eventFilter(self, obj, event):
-        if obj is self.page and event.type() == QEvent.Type.Hide:
-            self.hide()
-        return super().eventFilter(obj, event)
-
-    def bring_up(self):
-        self.show()
-        self.raise_()
-        self.activateWindow()
 
 
 class DeploymentPanel(QObject):
@@ -133,7 +113,7 @@ class DeploymentPanel(QObject):
         out = session_state.output_dir() if session_state is not None else None
         return (out / "models") if out is not None else settings.get_models_dir()
 
-    # ── state wiring ─────────────────────────────────────────────────────────
+    # state wiring
     def _connect_state(self):
         s = self.state
         s.cv_finished.connect(self._refresh)
@@ -143,7 +123,7 @@ class DeploymentPanel(QObject):
         s.final_finished.connect(self._on_final_done)
         s.final_failed.connect(self._on_final_done)
 
-    # ── refresh ──────────────────────────────────────────────────────────────
+    # refresh
     def _refresh(self, *_args):
         s = self.state
         self.btn_final.setEnabled(s.cv_done and not s.running)
@@ -216,7 +196,7 @@ class DeploymentPanel(QObject):
                          f"accuracy = {mperf['overall_accuracy']:.3f}"))
         self.info.card.set_rows(rows)
 
-    # ── final model (its messages: the Train tab's status line) ──────────────
+    # final model (its messages: the Train tab's status line)
     def _on_final_started(self):
         self.btn_final.setEnabled(False)
         self.btn_final.setText("Training…")
@@ -226,7 +206,7 @@ class DeploymentPanel(QObject):
         self.btn_final.setText("(3) Train final model")
         self._refresh()
 
-    # ── deployment ───────────────────────────────────────────────────────────
+    # deployment
     def _deploy(self):
         s = self.state
         version = self.ed_version.text().strip()

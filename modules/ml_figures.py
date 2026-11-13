@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Prediction figures, drawn onto any matplotlib Figure. Two presentations:
 
   dark=True   the on-screen look, in the theme's canvas colours. Empty
@@ -64,11 +58,10 @@ def _grid(ax, dark):
 
 
 def bar_width(ax, n_bars):
-    """Bar width for a by-treatment bar chart - half the usual 0.6 with
-    three or fewer bars, so a single treatment isn't one slab filling the
-    plot. The x limits are pinned to where the full-width bars would have
-    put them (autoscale would otherwise just stretch the narrower bars
-    back out), so they really do show at half width."""
+    """Bar width for a by-treatment chart: half the usual 0.6 with three
+    or fewer bars, so one treatment doesn't fill the plot. The x limits are
+    then pinned to where full-width bars would put them, or autoscale would
+    stretch the narrow bars back out."""
     if n_bars > 3:
         return 0.6
     span = n_bars - 1 + 0.6

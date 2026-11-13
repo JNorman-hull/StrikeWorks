@@ -344,6 +344,30 @@ recording's own rate from its HIG header through to prediction (README,
 - The 95/200/400 g bands and the HIG flag come from RAPID at 2000 Hz. Whether
   they mean the same at another rate and filter hasn't been looked at.
 
+## Review, nadir detection and segmentation (November 2026)
+
+In the working copy, not committed or built:
+
+- **Code review** (`CODE_REVIEW.md`): comments and docstrings cut back
+  (9 November); then, on 13 November, duplicated code made one of each
+  (the Wilson interval with z = 1.96 everywhere, the HIG bands,
+  `level_key`, the pop-up windows' `layout.ToolWindow`), unused functions
+  removed, `edition.py`, `ui_config.py` and `severity.py` merged into
+  `startup.py`, `ui_functions.py` and `hig_peaks.py`, and a table column
+  dragged by hand now keeps its width. Still open there: the shared signal
+  plot, the custom title bar code, the hidden pages.
+- **Nadir detection**: processing now looks for the pump's pressure step
+  and takes the lowest pressure just before it, falling back to the
+  earlier method (lowest pressure near the acceleration peak) for a
+  recording with no step. Both are in Sensor configuration > Nadir
+  detection (README, "Sensor configurations"). On the Testbed it matches
+  the validated nadir in 76 of 76 recordings (55 before); on Run 3 of the
+  EEL library in 10 of 12, the other two having a flat pressure trace.
+  Recordings already processed keep their nadir until processed again.
+- **Full sensor segmentation** is designed, not built
+  (`SEGMENTATION_PLAN.md`): seven regions on the validation screen, a
+  `roi` column written into the processed CSV on Save and export.
+
 ## What there is
 
 | Item | Where | Notes |

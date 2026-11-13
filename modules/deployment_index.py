@@ -1,41 +1,19 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""The deployment plan, and the rows it puts in the sensor index.
+"""The deployment plan, and its rows in the library's sensor index.
 
-A study is planned before any sensor is wetted: a site, a deployment, the
-machine, and then one set of conditions per treatment (head, flow, BEP,
-RPM) with the number of runs that treatment gets. Create and edit
-deployment collects that and writes it into the library's
-``global_sensor_index.csv`` - one row per treatment *per run* - so that
-processing can stamp a batch of sensors with the treatment and run they
-were recorded under, instead of that metadata being typed in per file.
+A deployment is planned before any sensor goes in: site, deployment ID,
+machine, and per treatment its conditions (head, flow, BEP, RPM) and number
+of runs. The plan is written into ``global_sensor_index.csv`` as one row per
+treatment per run, so processing can stamp each recording with its
+treatment and run. A library can hold several deployments; saving replaces
+only the rows of the deployment being edited.
 
-Several deployments in one library
-----------------------------------
-A library is not one site. Plan rows carry their own site, deployment ID,
-machine and type, so a library holds as many deployments as it needs;
-``deployments()`` lists them and Create and edit deployment edits one at a time.
-Saving replaces only the rows of the deployment being edited.
+Plan rows are index rows with ``file`` set to ``label_pad``.
+``sensor_rows()`` drops them for anything that lists or counts sensors, but
+code that rewrites the whole index must keep them. A library processed
+without a plan has none, so ``deployments()`` and ``treatments()`` fall back
+to the conditions on its sensor rows.
 
-Plan rows and sensor rows share one file
-----------------------------------------
-A plan row is a real row of the index with ``file`` set to ``label_pad``.
-Nothing else produces a sensor called that, so plan rows are easy to keep
-out of the way: ``sensor_rows()`` drops them, and every page that lists or
-counts sensors uses it. They are deliberately *not* dropped when a page
-rewrites the whole index - that would delete the plan.
-
-A library processed without a plan has no plan rows, but its sensor rows
-still carry whatever conditions were typed in. So
-``deployments()`` and ``treatments()`` fall back to reading those, and an
-existing library opens with its real deployments already filled in.
-
-The columns come from ``index_schema``, which the parser also uses, so plan
-rows and sensor rows always align.
+Columns come from ``index_schema``, shared with the parsers.
 """
 from pathlib import Path
 
@@ -114,7 +92,7 @@ class _Notifier(QObject):
 notifier = _Notifier()
 
 
-# ── reading ──────────────────────────────────────────────────────────────────
+# reading
 def index_path(root) -> Path:
     return Path(root) / INDEX_REL
 
@@ -177,13 +155,8 @@ def _row_values(row, cols):
 
 
 def _plan_or_sensor_rows(root, df=None):
-    """Plan rows if the library has them, else its processed sensor rows.
-
-    A library planned in StrikeWorks has plan rows. One processed before
-    this existed does not, but its sensors still carry the conditions, so
-    reading those back is how an existing library opens with its
-    deployments already filled in. `df` - the index, if the caller has
-    already read it.
+    """Plan rows if the library has any, else its processed sensor rows (a
+    library processed without a plan). `df`: the index, if already read.
     """
     if df is None:
         df = read_index(root)
@@ -284,14 +257,6 @@ def _run_count(runs):
     return len(runs) or 1
 
 
-def _run_sort_key(run):
-    """Numeric runs in numeric order, anything else after them by name."""
-    try:
-        return (0, int(float(run)), "")
-    except (TypeError, ValueError):
-        return (1, 0, str(run))
-
-
 def describe(treatment) -> str:
     """One-line label for a treatment, for a picker or a log."""
     name = treatment.get(TREATMENT_COL, "").strip() or "(unnamed)"
@@ -308,7 +273,7 @@ def describe(treatment) -> str:
     return f"{name} - {', '.join(bits)}" if bits else name
 
 
-# ── writing ──────────────────────────────────────────────────────────────────
+# writing
 def columns():
     """The index's column list (the app's schema)."""
     return index_schema.columns()
@@ -326,9 +291,8 @@ def _conform(df):
 def save_plan(root, deployment, treatments_in, sensor_key=None):
     """Write one deployment's plan into the library's index.
 
-    One row per treatment per run. Sensor rows are left exactly as they
-    are, and so are the plan rows of *other* deployments - a library holds
-    as many deployments as it needs.
+    One row per treatment per run. Sensor rows and other deployments' plan
+    rows are left as they are.
 
     Each entry in `treatments_in` is {column: value} plus ``runs``, a count.
     `sensor_key` records the sensor configuration the deployment uses
@@ -417,19 +381,12 @@ def apply_treatment(root, files, treatment, run=None):
 
 
 def set_row_values(root, file, values: dict) -> int:
-    """Write `values` onto the index row for `file`.
+    """Write `values` onto the index row for `file` and save.
 
-    The generic form of what `apply_treatment` does for a treatment/run
-    batch: mask by file, widen any numeric column to take a string, write,
-    save. Used for one recording at a time (Annotate's annotation entry and
-    manual `bad_sens` flag), so unlike `apply_treatment` it targets a single
-    file rather than a batch. A column `values` names that the index does
-    not have yet is added, defaulting to "" for every other row - annotation
-    columns are not part of `index_schema.SCHEMA`, so they only appear once
-    something is actually recorded.
-
-    Returns the number of rows changed (0 if the file has no index row -
-    this never creates one; a recording must already be processed).
+    Numeric columns are widened to take strings, and a column not yet in the
+    index is added (blank for the other rows) - annotation columns only appear
+    once something is recorded. Returns the number of rows changed: 0 if `file`
+    has no row (rows are never created here).
     """
     df = read_index(root)
     if df is None or FILE_COL not in df.columns:
@@ -450,7 +407,7 @@ def set_row_values(root, file, values: dict) -> int:
     return n
 
 
-# ── relabelling (deployment editor's Update) ─────────────────────────────────
+# relabelling (deployment editor's Update)
 def _relabel_frame(df, where, values):
     """Set `values` on every row of `df` matching all of `where` (compared
     as cleaned text). Returns the number of rows changed."""

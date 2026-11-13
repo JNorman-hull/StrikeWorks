@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """The card widgets: RingCard (a value or category ring), MetaCard
 (label/value rows), ProbBars, and the Spinner shown during long jobs.
 """
@@ -18,7 +12,7 @@ from .theme import (
 )
 
 
-# ── ring card ────────────────────────────────────────────────────────────────
+# ring card
 class RingCard(QFrame):
     """Card with a donut ring; fixed height, expands horizontally.
 
@@ -155,7 +149,7 @@ class RingCard(QFrame):
         p.end()
 
 
-# ── spinner ──────────────────────────────────────────────────────────────────
+# spinner
 class Spinner(QWidget):
     """Small rotating arc drawn with QPainter. Show/hide around long ops."""
 
@@ -194,7 +188,7 @@ class Spinner(QWidget):
         p.end()
 
 
-# ── metadata card ────────────────────────────────────────────────────────────
+# metadata card
 class MetaCard(QFrame):
     """Key/value metadata card. Unknown values display as an em dash."""
 
@@ -260,8 +254,8 @@ class MetaCard(QFrame):
         return str(value)
 
 
-# ── validation checklist ─────────────────────────────────────────────────────
-# ── horizontal probability bars ──────────────────────────────────────────────
+# validation checklist
+# horizontal probability bars
 class ProbBars(QWidget):
     """Compact horizontal bar chart for class probabilities.
 

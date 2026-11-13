@@ -1,17 +1,5 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Model prediction: Predict and Inspect (the sidebar picks the tab), and
-the Export and report dialog.
-
-Owns the single shared PredictionState.
-
-The tabs never hold their own copies of the model, dataset or results:
-everything flows through PredictionState signals, so loading a model or
-dataset, running a prediction, or selecting a record updates every tab.
+"""Model prediction: the Predict and Inspect tabs and the Export and report
+dialog, on one shared PredictionState.
 """
 from .layout import TabbedPage
 from .ml_state import PredictionState
@@ -39,14 +27,13 @@ class MLPredictionPage(TabbedPage):
         self.tabs.addTab(self.tab_inspect, "Inspect")
         self.report_dialog = ReportDialog(self.state, main_window)
 
-        # auto-load the deployed models from the default folder, the default
-        # models (Settings) selected (silent - a missing folder just leaves
-        # the compatibility check red)
+        # load Settings' default models (a missing folder just leaves the
+        # compatibility check red)
         ok, msg = self.state.use_default_models()
         if ok:
             self.status.emit(msg, 4000)
 
-    # ── dataset hand-off from Sensor Processing ──────────────────────────────
+    # dataset hand-off from Sensor Processing
     def on_dataset_ready(self, df, source):
         """Receives the curated dataset from the Dataset creation page."""
         if df is None:
@@ -56,7 +43,7 @@ class MLPredictionPage(TabbedPage):
             f"Prediction dataset updated from Sensor Processing "
             f"({df['file'].nunique()} recordings).", 5000)
 
-    # ── cross-page navigation ────────────────────────────────────────────────
+    # cross-page navigation
     def goto_inspect(self, preset=None):
         self.main_window.navigate_to("btn_inspect_pred")
         if preset:

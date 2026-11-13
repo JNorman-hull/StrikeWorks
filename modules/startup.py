@@ -1,12 +1,8 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Start-up helpers for main.py: the app icon, the logos, the loading
-splash, the default data folders and the Windows taskbar identity.
+splash, the default data folders, the Windows taskbar identity and which
+edition is running.
 """
+import os
 import platform
 from pathlib import Path
 
@@ -18,15 +14,22 @@ from PySide6.QtWidgets import QLabel, QSizePolicy, QSplashScreen, QWidget
 from . import settings
 from .theme import CARD_BG, MUTED
 
+
+def simple_only() -> bool:
+    """True in the Simple edition: StrikeWorks only, the Development
+    toolkit locked. `build.py --simple` compiles in a start-up hook
+    (tools/simple_edition_hook.py) that sets STRIKEWORKS_EDITION=simple;
+    set the variable to try it from source."""
+    return os.environ.get("STRIKEWORKS_EDITION", "").strip().lower() == "simple"
+
+
 # relative to this file rather than the working directory, so it still
 # resolves when the exe is launched from a shortcut (frozen, both files
 # sit in _internal/)
 ICON_PATH = Path(__file__).parent.parent / "icon.ico"   # built from icon.png
-# the app's logo - StrikeWorks with the University of Hull beside it, the
-# one logo the app shows (the sidebar's small badge aside), white, for the
-# dark theme (a light theme would need a navy one); the 300 dpi file for
-# the big ones (Home, Finished, the splash, About), the 96 dpi file for
-# the small ones (StrikeWorks's bottom bar, the toolkit's sidebar)
+# StrikeWorks | University of Hull logo, white for the dark theme: 300 dpi
+# for the large copies (Home, Finished, splash, About), 96 dpi for the
+# small ones (StrikeWorks's bottom bar, the toolkit's sidebar)
 _LOGOS = Path(__file__).parent.parent / "images"
 
 

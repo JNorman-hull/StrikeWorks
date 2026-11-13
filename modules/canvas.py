@@ -1,19 +1,7 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""The figure canvas every page uses: Matplotlib's Qt canvas, redrawn once
-a resize is over rather than at every step of one.
-
-Matplotlib lays a figure out and draws it again on every resize event, and
-a drag (a splitter handle, the window's edge) or the sidebar sliding open
-sends dozens a second - with a few figures on a page that is what made
-dragging slow. Here the last drawing is stretched to fit while the size
-changes, and the figure is laid out and drawn once at its new size: as soon
-as the mouse button is released, or, for a resize without the mouse
-(maximising, the sidebar), once it stops.
+"""The Matplotlib canvas every page uses. While a resize is in progress the
+last drawing is stretched to fit; the figure is laid out and redrawn once,
+when the mouse button is released or the resizing stops. Redrawing on every
+resize event made dragging slow on pages with several figures.
 """
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QImage, QPainter, QResizeEvent
@@ -27,16 +15,13 @@ SETTLE_MS = 80
 
 
 class FigureCanvas(FigureCanvasQTAgg):
-    """`FigureCanvasQTAgg` that redraws when a resize is over (see the
-    module docstring). Used exactly like it."""
+    """`FigureCanvasQTAgg` that redraws once a resize is over. Used like
+    it."""
 
     def __init__(self, figure=None):
         super().__init__(figure)
-        # the figure laid out for the size it's drawn at, every time:
-        # Matplotlib's tight_layout() lays it out once, for the size it has
-        # then, and a canvas the page later resizes keeps those margins -
-        # cutting off axis titles and putting legends over them. The drawing
-        # code's call is kept as the figure's layout engine instead
+        # lay the figure out at every draw: a one-off tight_layout() keeps
+        # margins for the old size after a resize, clipping axis titles
         fig = self.figure
         fig.tight_layout = lambda **kw: fig.set_layout_engine("tight", **kw)
         self._stale = None          # the last drawing, while resizing

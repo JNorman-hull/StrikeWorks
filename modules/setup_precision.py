@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Study design (Setup and deploy): sampling precision. Given a
 hypothesised strike rate and a planned sample size, shows the Wilson score
 interval (`wilson_calc.py`) that size would give, and how it changes over a
@@ -54,7 +48,7 @@ class PrecisionCalcTab(QWidget):
         self._build(self)
         self._recalculate()
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, frame):
         v = scroll_page(frame)
 
@@ -169,7 +163,7 @@ class PrecisionCalcTab(QWidget):
         """The Notes text: planned N, its interval and precision."""
         return self.txt_result.toPlainText()
 
-    # ── Blade strike calculator handoff ─────────────────────────────────────
+    # Blade strike calculator handoff
     def _load_from_bsm(self):
         if not LATEST_RESULT_PATH.exists():
             if self._status is not None:
@@ -191,7 +185,7 @@ class PrecisionCalcTab(QWidget):
                 f"rate from the Blade strike calculator ({payload['species']}, "
                 f"{payload['timestamp']}).", 5000)
 
-    # ── calculation ──────────────────────────────────────────────────────────
+    # calculation
     def _recalculate(self, *_args):
         p = self.spin_rate.value() / 100.0
         n = self.spin_n.value()

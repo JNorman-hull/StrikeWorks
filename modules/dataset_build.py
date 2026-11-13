@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Building a model-ready dataset from a library's processed sensors: one
 fixed-length window per sensor around its pressure nadir, with the
 deployment / treatment / run carried over from the sensor index.
@@ -76,12 +70,8 @@ class ExtractThread(QThread):
         return f"_{int(round(WIN_SEC * 1000))}ms"
 
     def _strip_window_suffix(self, stem):
-        """Recover the sensor stem from a saved window filename.
-
-        Validate names the file after the width it was saved at, which need
-        not be the width configured now, so any '_<n>ms' tail is removed -
-        otherwise a window saved at 300 ms would never match the index.
-        """
+        """The sensor stem from a saved window filename, without its '_<n>ms'
+        suffix (the window may have been saved at another width)."""
         if stem.endswith(self._win_suffix):
             return stem[: -len(self._win_suffix)]
         return WIN_SUFFIX_RE.sub("", stem)
@@ -109,13 +99,8 @@ class ExtractThread(QThread):
     def _meta_lookup(self):
         if self._index_df is None or "file" not in self._index_df.columns:
             return {}
-        # plan rows (deployment_index.save_plan's own "label_pad" rows,
-        # one per treatment/run) all share the same literal filename, so a
-        # library with more than one deployment has more than one -
-        # set_index("file") on the raw index then crashes with "index
-        # must be unique", which run()'s except-and-emit-zero swallows as
-        # a silent "no rows" instead of the real cause. sensor_rows()
-        # drops them the same way _run_unsegmented already does.
+        # drop plan rows: they all have file == "label_pad", which would
+        # break set_index("file") below
         df = di.sensor_rows(self._index_df)
         available = [c for c in META_COLS if c in df.columns]
         return (df.drop_duplicates("file", keep="last")
@@ -131,7 +116,7 @@ class ExtractThread(QThread):
                 insert_at += 1
         return df
 
-    # ── auto nadir +/- half a window out of the full sensor CSV ─────────────
+    # auto nadir +/- half a window out of the full sensor CSV
     def _run_unsegmented(self):
         index_path = self._root / INDEX_REL
         csv_dir = self._root / CSV_DIR
@@ -210,13 +195,13 @@ class ExtractThread(QThread):
         self.log.emit(f"\n-- Done: {n_ok} extracted, {n_skip} skipped.")
         return result, n_ok, n_skip
 
-    # ── bind the saved nadir windows ────────────────────────────────────────
+    # bind the saved nadir windows
     def _run_segmented(self):
         win_dir = self._root / WINDOW_DIR
         if not win_dir.exists():
             raise FileNotFoundError(
                 f"Nadir window folder not found:\n  {win_dir}\n"
-                "Run the Validate & segment page first.")
+                "Validate the sensors first (Validate and annotate).")
 
         win_files = sorted(win_dir.glob("*.csv"))
         if not win_files:

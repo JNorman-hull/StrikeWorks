@@ -1,22 +1,7 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Evaluate tab - interrogate any model's cross-validated performance.
-
-Evaluates either a model trained in this session or any model already
-deployed in the models folder (discovered by ``ml_model_library``), so a
-previously deployed model can be reviewed without retraining it.
-
-Top to bottom: the model; one performance table (out-of-fold,
-cross-validation mean ± SD, hold-out - model_measures, the names used
-everywhere); performance by class and by treatment; the figures - a
-binary model's ROC, precision-sensitivity, confusion matrix | predicted
-probability, accuracy by strike type; a multiclass model's ROC,
-confusion matrix | sensitivity by class, predicted probability |
-accuracy by strike type. The model report is in Export and report.
+"""Evaluate: the cross-validated performance of a model trained this
+session or of any model in the models folder (ml_model_library) - the
+performance table, performance by class and by treatment, and the
+evaluation figures.
 """
 from pathlib import Path
 
@@ -84,11 +69,11 @@ class EvaluateTab(QWidget):
             state.cv_finished.connect(self.reload_sources)
         self.reload_sources()
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, frame):
         v = scroll_page(frame)
 
-        # ── the model (where it's from: the list's tooltip) ────────────────
+        # the model (where it's from: the list's tooltip)
         sel_row = QHBoxLayout()
         sel_row.addWidget(muted_label("Model"))
         self.cmb_model = QComboBox()
@@ -101,7 +86,7 @@ class EvaluateTab(QWidget):
         sel_row.addStretch()
         v.addLayout(sel_row)
 
-        # ── one table: out-of-fold, cross-validation, hold-out ─────────────
+        # one table: out-of-fold, cross-validation, hold-out
         grp_perf = Section("Performance")
         pv = QVBoxLayout(grp_perf)
         pv.setSpacing(4)
@@ -116,7 +101,7 @@ class EvaluateTab(QWidget):
         pv.addWidget(self.lbl_averaged)
         v.addWidget(grp_perf)
 
-        # ── by class | by treatment ────────────────────────────────────────
+        # by class | by treatment
         grp_class = Section("Performance by class")
         cv = QHBoxLayout(grp_class)
         cv.setSpacing(10)
@@ -126,7 +111,7 @@ class EvaluateTab(QWidget):
             cv.addWidget(tbl, stretch=1)
         v.addWidget(grp_class)
 
-        # ── figures (_layout_figures places them for the model) ────────────
+        # figures (_layout_figures places them for the model)
         grp_figs = Section("Evaluation figures")
         self.fig_rows = QVBoxLayout(grp_figs)
         self.fig_rows.setSpacing(8)
@@ -226,7 +211,7 @@ class EvaluateTab(QWidget):
         fill_table_width(tbl)
         fit_height(tbl)
 
-    # ── model sources ────────────────────────────────────────────────────────
+    # model sources
     def follow_default_models_dir(self):
         """Settings' models folder changed - follow it."""
         new = Path(settings.get_models_dir())
@@ -263,7 +248,7 @@ class EvaluateTab(QWidget):
                        if 0 <= idx < len(self._entries) else None)
         self._refresh()
 
-    # ── refresh ──────────────────────────────────────────────────────────────
+    # refresh
     def _refresh(self):
         entry = self._entry
         m = entry.metrics if entry else {}

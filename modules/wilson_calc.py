@@ -1,18 +1,22 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Wilson score interval for a binomial proportion - used by the BSM's
-observed strike rate, Study design's planning (where `p` is a hypothesised
-rate) and Model comparison.
+"""Wilson score interval for a binomial proportion - the one interval every
+count in the app is given with: the BSM's observed strike rate, Study
+design's planning (where `p` is a hypothesised rate), Model comparison, the
+prediction summary, HIG peak analysis and the training metrics.
+
+No Qt and no package imports: the workers import it too.
 """
 import math
 
-# two-sided z for common confidence levels
-Z_FOR_CONFIDENCE = {90: 1.6448536269514722, 95: 1.959963984540054,
+# two-sided z; 95 % is 1.96 everywhere in the app
+Z_FOR_CONFIDENCE = {90: 1.6448536269514722, 95: 1.96,
                     99: 2.5758293035489004}
+
+
+def _limits(p, n, z):
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return max(0.0, centre - half), min(1.0, centre + half)
 
 
 def wilson_interval(p, n, confidence=95):
@@ -23,11 +27,18 @@ def wilson_interval(p, n, confidence=95):
         return None
     p = min(1.0, max(0.0, p))
     z = Z_FOR_CONFIDENCE.get(confidence, Z_FOR_CONFIDENCE[95])
-    denom = 1 + z * z / n
-    centre = (p + z * z / (2 * n)) / denom
-    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
-    lo, hi = max(0.0, centre - half), min(1.0, centre + half)
+    lo, hi = _limits(p, n, z)
     return lo, hi, (hi - lo) / 2
+
+
+def wilson_ci(k, n):
+    """(proportion, lower, upper) at 95 % for `k` of `n`; zeros when `n`
+    is 0."""
+    if n == 0:
+        return 0.0, 0.0, 0.0
+    p = k / n
+    lo, hi = _limits(p, n, Z_FOR_CONFIDENCE[95])
+    return p, lo, hi
 
 
 def required_n(p, target_half, confidence=95, n_max=100000):

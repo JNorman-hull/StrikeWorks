@@ -1,34 +1,8 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Export and report - the one place every StrikeWorks report is built.
-
-A dialog opened from the "Export and report" button at the bottom of the
-sidebar (`page_ml_prediction.open_report()`).
-
-Hosts the central reporting hub (`report_center.py`): a checklist of every
-report a page in the app can produce - BSM maths, Study design, Raw data
-processing, Annotation, Model training, Misclassification, Model
-deployment summary, Model prediction, Model comparison - all in the same
-HTML format; a section with nothing to report yet is greyed out. Three
-actions:
-
-  Preview     - assembles the checked sections and opens the result in the
-                user's default web browser.
-  Export      - the same, written to disk under the session library's
-                output folder (or the Settings default), its folder opened.
-  Export all  - every *available* section (not just checked), as Export -
-                the quickest way to get everything there is.
-
-(Simple mode's Download writes the prediction's self-contained package,
-`ml_report.export_analysis`.)
-
-Figure output settings (file formats, DPI) sit underneath and thread
-through to every section that renders its own figure (the `formats=`/
-`dpi=` arguments of the report_center sections).
+"""Export and report: the dialog behind the sidebar's "Export and report"
+button. Lists every section report_center can build, greyed out when there
+is nothing to report, with Preview (opens in the browser), Export (writes
+under the library's output folder, or Settings' default, and opens it) and
+Export all (every available section). The figure formats and DPI apply to every section.
 """
 from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -54,10 +28,8 @@ _SECTION_TITLES = [
     ("biological",       "Model comparison"),
 ]
 
-# these two sections report on models rather than "the app's current
-# state" - their own choice here, independent of Evaluate/Misclassification:
-# a checklist of the models the evaluation covers, and one model whose
-# misclassifications are listed
+# the models the evaluation section covers, and the one whose
+# misclassifications are listed - chosen here, not on Evaluate
 _MODEL_LIST_ROWS = 4.5          # visible rows before the checklist scrolls
 
 
@@ -84,13 +56,11 @@ class ReportDialog(QDialog):
         self._refresh_checklist()
 
     def refresh(self):
-        """Public entry point for callers opening this dialog (`page_ml_
-        prediction.py.open_report()`) - `showEvent` already refreshes on
-        every open, so this only matters if a caller wants the checklist
-        current before `exec()` is even called."""
+        """Refresh the checklist before the dialog is shown (showEvent
+        refreshes it on every open too)."""
         self._refresh_checklist()
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self):
         v = QVBoxLayout(self)
         v.setContentsMargins(16, 16, 16, 16)
@@ -227,7 +197,7 @@ class ReportDialog(QDialog):
         s.models_changed.connect(self._refresh_checklist)
         s.dataset_changed.connect(self._refresh_checklist)
 
-    # ── figure output settings ──────────────────────────────────────────────
+    # figure output settings
     def _selected_formats(self):
         fmts = []
         if self.chk_png.isChecked():
@@ -236,14 +206,12 @@ class ReportDialog(QDialog):
             fmts.append("svg")
         return tuple(fmts) or ("png",)
 
-    # ── section checklist ────────────────────────────────────────────────────
+    # section checklist
     def _refresh_models(self):
-        """Re-lists every available model in the evaluation checklist and
-        the misclassification picker, keeping the ticks and the pick
-        (matched by label, since `available_model_entries` builds fresh
-        `ModelEntry` objects each call). A model not listed before starts
-        ticked when it's in `report_center.default_model_set` - this
-        session's models, else the newest deployed pair."""
+        """Re-list the models in the evaluation checklist and the
+        misclassification picker, keeping ticks and the pick by label. A model
+        new to the list starts ticked if it's in `report_center.default_model_set`.
+        """
         entries = report_center.available_model_entries(self.window)
 
         for cb, entry in self._model_checks:
@@ -314,7 +282,7 @@ class ReportDialog(QDialog):
     def _checked_keys(self):
         return {k for k, cb in self._checks.items() if cb.isChecked()}
 
-    # ── report assembly ─────────────────────────────────────────────────────
+    # report assembly
     def _assemble(self, checked):
         # state may have changed since the checklist was drawn (a run
         # finished, a model deployed); refreshing unchecks anything that's

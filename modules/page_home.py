@@ -1,18 +1,6 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Home: the session library, New session, and a summary of what has been
-done in that library so far.
-
-`SessionState` holds the session library; this page sets it and every
-page with library filters follows it.
-
-The summary reads the library's own files (`deployment_index.py`,
-`model_features.csv`, `StrikeWorks_user_output/`), so it's right before
-any other page has been opened.
+done in the library, read from its own files (sensor index,
+model_features.csv, StrikeWorks_user_output/).
 """
 
 
@@ -48,16 +36,13 @@ class HomePage(Page):
         self._build(self)
         self._connect()
         self._refresh_library_combo()
-        # the Library status card is refreshed whenever Home is shown, not
-        # only when the library changes - its contents change under it
-        # (processing, Simple mode, the demos) while Home isn't on screen
+        # refreshed whenever Home is shown: other pages change the library
+        # while Home is hidden
         on_show(self, self._refresh_summary)
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, frame):
-        # the stub background image fights with real content - a plain
-        # dark background matches every other page instead; the same
-        # image comes back below as a real (not stretched) logo
+        # no background image; the logo is added below
         style(frame, role="bare")
         outer = QVBoxLayout(frame)
         outer.setContentsMargins(24, 24, 24, 24)
@@ -130,7 +115,7 @@ class HomePage(Page):
         self.btn_new_session.clicked.connect(lambda: self._new_session())
         self.session_state.library_changed.connect(self._on_session_library_changed)
 
-    # ── library combo ───────────────────────────────────────────────────────
+    # library combo
     def _refresh_library_combo(self, select=None):
         self.cmb_library.blockSignals(True)
         self.cmb_library.clear()
@@ -145,12 +130,8 @@ class HomePage(Page):
             self.cmb_library.setCurrentIndex(idx)
         self.cmb_library.blockSignals(False)
 
-        # a freshly populated combo defaults to index 0 (same convention
-        # LibrarySelector's own picker already uses) whether or not `want`
-        # matched - apply that back into the session explicitly, since
-        # blockSignals means currentIndexChanged never fired for it and
-        # state/UI would otherwise silently disagree until the user
-        # happens to touch the combo
+        # signals were blocked, so push the combo's choice (index 0 when
+        # `want` wasn't found) into the session explicitly
         current = self.cmb_library.currentData()
         if str(self.session_state.library or "") != str(current or ""):
             self.session_state.set_library(current)
@@ -194,24 +175,12 @@ class HomePage(Page):
             # not on screen: on_show refreshes it next time Home opens
             self.card_status.set_title(path.name if path else "Nothing selected yet")
             self.card_status.set_rows([])
-        # the one unified "Library: X" status message for a session-wide
-        # library change - every soft-synced page's own LibrarySelector
-        # suppresses its own copy of this message while syncing (see
-        # LibrarySelector.syncing in library_widgets.py), so this is the
-        # only place it's ever shown from a Home-driven change
+        # the one "Library: X" message for a session change (each
+        # LibrarySelector stays quiet while syncing)
         if path is not None:
             self.status.emit(f"Library: {path.name}", 4000)
 
-    # ── mode buttons ─────────────────────────────────────────────────────────
-    def _go_advanced(self):
-        """Advanced mode is every page as it exists today. The sidebar's
-        section buttons start disabled (main.py, on launch) regardless of
-        whether the sidebar itself is toggled wide or narrow - this is
-        the one place that actually activates them. No section's panel is
-        opened for the user - they pick where to start from the sidebar."""
-        self.main_window.expand_sidebar()
-
-    # ── new session ──────────────────────────────────────────────────────────
+    # new session
     def _new_session(self, parent=None):
         parent = parent or self.main_window
         reply = QMessageBox.warning(
@@ -228,7 +197,7 @@ class HomePage(Page):
         self.session_state.new_session()
         self.status.emit("New session started.", 4000)
 
-    # ── resume summary ──────────────────────────────────────────────────────
+    # resume summary
     def _refresh_summary(self):
         title, rows = library_status_rows(
             self.session_state.library, self.session_state)
@@ -236,13 +205,11 @@ class HomePage(Page):
         self.card_status.set_rows(rows)
 
 
-# ── shared "library status" summary ─────────────────────────────────────────
+# shared "library status" summary
 def library_status_rows(root, session_state):
-    """(title, rows) for a MetaCard - Deployments/Treatments/Sensors
-    indexed/Dataset built/StrikeWorks_user_output. Shared by Home's own
-    resume summary (above) and Simple mode's Deploy page "Library status"
-    card (page_simple_mode.py) - one definition of what "library status"
-    means, not two copies that can drift apart."""
+    """(title, rows) for a MetaCard: Deployments / Treatments / Sensors
+    indexed / Dataset built / StrikeWorks_user_output. Used by Home's
+    summary and the deployment editor's Library status card."""
     if root is None:
         return "Nothing selected yet", []
     rows = []

@@ -1,24 +1,14 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Central prediction-analysis state shared by Predict / Inspect / Report.
+"""PredictionState: the prediction state shared by Predict, Inspect, Results
+and the reports. The tabs read it and follow its signals:
 
-One instance of :class:`PredictionState` is owned by the Model Prediction
-page controller. The three tabs read from it and react to its signals -
-nothing is duplicated per tab:
-
-    load models   -> models_changed  -> all tabs refresh model info
-    load dataset  -> dataset_changed -> all tabs refresh dataset info
-    (both also re-run the compatibility validation -> validation_changed)
+    load models   -> models_changed
+    load dataset  -> dataset_changed
+    (either one re-runs the compatibility check -> validation_changed)
     run           -> run_started / run_finished / run_failed
-    select record -> selection_changed (Inspect updates its visualisation)
+    select record -> selection_changed
 
-The prediction itself runs ``modules/predict_worker.py`` in a subprocess
-(watched by a QThread), so the model stack is never imported into the GUI
-process.
+Predictions run ``predict_worker.py`` in a subprocess, so the model stack
+never loads in the GUI.
 """
 import json
 import subprocess
@@ -41,7 +31,7 @@ _DEFAULT_LOW_CONF = 0.70
 HIG_SECTION = "hig_peak_analysis"
 
 
-# ── worker thread ────────────────────────────────────────────────────────────
+# worker thread
 class _WorkerThread(QThread):
     finished_ok = Signal(str)
     failed      = Signal(str)
@@ -83,8 +73,7 @@ class _WorkerThread(QThread):
                 cmd += ["--hig-settings", json.dumps(self._hig_settings)]
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            # the worker's own output, for the console (dev_console.py
-            # mirrors print) - captured above, so it went nowhere before
+            # print the worker's output, so it reaches the console
             for line in (r.stdout + r.stderr).splitlines():
                 if line.strip():
                     print(f"[predict-worker] {line}")
@@ -99,7 +88,6 @@ class _WorkerThread(QThread):
             self.failed.emit(str(e))
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 class PredictionState(QObject):
     """Everything the Predict / Inspect / Report tabs share."""
 
@@ -111,7 +99,6 @@ class PredictionState(QObject):
     run_finished       = Signal()
     run_failed         = Signal(str)
     selection_changed  = Signal(str)   # recording id, "" = cleared
-    treatment_selected = Signal(str)   # treatment picked in the results table
     status             = Signal(str, int)
 
     def __init__(self, parent=None):
@@ -160,21 +147,20 @@ class PredictionState(QObject):
         self.predictions    = None      # per-recording DataFrame
         self.summary        = None      # treatment-level DataFrame
         self.region_summary = None
-        self.severity_summary = None    # treatment x HIG threshold (severity.py)
+        self.severity_summary = None    # treatment x HIG threshold
         self.peak_events    = None      # HIG peak analysis: one row per event
         self.acc_summary    = None      # ... and the acceleration table
         self.run_meta       = {}
 
         # selection
         self.selected_file      = None
-        self.selected_treatment = None
 
         self.app_version = ""
         self._thread = None
         self._traces = None
         self._traces_key = None
 
-    # ── models ───────────────────────────────────────────────────────────────
+    # models
     @staticmethod
     def _metrics_for(model_path):
         """Find the metrics JSON beside a model joblib: `<stem>performance_
@@ -201,15 +187,10 @@ class PredictionState(QObject):
                 or max(candidates, key=lambda p: p.stat().st_mtime))
 
     def load_models_from_dir(self, d):
-        """Find the binary*.joblib / multiclass*.joblib models in `d` and
-        select one of each: the one already selected if it's there (a
-        rescan, e.g. after a deploy), else the default (`_default_model`).
-        `bin_candidates` / `mc_candidates` expose the rest so a caller
-        (Predict's model selector) can switch via `select_bin_model`/
-        `select_mc_model` without re-browsing the folder.
-
-        Returns (ok, message). On success the models_changed signal fires and
-        validation is re-run.
+        """Find the binary*/multiclass*.joblib models in `d` and select one of
+        each: the current one if it's still there, else the default
+        (`_default_model`). The others are in `bin_candidates`/`mc_candidates`.
+        Returns (ok, message); on success emits models_changed and re-validates.
         """
         d = Path(d)
         self._bin_candidates = sorted(d.glob("binary*.joblib"))
@@ -382,7 +363,7 @@ class PredictionState(QObject):
                     chans.append(c)
         return chans
 
-    # ── dataset ──────────────────────────────────────────────────────────────
+    # dataset
     def set_dataset(self, df, path=None, source=None):
         """Install a dataset (in-memory DataFrame, optionally backed by a CSV)."""
         self.dataset_df     = df
@@ -397,17 +378,9 @@ class PredictionState(QObject):
     def load_dataset_csv(self, path):
         """Load a dataset CSV from disk. Returns (ok, message)."""
         path = Path(path)
-        try:
-            peek = pd.read_csv(path, low_memory=False, nrows=5)
-        except Exception as e:
-            return False, f"Dataset load failed: {e}"
-        for col in ("file", "time_s"):
-            if col not in peek.columns:
-                return False, f"CSV must have a '{col}' column."
-        try:
-            df = pd.read_csv(path, low_memory=False)
-        except Exception as e:
-            return False, f"Dataset load failed: {e}"
+        df, problem = recording_rate.read_dataset_csv(path)
+        if problem:
+            return False, problem
         self.set_dataset(df, path=path, source=f"CSV file: {path.name}")
         return True, f"Dataset loaded: {path.name}"
 
@@ -444,7 +417,7 @@ class PredictionState(QObject):
         meta["identity"] = recording_rate.identity(df)
         return meta
 
-    # ── validation ───────────────────────────────────────────────────────────
+    # validation
     def validate(self):
         """Model-dataset compatibility check. Runs before the subprocess can
         be launched; self.ready gates the Run button."""
@@ -534,7 +507,7 @@ class PredictionState(QObject):
                       and not self.running)
         self.validation_changed.emit()
 
-    # ── configuration ────────────────────────────────────────────────────────
+    # configuration
     def set_mode(self, mode):
         if mode not in ("binary", "multiclass") or mode == self.mode:
             return
@@ -564,7 +537,7 @@ class PredictionState(QObject):
             self.threshold_override = float(value)
         self.config_changed.emit()
 
-    # ── run ──────────────────────────────────────────────────────────────────
+    # run
     def run_prediction(self):
         """Launch the worker subprocess. Emits run_started immediately and
         run_finished / run_failed later on the GUI thread.
@@ -657,17 +630,13 @@ class PredictionState(QObject):
         self.selected_file = None
         self.selection_changed.emit("")
 
-    # ── selection ────────────────────────────────────────────────────────────
+    # selection
     def select_file(self, file_id):
         file_id = file_id or None
         if file_id == self.selected_file:
             return
         self.selected_file = file_id
         self.selection_changed.emit(file_id or "")
-
-    def select_treatment(self, treatment):
-        self.selected_treatment = treatment or None
-        self.treatment_selected.emit(treatment or "")
 
     def selected_row(self):
         """The predictions.csv row for the selected recording, or None."""
@@ -702,12 +671,8 @@ class PredictionState(QObject):
             self._traces_key = key
         return self._traces
 
-    # ── ground truth ─────────────────────────────────────────────────────────
-    # Predictions are compared with the annotations only as the binary
-    # model was trained: its own target column, holding its own "no strike"
-    # value (model_labels - read from its metrics). Anything else - no
-    # target column, or one without that value - is not compared rather
-    # than guessed at.
+    # ground truth: compared only on the binary model's own target column
+    # and "no strike" value (model_labels); otherwise not compared
     def ground_truth_column(self, df=None):
         """The model's target column, when `df` (the predictions by
         default) has it holding the model's "no strike" value; else None."""
@@ -770,7 +735,7 @@ class PredictionState(QObject):
                 region, self.mc_metrics, self.class_names)
         return gt_strike, gt_type, gt_region_class
 
-    # ── provenance ───────────────────────────────────────────────────────────
+    # provenance
     def provenance(self):
         """Everything needed to reproduce the analysis. Only real values -
         anything unavailable is reported as 'Not available'."""

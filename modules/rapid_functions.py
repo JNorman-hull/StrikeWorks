@@ -1,25 +1,22 @@
-"""RAPID sensor parser: paired .imp / .hig files merged onto one time base.
+"""RAPID parser: paired .imp / .hig files merged onto one time base.
 
-Three rates are involved and they are not the same number:
+Three rates are involved:
 
-  * the counter clock both files are stamped from (2000 Hz) - the `fs`
-    argument of the two readers, which turns the raw counter into seconds;
-  * each file's own rate - .imp is 100 Hz, .hig is 2000 Hz but recorded
+  * the counter clock both files are stamped from (2000 Hz) - the readers'
+    `fs`, which turns the raw counter into seconds;
+  * each file's own rate - .imp is 100 Hz; .hig is 2000 Hz but recorded
     only around events, so it is sparse;
-  * the output grid the combined CSV is written on (2000 Hz).
+  * the output grid of the combined CSV (2000 Hz).
 
-From the second to the third: the 100 Hz .imp channels are interpolated
-up onto the grid,
-and each sparse .hig sample is written to its nearest grid point (gaps stay
-at zero rather than having signal invented across them).
-
-All of it arrives as arguments from the sensor configuration, so the same
-reader serves any RAPID-family device defined in Sensor configuration.
-Without a config the RAPID defaults apply.
+The .imp channels are interpolated onto the grid; each .hig sample goes to
+its nearest grid point and gaps stay at zero. The rates come from the
+sensor configuration (RAPID's defaults without one), so any RAPID-family
+device can use this reader.
 """
 import os
 import numpy as np
 import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
 from scipy.interpolate import interp1d
 from pathlib import Path
 from datetime import datetime
@@ -34,7 +31,7 @@ HIG_PACKET_SIZE = 11
 NADIR_SEARCH_SEC = 1.5
 
 
-# ── nadir detection ─────────────────────────────────────────────────────────
+# nadir detection
 # The passage nadir is the moment every downstream window is cut around, so
 # how it is found matters. Methods are looked up by name, so another one is
 # a function plus an entry in NADIR_METHODS. A method takes the combined
@@ -59,15 +56,100 @@ def nadir_pressure_min_near_peak(data, acc_max_index, fs):
     return idx, data["time_s"][idx], data["pressure_kpa"].iloc[idx], warnings
 
 
+# the pump's pressure step (pressure_step_time)
+STEP_WINDOW_S = 0.5     # pressure is compared over this long either side...
+STEP_GAP_S = 0.1        # ...of this gap, which the rise itself falls in
+STEP_MIN_KPA = 5.0      # a smaller rise isn't taken for the pump
+STEP_HOLD_S = 4.0       # nor one pressure has fallen back from by then
+STEP_SHARE = 0.6        # a later rise this share of the largest can replace it
+STEP_BEFORE_S = 0.6     # the nadir is looked for from this long before the
+STEP_AFTER_S = 0.2      # step to this long after it
+
+
+def pressure_step_time(time, pressure, fs):
+    """When pressure steps up through the pump, or None for a recording
+    with no such step.
+
+    At each instant the step is the median pressure over the STEP_WINDOW_S
+    after it minus the median over the STEP_WINDOW_S before (medians, so
+    spikes don't count). A candidate is a step of at least STEP_MIN_KPA
+    after which pressure stays above where it started for STEP_HOLD_S. The
+    pump is the largest candidate - unless pressure then falls back below
+    where that one started and steps up again by at least STEP_SHARE as
+    much, as on a rig that pressurises the sensor before letting it go:
+    then it is the later one.
+    """
+    every = max(1, int(round(float(fs) / 100.0)))    # pressure is 100 Hz
+    t, p = time[::every], pressure[::every]
+    rate = float(fs) / every
+    w = max(2, int(round(STEP_WINDOW_S * rate)))
+    g = int(round(STEP_GAP_S * rate))
+    if len(p) < 2 * w + g + 1 or np.isnan(p).any():
+        return None
+    med = np.median(sliding_window_view(p, w), axis=1)
+    step = med[w + g:] - med[:-(w + g)]
+    hold = int(round(STEP_HOLD_S * rate))
+    apart = int(round(rate))            # candidates at least 1 s apart
+
+    candidates = []                     # largest first
+    seen = np.zeros(len(step), dtype=bool)
+    for i in np.argsort(step)[::-1]:
+        if step[i] < STEP_MIN_KPA or (
+                candidates and step[i] < STEP_SHARE * step[candidates[0]]):
+            break
+        if seen[max(0, i - apart):i + apart].any():
+            continue
+        seen[i] = True
+        after = med[i + w + g:i + w + g + hold]
+        if len(after) and after.min() > med[i]:
+            candidates.append(int(i))
+    if not candidates:
+        return None
+
+    pick = candidates[0]
+    for later in sorted(c for c in candidates if c > pick):
+        if med[pick + w + g:later + 1].min() < med[pick]:
+            pick = later
+    # a sharp rise gives nearly the same step over a stretch of instants:
+    # the rise is in the middle of it
+    lo = hi = pick
+    while lo > 0 and step[lo - 1] >= 0.9 * step[pick]:
+        lo -= 1
+    while hi < len(step) - 1 and step[hi + 1] >= 0.9 * step[pick]:
+        hi += 1
+    return float(t[(lo + hi) // 2 + w + g // 2])
+
+
+def nadir_pressure_step(data, acc_max_index, fs):
+    """Lowest pressure just before the pump's pressure step
+    (`pressure_step_time`); for a recording without one, the lowest
+    pressure near the acceleration peak (`nadir_pressure_min_near_peak`)."""
+    time = data["time_s"].to_numpy(dtype=float)
+    pressure = data["pressure_kpa"].to_numpy(dtype=float)
+    at = pressure_step_time(time, pressure, fs)
+    if at is None:
+        idx, when, value, warnings = nadir_pressure_min_near_peak(
+            data, acc_max_index, fs)
+        return idx, when, value, warnings + [NO_STEP_NOTE]
+    lo = int(np.searchsorted(time, at - STEP_BEFORE_S, "left"))
+    hi = int(np.searchsorted(time, at + STEP_AFTER_S, "right"))
+    pos = lo + int(np.argmin(pressure[lo:hi]))
+    return data.index[pos], time[pos], pressure[pos], []
+
+
+NO_STEP_NOTE = ("NADIR: no pressure step found, nadir taken near the "
+                "acceleration peak")
+
 #: method name -> callable(data, acc_max_index, fs)
 NADIR_METHODS = {
-    "pressure_min_near_peak": nadir_pressure_min_near_peak,
+    "pressure_step": nadir_pressure_step,
+    "pressure_near_peak": nadir_pressure_min_near_peak,
 }
 
-DEFAULT_NADIR_METHOD = "pressure_min_near_peak"
+DEFAULT_NADIR_METHOD = "pressure_step"
 
 
-# ── computed channels ───────────────────────────────────────────────────────
+# computed channels
 # Magnitude of each three-axis sensor. Which ones are written is a sensor
 # setting (Setup and deploy > Sensor configuration); the maths lives here.
 #   key -> (output column, axis columns, offset subtracted)
@@ -214,9 +296,8 @@ def process_imp_hig_direct(imp_filename, hig_filename, output_dir, config=None):
         imp_packet, hig_packet = IMP_PACKET_SIZE, HIG_PACKET_SIZE
         imp_method, hig_method = "linear", "nearest"
 
-    # `clock` is the counter tick rate both files are stamped from, NOT the
-    # rate their channels arrive at: .imp is 100 Hz and .hig is 2000 Hz but
-    # event-triggered. Each file's own timestamps carry that.
+    # `clock` is the counter tick rate both files are stamped from, not the
+    # rate their channels arrive at (.imp 100 Hz; .hig 2000 Hz, around events)
     imp_data = read_imp_raw(imp_filename, fs=clock, packet_size=imp_packet)
     hig_data = read_hig_raw(hig_filename, fs=clock, packet_size=hig_packet)
     
@@ -309,11 +390,8 @@ def process_imp_hig_direct(imp_filename, hig_filename, output_dir, config=None):
     return combined_data, {**file_info, **summary_info}
 
 def append_to_sensor_index(sensor_info, output_dir):
-    """Add or replace this sensor's row in the library's index.
-
-    The column list is the app's (``index_schema``), not the library's - a
-    library needs no config/index_config.txt to be processed, and nothing
-    here depends on the working directory.
+    """Add or replace this sensor's row in the library's index, with the
+    app's columns (``index_schema``).
     """
     index_file = Path(output_dir) / "index" / "global_sensor_index.csv"
     index_file.parent.mkdir(parents=True, exist_ok=True)
@@ -441,7 +519,7 @@ def post_process_combined(data, fs=FS, magnitudes=None, nadir_method=None,
         pres_min_time = acc_max_time
     else:
         find = NADIR_METHODS.get(nadir_method or DEFAULT_NADIR_METHOD,
-                                 nadir_pressure_min_near_peak)
+                                 nadir_pressure_step)
         _idx, pres_min_time, pres_min_value, found = find(
             data, acc_max_index, fs)
         warnings.extend(found)

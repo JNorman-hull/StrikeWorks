@@ -1,32 +1,20 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Discovery and evaluation of deployed models.
+"""Finds deployed models and loads what Evaluate, Misclassification
+analysis and the reports need from them.
 
-Any model in the models folder can be evaluated, not just one trained in
-the current session: a deployed model is a ``<kind><version>.joblib`` with
-its ``<kind><version>performance_metrics.json`` beside it (the naming
-Model Prediction discovers). Where the model was deployed by the Model
-Training page, the ``BladeStrikeModel_v<version>/`` package alongside it
-also carries the cross-validation predictions, which unlock the error
-analysis and the per-recording figures.
-
-Shared by Model Training → Evaluate and (later) the Model Performance
-page. The model report reuses the HTML helpers from ``ml_report`` rather
-than duplicating them.
+A deployed model is ``<kind><version>.joblib`` with
+``<kind><version>performance_metrics.json`` beside it. One deployed from
+Model training also has a ``BladeStrikeModel_v<version>/`` package with its
+cross-validation predictions, which the error analysis and per-recording
+figures need.
 """
 import json
 import re
-import shutil
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from . import ml_report, ml_train_figures, model_measures, recording_rate
+from . import ml_report, model_measures, recording_rate
 
 _STEM_RE = re.compile(r"^(binary|multiclass)(\d+(?:_\d+)*)$")
 
@@ -67,11 +55,9 @@ def model_display_name(model_path):
 
 
 def roc_pr_from_scores(y_true, scores):
-    """ROC and precision-recall curves from raw scores, in numpy only.
-
-    Lets a deployed model that shipped its cross-validation predictions but
-    not its curve JSON still draw ROC/PR, without importing the model stack
-    into the GUI process.
+    """ROC and precision-recall curves from raw scores, numpy only - for a
+    deployed model that has its cross-validation predictions but no curve
+    JSON.
     """
     y = np.asarray(y_true).astype(int)
     s = np.asarray(scores, dtype=float)
@@ -200,12 +186,12 @@ def session_entries(state):
     return out
 
 
-# ── model report ─────────────────────────────────────────────────────────────
+# model report
 def grouped_table_html(columns, rows):
     """A table with its measures grouped under a heading row (as the HIG
     peak analysis table): `columns` [(group, name)], `rows` [(label,
     cells)] - model_measures.summary_table's shape."""
-    esc, bord, ink = ml_report._esc, ml_report._BORD, ml_report._DARK
+    esc, bord, ink = ml_report.esc, ml_report.BORD, ml_report.DARK
     th = (f"border-bottom:2px solid {bord};padding:4px 8px;"
           f"text-align:center;color:{ink};")
     td = f"border-bottom:1px solid {bord};padding:3px 8px;text-align:center;"
@@ -239,8 +225,8 @@ def build_model_report_html(entry, image_paths=None, embed_images=False,
     Model Prediction (helpers reused from ml_report)."""
     from datetime import datetime
 
-    esc, kv, table = ml_report._esc, ml_report._kv_table, ml_report._data_table
-    dark = ml_report._DARK
+    esc, kv, table = ml_report.esc, ml_report.kv_table, ml_report.data_table
+    dark = ml_report.DARK
     m = entry.metrics or {}
     perf = m.get("out_of_fold_performance", {})
     tr = m.get("training", {})
@@ -274,7 +260,7 @@ def build_model_report_html(entry, image_paths=None, embed_images=False,
         ]
     h.append(kv(rows))
 
-    # ── performance: Evaluate's two tables ───────────────────────────────────
+    # performance: Evaluate's two tables
     h.append(f"<h2 style='color:{dark};'>Performance</h2>")
     columns, rows = model_measures.summary_table(m)
     h.append(grouped_table_html(columns, rows))
@@ -307,7 +293,7 @@ def build_model_report_html(entry, image_paths=None, embed_images=False,
                        [[st, d["n_files"], f"{d['accuracy']:.3f}"]
                         for st, d in by_type.items()]))
 
-    # ── error analysis ───────────────────────────────────────────────────────
+    # error analysis
     mis = m.get("misclassified", {})
     if mis:
         h.append(f"<h2 style='color:{dark};'>Error analysis</h2>")
@@ -317,13 +303,13 @@ def build_model_report_html(entry, image_paths=None, embed_images=False,
             h.append(table(["True class", "Misclassified"],
                            list(mis["by_true_class"].items())))
 
-    # ── figures ──────────────────────────────────────────────────────────────
+    # figures
     if image_paths:
         h.append(f"<h2 style='color:{dark};'>Figures</h2>")
         for path in image_paths.values():
-            h.append(ml_report._img_tag(path, embed_images))
+            h.append(ml_report.img_tag(path, embed_images))
 
-    # ── provenance ───────────────────────────────────────────────────────────
+    # provenance
     h.append(f"<h2 style='color:{dark};'>Provenance</h2>")
     rows = []
     for k, v in (tr or {}).items():
@@ -341,65 +327,3 @@ def build_model_report_html(entry, image_paths=None, embed_images=False,
              f"{datetime.now().strftime('%Y-%m-%d %H:%M')}.</p>")
     h.append("</div>")
     return "".join(h)
-
-
-def export_model_report(entry, target_dir, app_version=""):
-    """Write report.html + figures + metrics for one model. Returns the dir."""
-    # written through the long-path form, past Windows' 260-character limit
-    target_dir = ml_report.long_path(target_dir)
-    name = (Path(entry.model_path).stem if entry.model_path
-            else f"session_{entry.kind}")
-    out = target_dir / f"ModelReport_{name}"
-    out.mkdir(parents=True, exist_ok=True)
-
-    figs = ml_train_figures.render_model_figures(
-        out, entry.metrics, entry.cv_predictions, entry.curves,
-        formats=("png",))
-    if entry.metrics is not None:
-        with open(out / "performance_metrics.json", "w",
-                  encoding="utf-8") as f:
-            json.dump(entry.metrics, f, indent=2)
-    if entry.curves is not None:
-        with open(out / "cv_curves.json", "w", encoding="utf-8") as f:
-            json.dump(entry.curves, f)
-
-    df = entry.cv_predictions
-    if df is not None:
-        df.to_csv(out / "cv_predictions.csv", index=False)
-
-        # the misclassifications are the actionable part of the report
-        if "error_type" in df.columns:
-            mis = df[df["error_type"] != "correct"]
-        elif "correct" in df.columns:
-            mis = df[~df["correct"].astype(bool)]
-        else:
-            mis = None
-        if mis is not None:
-            mis.to_csv(out / "misclassified_files_for_review.csv",
-                       index=False)
-
-        # per-treatment summary, for reporting alongside the figures
-        if "treatment" in df.columns and "correct" in df.columns:
-            agg = {"n": ("correct", "size"), "accuracy": ("correct", "mean")}
-            if "y_true" in df.columns and "y_pred" in df.columns:
-                agg["true_strike_rate"] = ("y_true", "mean")
-                agg["predicted_strike_rate"] = ("y_pred", "mean")
-            (df.groupby("treatment").agg(**agg).round(4)
-               .to_csv(out / "performance_by_treatment.csv"))
-
-    # anything else the deployment package carries for this model
-    if entry.model_path is not None:
-        pkg = _package_dir_for(entry.model_path)
-        if pkg is not None:
-            for extra in ("model_card.json", "train_config.json",
-                          f"{entry.kind}_model_config.json"):
-                src = pkg / extra
-                if src.exists():
-                    shutil.copy(src, out / extra)
-
-    body = build_model_report_html(
-        entry, image_paths={fig: paths[0] for fig, paths in figs.items()},
-        embed_images=True, app_version=app_version)
-    (out / "report.html").write_text(ml_report.wrap_html_document(body),
-                                     encoding="utf-8")
-    return ml_report.short_path(out)

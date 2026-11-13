@@ -1,30 +1,15 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""The `raw_sens_data` folder layout - one definition of where a raw
-recording sits and what its position means.
+"""The raw_sens_data folder layout, and what a recording's place in it
+means:
 
     raw_sens_data/<deployment>/<treatment>/Run <n>/<recording files>
                                                    VIDEO/<stem>_vid_*.mp4
 
-Every treatment has at least one run, so Run 1 always exists once a
-deployment is created (the deployment editor builds `Run 1..N` for a
-treatment planned with N runs). A recording's deployment, treatment and run
-are read straight off its path, which is what lets processing label a batch
-spanning several treatments/runs correctly without a picker per batch.
-
-Older libraries put files directly in the treatment folder (no run level),
-and video in `<treatment>/VIDEO/` - those still read correctly: no run
-folder means Run 1, and the video lookup walks up from the recording's own
-folder to its deployment, so a treatment-level VIDEO folder is still found.
-A level missing entirely (files directly under a deployment, or directly
-under raw_sens_data) buckets as UNGROUPED rather than being dropped.
-
-Pure pathlib - no Qt - so the index helpers can use it as freely as the
-pages do.
+A recording's deployment, treatment and run are read from its path, so a
+batch spanning several treatments and runs is labelled correctly. Older
+libraries without a run level read as Run 1, and video is looked for from
+the recording's folder up to its deployment, so a treatment-level VIDEO
+folder is still found. A missing deployment or treatment level is
+UNGROUPED. No Qt.
 """
 import os
 import re
@@ -63,6 +48,14 @@ _RUN_RE = re.compile(r"^\s*run[\s_-]*(\d+)\s*$", re.IGNORECASE)
 def run_folder_name(run) -> str:
     """"Run 3" for run 3 (or "3")."""
     return f"Run {int(run)}"
+
+
+def run_sort_key(run):
+    """Numeric runs in numeric order, anything else after them by name."""
+    try:
+        return (0, int(float(run)), "")
+    except (TypeError, ValueError):
+        return (1, 0, str(run))
 
 
 def run_label(folder_name):

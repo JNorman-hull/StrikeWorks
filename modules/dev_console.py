@@ -1,25 +1,14 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""The console: everything the app prints - the pages' `[status]` lines,
-the demos' `[demo]` lines, worker output, warnings and errors - from the
-moment it starts, and the demos (dev_runner.py). Opened from Settings >
-Console.
+"""The console (Settings > Console): everything the app prints - status
+lines, worker output, warnings, errors - and the demo buttons.
 
-`install_capture()` (main.py, first thing) swaps sys.stdout/sys.stderr for
-tees that still write to the original stream when there is one (a windowed
-build has none - both are None), keep the last lines in memory for the
-console window, and append every line to this session's log file
-(`logs/strikeworks_<date>_<time>.log` beside the settings file; the last
-`_KEEP_LOGS` are kept). Unhandled errors - in a slot, a thread or start-up
-- are printed there with their traceback, Qt's own warnings too, and a
-hard crash (Python's faulthandler) writes its traceback into the same
-file, so the log of a session that crashed is already on disk.
+`install_capture()`, called first thing in main.py, replaces sys.stdout and
+sys.stderr with tees that keep writing to the original stream (None in a
+windowed build), keep recent lines for the console window, and append to
+this session's log, logs/strikeworks_<date>_<time>.log beside the settings
+file (the last `_KEEP_LOGS` are kept). Unhandled exceptions, Qt warnings and
+faulthandler crash tracebacks go to the same log.
 
-The window has no Qt parent, so no window-modal dialog blocks it.
+The window has no Qt parent, so modal dialogs don't block it.
 """
 import faulthandler
 import io
@@ -33,11 +22,11 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, QtMsgType, Signal, qInstallMessageHandler
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
+    QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel,
     QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout,
 )
 
-from .layout import Section
+from .layout import Section, ToolWindow
 from .theme import style
 
 _KEEP_LINES = 5000      # in memory, for the console window
@@ -141,8 +130,7 @@ def capture():
 
 
 def install_capture(log_dir):
-    """Capture the app's output from here on - see the module docstring.
-    Safe to call twice."""
+    """Start capturing everything the app prints. Safe to call twice."""
     global _capture
     if _capture is not None:
         return _capture
@@ -202,7 +190,7 @@ def _prune_logs(log_dir):
             pass
 
 
-class DevConsole(QDialog):
+class DevConsole(ToolWindow):
     """The console window and demo controls; one instance, `MainWindow.
     dev_console`. It has no Qt parent: a window-modal dialog (Settings,
     the StrikeWorks window) blocks its parent's whole window group on
@@ -291,11 +279,6 @@ class DevConsole(QDialog):
         row.addWidget(btn_close)
         v.addLayout(row)
 
-    def bring_up(self):
-        self.show()
-        self.raise_()
-        self.activateWindow()
-
     def _set_on_top(self, on):
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, on)
         self.show()   # changing window flags hides the window
@@ -306,7 +289,7 @@ class DevConsole(QDialog):
         if cap is not None and cap.log_path is not None:
             win_utils.open_folder(cap.log_path.parent)
 
-    # ── demos (dev_runner.py) ────────────────────────────────────────────────
+    # demos (dev_runner.py)
     def _run_demo(self):
         from . import settings
         from .dev_runner import DEMO_LIBRARY_NAME, RUNNERS, DemoSource

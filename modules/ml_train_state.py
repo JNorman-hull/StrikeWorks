@@ -1,31 +1,18 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Central training state shared by the Model Training tabs.
+"""TrainingState: the training state shared by Train, Evaluate and
+Misclassification analysis. It writes the JSON configuration for
+``train_worker.py``, streams the worker's output, loads the
+cross-validation results (``self.results``, per model) and deploys the
+final models.
 
-One TrainingState instance is owned by the Model Training page controller;
-the Train tab (with its Model deployment box) and Evaluate read from it and
-react to its signals. It builds the JSON configuration for
-``modules/train_worker.py``, streams the worker's console output, loads the
-cross-validation results, and performs the final-model deployment step.
+A run always trains the binary strike model and, when a class column is
+chosen, the multiclass region model. The order is enforced:
+cross-validation, the user's go-ahead, final models, deployment.
 
-Training follows the deployed prediction pipeline: a binary strike model is
-always trained, and (when the dataset carries pump-region labels) the
-multiclass region model for predicted strikes is trained alongside it in
-the same run. Results are held per model in ``self.results``.
-
-The scientific workflow is enforced here: cross-validation first, then an
-explicit user decision, then the final deployment models, then deployment.
-
-Labelling is the user's choice, made on the Train page: the target column,
-its "no strike" value, the class column and its grouping into classes,
-and the columns the performance is broken down by. Nothing is guessed
-from column names or values. A dataset starts from the settings file's
-"model_training" section (shipped defaults: config/default_settings.json),
-each choice applied only if the dataset has it.
+Labelling is the user's choice on the Train page (target column, "no
+strike" value, class column and grouping, breakdown columns); nothing is
+guessed from names or values. Starting choices come from the settings
+file's "model_training" section (config/default_settings.json), each used
+only if the dataset has it.
 """
 import json
 import re
@@ -43,6 +30,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 
 from . import annotation_schema as asch
 from . import recording_rate, sensor_config, settings
+from .model_labels import level_key
 from .sensor_sort import natural_key
 from .worker_launch import worker_command
 
@@ -66,23 +54,6 @@ DEFAULT_CHANNELS = [
 def canonical_channels():
     """Channel set for the active sensor, or the RAPID default."""
     return list(sensor_config.active().channels) or list(DEFAULT_CHANNELS)
-
-
-def level_key(value):
-    """Stable key for a raw level value.
-
-    Numeric levels normalise to their integer form ("2.0" -> "2") so a
-    column read as float and one read as int group identically; anything
-    else is used as trimmed text. The training worker uses the same rule,
-    so the mapping the GUI builds is exactly the mapping applied.
-    """
-    try:
-        f = float(value)
-        if f.is_integer():
-            return str(int(f))
-        return repr(f)
-    except (TypeError, ValueError):
-        return str(value).strip()
 
 
 # the settings file's section holding Model training's starting choices
@@ -123,7 +94,6 @@ class _StreamThread(QThread):
             self.done.emit(-1, str(e))
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 class TrainingState(QObject):
     """Everything Train, its Model deployment box and Evaluate share."""
 
@@ -209,26 +179,18 @@ class TrainingState(QObject):
         self.app_version = ""
         self._thread = None
 
-    # ── result access ────────────────────────────────────────────────────────
+    # result access
     def model_results(self, kind):
         """{"metrics", "cv_predictions", "curves"} for one stage, or None."""
         return self.results.get(kind)
 
-    # ── dataset ──────────────────────────────────────────────────────────────
+    # dataset
     def load_dataset_csv(self, path):
         """Load a training dataset CSV. Returns (ok, message)."""
         path = Path(path)
-        try:
-            peek = pd.read_csv(path, low_memory=False, nrows=5)
-        except Exception as e:
-            return False, f"Dataset load failed: {e}"
-        for col in ("file", "time_s"):
-            if col not in peek.columns:
-                return False, f"CSV must have a '{col}' column."
-        try:
-            df = pd.read_csv(path, low_memory=False)
-        except Exception as e:
-            return False, f"Dataset load failed: {e}"
+        df, problem = recording_rate.read_dataset_csv(path)
+        if problem:
+            return False, problem
 
         self.dataset_df = df
         self.dataset_path = path
@@ -395,7 +357,7 @@ class TrainingState(QObject):
             df[self.channels].isna().sum().sum()) if self.channels else 0
         return meta
 
-    # ── population / class distributions ─────────────────────────────────────
+    # population / class distributions
     def file_targets(self):
         """file-level Series of the target column after the inclusion filter."""
         df = self.dataset_df
@@ -507,7 +469,7 @@ class TrainingState(QObject):
         s = self.file_targets()
         return 0 if s is None else int(len(s))
 
-    # ── config mutation helpers (all emit config_changed + revalidate) ───────
+    # config mutation helpers (all emit config_changed + revalidate)
     def update(self, **kw):
         for k, v in kw.items():
             setattr(self, k, v)
@@ -528,7 +490,7 @@ class TrainingState(QObject):
         self.config_changed.emit()
         self.validate()
 
-    # ── readiness validation (pre-training validation) ───────────────────────
+    # readiness validation (pre-training validation)
     def validate(self):
         checks = []
         hard_fail = False
@@ -633,7 +595,7 @@ class TrainingState(QObject):
         self.ready = not hard_fail and not self.running
         self.validation_changed.emit()
 
-    # ── worker configuration ─────────────────────────────────────────────────
+    # worker configuration
     def build_config(self):
         cfg = {
             "data": str(self.dataset_path),
@@ -680,7 +642,7 @@ class TrainingState(QObject):
             })
         return cfg
 
-    # ── run stages ───────────────────────────────────────────────────────────
+    # run stages
     def _launch(self, stage):
         cfg_path = self.out_dir / "train_config.json"
         with open(cfg_path, "w", encoding="utf-8") as f:
@@ -780,7 +742,7 @@ class TrainingState(QObject):
                     entry["curves"] = json.load(f)
             self.results[kind] = entry
 
-    # ── deployment ───────────────────────────────────────────────────────────
+    # deployment
     def suggest_version(self, models_dir=None):
         """Next free <major>_<minor> shared by both pipeline models."""
         models_dir = Path(models_dir or settings.get_models_dir())

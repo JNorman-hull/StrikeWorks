@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """CSV and PNG export for blade strike calculator results, for the
 central report (report_center.py), including the two fixed-size report
 figures.

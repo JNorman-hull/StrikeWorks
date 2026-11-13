@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """HIG peak analysis: acceleration events in each recording's high-g
 magnitude (higacc_mag_g), counted around the pressure nadir.
 
@@ -22,13 +16,23 @@ is the whole window. A recording has a collision when one of its events
 reaches COLLISION_G there. Collision probability is the share of
 recordings with at least one, with a Wilson 95 % interval.
 
-No Qt and no package-relative imports: the prediction worker imports this
-module both as `modules.hig_peaks` and, run as a script, as `hig_peaks`.
-"""
-import math
+Strike severity is here too: each recording's peak HIG magnitude over its
+window, banded at the same 95, 200 and 400 g. It is measured, not
+predicted - only a peak over 400 g is a severe strike, while the model
+flags contacts of any size. predict_worker.py writes it (hig_peak_g /
+severity / severe_strike per recording, n_over_<g>g and severe_rate per
+treatment, severity_summary.csv).
 
+No Qt: the prediction worker imports this module both as
+`modules.hig_peaks` and, run as a script, as `hig_peaks`.
+"""
 import numpy as np
 import pandas as pd
+
+try:
+    from .wilson_calc import wilson_ci
+except ImportError:          # imported by a worker run as a script
+    from wilson_calc import wilson_ci
 
 HEIGHT_G = 95.0
 PROMINENCE_G = 25.0
@@ -37,6 +41,11 @@ SHEAR_S = 0.0075          # 15 samples at 2000 Hz
 SHEAR_FRACTION = 0.7
 THRESHOLDS_G = (95, 200, 400)
 COLLISION_G = 400
+SEVERE_G = COLLISION_G
+SEVERITY_BANDS = ("<=95 g", "95-200 g", "200-400 g", ">400 g")
+SEVERITY_BAND_LABELS = ("≤ 95 g", "95–200 g", "200–400 g", "> 400 g (severe)")
+SEVERITY_HEADERS = ["> 95 g", "> 200 g", "> 400 g (severe)", "Severe 95% CI",
+                    "Strikes > 400 g"]
 NADIR_WINDOW_S = 0.1
 ROI_LABEL = "nadir (±0.1 s)"
 ALL_LABEL = "All recordings"
@@ -212,15 +221,39 @@ def _file_result(peaks):
     return out
 
 
-def wilson_ci(k, n, z=1.96):
-    """(proportion, lower, upper) - the Wilson score interval."""
-    if n == 0:
-        return 0.0, 0.0, 0.0
-    p = k / n
-    denom = 1 + z ** 2 / n
-    centre = (p + z ** 2 / (2 * n)) / denom
-    half = z * math.sqrt(p * (1 - p) / n + z ** 2 / (4 * n ** 2)) / denom
-    return p, max(0.0, centre - half), min(1.0, centre + half)
+def severity_band(peaks):
+    """The band label for each peak: <=95 g, 95-200 g, 200-400 g, >400 g."""
+    idx = np.digitize(peaks, THRESHOLDS_G, right=True)
+    return np.array(SEVERITY_BANDS, dtype=object)[idx]
+
+
+def severity_measured(summary):
+    """True when the run measured severity (the dataset had HIG)."""
+    return summary is not None and f"n_over_{SEVERE_G}g" in summary.columns
+
+
+def severity_cells(row):
+    """The treatment table's severity cells, for one summary row."""
+    n = int(row["n"])
+    cells = []
+    for g in THRESHOLDS_G:
+        k = int(row[f"n_over_{g}g"])
+        cells.append(f"{k} ({k / n * 100:.0f}%)" if n else "0")
+    cells.append(f"{row['severe_ci_lo'] * 100:.1f}% – "
+                 f"{row['severe_ci_hi'] * 100:.1f}%")
+    n_strike = int(row["n_strike"])
+    k = int(row["n_strike_severe"])
+    cells.append(f"{k} of {n_strike}")
+    return cells
+
+
+def severity_band_counts(predictions):
+    """[(band label, count)] over every recording, in band order."""
+    if predictions is None or "severity" not in predictions.columns:
+        return []
+    counts = predictions["severity"].value_counts()
+    return [(label, int(counts.get(band, 0)))
+            for band, label in zip(SEVERITY_BANDS, SEVERITY_BAND_LABELS)]
 
 
 def summary(events, per_file, treatments=None):
@@ -266,7 +299,7 @@ def summary(events, per_file, treatments=None):
     return pd.DataFrame(rows)
 
 
-# ── the acceleration table, as the report template lays it out ─────────────
+# the acceleration table, as the report template lays it out
 TABLE_GROUPS = (("Event count", 3), ("Collision probability", 3),
                 ("Acceleration (g)", 3))
 TABLE_COLUMNS = ("≥95 g", "≥200 g", "≥400 g", "Total sensors",
@@ -307,7 +340,7 @@ def show_treatment(acc_summary):
     return acc_summary is not None and len(acc_summary) > 1
 
 
-# ── acceleration-centred traces ──────────────────────────────────────────────
+# acceleration-centred traces
 MEDIAN_BIN = 0.0025
 
 

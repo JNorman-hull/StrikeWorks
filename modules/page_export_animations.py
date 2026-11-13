@@ -1,27 +1,11 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Export animations (Validate and annotate): burns a synced sensor-graph
-overlay into the high-speed video, frame by frame (the logic is
-`video_sync.py`).
+"""Export animations: burns a synced sensor-graph overlay into the
+high-speed video (video_sync.py).
 
-The same browser as Annotate on the left; on the right, the signal plot
-(with Video preview / Process / Save) above the Sensor sync inputs: the
-overlay text lines (pump, shaft speed, camera, sensor) and the render
-options (sync frame, real fps, graph window and zoom, text on/off).
-
-Sync point: the processed CSV already holds the nadir time
-(`pres_min.time.`), so only the video frame the nadir appears at needs
-entering.
-
-Configs and output go to `processed_video/` at the app root:
-`<stem>_sync_config.json` beside the synced video, so reopening a sensor
-restores the values that produced it. "Process" renders off the GUI thread
-(`_VideoSyncWorker`) and saves the config with it; "Save" keeps an edit
-without rendering.
+The processed CSV holds the nadir time (`pres_min.time.`), so only the
+video frame of the nadir needs entering. Each sensor's settings are saved
+as `<stem>_sync_config.json` beside its synced video in
+StrikeWorks_user_output/processed_video/ and restored when the sensor is
+reopened. Rendering runs off the GUI thread (`_VideoSyncWorker`).
 """
 import json
 import os
@@ -132,10 +116,8 @@ class ExportAnimationsPage(Page):
         self._video_duration_s = None
         self._worker = None
 
-        # frame scrubber (Video preview row) - cv2-backed, not QMediaPlayer:
-        # the whole point of this page is picking the exact video frame the
-        # nadir occurs at, and a time-based player seeks to the nearest
-        # keyframe on a compressed container rather than the exact frame
+        # frame scrubber: cv2, not QMediaPlayer, which seeks to the nearest
+        # keyframe rather than the exact frame
         self._scrub_cap = None
         self._scrub_path = None
         self._scrub_frame_count = 0
@@ -149,7 +131,7 @@ class ExportAnimationsPage(Page):
         self._populate_sensor_table()
         self._set_loaded_enabled(False)
 
-    # ── library selector (shared widget - see library_widgets.py) ────────────
+    # library selector (shared widget - see library_widgets.py)
     @property
     def _lib_root(self):
         return self.lib_selector.lib_root
@@ -160,7 +142,7 @@ class ExportAnimationsPage(Page):
         if root and not self.lib_selector.syncing:
             self.status.emit(f"Library: {root.name}", 4000)
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, frame):
         root = QHBoxLayout(frame)
         root.setContentsMargins(4, 6, 4, 6)
@@ -197,10 +179,9 @@ class ExportAnimationsPage(Page):
         return left
 
     def _build_detail(self):
-        """Right column: Signal (the plot and the Video preview / Process /
-        Save actions) above Sensor sync inputs, scrolling in a short
-        window. Video preview is its own window so it and the plot can be
-        watched together while matching the nadir to a frame."""
+        """Right column: Signal (the plot with Video preview / Process /
+        Save) above Sensor sync inputs, in a scroll area. Video preview is a
+        separate window, so it can sit beside the plot."""
         outer = QWidget()
         outer_v = QVBoxLayout(outer)
         outer_v.setContentsMargins(0, 0, 0, 0)
@@ -214,10 +195,8 @@ class ExportAnimationsPage(Page):
         dv.setContentsMargins(5, 0, 0, 0)
         dv.setSpacing(8)
 
-        # Signal (with a floor on the plot's height) over Sensor sync inputs
-        # at its full natural height - the column scrolls when the two
-        # don't fit, rather than squeezing the sync inputs into their own
-        # small scroll box
+        # signal plot (minimum height) over the sync inputs; the column
+        # scrolls when they don't fit
         dv.addWidget(self._build_signal_side(), stretch=1)
         self._pw.setMinimumHeight(380)
         dv.addWidget(self._build_sync_inputs(), stretch=0)
@@ -256,13 +235,9 @@ class ExportAnimationsPage(Page):
         self._video_region.setVisible(False)
         pi.addItem(self._video_region)
 
-        # nadir line - yellow, draggable, snaps to the nearest sample -
-        # same interaction as the validation screen's nadir tool
-        # (sensor_validation.py).
-        # Starts at the sensor's own recorded nadir time; dragging it
-        # overrides that for this page's video sync only, persisted in
-        # this sensor's own sync config rather than the shared index -
-        # Validate remains the place that edits the index itself
+        # nadir line, as on the validation screen. Dragging it changes the
+        # sync point for this sensor's video only (saved in its sync
+        # config); the index's nadir is edited on Validate
         self._nadir_line = pg.InfiniteLine(
             angle=90, movable=True,
             pen=pg.mkPen(color=NADIR, width=3),
@@ -302,17 +277,10 @@ class ExportAnimationsPage(Page):
         return grp
 
     def _build_video_preview_dialog(self):
-        """Frame-exact scrubber (cv2, not QMediaPlayer - see __init__'s
-        comment) for the sensor's task: scroll to the frame where the
-        nadir/strike visibly occurs, then "Use this frame as sync frame"
-        copies it into Sync frame (video). Also hosts "Generate preview
-        frame", which composites one frame exactly as the export would.
-
-        A pop-out window (non-modal - see _open_video_preview()) instead
-        of embedded in the page, so it and the Signal plot above can be
-        looked at side by side on screen at the same time, which is the
-        whole point of this tool (matching a nadir point to a video
-        frame)."""
+        """The frame scrubber window (cv2, for exact frames): find the frame
+        where the nadir or strike shows, then "Use this frame as sync frame".
+        Also "Generate preview frame", composited as the export would be.
+        Non-modal, so it can sit beside the signal plot."""
         dlg = QDialog(self.main_window)
         dlg.setWindowTitle("Video preview")
         dlg.resize(520, 520)
@@ -461,11 +429,9 @@ class ExportAnimationsPage(Page):
         return grp
 
     def _build_channels_box(self, gv):
-        """Configurable rolling-graph panels (up to `video_sync.
-        MAX_CHANNELS`) - which signal each one plots, its label and
-        colour - plus how they're laid out and whether there's a video
-        underneath them at all. Was hardcoded to exactly pressure +
-        acceleration magnitude, side by side, always over a video crop."""
+        """The rolling-graph panels (up to `video_sync.MAX_CHANNELS`): each
+        one's signal, label and colour, their layout, and whether the video
+        is shown under them."""
         gv.addWidget(self._muted_header("Graph channels"))
 
         self.tbl_channels = QTableWidget(0, 3)
@@ -506,7 +472,7 @@ class ExportAnimationsPage(Page):
                 ("higacc_mag_g", "Acceleration magnitude (g)", "red")):
             self._add_channel_row(column=column, label=label, color=color)
 
-    # ── graph channels ──────────────────────────────────────────────────────
+    # graph channels
     def _channel_columns(self):
         """Every plottable (numeric, non-time) column in the current
         sensor's CSV - falls back to the two original channel names when
@@ -622,7 +588,7 @@ class ExportAnimationsPage(Page):
         # showing
         self.btn_cancel.setVisible(False)
 
-    # ── sensor table ─────────────────────────────────────────────────────────
+    # sensor table
     def _populate_sensor_table(self):
         if self._lib_root is None:
             self._sensor_rows = []
@@ -669,9 +635,7 @@ class ExportAnimationsPage(Page):
 
     def _on_video_double_clicked(self, item):
         """Double-clicking the Video column opens the matched clip in
-        LosslessCut - same pattern as Annotate/Misclassification's video
-        columns, wired here via `tbl_sensors.itemDoubleClicked` directly
-        (this page doesn't otherwise use `LibrarySelector.row_activated`)."""
+        LosslessCut."""
         if item.column() != 1:
             return
         stem_item = self.tbl_sensors.item(item.row(), 0)
@@ -683,7 +647,7 @@ class ExportAnimationsPage(Page):
         if message:
             self.status.emit(message, 4000)
 
-    # ── sensor loading ───────────────────────────────────────────────────────
+    # sensor loading
     def _load_sensor(self, path):
         if not path.exists():
             QMessageBox.warning(self.main_window, "File missing", f"Cannot find:\n{path}")
@@ -747,18 +711,11 @@ class ExportAnimationsPage(Page):
         else:
             self._open_scrubber(None)
 
-    # ── output location (session_state.py) ──────────────────────────────────
+    # output location (session_state.py)
     def _video_output_dir(self):
-        """`<the library this page is currently browsing>/
-        StrikeWorks_user_output/processed_video/` - falls back to the
-        original app-root `processed_video/` folder with no library
-        selected, so this still works before Home has been used at all.
-        Keyed off this page's own `_lib_root` (soft-synced from the
-        session library but independently changeable) rather than the
-        session library directly, so overriding this page's picker alone
-        still writes to the right place. Loading/reviewing a video (the
-        scrubber, LosslessCut) stays unaffected either way - only where a
-        *new* export/config is written by default changes."""
+        """<this page's library>/StrikeWorks_user_output/processed_video/, or
+        the app's processed_video/ with no library. Follows this page's own
+        library picker, not the session library."""
         if self._lib_root is None:
             return _PROCESSED_VIDEO_DIR
         return self._lib_root / OUTPUT_DIR_NAME / "processed_video"
@@ -799,16 +756,9 @@ class ExportAnimationsPage(Page):
                 f"({frames / duration:.1f} fps)")
 
     def _default_graph_window_s(self):
-        """Half-width for the rolling graph strip `video_sync.
-        make_graph_strip` burns into the export (total span per frame is
-        double this, divided by Zoom).
-
-        Deliberately NOT sized to the matched video's own length - that
-        was tried and made the strip scroll far too slowly (a multi-
-        second video's whole duration crammed into one view barely moves
-        frame to frame). A small window is what makes the trace read as
-        live and scrolling; "Zoom" (Code options) is the user's stretch
-        control for it, not the video's length."""
+        """Half-width in seconds of the scrolling graph strip (it spans twice
+        this, divided by Zoom). Kept small rather than sized to the video, so the
+        trace visibly scrolls."""
         return _DEFAULT_GRAPH_WINDOW_S
 
     def _draw_plot(self):
@@ -827,11 +777,9 @@ class ExportAnimationsPage(Page):
         self._update_view_range()
 
     def _update_view_range(self):
-        """Sizes the live preview's X-range, the nadir line's position and
-        the shaded video-span region - split out of `_draw_plot()` so
-        dragging Graph window/Zoom (Code options) re-scales the preview
-        immediately instead of only ever showing up after a full (slow)
-        re-render."""
+        """Set the preview's x range, the nadir line and the shaded video
+        span. Separate from `_draw_plot()` so a change to Graph window or
+        Zoom rescales the preview straight away."""
         pi = self._pw.plotItem
         if self._time is None or self._curve is None:
             return
@@ -845,12 +793,9 @@ class ExportAnimationsPage(Page):
         self._nadir_line.setValue(nadir_t)
         self._nadir_line.blockSignals(False)
 
-        # the view shows exactly what the export crops per frame (2x the
-        # Graph window option, divided by Zoom, around the current-time
-        # line) capped at _MAX_WINDOW_S so a large manual override can't
-        # blow the preview out to something unreadable - the shaded
-        # region still shows the video's *true* span even past that cap,
-        # since it - not the view - is the thing being aligned
+        # the view is what the export shows per frame (2 x Graph window /
+        # Zoom), capped at _MAX_WINDOW_S; the shaded region is always the
+        # video's full span
         zoom = max(self.spin_zoom.value(), 1e-6)
         window = min(2 * self.spin_window.value() / zoom, _MAX_WINDOW_S)
         pi.setXRange(nadir_t - window / 2, nadir_t + window / 2, padding=0)
@@ -866,7 +811,7 @@ class ExportAnimationsPage(Page):
         self._vb2.setGeometry(pi.vb.sceneBoundingRect())
         self._vb2.linkedViewChanged(pi.vb, self._vb2.XAxis)
 
-    # ── config (Text inputs + Code options) persistence ─────────────────────
+    # config (Text inputs + Code options) persistence
     def _config_values(self):
         return {
             "pump": self.ed_pump.text().strip(),
@@ -947,10 +892,7 @@ class ExportAnimationsPage(Page):
         self._nadir_override_t = float(override) if override is not None else None
         self._update_view_range()
 
-        # channels are a "how do my animations look" setting more than a
-        # per-sensor one - only rebuild the table when this sensor has its
-        # own saved choice, otherwise leave whatever's already there (the
-        # defaults, or an earlier sensor's still-applicable customisation)
+        # channels carry over between sensors unless this one has its own
         channels_cfg = cfg.get("channels")
         if channels_cfg:
             self.tbl_channels.setRowCount(0)
@@ -973,7 +915,7 @@ class ExportAnimationsPage(Page):
         path.write_text(json.dumps(self._config_values(), indent=2))
         self.status.emit(f"Sync configuration saved for {self._cur_stem}.", 4000)
 
-    # ── overlay image ────────────────────────────────────────────────────────
+    # overlay image
     def _set_logo_path(self, path):
         self._logo_path = path or None
         self.lbl_logo_path.setText(Path(path).name if path else "No overlay image")
@@ -988,7 +930,7 @@ class ExportAnimationsPage(Page):
     def _clear_logo(self):
         self._set_logo_path(None)
 
-    # ── nadir time (from the sensor's own processed CSV, or a user pick) ────
+    # nadir time (from the sensor's own processed CSV, or a user pick)
     def _nadir_time_s(self):
         if self._df is None or "pressure_kpa" not in self._df.columns:
             return None
@@ -1007,10 +949,9 @@ class ExportAnimationsPage(Page):
         return float(self._time[int(pres.argmin())])
 
     def _on_nadir_line_moved(self):
-        """Dragging the nadir line - snaps to the nearest actual sample,
-        same as Validate's nadir tool - overrides the detected nadir time
-        for this page's video sync (persisted per-sensor, see
-        `_config_values`/`_load_config`)."""
+        """Dragging the nadir line snaps it to the nearest sample and
+        overrides the nadir time for this sensor's video sync (saved in its
+        sync config)."""
         if self._time is None:
             return
         raw_t = self._nadir_line.value()
@@ -1027,7 +968,7 @@ class ExportAnimationsPage(Page):
         self._update_view_range()
         self.status.emit("Nadir reset to the detected value.", 3000)
 
-    # ── process ──────────────────────────────────────────────────────────────
+    # process
     def _process(self):
         if self._df is None or self._cur_stem == "":
             return
@@ -1093,7 +1034,7 @@ class ExportAnimationsPage(Page):
         if msg != "Cancelled.":
             QMessageBox.critical(self.main_window, "Processing failed", msg)
 
-    # ── video preview (frame scrubber, Video preview row) ───────────────────
+    # video preview (frame scrubber, Video preview row)
     def _open_scrubber(self, path):
         """Points the scrubber at `path` (the raw matched video before
         processing, or the synced output after) - a fresh `cv2.
@@ -1183,7 +1124,7 @@ class ExportAnimationsPage(Page):
         self.spin_nadir_frame.setValue(frame)
         self.status.emit(f"Sync frame set to {frame}.", 4000)
 
-    # ── preview-frame composite (sanity-check before a full render) ────────
+    # preview-frame composite (sanity-check before a full render)
     def _generate_preview_frame(self):
         if self._df is None or not self._video_matches:
             QMessageBox.warning(self.main_window, "Nothing to preview",

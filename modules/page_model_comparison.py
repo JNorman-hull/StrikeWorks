@@ -1,29 +1,12 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Model comparison (Model prediction).
+"""Model comparison: each treatment's predicted strike rate against the BSM
+collision probability, with manual video-observed and comparison counts
+(Wilson 95 % CI), as a figure and table; and mortality - the model's strike
+rate through each species' BSM injury model
+(`bsm_model.mortality_from_strike_rate`) against the BSM's own and any
+video-observed mortality.
 
-Collision: each treatment's strike rate from the model against the BSM
-collision probability, as a figure and a table, plus manual Video observed
-and Model comparison counts shown as their own bars (Wilson 95 % CI) -
-each once its Include box is ticked (as soon as counts are entered). The
-table has a column for each thing the figures show, no more.
-
-Mortality: the current model's strike rate put through each species' BSM
-injury model (`bsm_model.mortality_from_strike_rate`, the same formula as
-the BSM's observed-counts mortality) - the model-projected mortality -
-against the BSM's own mortality and any video-observed mortality, as a
-figure beside the collision figure and extra table columns. The manual
-Model comparison counts get no projected mortality (no BSM run behind
-them).
-
-Layout: Filters (the same Deployment / Treatment / Run filters as Raw data
-processing) and the three input boxes on the left, figures over the table
-on the right. The filters narrow the prediction's per-recording results
-and each treatment's strike rate and CI are recomputed from those.
+The library filters narrow the per-recording predictions, and each
+treatment's rate and CI are recomputed from what is left.
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -126,7 +109,7 @@ class ModelComparisonPage(Page):
         self.lib_selector.filters_changed.connect(self._refresh_comparison)
         self._refresh_comparison()
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, frame):
         v = scroll_page(frame)
         v.addWidget(self._comparison_group(), stretch=1)
@@ -323,7 +306,7 @@ class ModelComparisonPage(Page):
         gv.addLayout(form)
         return g
 
-    # ── filtered per-treatment results ──────────────────────────────────────
+    # filtered per-treatment results
     def _location(self, row):
         """(deployment, treatment, run) of one prediction row - where the
         library's raw folders put that recording, else the deployment/
@@ -370,7 +353,7 @@ class ModelComparisonPage(Page):
             out.append((name, n, k / n, lo, hi))
         return sorted(out)
 
-    # ── reactions ────────────────────────────────────────────────────────────
+    # reactions
     def _video_counts_changed(self):
         self._include_if_entered(self.chk_video_plot, (
             self.spin_manual_total, self.spin_manual_strike,
@@ -389,10 +372,9 @@ class ModelComparisonPage(Page):
         self._refresh_comparison()
 
     def _video_observed_bar(self):
-        """(label, value_pct, ci_lo, ci_hi) for the video-observed entry,
-        or None if it's empty/invalid/hidden - an extra bar in the
-        comparison figure, same across every selected treatment (a single
-        deployment-wide count, not per treatment)."""
+        """(label, value_pct, ci_lo, ci_hi) for the video-observed counts,
+        or None if they are empty, invalid or not included. One bar for the
+        whole deployment, not one per treatment."""
         total = self.spin_manual_total.value()
         strike = self.spin_manual_strike.value()
         mort = self.spin_manual_mort.value()
@@ -466,10 +448,7 @@ class ModelComparisonPage(Page):
         return model_display_name(path)
 
     def _refresh_comparison(self, *_args):
-        # dual-species default: Calculator computes both scaly and eel per
-        # run (BSMState.set_results()) - each species' Cen is that
-        # species' own Pco_tip, an independent full BSM run, not one
-        # result relabelled twice
+        # each species' Cen is its own run's Pco_tip (BSMState.results)
         results = self.bsm_state.results or {}
         cen_raw = {
             sp: (results[sp]["Pco_tip"] * 100 if results.get(sp) else None)
@@ -495,8 +474,7 @@ class ModelComparisonPage(Page):
 
         model_name = self._run_model_name()
 
-        # each also refreshes its own status label as a side effect - one
-        # call each, reused below, rather than once per table row
+        # each call also refreshes its status label
         video = self._video_observed_bar()
         video_mort = self._video_mortality_bar()
         model1 = self._model1_bar()

@@ -1,40 +1,26 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Validate and annotate (Development toolkit), and StrikeWorks's Validate
-step - the same page, behaving the same, in both: the validation screen
-(sensor_validation.ValidationView) with the library's Deployment /
-Treatment / Run filters above its sensor list and an "Annotations and
-notes" window. Save and export asks first while flagged sensors are
-unreviewed, and exports the sensors listed as `<library>_<deployment
-filter>_<timestamp>.csv` (validation_core.DatasetExporter - which also
-updates the library's running dataset, behind "In dataset"). StrikeWorks
-then takes the export on to Predict itself (`for_strikeworks`,
-page_simple_mode.py).
+"""Validate and annotate, which is also StrikeWorks's Validate step
+(`for_strikeworks`): the validation screen (sensor_validation.ValidationView)
+under the library filters, with an "Annotations and notes" window that
+follows the sensor shown.
 
-A sensor's deployment and treatment are the folders its raw file sits in,
-`raw_sens_data/<deployment>/<treatment>/[Run n/]`, which need not match a
-planned deployment; a missing level shows as "(ungrouped)". Video is
-`<treatment>/VIDEO/<stem>_vid_*.mp4`, matched case-insensitively.
+Save + Next saves the review and annotations to the sensor index. Save and
+export asks first while flagged sensors are unreviewed, then exports the
+listed sensors as `<library>_<deployment filter>_<timestamp>.csv`
+(validation_core.DatasetExporter, which also updates the running dataset).
+"Import annotations CSV…" stamps a spreadsheet of annotations onto the
+index.
 
-The Annotations and notes window stays open beside the main one and
-follows the sensor shown. Save + Next saves what's in it to the sensor
-index with the window; Save and export takes the annotations into the
-dataset. Annotations are optional per sensor ("No annotations for this
-sensor"). "Save annotations" saves them without moving on; "Import
-annotations CSV…" stamps a spreadsheet of annotations onto the index.
+A sensor's deployment and treatment are the folders its raw file is in;
+video is `<treatment>/VIDEO/<stem>_vid_*.mp4`, matched case-insensitively.
 """
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QFileDialog, QGridLayout, QHBoxLayout, QLabel,
+    QCheckBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel,
     QMessageBox, QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem,
     QTabWidget, QVBoxLayout, QWidget,
 )
@@ -47,7 +33,9 @@ from . import validation_core as vc
 from .annotation_widgets import AnnotationValueEditor, VariableListDialog
 from .cards import MetaCard
 from .inventory_widgets import notifier as inventory_notifier
-from .layout import discard_widget, Page, scroll_page, Section, when_visible
+from .layout import (
+    discard_widget, Page, scroll_page, Section, ToolWindow, when_visible,
+)
 from .library_widgets import LibrarySelector
 from .sensor_validation import ValidationView
 from .theme import muted_label, style
@@ -56,13 +44,12 @@ _BAD_SENS_COL = di.BAD_SENS_COL
 _NOTES_COL = "notes"
 
 
-class AnnotationsWindow(QDialog):
-    """The shown sensor's annotations and notes, in a window of their own
-    (a dialog that doesn't block - shown, not exec'd) that stays open
-    beside the main one and follows the sensor shown."""
+class AnnotationsWindow(ToolWindow):
+    """The shown sensor's annotations and notes, in a non-modal window that
+    follows the sensor shown."""
 
     def __init__(self, page):
-        super().__init__(page.main_window)
+        super().__init__(page.main_window, page)
         self.page = page
         self.setWindowTitle("Annotations and notes")
         self._stem = None
@@ -72,16 +59,8 @@ class AnnotationsWindow(QDialog):
         self._rebuild()
         self.set_sensor(None)
         self.resize(460, 620)
-        # it belongs to the page: gone when the page is (another page, or
-        # the window closed or minimised)
-        page.installEventFilter(self)
 
-    def eventFilter(self, obj, event):
-        if obj is self.page and event.type() == QEvent.Type.Hide:
-            self.hide()
-        return super().eventFilter(obj, event)
-
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self):
         v = QVBoxLayout(self)
         v.setContentsMargins(14, 12, 14, 12)
@@ -177,10 +156,10 @@ class AnnotationsWindow(QDialog):
         self.position_box.setVisible(on)
         asch.set_show_position(on)
 
-    # ── the sensor shown ─────────────────────────────────────────────────────
+    # the sensor shown
     def set_sensor(self, stem):
         """Show `stem`'s annotations and notes from the index (None: none)."""
-        from .ml_train_state import level_key
+        from .model_labels import level_key
         self._stem = stem
         self.lbl_sensor.setText(stem or "No sensor loaded")
         self.btn_save.setEnabled(bool(stem))
@@ -256,11 +235,6 @@ class AnnotationsWindow(QDialog):
         self.page.status.emit(message, 6000)
         return n
 
-    def bring_up(self):
-        self.show()
-        self.raise_()
-        self.activateWindow()
-
 
 class AnnotationPage(Page):
     """Validate and annotate > Annotate - and, `for_strikeworks`, StrikeWorks's
@@ -296,7 +270,7 @@ class AnnotationPage(Page):
         self._on_lib_changed()
         self._populate_sensor_table()
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, frame):
         outer = QVBoxLayout(frame)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -361,7 +335,7 @@ class AnnotationPage(Page):
         self.view.export_done.connect(self._on_export_done)
         inventory_notifier.processed.connect(self._on_library_processed)
 
-    # ── the library ──────────────────────────────────────────────────────────
+    # the library
     @property
     def lib_root(self):
         return self.lib_selector.lib_root
@@ -399,7 +373,7 @@ class AnnotationPage(Page):
         self.view.index_changed.emit()      # tells the host; reloads it here
         self._populate_sensor_table()
 
-    # ── the running dataset ("In dataset") ──────────────────────────────────
+    # the running dataset ("In dataset")
     def _dataset_path(self):
         return self.lib_root / raw_layout.DATASET_REL
 
@@ -416,7 +390,7 @@ class AnnotationPage(Page):
         except (OSError, ValueError) as e:
             self.status.emit(f"Could not read the running dataset: {e}", 6000)
 
-    # ── the sensors listed ───────────────────────────────────────────────────
+    # the sensors listed
     def _populate_sensor_table(self):
         files = self.lib_selector.list_sensor_csvs() if self.lib_root else []
         self.view.set_source(self.lib_root, files,
@@ -451,7 +425,7 @@ class AnnotationPage(Page):
             # dataset stems too - deferred until this page is looked at
             when_visible(self.lib_selector, self.lib_selector.rescan, key="scan")
 
-    # ── reporting tab (hidden; the central report reads it) ──────────────────
+    # reporting tab (hidden; the central report reads it)
     def _library_sensor_rows(self):
         """Every sensor index row for the whole library, plan rows dropped -
         the summary is of the library, not the current filters."""
@@ -464,7 +438,7 @@ class AnnotationPage(Page):
         sensor row, one group per variable - numeric levels (concentric
         pump region) in their own order (1, 2, 3...), anything else most
         common value first."""
-        from .ml_train_state import level_key
+        from .model_labels import level_key
         rows = []
         for var in asch.all_variables():
             if var.name not in df.columns:

@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Sort by, for every list of sensors - Annotate, Export animations (both
 through `library_widgets.LibrarySelector`) and StrikeWorks's Validate step:
 one control (`SortControl`), one order (`sort_rows`) and one choice,

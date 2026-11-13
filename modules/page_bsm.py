@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Blade strike calculator (the sidebar's button of that name - no
 section panel): two tabs, Calculator (page_bsm_calculator.py) and
 Advanced analysis (page_bsm_analysis.py), the second also opened by

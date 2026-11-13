@@ -1,45 +1,18 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""The deployment editor - one widget shared by Simple mode's Deploy step
-and Advanced mode's Create and edit deployment page, so both build and edit
-deployments exactly the same way.
+"""The deployment editor, used by StrikeWorks's Deploy step and the
+toolkit's Create and edit deployment page.
 
-  Session library   - soft-synced to session_state like every other
-                      picker, plus New library / New session (Home's own).
-  Library status    - page_home.library_status_rows, the shared summary.
-  Sensors           - every sensor configuration (edited on Setup and
-                      deploy > Sensor configuration), RAPID by default. It
-                      is recorded on the deployment's plan
-                      (deployment_index.SENSOR_CONFIG_COL), so reopening a
-                      deployment restores it and Raw data processing reads
-                      the deployment's recordings as that sensor.
-  Deployment        - pick an existing deployment (or "New deployment"
-                      under the list), and its site/ID/machine fields.
-  Treatments        - one table row per treatment (conditions + number of
-                      runs); a new deployment starts with "Treatment 1".
+Edits one deployment of the session library: its fields, its sensor
+configuration (saved on the plan as `deployment_index.SENSOR_CONFIG_COL`
+and used to read its recordings) and its treatments, one table row each
+with its conditions and number of runs.
 
-+ Add treatment, Create & open data folder and Update are one row under
-the treatments table, with the folder's recording count below it.
-
-Create & open data folder - only for a deployment whose folder doesn't
-exist yet: saves the plan and builds raw_sens_data/<deployment>/<treatment>/
-Run 1..N/VIDEO/ for every treatment, then opens it in Explorer.
-
-Update - once anything has changed: saves the plan and makes the folders
-match it. A renamed deployment or treatment has its folder renamed and its
-already-processed sensors relabelled (index and the library's running
-dataset); changed conditions are re-stamped onto those sensors; a removed
-treatment (or a run dropped from one) has its folder removed - after an
-explicit "Remove folder and content" confirmation whenever it holds files.
-No Explorer window.
-
-Leaving with unsaved changes (the host's Next, or picking another
-deployment) asks: Save and continue / Continue / Cancel -
-`confirm_leave()`.
+Create & open data folder (new deployments only) saves the plan and makes
+raw_sens_data/<deployment>/<treatment>/Run 1..N/VIDEO/. Update saves the
+plan and makes the folders match it: renames carry through to the folders
+and to the processed sensors' index rows and running dataset, changed
+conditions are re-stamped, and a removed treatment or run has its folder
+deleted (after a confirmation when it holds files). `confirm_leave()` asks
+before unsaved changes are lost.
 """
 import os
 import shutil
@@ -175,11 +148,9 @@ class DeploymentEditor(QWidget):
         # editor is actually looked at
 
     def showEvent(self, event):
-        """Re-read the library every time the editor is shown - the
-        deployments, treatments and status card go stale whenever the
-        library's contents change somewhere else (the other mode's editor,
-        processing, the demo). Unsaved edits to the same library are kept:
-        then only the status card is refreshed."""
+        """Re-read the library each time the editor is shown, since other
+        pages change it. With unsaved edits to the same library, only the
+        status card is refreshed."""
         super().showEvent(event)
         QTimer.singleShot(0, self._on_shown)
 
@@ -199,7 +170,7 @@ class DeploymentEditor(QWidget):
         if self._snapshot is None or self._loaded_for != self._lib_root:
             self.refresh()
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, show_configure_link):
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
@@ -337,7 +308,7 @@ class DeploymentEditor(QWidget):
         # folder's recording count sit at the foot of the page
         row.addWidget(grp_tr, stretch=3)
 
-    # ── public ───────────────────────────────────────────────────────────────
+    # public
     @property
     def lib_root(self):
         return self._lib_root
@@ -414,7 +385,7 @@ class DeploymentEditor(QWidget):
             return self.apply(open_folder=False)
         return clicked is btn_continue
 
-    # ── session library ──────────────────────────────────────────────────────
+    # session library
     def _refresh_library_combo(self):
         self.cmb_library.blockSignals(True)
         self.cmb_library.clear()
@@ -445,7 +416,7 @@ class DeploymentEditor(QWidget):
         if self.isVisible():
             self.refresh()
 
-    # ── sensors ──────────────────────────────────────────────────────────────
+    # sensors
     def _reload_sensor_list(self, *_args):
         current = self.cmb_sensor.currentData() or sensor_config.DEFAULT_KEY
         self.cmb_sensor.blockSignals(True)
@@ -470,7 +441,7 @@ class DeploymentEditor(QWidget):
         self.cmb_sensor.setCurrentIndex(max(idx, 0))
         self.cmb_sensor.blockSignals(False)
 
-    # ── deployments ──────────────────────────────────────────────────────────
+    # deployments
     def _all_deployments(self):
         """Planned deployments plus any that only exist as a folder."""
         if self._lib_root is None:
@@ -566,7 +537,7 @@ class DeploymentEditor(QWidget):
                 out.append((entry.name, max(runs) if runs else 1))
         return out
 
-    # ── treatments ───────────────────────────────────────────────────────────
+    # treatments
     def add_treatment(self, values=None):
         """A new row - a copy of the last row's conditions under the next
         free "Treatment N" name, unless `values` are given."""
@@ -603,7 +574,7 @@ class DeploymentEditor(QWidget):
             t.clear_rows()
         t.add_row(values)
 
-    # ── state ────────────────────────────────────────────────────────────────
+    # state
     def _state(self):
         return (tuple(e.text().strip() for e in self.dep_edits.values()),
                 self.cmb_sensor.currentData(),
@@ -700,7 +671,7 @@ class DeploymentEditor(QWidget):
         self.lbl_files_found.setText(
             f"{n_rec} sensor recording(s) found in folder ({n_files} file(s))")
 
-    # ── create / update ──────────────────────────────────────────────────────
+    # create / update
     def apply(self, open_folder=False):
         """Create (`open_folder=True`) or Update - see module docstring.
         Returns True once saved."""

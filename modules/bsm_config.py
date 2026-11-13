@@ -1,26 +1,13 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Blade strike modelling configuration files.
-
-Plain INI text files (`[fish]`/`[pump]`/`[blade]`/`[observed]` sections) -
-the same shape the standalone `/Scripts/Mathematical BSM/Project` scripts
-use (`pump_config/*.txt`), so a config written for one of those scripts
-loads straight into Calculator unchanged. Discovered from
-`input_data/BSM_config/*.txt`, listed in a combo above the Fish section -
-the same "pick from a folder" shape as `LibrarySelector`, just for a plain
-folder of config files rather than a sensor library.
-"""
+"""Blade strike model configuration files: INI text with [fish], [pump],
+[blade] and optional [observed] sections, read from
+input_data/BSM_config/*.txt. Same format as the standalone Mathematical
+BSM scripts' pump_config/*.txt."""
 import configparser
 
 from . import settings
 
-# a bundled app resource (shipped presets), always at the real app root -
-# settings.get_input_data_dir() is a *user* data location and could point
-# anywhere, which these presets must not follow
+# shipped presets, always under the app root (not the user's input data
+# folder, which can be anywhere)
 CONFIG_DIR = settings.app_root() / "input_data" / "BSM_config"
 
 _BLADE_KEYS = ("rttr", "d_vals", "beta_vals", "delta_vals")
@@ -34,15 +21,11 @@ def list_configs():
 
 
 def load_config(path) -> dict:
-    """Parse one config file into a `bsm_model.compute()`-shaped dict.
-
-    Raises on a missing required section/key - the caller should show the
-    exception message directly, it already names the file and field.
-    """
+    """Parse one config file into the dict `bsm_model.compute()` takes.
+    Raises on a missing section or key."""
     cp = configparser.ConfigParser()
-    # keep option names case-sensitive - [pump] deliberately has both a
-    # lower-case n (blade count) and upper-case N (shaft speed rpm), which
-    # ConfigParser's default lower-casing would collide into one key
+    # case-sensitive option names: [pump] has both n (blade count) and N
+    # (shaft speed, rpm)
     cp.optionxform = str
     read = cp.read(path)
     if not read:

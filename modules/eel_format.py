@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Reader for the EEL tag (Micro-EEL) - its .HIG/.IMP pair onto the same
 processed-CSV shape the RAPID parser writes, so everything downstream
 (validation, datasets, training, prediction) works unchanged.

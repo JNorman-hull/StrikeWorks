@@ -1,17 +1,8 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Subprocess worker: loads models, runs predictions, writes results to CSV.
+"""Prediction worker, run as a subprocess so sktime/joblib/numba never load
+in the GUI and a model crash can't take the app down.
 
-Two-stage pipeline:
-  1. binary model      -> strike vs no-contact (overall strike rate)
-  2. multiclass model  -> for each predicted strike, which pump region (class)
-
-Run in a subprocess so sktime/joblib/numba are never imported inside the GUI
-process, and a model crash cannot take the application down.
+  1. binary model      strike vs no contact
+  2. multiclass model  the class (pump region) of each predicted strike
 
 Usage:
     python predict_worker.py \
@@ -20,27 +11,23 @@ Usage:
         --data <path>       --out <dir> \
         [--threshold <float>] [--hig-peaks]
 
---mc-model/--mc-metrics are optional; if omitted only the binary stage runs.
---threshold overrides the deployed optimal_threshold (the GUI passes it
-only when the override box is ticked). --hig-peaks runs the HIG
-analyses - severity and the peak analysis (hig_peaks.py) - Predict's "HIG
-peak analysis" box, on by default; without it there are no HIG outputs.
+--mc-model/--mc-metrics are optional (binary stage only without them).
+--threshold overrides the model's optimal_threshold. --hig-peaks runs
+severity and the HIG peak analysis (hig_peaks.py).
 
 Outputs:
-    predictions.csv     per-recording predictions
-    summary.csv         treatment-level summary with Wilson CIs
-    region_summary.csv  tidy treatment x class table (multiclass only)
-    severity_summary.csv  treatment x HIG threshold table (when the dataset
-                        has the high-g accelerometer channels)
-    hig_peaks.csv       with --hig-peaks: every acceleration event found
-    acceleration_summary.csv  with --hig-peaks: event counts, collision
-                        probability and event acceleration by treatment
+    predictions.csv           per-recording predictions
+    summary.csv               per-treatment summary with Wilson CIs
+    region_summary.csv        treatment x class (multiclass only)
+    severity_summary.csv      treatment x HIG threshold (datasets with HIG)
+    hig_peaks.csv             every acceleration event (--hig-peaks)
+    acceleration_summary.csv  event counts, collision probability and event
+                              acceleration by treatment (--hig-peaks)
+    run_meta.json             class names and run/provenance metadata
 
-Severity is measured, not predicted: each recording's peak high-g
-acceleration magnitude over its window (`hig_peak_g`), banded at 95, 200
-and 400 g. Only a peak over 400 g is a severe strike - the model flags
-contacts of any size, so this says how hard they were.
-    run_meta.json       class_names + run/provenance metadata
+Severity is measured, not predicted: each recording's peak HIG magnitude in
+its window (`hig_peak_g`), banded at 95, 200 and 400 g; over 400 g is a
+severe strike.
 """
 import argparse
 import json
@@ -55,9 +42,11 @@ import pandas as pd
 
 try:
     from . import hig_peaks, model_labels
+    from .wilson_calc import wilson_ci
 except ImportError:          # run as a script from source (worker_launch.py)
     import hig_peaks
     import model_labels
+    from wilson_calc import wilson_ci
 
 # Shim: models saved with numpy >= 2.0 pickle references to numpy._core.*,
 # which does not exist on numpy 1.x. Register every numpy.core submodule
@@ -103,12 +92,6 @@ _META_COLS = [
 ]
 
 
-# HIG severity bands: over 95, 200 and 400 g; only over 400 g is severe
-SEVERITY_THRESHOLDS_G = (95, 200, 400)
-SEVERE_G = 400
-SEVERITY_BANDS = ("<=95 g", "95-200 g", "200-400 g", ">400 g")
-
-
 def _hig_peaks(df, file_meta):
     """Each recording's peak HIG acceleration magnitude (g) over its window,
     aligned to `file_meta`; (None, None) when the dataset has no HIG."""
@@ -123,12 +106,6 @@ def _hig_peaks(df, file_meta):
         return None, None
     peaks = mag.groupby(df["file"]).max()
     return file_meta["file"].map(peaks).astype(float).values, source
-
-
-def _severity_band(peaks):
-    """The band label for each peak: <=95 g, 95-200 g, 200-400 g, >400 g."""
-    idx = np.digitize(peaks, SEVERITY_THRESHOLDS_G, right=True)
-    return np.array(SEVERITY_BANDS, dtype=object)[idx]
 
 
 def _pad(ts, target):
@@ -162,16 +139,6 @@ def _softmax(scores):
         scores = np.column_stack([-scores, scores])
     e = np.exp(scores - scores.max(axis=1, keepdims=True))
     return e / e.sum(axis=1, keepdims=True)
-
-
-def _wilson_ci(k, n, z=1.96):
-    if n == 0:
-        return 0.0, 0.0, 0.0
-    p      = k / n
-    denom  = 1 + z**2 / n
-    centre = (p + z**2 / (2 * n)) / denom
-    half   = z * np.sqrt(p * (1 - p) / n + z**2 / (4 * n**2)) / denom
-    return p, max(0.0, centre - half), min(1.0, centre + half)
 
 
 def _package_versions():
@@ -268,8 +235,8 @@ def main():
                          else (None, None))
     if peaks is not None:
         results["hig_peak_g"] = np.round(peaks, 1)
-        results["severity"] = _severity_band(peaks)
-        results["severe_strike"] = (peaks > SEVERE_G).astype(int)
+        results["severity"] = hig_peaks.severity_band(peaks)
+        results["severe_strike"] = (peaks > hig_peaks.SEVERE_G).astype(int)
 
     # ---- HIG peak analysis (measured events around the nadir) ----
     acc_summary = None
@@ -292,7 +259,7 @@ def main():
     for tx, grp in groups:
         n = len(grp)
         k = int(grp["predicted_strike"].sum())
-        rate, lo, hi = _wilson_ci(k, n)
+        rate, lo, hi = wilson_ci(k, n)
         row = dict(
             treatment    = str(tx),
             n            = n,
@@ -309,15 +276,15 @@ def main():
         for cn in class_names:
             row[f"n_{cn}"] = int((strikes["predicted_region"] == cn).sum())
         if peaks is not None:
-            for g in SEVERITY_THRESHOLDS_G:
+            for g in hig_peaks.THRESHOLDS_G:
                 n_over = int((grp["hig_peak_g"] > g).sum())
                 row[f"n_over_{g}g"] = n_over
-                p_over, lo_over, hi_over = _wilson_ci(n_over, n)
+                p_over, lo_over, hi_over = wilson_ci(n_over, n)
                 severity_rows.append(dict(
                     treatment=str(tx), threshold_g=g, n=n, n_over=n_over,
                     rate=round(p_over, 6), ci_lo=round(lo_over, 6),
-                    ci_hi=round(hi_over, 6), severe=g == SEVERE_G))
-            sev_rate, sev_lo, sev_hi = _wilson_ci(row[f"n_over_{SEVERE_G}g"], n)
+                    ci_hi=round(hi_over, 6), severe=g == hig_peaks.SEVERE_G))
+            sev_rate, sev_lo, sev_hi = wilson_ci(row[f"n_over_{hig_peaks.SEVERE_G}g"], n)
             row["severe_rate"] = round(sev_rate, 6)
             row["severe_ci_lo"] = round(sev_lo, 6)
             row["severe_ci_hi"] = round(sev_hi, 6)
@@ -373,8 +340,8 @@ def main():
         "bin_max_sequence_length": int(bin_max_len),
         "mc_max_sequence_length":  int(mc_max_len) if mc_max_len else None,
         "severity": None if peaks is None else {
-            "thresholds_g": list(SEVERITY_THRESHOLDS_G),
-            "severe_g": SEVERE_G,
+            "thresholds_g": list(hig_peaks.THRESHOLDS_G),
+            "severe_g": hig_peaks.SEVERE_G,
             "hig_channel": hig_source,
             "n_severe": int(results["severe_strike"].sum()),
             "severe_rate": (round(float(results["severe_strike"].mean()), 6)

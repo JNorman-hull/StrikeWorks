@@ -1,30 +1,14 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Misclassification analysis (Model training): a model picker, the
-recordings its cross-validation got wrong (`{kind}_cv_predictions.csv`,
-loaded by `ml_model_library.discover_models()`), a signal plot and a
-Labels box (Annotate's `AnnotationValueEditor` / `VariableListDialog`).
+"""Misclassification analysis: pick a model, list the recordings its
+cross-validation got wrong (`{kind}_cv_predictions.csv`), plot the signal
+and correct the labels.
 
 Corrections go to `<dataset>_corrected.csv` beside the training dataset
-(created from it on the first correction); every row of a recording shares
-one value per variable, as in `deployment_index.set_row_values`. Once it
-exists the corrected file is what's read back, so corrections build up
-across recordings and sessions. Each correction is also written to the
-recording's row of its library's sensor index (`_sync_index`), so
-Annotate - and the next dataset exported from it - carry it too.
-
-The training dataset: in memory for a model trained this session
-(`TrainingState.dataset_df`), otherwise the path recorded in the model
-package's `train_config.json`.
-
-Leaving the page with corrections made goes to Model training > Train with
-the corrected dataset loaded, after a note that the model needs
-retraining (`notify_and_load_into_training()`, called by
-`MainWindow.navigate_to`).
+(made on the first correction and read from then on, so corrections
+accumulate) and to the recording's row in its library's sensor index
+(`_sync_index`). The training dataset is the one in memory for a model
+trained this session, else the path in its package's train_config.json.
+Leaving the page after corrections loads the corrected dataset into Train
+(`notify_and_load_into_training`, called by `MainWindow.navigate_to`).
 """
 from datetime import datetime
 from pathlib import Path
@@ -56,9 +40,7 @@ from .plot_style import (
     set_right_axis_active,
 )
 
-# "Model input signal" (ml_tab_inspect.py) offers the same choice - here it's
-# the model's own training channels versus every channel recorded for the
-# file, rather than a segmented window versus the full sensor passage.
+# the model's training channels, or every channel recorded for the file
 _VIEW_MODEL = "model"
 _VIEW_FULL = "full"
 _NON_CHANNEL_COLS = {"file", "time_s", "treatment", "deployment"}
@@ -87,9 +69,8 @@ def _resolve_column(df, var_name):
 
 
 def _misclassified_rows(entry):
-    """[{file, true, pred, confidence, treatment}, ...] - mirrors
-    ml_model_library.build_model_report_html's exact same read of
-    cv_predictions, so the list matches what the report already shows."""
+    """[{file, true, pred, confidence, treatment}, ...]: the recordings the
+    model's cross-validation got wrong, from its cv_predictions."""
     df = entry.cv_predictions
     if df is None or not len(df):
         return []
@@ -148,7 +129,7 @@ class MisclassificationPage(Page):
         when_visible(self, self._reload_models,
                      key="models")
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, frame):
         root = QHBoxLayout(frame)
         root.setContentsMargins(4, 6, 4, 6)
@@ -304,7 +285,7 @@ class MisclassificationPage(Page):
         asch.notifier.changed.connect(self._rebuild_labels)
         self._rebuild_labels()
 
-    # ── models ───────────────────────────────────────────────────────────────
+    # models
     def _refresh(self):
         """Refresh button: re-discover models and re-index videos."""
         self._video_index = None
@@ -370,7 +351,7 @@ class MisclassificationPage(Page):
         else:
             self._fill_video_column()
 
-    # ── video index (background, cached - see raw_layout.video_index) ────────────
+    # video index (background, cached - see raw_layout.video_index)
     def _start_video_index(self):
         if self._video_thread is not None and self._video_thread.isRunning():
             return
@@ -403,15 +384,14 @@ class MisclassificationPage(Page):
     def _on_misclass_double_clicked(self, item):
         if item.column() != 5:
             return
-        # look up by file, not item.row() - the table is sortable, so a
-        # visual row no longer lines up with self._rows' insertion order
+        # by file, not item.row(): the table can be sorted
         stem = item.data(Qt.ItemDataRole.UserRole)
         matches = self._matches_by_file.get(stem) or []
         message = open_video(self.main_window, stem, matches)
         if message:
             self.status.emit(message, 4000)
 
-    # ── dataset access ───────────────────────────────────────────────────────
+    # dataset access
     def _resolve_dataset_path(self, entry):
         if entry.source == "session":
             return (self.training_state.dataset_path
@@ -454,7 +434,7 @@ class MisclassificationPage(Page):
         self._df_cache[key] = df
         return df
 
-    # ── selection / signal ──────────────────────────────────────────────────
+    # selection / signal
     def _on_row_selected(self):
         items = self.tbl_misclass.selectedItems()
         if not items:
@@ -597,7 +577,7 @@ class MisclassificationPage(Page):
             self._time, self._left_key or "", left_y,
             self._right_key or "", right_y, self._pw, self._vb2)
 
-    # ── labels ───────────────────────────────────────────────────────────────
+    # labels
     def _rebuild_labels(self):
         """One editor per annotation variable the model's training dataset
         has a column for - the main ones, then the position ones under
@@ -659,7 +639,7 @@ class MisclassificationPage(Page):
         dlg = VariableListDialog(self.main_window)
         dlg.exec()
 
-    # ── save ─────────────────────────────────────────────────────────────────
+    # save
     def _save_correction(self):
         if self._cur_stem is None or self._entry is None:
             return
@@ -775,15 +755,14 @@ class MisclassificationPage(Page):
                                  f"index: {e}", 8000)
         return written
 
-    # ── leaving the page (main.py's navigate_to hook) ───────────────────────
+    # leaving the page (main.py's navigate_to hook)
     def has_changes(self):
         return self._has_changes
 
     def notify_and_load_into_training(self):
-        """Called by MainWindow.navigate_to when the user leaves this page
-        having made at least one correction: notify, then load the
-        corrected dataset into Model training > Train so the redirect
-        `navigate_to` performs next lands on it already in place."""
+        """Called by MainWindow.navigate_to when the page is left with
+        corrections made: tell the user, then load the corrected dataset into
+        Model training > Train, where navigate_to goes next."""
         self._has_changes = False
         QMessageBox.information(
             self.main_window, "Retrain recommended",

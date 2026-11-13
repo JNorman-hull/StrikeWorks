@@ -1,17 +1,5 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""About StrikeWorks - one dialog, shown from both Simple mode's About
-button and the full app's (settings panel > About).
-
-Package versions are read from the running install (importlib.metadata,
-falling back to an already-imported module's __version__) rather than
-typed in, so they stay right as dependencies are upgraded; the citations
-themselves are the ones each project asks users to cite.
-"""
+"""About StrikeWorks, shown from both windows. Package versions are read
+from the installed packages, so they follow upgrades."""
 import platform
 import sys
 from importlib import metadata

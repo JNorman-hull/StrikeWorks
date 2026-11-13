@@ -1,33 +1,19 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Sensor validation shared by Simple mode's Validate step
-(page_simple_mode.py) and Advanced mode's Annotate page (page_annotate.py)
-- one implementation, so the two can't drift apart.
+"""Sensor validation logic shared by Validate and annotate and StrikeWorks's
+Validate step.
 
-  Auto process all  - accepts every processed sensor's already-detected
-                      nadir (`pres_min.time.` from the index, else the
-                      pressure minimum), saves its ROI window and marks it
-                      validated, with no per-file review. Each sensor also
-                      gets the one "worth a look" check: a real blade-strike
-                      window should show a real HIG (impact accelerometer)
-                      peak, so a window whose HIG max is under
-                      FLAG_HIG_THRESHOLD_G is *flagged* for a human to
-                      review. Ad hoc by design - it points a person at the
-                      sensors worth a second look, it never rejects one.
-  Validation state  - hstrike_processed (window saved at all, auto or
-                      user), hstrike_user_validated (a human reviewed it
-                      with Save + next), hstrike_user_adjusted (they moved
-                      the nadir, not just re-confirmed it), hstrike_flagged.
-  Save and export   - binds every saved window into one model-ready dataset
-                      (page_dataset's segmented extraction), joins the
-                      annotation columns recorded on the index, writes it to
-                      the input data folder and into the library's running
-                      dataset (model_features.csv), and hands it back to the
-                      caller (both callers pass it on to Model prediction).
+  Auto process all  accepts each processed sensor's detected nadir
+                    (`pres_min.time.` from the index, else the pressure
+                    minimum), saves its ROI window and marks it validated.
+                    A window whose HIG maximum is under
+                    FLAG_HIG_THRESHOLD_G is flagged for review - a pointer
+                    for a person, never a rejection.
+  Validation state  hstrike_processed (window saved), hstrike_user_validated
+                    (reviewed with Save + Next), hstrike_user_adjusted
+                    (nadir moved), hstrike_flagged.
+  Save and export   binds the saved windows into one dataset with the
+                    annotation columns from the index, writes it to the
+                    input data folder and the library's running dataset
+                    (model_features.csv), and returns it to the caller.
 """
 import re
 from datetime import datetime

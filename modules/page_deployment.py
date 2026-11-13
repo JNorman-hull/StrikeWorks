@@ -1,13 +1,6 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Create and edit deployment (Setup and deploy): hosts the shared
-deployment editor (deployment_editor.py), the same one Simple mode's Deploy
-step shows. The Designer object names (`page_initiate_deployment`,
-`btn_initiate_deployment`) keep the page's old working name.
+"""Create and edit deployment (Setup and deploy): the deployment editor
+(deployment_editor.py), as in StrikeWorks's Deploy step. Its sidebar button
+is main.ui's `btn_initiate_deployment`.
 """
 from PySide6.QtWidgets import QVBoxLayout
 

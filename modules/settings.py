@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """The app's persisted settings, in one JSON file:
 
   - the packaged app: `settings.json` beside StrikeWorks.exe, so the
@@ -150,7 +144,7 @@ def write_section(name, payload: dict):
     _set(name, payload)
 
 
-# ── folders ──────────────────────────────────────────────────────────────────
+# folders
 # A configured folder is used even when it can't be reached right now (a
 # OneDrive folder not yet mounted), rather than silently switching to the
 # default.
@@ -218,7 +212,7 @@ def set_input_data_dir(path) -> Path:
     return p
 
 
-# ── Simple mode's default models ─────────────────────────────────────────────
+# default models
 # Unset (None) means 'binary1' / 'multiclass1'. Not checked for existence:
 # the model may be in a library that isn't reachable right now.
 
@@ -240,7 +234,7 @@ def set_default_mc_model(path):
     _set("default_mc_model", None if path is None else str(Path(path)))
 
 
-# ── appearance ───────────────────────────────────────────────────────────────
+# appearance
 def get_theme() -> str:
     """The theme's key in theme.THEMES ("strikeworks" unless changed)."""
     return _load().get("theme") or "strikeworks"
@@ -251,7 +245,7 @@ def set_theme(name):
     _set("theme", name)
 
 
-# ── session ──────────────────────────────────────────────────────────────────
+# session
 def get_last_library():
     """Last session's library, or None if unset or gone."""
     p = _load().get("last_library")

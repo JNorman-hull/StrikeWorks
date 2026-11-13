@@ -1,12 +1,4 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# GUI built on the PyDracula template (MIT licence) - credit and link
-# available under Settings > About. See LICENSE.
-#
-# ///////////////////////////////////////////////////////////////
+# Based on the PyDracula template (MIT licence) - see LICENSE.
 """The window frame's behaviour: custom title bar (move, maximise,
 resize grips), the sliding sidebar and side panels, and the selected-menu
 highlight. Every function takes the main window as its first argument."""
@@ -20,11 +12,23 @@ from PySide6.QtWidgets import QGraphicsDropShadowEffect, QPushButton, QSizeGrip
 from widgets import CustomGrip
 
 from .theme import set_flag
-from .ui_config import UIConfig
+
+
+class UIConfig:
+    """Window-frame sizes and the title bar switch."""
+    # False: the standard Windows title bar and frame (move, snap,
+    # maximise, resize as any Windows app). True: the template's own
+    # frameless title bar
+    ENABLE_CUSTOM_TITLE_BAR = False
+    MENU_WIDTH = 240
+    MENU_COLLAPSED_WIDTH = 60      # the icon strip
+    LEFT_BOX_WIDTH = 240
+    RIGHT_BOX_WIDTH = 240
+    TIME_ANIMATION = 500
 
 
 class UIFunctions:
-    # ── maximise / restore ──────────────────────────────────────────────────
+    # maximise / restore
     def maximize_restore(self):
         grips = (self.left_grip, self.right_grip, self.top_grip, self.bottom_grip)
         if not getattr(self, "_maximized", False):
@@ -48,7 +52,7 @@ class UIFunctions:
             for grip in grips:
                 grip.show()
 
-    # ── sidebar ─────────────────────────────────────────────────────────────
+    # sidebar
     def toggleMenu(self, enable):
         """Expand/collapse the sidebar. Both its minimum and maximum width
         are animated so it is pinned to an exact width either way - with
@@ -70,7 +74,7 @@ class UIFunctions:
             self.menu_group.addAnimation(anim)
         self.menu_group.start()
 
-    # ── side panels ─────────────────────────────────────────────────────────
+    # side panels
     def toggleLeftBox(self, enable):
         """Open/close the section panel; the section's top button
         (`self._panel_btn`) carries the "owns the panel" highlight."""
@@ -111,7 +115,7 @@ class UIFunctions:
             self.group.addAnimation(anim)
         self.group.start()
 
-    # ── selected-menu highlight (the "selected" property, app.qss) ─────────
+    # selected-menu highlight (the "selected" property, app.qss)
     def resetStyle(self, keep):
         """Clear the highlight from every sidebar button but `keep`."""
         for w in self.ui.topMenu.findChildren(QPushButton):
@@ -124,7 +128,7 @@ class UIFunctions:
             if w.objectName() != keep:
                 set_flag(w, "selected", False)
 
-    # ── window frame set-up ─────────────────────────────────────────────────
+    # window frame set-up
     def uiDefinitions(self):
         if UIConfig.ENABLE_CUSTOM_TITLE_BAR:
             def double_click_maximize(event):

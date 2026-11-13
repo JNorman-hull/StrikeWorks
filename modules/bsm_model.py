@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """CEN 2025 blade strike collision and mortality calculation (NumPy/SciPy
 only, no GUI). The observed-strike confidence interval is
 `wilson_calc.wilson_interval()`, the same one Study design uses.
@@ -36,8 +30,7 @@ def cen_regression(species, Lf_d, eel_vcrit):
 def compute(p):
     """`p`: species, lf, bf, wf, alpha, eel_vcrit, n, N, Q, r, bh, rttr,
     d_vals, beta_vals, delta_vals, use_observed, total, strike.
-    Returns a result dict - see the field names used throughout this
-    module and `ml_report`-style consumers below."""
+    Returns the result dict the figures, reports and BSMState read."""
     species = p["species"]
     lf, bf = p["lf"], p["bf"]
     wf, alpha = p["wf"], p["alpha"]
@@ -148,19 +141,12 @@ def compute(p):
 
 
 def recompute_mortality(res, species, eel_vcrit=None, lf=None, threshold=None):
-    """Re-run the mortality integral from an existing `compute()` result
-    under a different species / eel critical velocity / mortality
-    threshold, holding the hydrodynamic exposure (Pco_arr, vstrike_arr,
-    r_arr - i.e. the fish's actual passage through the blade sweep) fixed.
+    """Re-run the mortality integral from a `compute()` result for another
+    species, eel critical velocity or mortality threshold, keeping the
+    hydrodynamic exposure (Pco_arr, vstrike_arr, r_arr) fixed.
 
-    This is the "what if these fish were a different species, or death is
-    any strike whose injury fraction meets a threshold rather than the
-    continuous fMR itself" question Biological interpretation answers,
-    without re-running the geometric/hydrodynamic half of the model.
-
-    threshold=None keeps the continuous fMR (identical maths to
-    `compute()`); a threshold in [0, 1] makes fMR binary: 1.0 where the
-    continuous fraction meets or exceeds it, else 0.0.
+    threshold=None keeps the continuous fMR (the same maths as `compute()`);
+    a threshold in [0, 1] makes fMR 1 where the fraction reaches it, else 0.
     """
     p = res["params"]
     lf = lf if lf is not None else p["lf"]
@@ -190,11 +176,9 @@ def recompute_mortality(res, species, eel_vcrit=None, lf=None, threshold=None):
 
 
 def default_vcrit(res, species, eel_vcrit=None, lf=None):
-    """The critical velocity `cen_regression` would derive on its own for
-    this result's blade-tip length-to-diameter ratio - scaly's floor is
-    4.8 m/s (`max(4.8, -2.8*Lf_d + 10.3)`), eel uses `eel_vcrit` directly.
-    The point the critical-velocity sensitivity curve marks as "the
-    regression's own value" rather than an override."""
+    """The critical velocity `cen_regression` derives for this result:
+    `max(4.8, -2.8*Lf_d + 10.3)` m/s for scaly fish, `eel_vcrit` for eel.
+    The vcrit sweep marks it as each species' default."""
     p = res["params"]
     lf = lf if lf is not None else p["lf"]
     eel_vcrit = eel_vcrit if eel_vcrit is not None else p["eel_vcrit"]
@@ -204,13 +188,9 @@ def default_vcrit(res, species, eel_vcrit=None, lf=None):
 
 
 def recompute_mortality_at_vcrit(res, species, vcrit, lf=None):
-    """Mortality at an explicit critical velocity, bypassing
-    `cen_regression`'s own vcrit formula entirely - the "what if the
-    critical velocity were X" question the critical-velocity sensitivity
-    curve sweeps, holding everything else (regression a/b coefficients,
-    hydrodynamic exposure) fixed at this result's values. Species still
-    selects which regression shape (log-linear vs single-term) applies -
-    only the velocity threshold itself is overridden.
+    """Mortality at a given critical velocity, in place of `cen_regression`'s
+    own vcrit, with the regression coefficients and exposure fixed. Species
+    still picks the regression form. Used by the vcrit sweep.
     """
     p = res["params"]
     lf = lf if lf is not None else p["lf"]
@@ -239,13 +219,9 @@ def recompute_mortality_at_vcrit(res, species, vcrit, lf=None):
 
 
 def mortality_from_strike_rate(res, strike_rate):
-    """Mortality (0-1) when the collision probability is an externally
-    estimated strike rate rather than the CEN geometry - the same formula
-    as the observed-counts mortality above (Pm,obs = 2/(r + bh) . P .
-    integral fMR(f).r(f) df), with this result's own mutilation ratio
-    fMR along the blade. Model comparison's model-projected mortality:
-    the ML model's predicted strike rate put through each species' BSM
-    injury model. Linear in `strike_rate`, so a strike rate's confidence
+    """Mortality (0-1) with an external strike rate as the collision
+    probability: Pm = 2/(r + bh) . P . integral fMR(f).r(f) df, using this
+    result's fMR along the blade. Linear in `strike_rate`, so the rate's CI
     limits map straight onto mortality limits."""
     p = res["params"]
     f_arr = res["f_arr"]
@@ -254,7 +230,7 @@ def mortality_from_strike_rate(res, strike_rate):
     return float(min(1.0, max(0.0, 2 / (p["r"] + p["bh"]) * strike_rate
                                * integral)))
 
-# ── sensitivity sweeps (Advanced analysis, the BSM report) ──────────────────
+# sensitivity sweeps (Advanced analysis, the BSM report)
 # the defaults of Calculator's Advanced options, each x the design value
 SWEEP_Q_SPAN = (0.6, 1.6)       # flow-rate lines from / to...
 SWEEP_Q_STEP = 0.2              # ...this far apart (and the design Q)
@@ -276,15 +252,12 @@ def sweep_q_multipliers(q_span=SWEEP_Q_SPAN, q_step=SWEEP_Q_STEP):
 
 def sensitivity_sweeps(params, q_span=SWEEP_Q_SPAN, q_step=SWEEP_Q_STEP,
                        n_span=SWEEP_N_SPAN):
-    """Collision and mortality probability against shaft speed N (the
-    design N x `n_span`) and against relative fish velocity wf, one line
-    per flow rate Q (`sweep_q_multipliers`) - every sweep holds the
-    rest of `params` at its design value. One `compute()` per point gives both
-    Pco and Pm, so the four sweeps cost two passes, not four.
+    """Collision and mortality probability against shaft speed N (design N x
+    `n_span`) and relative fish velocity wf, one line per flow rate Q
+    (`sweep_q_multipliers`), everything else at its design value.
 
-    Returns {"pco_n", "pm_n", "pco_wf", "pm_wf"}: each {label: (x, y%)},
-    plus "design_label" (the design-Q line's label) and "design"
-    ({"N", "wf", "Q"} - where the design point sits on each x axis)."""
+    Returns {"pco_n", "pm_n", "pco_wf", "pm_wf"}, each {label: (x, y%)}, plus
+    "design_label" (the design-Q line) and "design" ({"N", "wf", "Q"})."""
     design_q, design_n = params["Q"], params["N"]
     lo, hi = n_span
     n_vals = np.linspace(design_n * lo, design_n * hi, SWEEP_N_POINTS)

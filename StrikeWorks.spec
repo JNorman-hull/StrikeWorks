@@ -23,7 +23,7 @@ from PyInstaller.utils.hooks import (
 )
 
 # build.py --simple sets this: the Simple edition gets a start-up hook that
-# locks it to Simple mode (modules/edition.py)
+# locks it to Simple mode (modules/startup.py)
 runtime_hooks = []
 if os.environ.get("STRIKEWORKS_EDITION") == "simple":
     runtime_hooks.append(os.path.join(SPECPATH, "tools", "simple_edition_hook.py"))

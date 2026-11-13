@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """The app's themes: one palette per theme, the app stylesheet built from
 it (themes/app.qss), and the colours the code draws with directly (list
 items, plots, figures).
@@ -26,10 +20,9 @@ from . import settings
 
 _QSS = Path(__file__).parent.parent / "themes" / "app.qss"
 
-# the dark theme's two blues (in place of its original purple and pink):
 # navy fills what sits behind white text (headers, pressed and primary
-# buttons, selections, scrollbar handles), light blue is anything drawn on
-# the dark background (markers, accent and link text, rings, the spinner)
+# buttons, selections, scrollbar handles); light blue is drawn on the dark
+# background (markers, accent and link text, rings, the spinner)
 NAVY, LIGHT_BLUE = "#0d1446", "#81daf4"
 # its data series (charts, rings, figures), from the same brand strip:
 # first green, then lime, then orange ...
@@ -86,9 +79,8 @@ STRIKEWORKS = {
     "dark": True,
 }
 
-# one theme for now; Settings > Appearance lists whatever is here, and a
-# light one would set "dark": False (white plots - and it would need a
-# navy logo: startup.logo_path)
+# Settings > Appearance lists these; a light theme sets "dark": False and
+# needs a navy logo (startup.logo_path)
 THEMES = {"strikeworks": STRIKEWORKS}
 NAME = settings.get_theme() if settings.get_theme() in THEMES else "strikeworks"
 P = THEMES[NAME]

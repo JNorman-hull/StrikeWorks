@@ -99,6 +99,27 @@ and frequency needs its own models (`modules/recording_rate.py`).
 three rates for trying this out; `tests/test_eel_pipeline.py` runs them
 through (`STRIKEWORKS_E2E=1` for training and prediction too).
 
+**Nadir detection** is part of the configuration (Sensor configuration >
+Nadir detection) and runs when a recording is processed
+(`rapid_functions.NADIR_METHODS`):
+
+* **Pressure step at the pump** (the default): the lowest pressure in the
+  0.6 s before pressure steps up through the pump. The step is the largest
+  sustained rise - medians of 0.5 s either side, so spikes don't count -
+  after which pressure stays up for 4 s; on a rig that pressurises the
+  sensor before letting it go, it is the rise after pressure has fallen
+  back. A recording with no step of at least 5 kPa (a flat pressure trace,
+  a bench test) falls back to the method below, and its index message says
+  so.
+* **Lowest pressure near the acceleration peak**: within 1.5 s of the
+  recording's largest acceleration. The only method before November 2026;
+  it puts the nadir at the release when the knock there is the largest
+  acceleration in the recording.
+
+A sensor saved with the earlier method takes the pressure step. Recordings
+already processed keep the nadir they have until they are processed again
+or moved on the validation screen.
+
 A new device is New or Duplicate in Sensor configuration plus a Save
 (kept in the settings file); only its reader is code, written and
 registered under `sensor_config.PARSERS`.
@@ -206,7 +227,7 @@ how many of its strikes were hard hits. It appears in the Predict results
 (cards, treatment table, figure), Inspect (per recording, with severe and
 "strike, ≤ 400 g" filters), StrikeWorks and the reports
 (`severity_summary.csv`; `hig_peak_g`, `severity`, `severe_strike` in
-`predictions.csv`). The thresholds are in `modules/severity.py`.
+`predictions.csv`). The thresholds are in `modules/hig_peaks.py`.
 
 **HIG peak analysis** (the *HIG peak analysis* box in Predict's
 **Advanced features** - one setting, ticked by default) goes further: it finds every acceleration event in each
@@ -330,7 +351,7 @@ holds anything the build didn't put there.
 `dist/StrikeWorks_Simple`: the StrikeWorks window only, with the
 Development toolkit (the full app) locked - no Development toolkit button,
 and only the StrikeWorks demo in the console. The lock is a start-up hook compiled into the exe
-(`tools/simple_edition_hook.py`, `modules/edition.py`); from source,
+(`tools/simple_edition_hook.py`, `modules/startup.py`); from source,
 `set STRIKEWORKS_EDITION=simple` shows the same thing. Test and zip it with
 `tools\smoke_test.ps1 -Simple -Demos` and `build.py --simple --zip-only`.
 

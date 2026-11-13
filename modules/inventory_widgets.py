@@ -1,36 +1,17 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""The raw file inventory - one widget shared by Simple mode's Process step
-and Advanced mode's Raw data processing page.
+"""The raw file inventory, used by StrikeWorks's Process step and the
+toolkit's Raw data processing page.
 
-Lists every raw recording under a folder (a whole deployment in Simple
-mode; whatever the Deployment/Treatment/Run filters select in Advanced
-mode) with its sensor/date/time parsed from the filename, whether all of
-its files are present, whether it has been processed, and the
-Deployment, Treatment and Run it sits under (raw_layout.locate). Because
-every file carries its own labels, a batch spanning several treatments or
-runs is processed in one go and each recording is stamped with the right
-conditions afterwards (deployment_index.stamp_by_location), instead of the
-whole batch getting whatever one treatment/run picker said.
+Lists every raw recording under a folder with its sensor, date and time
+(from the filename), whether its files are complete, whether it has been
+processed, its frequency, and the deployment, treatment and run of its
+folder (raw_layout.locate). Each recording is labelled from its own folder
+after processing (deployment_index.stamp_by_location), so one batch can
+span treatments and runs.
 
-Each recording's Frequency is listed too. For a sensor whose files state
-their own rate (the EEL tag) it is read in the background once the list is
-up: from the index for a processed recording, otherwise from the recording's
-own file. A selection mixing frequencies asks what to process
-(frequency_dialog.py).
-
-A deployment's recordings are read as the sensor saved on that deployment
-(deployment_editor.py), whichever sensor is selected; the selected one only
-answers for a deployment with none saved. A batch can span deployments, so
-each record carries its own `config`.
-
-Processing itself is processing.py's `ProcessThread`, running the reader
-each recording's sensor configuration names; its log streams into the
-console below the table.
+Recordings are read as their deployment's saved sensor, or the selected
+sensor when the deployment has none. For a sensor whose files state their
+own rate (the EEL tag) the frequency is read in the background, and a
+selection of mixed frequencies asks what to process (frequency_dialog.py).
 """
 from collections import Counter
 from datetime import datetime
@@ -185,7 +166,7 @@ class FileInventory(QWidget):
     Host API: `set_source(lib_root, folder, row_filter=None)` then
     `refresh()`; `files` is the current list (each a dict - see
     `scan_raw`). `processing_done(code, stems)` fires once a batch has
-    finished *and* been labelled (0 = every file succeeded).
+    finished and been labelled (0 = every file succeeded).
 
     Every log line is also printed, so it reaches the app console. Given
     `open_console` (a no-arg callable), there is no log box: a Console
@@ -214,7 +195,7 @@ class FileInventory(QWidget):
         self._row_of = {}
         self._build(orientation, inventory_title, log_title, open_console)
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, orientation, inventory_title, log_title, open_console):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -287,7 +268,7 @@ class FileInventory(QWidget):
         split.setStretchFactor(0, 10)
         split.setStretchFactor(1, 3)
 
-    # ── source ───────────────────────────────────────────────────────────────
+    # source
     @property
     def files(self):
         return self._files
@@ -306,7 +287,7 @@ class FileInventory(QWidget):
 
     def set_source(self, lib_root, folder, row_filter=None, tree=None):
         """`row_filter(deployment, treatment, run) -> bool` narrows the scan
-        further (Advanced mode's Run filter); `tree` is an already-built
+        further (the toolkit's Run filter); `tree` is an already-built
         raw_layout.RawTree to list from instead of walking `folder`."""
         self._lib_root = Path(lib_root) if lib_root else None
         self._folder = Path(folder) if folder else None
@@ -395,7 +376,7 @@ class FileInventory(QWidget):
         self.lbl_counts.setText(f"{n} recording(s), {n_proc} processed" if n else "")
         self._on_selection_changed()
 
-    # ── selection ────────────────────────────────────────────────────────────
+    # selection
     def _on_select_all(self, checked):
         if checked:
             self.table.selectAll()
@@ -414,7 +395,7 @@ class FileInventory(QWidget):
             bool(self.table.selectedItems()) and self._lib_root is not None
             and not self.running)
 
-    # ── console ──────────────────────────────────────────────────────────────
+    # console
     def log(self, text):
         try:
             print(text)            # the app console tees print
@@ -430,7 +411,7 @@ class FileInventory(QWidget):
         if self.console is not None:
             self.console.clear()
 
-    # ── processing ───────────────────────────────────────────────────────────
+    # processing
     def process_selected(self):
         files = self._choose_frequency(self.selected_files())
         if files is not None:

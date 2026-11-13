@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Compile main.ui -> modules/ui_main.py.
 
 Run this after editing main.ui (in Qt Designer or by hand). PyCharm runs it

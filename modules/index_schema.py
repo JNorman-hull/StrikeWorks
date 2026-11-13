@@ -1,23 +1,8 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""The columns of ``global_sensor_index.csv``, defined in one place.
-
-The schema belongs to the app, so a library needs no configuration file
-of its own. The column order matches indexes written by earlier versions
-(from a library's ``config/index_config.txt``), so old and new indexes
-line up column for column.
-
-Each entry is (column, default). A default of None means the value comes
-from the parser's summary for that recording - keyed by ``source``, which
-is the parser's name for it where that differs from the column name.
-
-A later settings page can edit this list; nothing else needs to change,
-because every writer and reader goes through ``columns()`` and
-``row_for()``.
+"""The columns of ``global_sensor_index.csv``, in the order indexes have
+always been written. Each entry is (column, default); a default of None
+takes the value from the parser's summary, under ``source`` where the
+parser's name differs. Everything reads and writes the index through
+``columns()`` and ``row_for()``.
 """
 
 # (column, default, source-key-in-summary)

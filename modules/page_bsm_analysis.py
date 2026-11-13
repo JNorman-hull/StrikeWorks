@@ -1,23 +1,7 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Advanced analysis (Blade strike calculator's second tab - Calculator's
-"Advanced model outputs").
-
-  - Figures: the headline results as one 4-panel figure ((a) scaly
-    collision, (b) scaly mortality, (c) eel collision, (d) eel mortality)
-    and the sensitivity sweeps as another ((a)/(b) collision probability
-    vs shaft speed / relative fish velocity, (c)/(d) mortality vs the
-    same), one line per flow rate Q - over the ranges in Calculator's
-    Advanced options (`BSMState.sweep_options`).
-  - The Results table and the "Blade strike output" cards, scaly and eel.
-
-The report is Export and report's Blade strike calculator section
-(report_center.bsm_section). Follows `BSMState`, so it shows the latest
-result however it was produced.
+"""Advanced analysis, the Blade strike calculator's second tab: the 4-panel
+results figure (scaly and eel collision and mortality), the sensitivity
+sweeps over Calculator's Advanced options, the Results table and the
+output cards. Follows BSMState.
 """
 from matplotlib.figure import Figure
 
@@ -55,7 +39,7 @@ class BSMAnalysisPage(Page):
         self._show_results(bsm_state.results)
         self.update_from_result(bsm_state.last_result)
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, frame):
         v = scroll_page(frame)
         v.addWidget(self._figures_group())
@@ -116,7 +100,7 @@ class BSMAnalysisPage(Page):
             row.addWidget(self.cards[species], stretch=1)
         return g
 
-    # ── both species: table, cards, results figure ──────────────────────────
+    # both species: table, cards, results figure
     # Figures are drawn when their canvas is on screen: rendering both takes
     # about a second, which would otherwise be spent at start-up.
     def _show_results(self, results):
@@ -148,7 +132,7 @@ class BSMAnalysisPage(Page):
             self.canvas_results.draw()
         when_visible(self.canvas_results, draw, key="figure")
 
-    # ── the sweeps (scaly, the Calculator's single result) ──────────────────
+    # the sweeps (scaly, the Calculator's single result)
     def update_from_result(self, res):
         self.last_result = res
         self.sweeps = None

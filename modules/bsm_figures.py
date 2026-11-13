@@ -1,12 +1,5 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Blade strike modelling figures, in the same style as the app's other
-figures (`ml_figures.style_axes` and friends). `dark=True` (the default) is
-the in-app look; `dark=False` is for exported, light-background reports.
+"""Blade strike model figures, styled with ml_figures' helpers. `dark=True`
+(the default) is the in-app look, `dark=False` the export style.
 """
 import textwrap
 import warnings
@@ -15,8 +8,8 @@ from matplotlib.layout_engine import TightLayoutEngine
 
 from .ml_figures import _PALETTE, _awaiting, fg_colour, style_axes, style_legend, _grid
 
-CEN_COLOR = _PALETTE[3]   # "the model's own estimate"
-OBS_COLOR = _PALETTE[0]   # "what was actually observed"
+CEN_COLOR = _PALETTE[3]   # the model's estimate
+OBS_COLOR = _PALETTE[0]   # observed
 
 # dual-species default (Model comparison's Cen bars, Predict's mortality
 # vcrit sweep) - one colour per species so scaly/eel are visually
@@ -289,21 +282,13 @@ def sweep_panels_title(species, params):
 
 
 def draw_vcrit_sweep(fig, series, dark=True, title=None):
-    """Mortality probability vs critical velocity - dual-species default:
-    one line per species, each with its own highlighted point marking
-    what that species' own regression would derive by itself, so each
-    sweep is read against its actual default rather than an arbitrary
-    baseline.
+    """Mortality probability against critical velocity, one line per
+    species, each with a point at that species' own default.
 
-    `series`: list of (species_label, vcrit_vals, pm_vals, default_vcrit,
-    default_pm) - a species whose `vcrit_vals` is empty/None is skipped;
-    every series empty (or `series` itself empty) draws the themed
-    awaiting-data placeholder instead of a blank white canvas - the same
-    idiom `ml_figures.draw_strike_rate`/`draw_region` use before a run
-    exists. `title` - which treatment's pump condition this nominally
-    represents (Predict's own treatment picker, purely a label - BSM
-    itself has no per-treatment input), shown even on the placeholder so
-    "no treatment selected" is visible before a BSM run exists too.
+    `series`: [(species_label, vcrit_vals, pm_vals, default_vcrit,
+    default_pm)]; a species with no `vcrit_vals` is skipped, and with none at
+    all the placeholder is drawn. `title` names the treatment the figure is
+    for and is shown on the placeholder too.
     """
     fig.clear()
     ax = fig.add_subplot(111)
@@ -339,19 +324,13 @@ def draw_vcrit_sweep(fig, series, dark=True, title=None):
 def draw_comparison_bars(fig, cen_values, comparisons, dark=True,
                          ylabel="Strike / collision probability (%)",
                          title="Model comparison"):
-    """The mathematical (Cen) estimate against one bar per comparison -
-    each treatment's data-driven strike rate, plus optional manually
-    entered comparisons - the "BSM vs predicted" figure on Model
-    comparison. Dual-species default: one Cen bar per species with a
-    result, each in that species' own colour.
+    """Model comparison's collision figure: the Cen estimate (one bar per
+    species) against each treatment's predicted strike rate and any manual
+    comparisons.
 
-    `cen_values`: {species_label: value_pct_or_None}. `comparisons`: list
-    of (label, value_pct, ci_lo, ci_hi) - ci_lo/ci_hi may be None for a
-    bar with no confidence interval.
-
-    No Cen value and no comparisons draws the themed awaiting-data
-    placeholder instead of a blank white canvas - the same idiom
-    `ml_figures.draw_strike_rate`/`draw_region` use before a run exists.
+    `cen_values`: {species_label: percent or None}. `comparisons`:
+    [(label, percent, ci_lo, ci_hi)], CI limits may be None. Draws the
+    placeholder when there is nothing to show.
     """
     fig.clear()
     ax = fig.add_subplot(111)
@@ -397,16 +376,13 @@ def draw_comparison_bars(fig, cen_values, comparisons, dark=True,
 
 def draw_mortality_bars(fig, items, dark=True, title="Mortality",
                         ylabel="Mortality probability (%)"):
-    """Model comparison's mortality figure - the Blade Strike Model's own
-    mortality per species against the model-projected mortality (the
-    current model's predicted strike rate put through each species' BSM
-    injury model) and any video-observed mortality.
+    """Model comparison's mortality figure: the BSM's mortality per species,
+    the model-projected mortality and any video-observed mortality.
 
-    `items`: [(label, value_pct, ci_lo, ci_hi, kind)] - kind "scaly"/"eel"
-    for a BSM bar (that species' colour), anything else a data-driven bar;
-    ci_lo/ci_hi may be None. Same look as `draw_comparison_bars`; the y
-    axis tops out just above the tallest bar/whisker (mortality is usually
-    far below 100%) rather than always at 100."""
+    `items`: [(label, percent, ci_lo, ci_hi, kind)]; kind "scaly"/"eel" draws
+    in that species' colour, CI limits may be None. The y axis stops just
+    above the tallest bar or whisker.
+    """
     fig.clear()
     ax = fig.add_subplot(111)
     fg = fg_colour(dark)

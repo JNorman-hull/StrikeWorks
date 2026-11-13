@@ -1,15 +1,4 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Setup and deploy's Sensor configuration and Study design tabs.
-
-Sensor configuration chooses and edits the device the session works with;
-Study design is a sampling-precision calculator (Wilson score interval).
-The tab bar is hidden - the sidebar picks the tab (`main.py`'s
-`_SUBMENU_TARGETS`).
+"""Setup and deploy: the Sensor configuration and Study design tabs.
 """
 from .layout import TabbedPage
 from .setup_sensor import SensorTab

@@ -1,33 +1,9 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Train tab - everything that defines and runs a training run, in four
-rows:
+"""Model training > Train: the dataset, labelling (binary target and
+values, multiclass classes), inputs, sequence length, class weights,
+cross-validation and the performance breakdown, then the Model box that
+runs, evaluates, finalises and deploys (ml_tab_train_deploy.py).
 
-  (dataset)          loading (or binding several) and its summary card,
-                     beside a file-level preview (a draggable split).
-  Labelling          Binary model - the target variable, its null (0) and
-                     positive (1) values, and each of the target's values
-                     coded 0, 1 or excluded | Multiclass model - the class
-                     variable and its grouping | the class distributions.
-  Inputs | Sequence length | Class weights | Cross-validation
-                     input channels; sequence preparation; class weights;
-                     validation (hold-out + stratified CV) and the
-                     performance metric - the variables performance is
-                     broken down by.
-  Model              one box, centred: the configuration beside (1) Train
-                     model (CV), (2) Evaluate performance, (3) Train final
-                     model; the folds' progress and Console (the training
-                     worker's output goes to the app console); one status
-                     line; the out-of-fold performance of both pipeline
-                     stages; the version, (4) Deploy model and Model
-                     information (ml_tab_train_deploy.py).
-
-All configuration and results live in the shared TrainingState; Evaluate
-and the deployment consume them unchanged.
+Configuration and results live in the shared TrainingState.
 """
 from pathlib import Path
 
@@ -36,7 +12,7 @@ import pandas as pd
 from PySide6.QtCore import QEvent, Qt, QElapsedTimer, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFrame, QGridLayout,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QGridLayout,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QProgressBar,
     QPushButton, QRadioButton, QSizePolicy, QSpinBox, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
@@ -46,7 +22,7 @@ from . import annotation_schema as asch
 from . import model_measures, recording_rate, settings
 from .bind_datasets import BindTrainingData
 from .cards import MetaCard, Spinner
-from .layout import hsplit, scroll_area, scroll_page, Section
+from .layout import hsplit, scroll_area, scroll_page, Section, ToolWindow
 from .ml_tab_train_deploy import (
     ACTION_W, FIELD_W, DeploymentPanel, action_button, column,
 )
@@ -109,7 +85,7 @@ class _ClassDist(QWidget):
         p.end()
 
 
-class AnnotationSummaryWindow(QDialog):
+class AnnotationSummaryWindow(ToolWindow):
     """How many recordings hold each value of each annotation variable, in
     the class distributions' bars - over the recordings the preview table
     shows, so its header filters narrow it. Doesn't block, like Model
@@ -118,7 +94,7 @@ class AnnotationSummaryWindow(QDialog):
 
     def __init__(self, tab, owner):
         # (the tab, without a window - the tests: never parentless)
-        super().__init__(owner if owner is not None else tab)
+        super().__init__(owner if owner is not None else tab, tab)
         self.tab = tab
         self._shown_for = None
         self.setWindowTitle("Annotation summary")
@@ -129,12 +105,6 @@ class AnnotationSummaryWindow(QDialog):
         self.scroll = scroll_area(QWidget())
         v.addWidget(self.scroll, stretch=1)
         self.resize(460, 620)
-        tab.installEventFilter(self)
-
-    def eventFilter(self, obj, event):
-        if obj is self.tab and event.type() == QEvent.Type.Hide:
-            self.hide()
-        return super().eventFilter(obj, event)
 
     def event(self, event):
         if event.type() == QEvent.Type.WindowActivate:
@@ -143,9 +113,7 @@ class AnnotationSummaryWindow(QDialog):
 
     def bring_up(self):
         self.refresh()
-        self.show()
-        self.raise_()
-        self.activateWindow()
+        super().bring_up()
 
     def refresh(self):
         """Redraw for what the table shows now - unless that hasn't changed,
@@ -235,7 +203,7 @@ class TrainTab(QWidget):
         self._rebuild_dataset_widgets()
         self._refresh_all()
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, frame):
         v = scroll_page(frame)
         v.addWidget(self._dataset_section())
@@ -331,7 +299,7 @@ class TrainTab(QWidget):
         top = QHBoxLayout()
         top.setSpacing(24)
 
-        # ── binary: target, null (0) and positive (1) ──────────────────────
+        # binary: target, null (0) and positive (1)
         binary, bv = column("Binary model")
         tr = QGridLayout()
         tr.setVerticalSpacing(6)
@@ -368,7 +336,7 @@ class TrainTab(QWidget):
         bv.addStretch()
         top.addWidget(binary, stretch=3)
 
-        # ── multiclass: class variable and its grouping ────────────────────
+        # multiclass: class variable and its grouping
         multi, mv = column("Multiclass model")
         self.chk_multiclass = QCheckBox("Train a multiclass model")
         self.chk_multiclass.toggled.connect(self._mc_toggled)
@@ -391,7 +359,7 @@ class TrainTab(QWidget):
         mv.addStretch()
         top.addWidget(multi, stretch=4)
 
-        # ── the class distributions, one above the other ───────────────────
+        # the class distributions, one above the other
         dist = QWidget()
         dv = QVBoxLayout(dist)
         dv.setContentsMargins(0, 0, 0, 0)
@@ -595,7 +563,7 @@ class TrainTab(QWidget):
         row.setContentsMargins(16, 12, 16, 12)
         row.setSpacing(24)
 
-        # ── configuration ──────────────────────────────────────────────────
+        # configuration
         config, cv = column("Configuration")
         mv = QGridLayout()
         mv.setVerticalSpacing(6)
@@ -629,7 +597,7 @@ class TrainTab(QWidget):
         cv.addStretch()
         row.addWidget(config)
 
-        # ── the workflow: train, evaluate, final model, deploy ─────────────
+        # the workflow: train, evaluate, final model, deploy
         train, gv = column("Train")
         # one status line for the whole box - every run and the deploy
         self.lbl_status = QLabel("")
@@ -716,7 +684,7 @@ class TrainTab(QWidget):
         if console is not None:
             console.bring_up()
 
-    # ── state wiring ─────────────────────────────────────────────────────────
+    # state wiring
     def _connect_state(self):
         s = self.state
         s.dataset_changed.connect(self._rebuild_dataset_widgets)
@@ -730,7 +698,7 @@ class TrainTab(QWidget):
         s.final_finished.connect(self._on_final_finished)
         s.final_failed.connect(self._on_final_failed)
 
-    # ── dataset loading ──────────────────────────────────────────────────────
+    # dataset loading
     def _load_dataset(self):
         path, _ = QFileDialog.getOpenFileName(
             self.main_window, "Load training dataset",
@@ -750,7 +718,7 @@ class TrainTab(QWidget):
         if not ok:
             QMessageBox.warning(self.main_window, "Training dataset", msg)
 
-    # ── dynamic widget sets (rebuilt on dataset change) ──────────────────────
+    # dynamic widget sets (rebuilt on dataset change)
     def _rebuild_dataset_widgets(self):
         s = self.state
         self._updating = True
@@ -897,7 +865,7 @@ class TrainTab(QWidget):
                 text = "-" if pd.isna(val) else str(val)
                 self.tbl_preview.setItem(r, c, QTableWidgetItem(text))
 
-    # ── widget -> state ──────────────────────────────────────────────────────
+    # widget -> state
     def _target_changed(self):
         if self._updating:
             return
@@ -1047,7 +1015,7 @@ class TrainTab(QWidget):
             alpha_max_exp=self.spin_a_max.value(),
             n_alphas=self.spin_n_alpha.value())
 
-    # ── state -> widgets ─────────────────────────────────────────────────────
+    # state -> widgets
     def _refresh_all(self):
         if self._updating:
             return
@@ -1223,7 +1191,7 @@ class TrainTab(QWidget):
             style(self.lbl_status, role="muted")
             self.lbl_status.setText("")
 
-    # ── run lifecycle ────────────────────────────────────────────────────────
+    # run lifecycle
     def _on_started(self):
         self.btn_train.setEnabled(False)
         self.btn_train.setText("Training…")

@@ -1,17 +1,7 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Shared state for the Blade strike calculator - the
-same "one state object, several pages react to its signal" shape
-`ml_state.PredictionState`/`ml_train_state.TrainingState` already use.
-
-Calculator owns the run and publishes `LATEST_RESULT_PATH`; Advanced
-analysis re-sweeps whenever a new result comes in (`calculated`) or the
-sweep options change (`sweep_options_changed`). Nothing here is Qt-multithreaded - `bsm_model.compute()`
-is fast (one 200-point NumPy loop), so it runs straight on the GUI thread.
+"""Shared state for the Blade strike calculator. Calculator runs the model
+and writes `LATEST_RESULT_PATH`; Advanced analysis, Model comparison and
+Predict follow `calculated`, `calculated_all` and `sweep_options_changed`.
+`bsm_model.compute()` is fast enough to run on the GUI thread.
 """
 from datetime import datetime, timezone
 
@@ -28,9 +18,8 @@ EEL_VCRIT_DEFAULT = 8.0
 
 
 def build_latest_payload(res):
-    """The small JSON shape written to LATEST_RESULT_PATH and shown on
-    Calculator's own output card - one definition so the two never drift:
-    Reporting publishes it to disk, Calculator just displays it."""
+    """The result summary written to LATEST_RESULT_PATH and shown on
+    Calculator's output card."""
     payload = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "species": res["params"]["species"],
@@ -84,11 +73,9 @@ class BSMState(QObject):
         super().__init__(parent)
         self.last_result = None
         self.results = {}   # {"scaly": res, "eel": res} - dual-species default
-        # Predict's mortality inputs (its Advanced features), one pair for
-        # StrikeWorks and the toolkit: eel's critical velocity - the first
-        # run's own (every saved config says 8 m/s) until changed there -
-        # and the treatment the mortality plot is labelled with (a label
-        # only: the BSM run has no per-treatment input)
+        # Predict's mortality inputs (Advanced features), shared by both
+        # windows: eel critical velocity (the first run's own until changed)
+        # and the treatment the mortality plot is labelled with
         self.eel_vcrit = EEL_VCRIT_DEFAULT
         self.mortality_treatment = None
         self._eel_vcrit_set = False
@@ -102,16 +89,10 @@ class BSMState(QObject):
         self.calculated.emit(res)
 
     def set_results(self, results_by_species):
-        """Dual-species default: Calculator computes both scaly and eel
-        every run (all other inputs - fish/pump/blade geometry, eel_vcrit
-        - are shared, so this costs one extra `compute()` call, not a
-        second data-entry pass). `last_result`/`calculated` are untouched
-        and keep meaning "whichever species the Calculator's own Species
-        combo has selected" for every pre-existing single-result consumer
-        (Advanced analysis's sweeps, Study design's Load);
-        `results`/`calculated_all` are for the newer dual-species
-        consumers (Model comparison's Cen bars, Predict's mortality
-        panel) that want both at once, keyed by species name."""
+        """Store both species' results from one Calculate. `last_result` and
+        `calculated` stay the Species combo's choice (Advanced analysis's sweeps,
+        Study design's Load); `results` and `calculated_all` hold both, keyed by
+        species, for Model comparison and Predict's mortality."""
         self.results = results_by_species
         eel = results_by_species.get("eel")
         if not self._eel_vcrit_set and eel is not None:

@@ -1,14 +1,8 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Which annotation (label) columns a deployed model was trained on, read
 from its metrics JSON exactly as training recorded them - so prediction
 compares against the same columns and values. Nothing is renamed or
-recoded: a dataset whose columns or values differ from the model's simply
-can't be compared (`ml_state.PredictionState.ground_truth_column`).
+recoded: a dataset whose columns or values differ from the model's can't
+be compared (`ml_state.PredictionState.ground_truth_column`).
 
 Plain Python (no Qt): the prediction worker imports it too.
 
@@ -21,8 +15,9 @@ Plain Python (no Qt): the prediction worker imports it too.
 
 
 def level_key(value):
-    """Stable key for a level: numbers in their integer form ("2.0" ->
-    "2"), anything else as trimmed text - train_worker's own rule."""
+    """Stable key for a level: whole numbers as "2" whether read as 2 or
+    2.0, anything else as trimmed text. The GUI and the training worker
+    both group levels by it."""
     try:
         f = float(value)
         if f.is_integer():

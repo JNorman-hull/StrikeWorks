@@ -31,10 +31,9 @@ tag - at other rates and filters - may want different ones. Making them
 editable means everything named after them follows the run's own values
 instead of fixed numbers: the `n_events_<g>g` and `n_over_<g>g` columns,
 severity's bands and table headers, the Collisions card, the HIG figures'
-labels and the report text (`hig_peaks.py`, `severity.py`,
-`predict_worker.py`, `ml_figures.py`, `ml_report.py`, `ml_tab_predict.py`),
-and the two copies of the bands (`hig_peaks.THRESHOLDS_G`, and
-`predict_worker.SEVERITY_THRESHOLDS_G` / `severity.py`) become one.
+labels and the report text (`hig_peaks.py`, `predict_worker.py`,
+`ml_figures.py`, `ml_report.py`, `ml_tab_predict.py`). The bands are one
+set already, `hig_peaks.THRESHOLDS_G`.
 
 **Low-magnitude contacts called strikes.** On the Pentair dataset (66
 recordings, different pump conditions from the training data; on OneDrive,
@@ -44,7 +43,7 @@ the binary model calls 64 strikes, but only 1 recording's HIG peak passes
 (`modules/hig_peaks.py`, on by default in Predict) puts the same data as
 111 acceleration events of at least 95 g, 25 of at least 200 g and 1 of
 at least 400 g: 1 collision in 66 recordings, 1.5 % (95 % CI 0.3-8.1 %).
-Strike severity (`modules/severity.py`) still reports the per-recording
+Strike severity (`modules/hig_peaks.py`) still reports the per-recording
 peak where the peak analysis is off; the model itself is unchanged. Wants
 a decision: report the collision probability as the headline figure;
 retrain with labels that separate light contacts from strikes (Annotate's
@@ -65,13 +64,14 @@ unused Qt parts (`Qt6Quick`, `Qt6Qml`, `Qt6Pdf`, `opengl32sw.dll`, ~30
 MB); `opencv-python-headless` instead of `opencv-python` (a package
 change).
 
-**Delineation tool.** (The hidden Segmentation page it was planned for
-was deleted on 27 October 2026.) Seven windows covering the full
-time series: start/end trim handles placed first with everything else
-relative to them, the nadir window fixed-width and centred, pre-/post-nadir
-windows of fixed duration (default 300 ms), ROI 1/2 and 6/7 the remaining
-handles, the same bad-sensor flag as Annotate. Anticipates the old Shiny
-app's delineation and passage summary.
+**Delineation and full sensor segmentation.** Planned in
+`SEGMENTATION_PLAN.md`: a nadir detector based on the pump's pressure step
+(76 of 76 Testbed recordings against the current 55), the seven regions of
+the old Shiny app found from pressure, a Full passage mode on the
+validation screen to check them, and a per-region summary.
+
+**Code review, November 2026.** `CODE_REVIEW.md`: duplicated and unused
+code, three small merges and the shared signal plot, as batches to approve.
 
 **Data analysis page (Sensor processing).** Passage durations, time-series
 normalisation and barotrauma metrics, following the old Shiny app.

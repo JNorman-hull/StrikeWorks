@@ -84,7 +84,7 @@ class PredictPages(unittest.TestCase):
         """Doesn't block, closes with its page, and is the same settings
         in both apps."""
         state = self.state
-        self.window.home_page._go_advanced()
+        self.window.expand_sidebar()
         self.window.show()
         target = next(name for name, (page, tab)
                       in self.window._SUBMENU_TARGETS.items()

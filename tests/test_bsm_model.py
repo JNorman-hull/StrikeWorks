@@ -29,8 +29,8 @@ class BSMModel(unittest.TestCase):
     def test_observed_counts(self):
         r = compute(dict(self.params, use_observed=True, total=200, strike=80))
         self.assertAlmostEqual(r["Pm_obs"], 0.15521489209875397, places=12)
-        self.assertAlmostEqual(r["wilson_lo"], 0.33460578566807336, places=12)
-        self.assertAlmostEqual(r["wilson_hi"], 0.46916327960737997, places=12)
+        self.assertAlmostEqual(r["wilson_lo"], 0.3346046396837895, places=12)
+        self.assertAlmostEqual(r["wilson_hi"], 0.46916456149987484, places=12)
 
     def test_model_projected_mortality_matches_observed_formula(self):
         r = compute(dict(self.params, use_observed=True, total=200, strike=80))
@@ -64,9 +64,9 @@ class BSMModel(unittest.TestCase):
 class Wilson(unittest.TestCase):
     def test_interval(self):
         lo, hi, half = wilson_interval(0.3, 50, 95)
-        self.assertAlmostEqual(lo, 0.19103553500880954, places=12)
-        self.assertAlmostEqual(hi, 0.437503504644534, places=12)
-        self.assertAlmostEqual(half, 0.12323398481786224, places=12)
+        self.assertAlmostEqual(lo, 0.1910338908960936, places=12)
+        self.assertAlmostEqual(hi, 0.4375061227736339, places=12)
+        self.assertAlmostEqual(half, 0.12323611593877014, places=12)
         lo, hi, _ = wilson_interval(0.1, 200, 90)
         self.assertAlmostEqual(lo, 0.07027110227833182, places=12)
         self.assertAlmostEqual(hi, 0.14040662624548866, places=12)

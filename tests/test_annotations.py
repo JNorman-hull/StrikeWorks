@@ -89,7 +89,7 @@ class Pages(unittest.TestCase):
         cls.main, cls.window = main_window()
         cls.window.resize(1400, 900)
         cls.window.show()
-        cls.window.home_page._go_advanced()
+        cls.window.expand_sidebar()
         pump(200)
 
     @classmethod

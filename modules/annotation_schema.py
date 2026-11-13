@@ -1,27 +1,12 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Annotation variables: what Annotate lets a user record about a
-recording, and the known values of each.
+"""Annotation variables: the columns Annotate records for each recording,
+and their known values.
 
-A small dataclass, a section of the settings file and a ``notifier`` the
-page follows, as in ``sensor_config.py``. The values themselves go onto
-the sensor's index row (``deployment_index.set_row_values``) under the
-variable's name; this module only tracks which variables exist.
-
-The variables are read from the settings file's "annotation_variables"
-section - until it has one, from the shipped defaults
-(`config/default_settings.json`, `settings.read_section`). None are
-written in code, and nothing is renamed or recoded: a variable's name is
-the column it reads and writes, as it is.
-
-Variables come in two groups: annotations, always shown, and position
-annotations (`POSITION_GROUP`), which Annotate shows only while its
-"Position annotations" box is ticked (`show_position`). Manage variables
-adds, renames, removes and moves variables between the two.
+Read from the settings file's "annotation_variables" section, falling back
+to config/default_settings.json. Names are used as given - a variable's
+name is the index column it reads and writes. Variables are in two groups:
+annotations (always shown) and position annotations (`POSITION_GROUP`,
+shown while Annotate's "Position annotations" box is ticked). The values
+themselves are written by `deployment_index.set_row_values`.
 """
 from dataclasses import asdict, dataclass, field
 

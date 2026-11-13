@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Placeholder content for a page that isn't built yet (Data analysis)."""
 from PySide6.QtWidgets import QLabel, QVBoxLayout
 

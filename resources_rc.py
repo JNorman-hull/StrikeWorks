@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Top-level shim for the compiled Qt resources.
 
 ``pyside6-uic`` always emits a plain ``import resources_rc`` into the generated

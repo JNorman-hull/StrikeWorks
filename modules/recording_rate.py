@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """What a dataset's rows are: which sensor recorded them and at what rate,
 read from the data itself rather than from the sensor selected in the app.
 
@@ -20,6 +14,7 @@ No Qt and no package-relative imports needed: the workers import this both as
 `modules.recording_rate` and, run as scripts, as `recording_rate`.
 """
 import numpy as np
+import pandas as pd
 
 try:
     from .hig_peaks import sample_rate
@@ -33,6 +28,21 @@ LEGACY_RATE = 2000
 _SENSOR_NAMES = {"rapid": "RAPID", "micro_eel": "Micro-EEL"}
 # enough rows for the median time step, without walking long recordings
 _RATE_ROWS = 50
+
+
+def read_dataset_csv(path):
+    """A dataset CSV: (DataFrame, None), or (None, why it can't be used)."""
+    try:
+        peek = pd.read_csv(path, low_memory=False, nrows=5)
+    except Exception as e:
+        return None, f"Dataset load failed: {e}"
+    for col in ("file", "time_s"):
+        if col not in peek.columns:
+            return None, f"CSV must have a '{col}' column."
+    try:
+        return pd.read_csv(path, low_memory=False), None
+    except Exception as e:
+        return None, f"Dataset load failed: {e}"
 
 
 def sensor_name(key) -> str:

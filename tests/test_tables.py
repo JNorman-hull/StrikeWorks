@@ -42,6 +42,22 @@ class Tables(unittest.TestCase):
         self.assertFalse(tbl.isSortingEnabled())       # the menu sorts
         self.assertIsInstance(tbl.itemDelegate(), tables._Centred)
 
+    def test_dragged_column_widths_are_kept(self):
+        from modules import tables
+        tbl = self._shown(_table(["file", "x"], [["S1", "1"]]))
+        fitted = tbl.columnWidth(0)
+        tbl.setColumnWidth(0, fitted + 120)       # set by code: fitted again
+        tbl.hide()
+        tbl.show()
+        pump(20)
+        self.assertEqual(tbl.columnWidth(0), fitted)
+        tbl.setColumnWidth(0, fitted + 120)       # dragged: kept
+        tbl.setProperty(tables.DRAGGED, True)
+        tbl.hide()
+        tbl.show()
+        pump(20)
+        self.assertEqual(tbl.columnWidth(0), fitted + 120)
+
     def test_sort_numbers_and_names(self):
         from PySide6.QtCore import Qt
         from modules.tables import sort_column

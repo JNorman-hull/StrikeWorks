@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """The question asked when a selection of recordings mixes sample rates.
 
 Processing can take any mix ("Process all"). A dataset can't: its rows are

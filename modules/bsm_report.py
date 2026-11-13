@@ -1,23 +1,14 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""HTML report for a blade strike modelling result, built from
-`ml_report.py`'s HTML pieces so it matches the other reports. Equations are
-shown as plain text with the numbers substituted (no MathJax, so the report
-works offline).
-
-Covers every derivation step: blade profile, effective fish length, pump
-kinematics, strike velocity, collision probability and the mortality
-integrand at hub / mid-span / tip, the mutilation-ratio regime table and
-the observed comparison. Scaly and eel can be reported together.
+"""HTML report for a blade strike model result, built from ml_report's
+HTML helpers. Equations are written out with the numbers substituted (plain
+text, so the report works offline): blade profile, effective fish length,
+kinematics, strike velocity, collision probability, the mortality
+integrand at hub, mid-span and tip, the mutilation-ratio table and the
+observed comparison. Scaly and eel can be reported together.
 """
 import numpy as np
 from datetime import datetime
 
-from .ml_report import _DARK, _MUTED, _BORD, _data_table, _img_tag, _kv_table
+from .ml_report import DARK, MUTED, BORD, data_table, img_tag, kv_table
 
 _EPS = 1e-9
 
@@ -54,7 +45,7 @@ def _blade_profile_table(p):
     rows = [[f"{rt:.3f}", f"{d:.2f}", f"{b:.3f}", f"{dl:.3f}"]
             for rt, d, b, dl in zip(p["rttr"], p["d_vals"], p["beta_vals"],
                                     p["delta_vals"])]
-    return _data_table(headers, rows)
+    return data_table(headers, rows)
 
 
 def _effective_length_section(res):
@@ -132,7 +123,7 @@ def _strike_velocity_table(res):
     headers = ["Position", "r (m)", "b (deg)", "d (deg)",
               "(vm+wf.cosa).cosb", "(Wr-...).cosd", "vstrike (m/s)"]
     rows = [row(label, i) for label, i in _hub_mid_tip(res)]
-    return _data_table(headers, rows)
+    return data_table(headers, rows)
 
 
 def _mortality_integrand_table(res):
@@ -145,7 +136,7 @@ def _mortality_integrand_table(res):
     headers = ["Position", "r (m)", "d (mm)", "Pco", "vstrike (m/s)",
               "fMR", "fMR.Pco.r"]
     rows = [row(label, i) for label, i in _hub_mid_tip(res)]
-    return _data_table(headers, rows)
+    return data_table(headers, rows)
 
 
 def _mutilation_regime_table(res):
@@ -154,7 +145,7 @@ def _mutilation_regime_table(res):
             for rng, a, b in _SCALY_REGIME_TABLE]
     rows.append(["Eel", "1-30", "0.0024", "-", f"{p['eel_vcrit']:.4f} m/s"])
     headers = ["Species", "Lf/d range", "a", "b", "vcrit"]
-    return _data_table(headers, rows)
+    return data_table(headers, rows)
 
 
 def _collision_probability_section(res):
@@ -195,7 +186,7 @@ def _mutilation_section(res):
             f"= {res['fMR_tip']:.6f}")
     b_disp = f"{res['b_tip']:.4f}" if res["b_tip"] is not None else "- (eel)"
     return "".join([
-        f"<p style='color:{_MUTED};font-size:11px;'>Tip Lf/d = "
+        f"<p style='color:{MUTED};font-size:11px;'>Tip Lf/d = "
         f"{res['Lf_d_tip']:.2f} &rarr; regime <b>{res['regime_tip']}</b>, "
         f"a = {res['a_tip']:.4f}, b = {b_disp}, "
         f"vcrit = {res['vcrit_tip']:.4f} m/s</p>",
@@ -229,7 +220,7 @@ def _empirical_section(res):
         return ""
     p = res["params"]
     return "".join([
-        f"<h3 style='color:{_DARK};'>Empirical comparison</h3>",
+        f"<h3 style='color:{DARK};'>Empirical comparison</h3>",
         "<p>Observed strike counts replace the per-strip Pco with a "
         "constant empirical estimate:</p>",
         _equation_block("Empirical collision probability", [
@@ -255,10 +246,10 @@ def _empirical_section(res):
 def _species_section(res):
     """One species' full methodology walkthrough."""
     p = res["params"]
-    h = [f"<h2 style='color:{_DARK};'>{_species_label(p['species'])}</h2>"]
+    h = [f"<h2 style='color:{DARK};'>{_species_label(p['species'])}</h2>"]
 
-    h.append(f"<h3 style='color:{_DARK};'>Inputs</h3>")
-    h.append(_kv_table([
+    h.append(f"<h3 style='color:{DARK};'>Inputs</h3>")
+    h.append(kv_table([
         ("Species",                    p["species"]),
         ("Fish body length Lf (m)",    f"{p['lf']:g}"),
         ("Fish body height Bf (m)",    f"{p['bf']:g}"),
@@ -272,34 +263,34 @@ def _species_section(res):
         ("Hub radius bh (m)",          f"{p['bh']:g}"),
     ]))
 
-    h.append(f"<h3 style='color:{_DARK};'>Blade profile</h3>")
+    h.append(f"<h3 style='color:{DARK};'>Blade profile</h3>")
     h.append("<p>Measurement positions along the leading edge, "
              "interpolated by natural cubic spline:</p>")
     h.append(_blade_profile_table(p))
 
-    h.append(f"<h3 style='color:{_DARK};'>Effective fish length</h3>")
+    h.append(f"<h3 style='color:{DARK};'>Effective fish length</h3>")
     h.append(_effective_length_section(res))
     h.append(_result_box(
         f"Leff,m = {res['Leff_m']:.6f} m | Leff,t = {res['Leff_t']:.6f} m"))
 
-    h.append(f"<h3 style='color:{_DARK};'>Pump kinematics</h3>")
+    h.append(f"<h3 style='color:{DARK};'>Pump kinematics</h3>")
     h.append(_pump_kinematics_section(res))
 
-    h.append(f"<h3 style='color:{_DARK};'>Strike velocity</h3>")
+    h.append(f"<h3 style='color:{DARK};'>Strike velocity</h3>")
     h.append("<p>Strike velocity combines axial and tangential relative "
              "motion, modulated by leading-edge angles &beta; and "
              "&delta; (Eq 19):</p>")
     h.append(_strike_velocity_table(res))
 
-    h.append(f"<h3 style='color:{_DARK};'>Collision probability</h3>")
+    h.append(f"<h3 style='color:{DARK};'>Collision probability</h3>")
     h.append(_collision_probability_section(res))
 
-    h.append(f"<h3 style='color:{_DARK};'>Mutilation ratio</h3>")
+    h.append(f"<h3 style='color:{DARK};'>Mutilation ratio</h3>")
     h.append("<p>Table 3 parameters (EVS-EN 18110:2025):</p>")
     h.append(_mutilation_regime_table(res))
     h.append(_mutilation_section(res))
 
-    h.append(f"<h3 style='color:{_DARK};'>Blade strike mortality</h3>")
+    h.append(f"<h3 style='color:{DARK};'>Blade strike mortality</h3>")
     h.append("<p>Pco and fMR vary along the leading edge - total "
              "mortality is a flow-weighted integral:</p>")
     h.append(_mortality_section(res))
@@ -316,15 +307,15 @@ def build_bsm_report_html(res, res_other=None, image_paths=None,
     species."""
     h = ["<div style='font-family:Segoe UI, Arial, sans-serif;"
          "color:#1e293b;font-size:13px;'>"]
-    h.append(f"<h1 style='color:{_DARK};'>Blade Strike Modelling Report</h1>")
-    h.append(f"<p style='color:{_MUTED};font-size:11px;'>Generated by "
+    h.append(f"<h1 style='color:{DARK};'>Blade Strike Modelling Report</h1>")
+    h.append(f"<p style='color:{MUTED};font-size:11px;'>Generated by "
              f"StrikeWorks on {datetime.now().strftime('%Y-%m-%d %H:%M')}."
              "</p>")
 
     h.append(_species_section(res))
     if res_other is not None:
         h.append("<hr style='margin:24px 0;border:none;"
-                 f"border-top:1px solid {_BORD};'/>")
+                 f"border-top:1px solid {BORD};'/>")
         h.append(_species_section(res_other))
 
     image_paths = image_paths or {}
@@ -332,11 +323,11 @@ def build_bsm_report_html(res, res_other=None, image_paths=None,
     widths_cm = widths_cm or {}
     figs = [(key, f) for key, f in image_paths.items() if f]
     if figs:
-        h.append(f"<h2 style='color:{_DARK};'>Figures</h2>")
+        h.append(f"<h2 style='color:{DARK};'>Figures</h2>")
         for i, (key, f) in enumerate(figs, start=1):
-            h.append(_img_tag(f, embed_images, widths_cm.get(key)))
+            h.append(img_tag(f, embed_images, widths_cm.get(key)))
             if captions.get(key):
-                h.append(f"<p style='color:{_MUTED};font-size:11px;"
+                h.append(f"<p style='color:{MUTED};font-size:11px;"
                          f"margin:2px 0 14px;'><b>Figure {i}.</b> "
                          f"{captions[key]}</p>")
 

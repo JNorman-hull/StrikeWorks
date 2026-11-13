@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """LevelGrouper - assign a variable's observed levels to named classes
 (Model training's class grouping, Annotate's variable editor).
 """
@@ -16,18 +10,11 @@ from .layout import discard_widget
 from .theme import style
 
 
-# ── level grouping ───────────────────────────────────────────────────────────
+# level grouping
 class LevelGrouper(QWidget):
-    """Assign the observed levels of a variable to named classes.
-
-    The levels come from the data, so a column gaining a new level (a sixth
-    pump region, a new hub_type) simply appears here. Each level is mapped
-    to a named group or excluded from training, and the group names are
-    free text - they become the model's class names.
-
-    Reused wherever levels need collapsing or recoding, so the behaviour is
-    defined once. No count line under it: the class distribution beside it
-    shows the counts.
+    """Map the observed levels of a variable to named classes, or exclude
+    them. Levels come from the data and class names are free text - they
+    become the model's class names.
     """
 
     changed = Signal()
@@ -81,7 +68,7 @@ class LevelGrouper(QWidget):
         style(lab, role="muted")
         return lab
 
-    # ── public API ───────────────────────────────────────────────────────────
+    # public API
     def set_data(self, levels, groups):
         """levels: [(key, display, count)]; groups: [{"name", "levels"}].
         Nothing is rebuilt when they are what's shown already - the host
@@ -100,7 +87,7 @@ class LevelGrouper(QWidget):
         return [{"name": g["name"], "levels": list(g["levels"])}
                 for g in self._groups]
 
-    # ── rebuild ──────────────────────────────────────────────────────────────
+    # rebuild
     def _clear(self, layout):
         while layout.count():
             item = layout.takeAt(0)
@@ -167,7 +154,7 @@ class LevelGrouper(QWidget):
                 out[key] = i
         return out
 
-    # ── edits ────────────────────────────────────────────────────────────────
+    # edits
     def _name_changed(self, idx, text):
         if self._updating or idx >= len(self._groups):
             return

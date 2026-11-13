@@ -1,18 +1,6 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Inspect tab - interrogate individual predictions.
-
-Select a prediction -> inspect the underlying sensor event -> understand how
-it was classified. The browser lists the per-recording predictions produced
-by the worker; the detail panel shows the class probabilities and the exact
-model-input signal (the same segmented channels that were supplied to the
-model), plotted with the same pyqtgraph navigation used on the Validate &
-segment page. Ground-truth comparison appears only when the dataset carries
-annotation labels.
+"""Inspect: the per-recording predictions and, for the one selected, its
+class probabilities and the model-input signal. Ground truth is compared
+only when the dataset has annotation labels.
 """
 import numpy as np
 import pandas as pd
@@ -76,19 +64,17 @@ class InspectTab(QWidget):
         self._populate_table()
         self._refresh_detail()
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, frame):
         root = QHBoxLayout(frame)
         root.setContentsMargins(4, 6, 4, 6)
         root.setSpacing(0)
 
-        # A splitter rather than fixed widths, so the user can rebalance the
-        # browser against the signal view at any window size.
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
         root.addWidget(split)
 
-        # ── left: browser ───────────────────────────────────────────────────
+        # left: browser
         left = QWidget()
         left.setMinimumWidth(360)
         lv = QVBoxLayout(left)
@@ -145,12 +131,8 @@ class InspectTab(QWidget):
         lv.setContentsMargins(0, 0, 5, 0)
         split.addWidget(left)
 
-        # ── right: detail ───────────────────────────────────────────────────
-        # laid out like Misclassification analysis: no page-level scroll -
-        # the selected-prediction/probabilities row keeps its natural
-        # height, the signal plot takes all the rest (with a minimum, so it
-        # can't be squeezed away), and this side has a minimum width so the
-        # browser can't take the page over
+        # right: the probabilities row at its natural height, the signal
+        # plot (minimum size) taking the rest
         right = QWidget()
         right.setMinimumWidth(520)
         rv = QVBoxLayout(right)
@@ -256,16 +238,15 @@ class InspectTab(QWidget):
         split.setSizes([2000, 3000])
 
 
-    # ── state wiring ─────────────────────────────────────────────────────────
+    # state wiring
     def _connect_state(self):
         s = self.state
         s.run_finished.connect(self._on_run_finished)
         s.models_changed.connect(self._rebuild_channel_combos)
         s.dataset_changed.connect(self._rebuild_channel_combos)
         s.selection_changed.connect(self._on_selection_changed)
-        s.treatment_selected.connect(self._on_treatment_from_predict)
 
-    # ── filters ──────────────────────────────────────────────────────────────
+    # filters
     def _rebuild_filters(self):
         s = self.state
         thr = s.low_conf_threshold
@@ -317,9 +298,8 @@ class InspectTab(QWidget):
         self._rebuild_channel_combos()
 
     def _rebuild_channel_combos(self):
-        """Offer the model input channels plus the derived magnitude
-        channels the dataset carries - the magnitudes are what an analyst
-        actually reads a blade interaction from."""
+        """Offer the model input channels and the magnitude channels the
+        dataset has."""
         chans = self.state.required_channels()
         df = self.state.dataset_df
         if df is not None:
@@ -358,14 +338,7 @@ class InspectTab(QWidget):
         if idx >= 0:
             self.cmb_filter.setCurrentIndex(idx)
 
-    def _on_treatment_from_predict(self, treatment):
-        if not treatment:
-            return
-        idx = self.cmb_treatment.findText(treatment)
-        if idx >= 0:
-            self.cmb_treatment.setCurrentIndex(idx)
-
-    # ── ground truth helpers ─────────────────────────────────────────────────
+    # ground truth helpers
     def _have_ground_truth(self):
         return self.state.ground_truth_column() is not None
 
@@ -409,7 +382,7 @@ class InspectTab(QWidget):
                       .str.contains(text, regex=False)]
         return out
 
-    # ── prediction browser table ─────────────────────────────────────────────
+    # prediction browser table
     def _on_run_finished(self):
         self._rebuild_filters()
         self._populate_table()
@@ -525,7 +498,7 @@ class InspectTab(QWidget):
             Qt.ItemDataRole.UserRole)
         self.state.select_file(file_id)
 
-    # ── detail panel ─────────────────────────────────────────────────────────
+    # detail panel
     def _on_selection_changed(self, _file_id):
         self._reselect_current()
         self._refresh_detail()
@@ -604,7 +577,7 @@ class InspectTab(QWidget):
                 ("Strike",    p,       PINK),
             ])
 
-    # ── signal plot ──────────────────────────────────────────────────────────
+    # signal plot
     def _clear_signal(self):
         pi = self._pw.plotItem
         if self._left_curve is not None:
@@ -624,7 +597,7 @@ class InspectTab(QWidget):
         self._export_left = None
         self._export_right = None
 
-    # ── full-passage lookup (library CSVs, loaded off the GUI thread) ────────
+    # full-passage lookup (library CSVs, loaded off the GUI thread)
     def _find_full_csv(self, stem):
         lib_dir = settings.get_libraries_dir()
         roots = [lib_dir]

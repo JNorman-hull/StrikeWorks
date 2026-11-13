@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Blade Strike Analysis report: HTML builder, provenance and export.
 
 The report is a structured HTML document (printable / saveable to PDF from
@@ -27,17 +21,17 @@ same prediction results and metadata as the Predict and Inspect tabs.
 """
 import base64
 import json
-import math
 import os
 import sys
 from datetime import datetime
 from pathlib import Path
 
-from . import hig_peaks, ml_figures, severity
+from . import hig_peaks, ml_figures
+from .wilson_calc import wilson_ci
 
-_DARK  = "#1e3a5f"
-_MUTED = "#64748b"
-_BORD  = "#cbd5e1"
+DARK  = "#1e3a5f"
+MUTED = "#64748b"
+BORD  = "#cbd5e1"
 
 _LONG_PREFIX = "\\\\?\\"
 
@@ -67,40 +61,30 @@ def short_path(path):
     return Path(path)
 
 
-def _wilson_ci(k, n, z=1.96):
-    if n == 0:
-        return 0.0, 0.0, 0.0
-    p      = k / n
-    denom  = 1 + z ** 2 / n
-    centre = (p + z ** 2 / (2 * n)) / denom
-    half   = z * math.sqrt(p * (1 - p) / n + z ** 2 / (4 * n ** 2)) / denom
-    return p, max(0.0, centre - half), min(1.0, centre + half)
-
-
-def _esc(text):
+def esc(text):
     return (str(text).replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;"))
 
 
-def _kv_table(rows):
+def kv_table(rows):
     """Two-column key/value table."""
     body = "".join(
-        f"<tr><td style='color:{_MUTED};padding:2px 14px 2px 0;"
-        f"white-space:nowrap;'>{_esc(k)}</td>"
-        f"<td style='padding:2px 0;'>{_esc(v)}</td></tr>"
+        f"<tr><td style='color:{MUTED};padding:2px 14px 2px 0;"
+        f"white-space:nowrap;'>{esc(k)}</td>"
+        f"<td style='padding:2px 0;'>{esc(v)}</td></tr>"
         for k, v in rows)
     return f"<table cellspacing='0' cellpadding='0'>{body}</table>"
 
 
-def _data_table(headers, rows):
+def data_table(headers, rows):
     head = "".join(
-        f"<th style='border-bottom:2px solid {_BORD};padding:4px 10px;"
-        f"text-align:left;color:{_DARK};'>{_esc(h)}</th>" for h in headers)
+        f"<th style='border-bottom:2px solid {BORD};padding:4px 10px;"
+        f"text-align:left;color:{DARK};'>{esc(h)}</th>" for h in headers)
     body = ""
     for r in rows:
         cells = "".join(
-            f"<td style='border-bottom:1px solid {_BORD};"
-            f"padding:3px 10px;'>{_esc(c)}</td>" for c in r)
+            f"<td style='border-bottom:1px solid {BORD};"
+            f"padding:3px 10px;'>{esc(c)}</td>" for c in r)
         body += f"<tr>{cells}</tr>"
     return (f"<table cellspacing='0' cellpadding='0' "
             f"style='margin:6px 0;'>"
@@ -113,23 +97,23 @@ def acceleration_table_html(acc_summary):
     (g) over their columns - with its notes."""
     with_tx = hig_peaks.show_treatment(acc_summary)
     lead = (["Treatment"] if with_tx else []) + ["Region of interest"]
-    th = (f"border-bottom:2px solid {_BORD};padding:4px 8px;"
-          f"text-align:center;color:{_DARK};")
-    td = f"border-bottom:1px solid {_BORD};padding:3px 8px;text-align:center;"
-    top = "".join(f"<th rowspan='2' style='{th}'>{_esc(h)}</th>" for h in lead)
-    top += "".join(f"<th colspan='{span}' style='{th}'>{_esc(title)}</th>"
+    th = (f"border-bottom:2px solid {BORD};padding:4px 8px;"
+          f"text-align:center;color:{DARK};")
+    td = f"border-bottom:1px solid {BORD};padding:3px 8px;text-align:center;"
+    top = "".join(f"<th rowspan='2' style='{th}'>{esc(h)}</th>" for h in lead)
+    top += "".join(f"<th colspan='{span}' style='{th}'>{esc(title)}</th>"
                    for title, span in hig_peaks.TABLE_GROUPS)
-    second = "".join(f"<th style='{th}'>{_esc(h)}</th>"
+    second = "".join(f"<th style='{th}'>{esc(h)}</th>"
                      for h in hig_peaks.TABLE_COLUMNS)
     body = ""
     for treatment, roi, cells in hig_peaks.table_rows(acc_summary):
         values = ([treatment] if with_tx else []) + [roi] + cells
-        body += "<tr>" + "".join(f"<td style='{td}'>{_esc(v)}</td>"
+        body += "<tr>" + "".join(f"<td style='{td}'>{esc(v)}</td>"
                                  for v in values) + "</tr>"
-    notes = "".join(f"<div>{_esc(n)}</div>" for n in hig_peaks.TABLE_NOTES)
+    notes = "".join(f"<div>{esc(n)}</div>" for n in hig_peaks.TABLE_NOTES)
     return (f"<table cellspacing='0' cellpadding='0' style='margin:6px 0;'>"
             f"<tr>{top}</tr><tr>{second}</tr>{body}</table>"
-            f"<div style='color:{_MUTED};font-size:0.85em;margin-bottom:6px;'>"
+            f"<div style='color:{MUTED};font-size:0.85em;margin-bottom:6px;'>"
             f"{notes}</div>")
 
 
@@ -139,7 +123,7 @@ def acceleration_table_html(acc_summary):
 _PX_PER_CM = 560 / 15.24
 
 
-def _img_tag(path, embed, width_cm=None):
+def img_tag(path, embed, width_cm=None):
     path = Path(path)
     if not path.exists():
         return ""
@@ -154,18 +138,11 @@ def _img_tag(path, embed, width_cm=None):
             f"style='margin:8px 16px 8px 0;max-width:100%;height:auto;'/>")
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 def build_report_html(state, image_paths=None, embed_images=False,
                       processing_review=None):
     """Assemble the full report. `image_paths` maps figure name -> file.
-
-    `processing_review` is an optional [(label, value), ...] list -
-    Simple mode's own Validate-step summary (auto- vs. user-validated,
-    how many sensors got flagged for a HIG-in-window check and how many
-    of those were actually reviewed, how many had their nadir moved by a
-    human) passed in from page_simple_mode.py's _download_report. None
-    for Advanced mode's own report generation, which has no equivalent
-    concept - the section is simply omitted then."""
+    `processing_review` is StrikeWorks's Validate summary as [(label, value)]
+    (page_simple_mode._download_report); None leaves that section out."""
     s = state
     prov = s.provenance()
     meta = s.run_meta or {}
@@ -176,23 +153,23 @@ def build_report_html(state, image_paths=None, embed_images=False,
     h.append(
         "<div style='font-family:Segoe UI, Arial, sans-serif;"
         "color:#1e293b;font-size:13px;'>")
-    h.append(f"<h1 style='color:{_DARK};'>Blade Strike Analysis Report</h1>")
+    h.append(f"<h1 style='color:{DARK};'>Blade Strike Analysis Report</h1>")
     if s.summary is None:
-        h.append(f"<p style='color:{_MUTED};'>No prediction has been run yet. "
+        h.append(f"<p style='color:{MUTED};'>No prediction has been run yet. "
                  "Run a prediction on the Predict tab, then refresh this "
                  "report.</p></div>")
         return "".join(h)
 
     n = int(meta.get("n_files", s.summary["n"].sum()))
     k = int(meta.get("n_strike", s.summary["n_strike"].sum()))
-    rate, lo, hi = _wilson_ci(k, n)
+    rate, lo, hi = wilson_ci(k, n)
     mode = meta.get("mode", s.mode)
     mc_run = mode == "multiclass"
 
-    # ── analysis overview ────────────────────────────────────────────────────
-    h.append(f"<h2 style='color:{_DARK};'>Analysis overview</h2>")
+    # analysis overview
+    h.append(f"<h2 style='color:{DARK};'>Analysis overview</h2>")
     tx = s.dataset_meta.get("treatments")
-    h.append(_kv_table([
+    h.append(kv_table([
         ("Dataset",        s.dataset_meta.get("name", na)),
         ("Dataset source", s.dataset_source or na),
         ("Date / time",    meta.get("timestamp", na)),
@@ -204,8 +181,8 @@ def build_report_html(state, image_paths=None, embed_images=False,
                             else "Binary (strike / no strike)"),
     ]))
 
-    # ── model ────────────────────────────────────────────────────────────────
-    h.append(f"<h2 style='color:{_DARK};'>Model</h2>")
+    # model
+    h.append(f"<h2 style='color:{DARK};'>Model</h2>")
     bm = s.bin_metrics or {}
     rows = [
         ("Binary model",  prov["model"]["binary_model"]),
@@ -223,13 +200,13 @@ def build_report_html(state, image_paths=None, embed_images=False,
         rows.append(("Multiclass model", prov["model"]["multiclass_model"]))
         rows.append(("Classes", ", ".join(s.class_names)))
         rows += _measure_rows("Multiclass", s.mc_metrics)
-    h.append(_kv_table(rows))
+    h.append(kv_table(rows))
 
-    # ── prediction results ───────────────────────────────────────────────────
-    h.append(f"<h2 style='color:{_DARK};'>Prediction results</h2>")
+    # prediction results
+    h.append(f"<h2 style='color:{DARK};'>Prediction results</h2>")
     mean_conf = (f"{float(s.predictions['confidence'].mean()):.3f}"
                  if s.predictions is not None else na)
-    h.append(_kv_table([
+    h.append(kv_table([
         ("Total recordings",        n),
         ("Total predicted strikes", k),
         ("Overall strike rate",     f"{rate * 100:.1f}%"),
@@ -238,8 +215,8 @@ def build_report_html(state, image_paths=None, embed_images=False,
         ("Elapsed time",            f"{meta.get('elapsed_s', na)} s"),
     ]))
 
-    # ── results by treatment ─────────────────────────────────────────────────
-    h.append(f"<h2 style='color:{_DARK};'>Results by treatment</h2>")
+    # results by treatment
+    h.append(f"<h2 style='color:{DARK};'>Results by treatment</h2>")
     headers = ["Treatment", "N", "Strikes", "No strike", "Strike rate",
                "95% CI", "Mean conf"]
     rows = []
@@ -251,15 +228,15 @@ def build_report_html(state, image_paths=None, embed_images=False,
             f"{r['ci_lo'] * 100:.1f}% – {r['ci_hi'] * 100:.1f}%",
             f"{r['mean_conf']:.3f}",
         ])
-    h.append(_data_table(headers, rows))
+    h.append(data_table(headers, rows))
 
-    # ── HIG peak analysis (measured events around the nadir) ─────────────────
+    # HIG peak analysis (measured events around the nadir)
     if s.acc_summary is not None:
         par = meta.get("hig_peaks") or hig_peaks.parameters()
-        h.append(f"<h2 style='color:{_DARK};'>HIG peak analysis</h2>")
+        h.append(f"<h2 style='color:{DARK};'>HIG peak analysis</h2>")
         h.append("<p style='margin:4px 0;color:#1e293b;'>Measured, not "
                  "predicted: acceleration events in each recording's high-g "
-                 f"magnitude ({_esc(par.get('channel', hig_peaks.CHANNEL))}) - "
+                 f"magnitude ({esc(par.get('channel', hig_peaks.CHANNEL))}) - "
                  f"peaks of at least {par['height_g']:.0f} g with a prominence "
                  f"of {par['prominence_g']:.0f} g, at least "
                  f"{par['interpeak_s'] * 1000:g} ms apart - counted within "
@@ -273,32 +250,32 @@ def build_report_html(state, image_paths=None, embed_images=False,
                                 image_paths.get("nadir_aligned_acceleration"))
                     if p]
         for p in figs_hig:
-            h.append(_img_tag(p, embed_images))
+            h.append(img_tag(p, embed_images))
 
-    # ── strike severity (measured HIG peak) ──────────────────────────────────
-    elif severity.available(s.summary):
+    # strike severity (measured HIG peak)
+    elif hig_peaks.severity_measured(s.summary):
         sev = meta.get("severity") or {}
-        h.append(f"<h2 style='color:{_DARK};'>Strike severity (HIG peak)</h2>")
+        h.append(f"<h2 style='color:{DARK};'>Strike severity (HIG peak)</h2>")
         h.append("<p style='margin:4px 0;color:#1e293b;'>Measured, not "
                  "predicted: each recording's peak high-g acceleration "
-                 f"magnitude ({_esc(sev.get('hig_channel', 'higacc_mag_g'))}) "
+                 f"magnitude ({esc(sev.get('hig_channel', 'higacc_mag_g'))}) "
                  "over its window, counted over 95, 200 and 400 g. Only a "
                  "peak over 400 g is a severe strike - the model flags "
                  "contacts of any size, so a high predicted strike rate with "
                  "few severe strikes means mostly low-magnitude contacts.</p>")
-        rows = [[r["treatment"], int(r["n"])] + severity.table_values(r)
+        rows = [[r["treatment"], int(r["n"])] + hig_peaks.severity_cells(r)
                 for _, r in s.summary.iterrows()]
-        h.append(_data_table(["Treatment", "N"] + severity.TABLE_HEADERS, rows))
-        bands = severity.band_counts(s.predictions)
+        h.append(data_table(["Treatment", "N"] + hig_peaks.SEVERITY_HEADERS, rows))
+        bands = hig_peaks.severity_band_counts(s.predictions)
         if bands:
             total = sum(c for _l, c in bands) or 1
-            h.append(_data_table(["HIG peak", "Recordings", "Share"],
+            h.append(data_table(["HIG peak", "Recordings", "Share"],
                                  [[label, c, f"{c / total * 100:.1f}%"]
                                   for label, c in bands]))
 
-    # ── strike classification (multiclass) ───────────────────────────────────
+    # strike classification (multiclass)
     if mc_run and s.region_summary is not None and len(s.region_summary):
-        h.append(f"<h2 style='color:{_DARK};'>Strike classification</h2>")
+        h.append(f"<h2 style='color:{DARK};'>Strike classification</h2>")
         totals = (s.region_summary.groupby("region")["n"].sum()
                   .reindex(s.class_names))
         tot_strikes = int(totals.sum())
@@ -308,43 +285,43 @@ def build_report_html(state, image_paths=None, embed_images=False,
                 for cn in s.class_names]
         h.append("<p style='margin:4px 0;color:#1e293b;'>"
                  "Predicted class distribution among strikes:</p>")
-        h.append(_data_table(["Class / region", "N", "Proportion"], rows))
+        h.append(data_table(["Class / region", "N", "Proportion"], rows))
 
         h.append("<p style='margin:4px 0;color:#1e293b;'>"
                  "Treatment × class summary:</p>")
         rows = [[r["treatment"], r["region"], int(r["n"]),
                  f"{r['proportion'] * 100:.1f}%"]
                 for _, r in s.region_summary.iterrows()]
-        h.append(_data_table(["Treatment", "Class", "N", "Share of strikes"],
+        h.append(data_table(["Treatment", "Class", "N", "Share of strikes"],
                              rows))
 
-    # ── figures ──────────────────────────────────────────────────────────────
+    # figures
     figs = [p for p in (image_paths.get("predicted_strike_rate"),
                         image_paths.get("strike_severity"),
                         image_paths.get("predicted_strike_region")) if p]
     if figs:
-        h.append(f"<h2 style='color:{_DARK};'>Figures</h2>")
+        h.append(f"<h2 style='color:{DARK};'>Figures</h2>")
         for p in figs:
-            h.append(_img_tag(p, embed_images))
+            h.append(img_tag(p, embed_images))
 
-    # ── data quality / validation ────────────────────────────────────────────
-    h.append(f"<h2 style='color:{_DARK};'>Data quality &amp; validation</h2>")
+    # data quality / validation
+    h.append(f"<h2 style='color:{DARK};'>Data quality &amp; validation</h2>")
     icon = {"ok": "✓", "warn": "⚠", "fail": "✗", "off": "–"}
     rows = [(icon.get(state_, "–") + " " + label, detail or "")
             for state_, label, detail in s.checks]
-    h.append(_kv_table(rows) if rows else
-             f"<p style='color:{_MUTED};'>{na}</p>")
+    h.append(kv_table(rows) if rows else
+             f"<p style='color:{MUTED};'>{na}</p>")
     if s.ground_truth_column() is not None:
         h.append("<p>The dataset carries the model's own annotation labels; "
                  "prediction accuracy can be reviewed per recording on the "
                  "Inspect tab.</p>")
 
-    # ── processing review (Simple mode's Validate step only) ─────────────────
+    # processing review (StrikeWorks's Validate step only)
     if processing_review:
-        h.append(f"<h2 style='color:{_DARK};'>Processing review</h2>")
-        h.append(_kv_table(processing_review))
+        h.append(f"<h2 style='color:{DARK};'>Processing review</h2>")
+        h.append(kv_table(processing_review))
 
-    # ── notes / warnings ─────────────────────────────────────────────────────
+    # notes / warnings
     warnings = [f"{label}: {detail}" for st, label, detail in s.checks
                 if st == "warn"]
     if meta.get("threshold_overridden"):
@@ -352,18 +329,18 @@ def build_report_html(state, image_paths=None, embed_images=False,
             f"The deployed decision threshold "
             f"({meta.get('deployed_threshold', na)}) was overridden by the "
             f"user to {meta.get('threshold', na)}.")
-    h.append(f"<h2 style='color:{_DARK};'>Notes &amp; warnings</h2>")
+    h.append(f"<h2 style='color:{DARK};'>Notes &amp; warnings</h2>")
     if warnings:
-        h.append("<ul>" + "".join(f"<li>{_esc(w)}</li>" for w in warnings)
+        h.append("<ul>" + "".join(f"<li>{esc(w)}</li>" for w in warnings)
                  + "</ul>")
     else:
         h.append("<p>No warnings were generated during this analysis.</p>")
 
-    # ── provenance ───────────────────────────────────────────────────────────
-    h.append(f"<h2 style='color:{_DARK};'>Provenance</h2>")
+    # provenance
+    h.append(f"<h2 style='color:{DARK};'>Provenance</h2>")
     for section, title in (("dataset", "Dataset"), ("model", "Model"),
                            ("analysis", "Analysis"), ("outputs", "Outputs")):
-        h.append(f"<h3 style='color:{_DARK};margin-bottom:2px;'>{title}</h3>")
+        h.append(f"<h3 style='color:{DARK};margin-bottom:2px;'>{title}</h3>")
         rows = []
         for kk, vv in prov[section].items():
             if isinstance(vv, dict):
@@ -371,9 +348,9 @@ def build_report_html(state, image_paths=None, embed_images=False,
             elif isinstance(vv, list):
                 vv = ", ".join(str(x) for x in vv)
             rows.append((kk.replace("_", " "), vv))
-        h.append(_kv_table(rows))
+        h.append(kv_table(rows))
 
-    h.append(f"<p style='color:{_MUTED};font-size:11px;margin-top:16px;'>"
+    h.append(f"<p style='color:{MUTED};font-size:11px;margin-top:16px;'>"
              f"Generated by {prov['analysis']['application']} on "
              f"{datetime.now().strftime('%Y-%m-%d %H:%M')}.</p>")
     h.append("</div>")
@@ -436,7 +413,6 @@ A4_REPORT_CSS = (
 )
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 def export_analysis(state, parent_dir, processing_review=None):
     """Create the self-contained analysis package. Returns its Path.
 

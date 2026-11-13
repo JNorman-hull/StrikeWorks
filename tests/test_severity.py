@@ -5,19 +5,14 @@ import unittest
 import numpy as np
 import pandas as pd
 
+from modules import hig_peaks as hp
 from modules import predict_worker as pw
-from modules import severity
 
 
 class SeverityTest(unittest.TestCase):
-    def test_worker_and_app_agree_on_the_thresholds(self):
-        self.assertEqual(tuple(pw.SEVERITY_THRESHOLDS_G), severity.THRESHOLDS_G)
-        self.assertEqual(pw.SEVERE_G, severity.SEVERE_G)
-        self.assertEqual(tuple(pw.SEVERITY_BANDS), severity.BANDS)
-
     def test_bands_are_over_each_threshold(self):
         peaks = np.array([10.0, 95.0, 95.1, 200.0, 250.0, 400.0, 400.1, 900.0])
-        self.assertEqual(list(pw._severity_band(peaks)), [
+        self.assertEqual(list(hp.severity_band(peaks)), [
             "<=95 g", "<=95 g", "95-200 g", "95-200 g", "200-400 g",
             "200-400 g", ">400 g", ">400 g"])
 
@@ -39,18 +34,18 @@ class SeverityTest(unittest.TestCase):
         df = pd.DataFrame({"file": ["a"], "pressure_kpa": [100.0]})
         self.assertEqual(pw._hig_peaks(df, pd.DataFrame({"file": ["a"]})),
                          (None, None))
-        self.assertFalse(severity.available(pd.DataFrame({"n": [3]})))
+        self.assertFalse(hp.severity_measured(pd.DataFrame({"n": [3]})))
 
     def test_table_and_band_counts(self):
         row = pd.Series({"n": 10, "n_strike": 9, "n_over_95g": 6,
                          "n_over_200g": 3, "n_over_400g": 1,
                          "severe_ci_lo": 0.018, "severe_ci_hi": 0.404,
                          "n_strike_severe": 1})
-        self.assertEqual(severity.table_values(row), [
+        self.assertEqual(hp.severity_cells(row), [
             "6 (60%)", "3 (30%)", "1 (10%)", "1.8% – 40.4%", "1 of 9"])
         preds = pd.DataFrame({"severity": ["<=95 g", ">400 g", "<=95 g",
                                            "95-200 g"]})
-        self.assertEqual([c for _l, c in severity.band_counts(preds)],
+        self.assertEqual([c for _l, c in hp.severity_band_counts(preds)],
                          [2, 1, 0, 1])
 
 

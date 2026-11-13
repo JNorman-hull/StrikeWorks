@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Dataset creation (hidden for now - see ROADMAP.md, "Hidden for now";
 Annotate's "Save and export" builds the dataset instead).
 
@@ -42,7 +36,7 @@ from .dataset_build import (
 from .layout import Page, group_box
 from .theme import style
 
-# ── annotation join (model_labels.csv) ──────────────────────────────────────
+# annotation join (model_labels.csv)
 _LABEL_FILE_COL = "sens_file"          # joins to feature 'file'
 _LABEL_COLS = ["passage_type", "leading_type", "other_type",
                "concentric_pump_region"]
@@ -61,7 +55,6 @@ def _init_item(item, tristate=False):
     item.setCheckState(0, Qt.CheckState.Checked)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 class DatasetPage(Page):
     """Advanced dataset options: dataset creation and Bind training data."""
 
@@ -90,7 +83,7 @@ class DatasetPage(Page):
         self._on_session_library_changed(
             session_state.library if session_state is not None else None)
 
-    # ── setup ────────────────────────────────────────────────────────────────
+    # setup
     def _build_ui(self):
         """Library, Sensor selection and Console output on the left; Create
         dataset, Annotate dataset and Annotation summary on the right."""
@@ -175,10 +168,9 @@ class DatasetPage(Page):
         holder.addWidget(self.canvas)
 
     def _build_bind_training_data(self):
-        """Joins several ``model_features.csv`` files - one per library,
-        typically - into one combined training set for Model training,
-        without needing them merged into a single library first: a row
-        under the grid's six boxes, spanning both columns."""
+        """Bind training data: several ``model_features.csv`` files (usually
+        one per library) into one training set. A row under the grid's six
+        boxes, spanning both columns."""
         grp = QGroupBox("Bind training data")
         gv = QVBoxLayout(grp)
         gv.addWidget(BindTrainingData(start_dir=lambda: self._root
@@ -219,7 +211,7 @@ class DatasetPage(Page):
         self.btn_ds_append.clicked.connect(self._append_annotations)
         self.btn_ds_save_annotated.clicked.connect(self._save_annotation_outputs)
 
-    # ── library selection (session_state - see session_state.py) ────────────
+    # library selection (session_state - see session_state.py)
     def _on_session_library_changed(self, root):
         # no status.emit here - Home already shows the one unified
         # "Library: X" message for a session-wide change (page_home.py)
@@ -332,7 +324,7 @@ class DatasetPage(Page):
             _apply(root_item.child(i))
         tree.blockSignals(False)
 
-    # ── create ───────────────────────────────────────────────────────────────
+    # create
     def _run(self):
         if self._root is None:
             self.status.emit("Select a library first.", 5000)
@@ -382,7 +374,7 @@ class DatasetPage(Page):
             self.status.emit("Dataset creation produced no output.", 6000)
         self._refresh_append_enabled()
 
-    # ── annotate ─────────────────────────────────────────────────────────────
+    # annotate
     def _browse_features(self):
         path, _ = QFileDialog.getOpenFileName(
             self.main_window, "Select sensor dataset CSV",
@@ -481,7 +473,7 @@ class DatasetPage(Page):
             self._result,
             "Sensor Processing - Dataset creation (annotated)")
 
-    # ── figure ───────────────────────────────────────────────────────────────
+    # figure
     def _bar(self, ax, labels, heights, title, ylabel, fmt, ymax=None):
         x = np.arange(len(heights))
         colors = [_BLUES[i % len(_BLUES)] for i in range(len(heights))]
@@ -533,7 +525,7 @@ class DatasetPage(Page):
         self.fig.tight_layout()
         self.canvas.draw()
 
-    # ── save ─────────────────────────────────────────────────────────────────
+    # save
     def _save(self):
         if self._result is None:
             return

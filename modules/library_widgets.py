@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """The Deployment / Treatment / Run filters used by Raw data processing,
 Annotate, Export animations and Model comparison, with an optional sensor
 list (Annotate, Export animations): a "Show bad sensors" box, a progress
@@ -58,14 +52,6 @@ def library_picker(combo):
 def show_library_path(combo):
     path = combo.currentData()
     combo.setToolTip(str(path) if path else "No library selected.")
-
-
-def _run_sort_key(run):
-    """Numeric runs in numeric order, anything else after them by name."""
-    try:
-        return (0, int(float(run)), "")
-    except (TypeError, ValueError):
-        return (1, 0, str(run))
 
 
 class RawScanThread(QThread):
@@ -149,7 +135,7 @@ class LibrarySelector(QWidget):
         self._select_library(session_state.library)
         session_state.library_changed.connect(self.set_library)
 
-    # ── the session library ─────────────────────────────────────────────────
+    # the session library
     def set_library(self, path):
         """Follow the session library (`None` clears it)."""
         self._syncing = True
@@ -165,7 +151,7 @@ class LibrarySelector(QWidget):
         once per page."""
         return self._syncing
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, sensor_list):
         v = QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
@@ -256,7 +242,7 @@ class LibrarySelector(QWidget):
         self.cmb_run.currentIndexChanged.connect(
             lambda _i: self.filters_changed.emit())
 
-    # ── libraries ────────────────────────────────────────────────────────────
+    # libraries
     @property
     def lib_root(self):
         return self._lib_root
@@ -297,7 +283,7 @@ class LibrarySelector(QWidget):
         self._tree = None
         when_visible(self, self._start_scan, key="scan")
 
-    # ── deployments / treatments / runs (raw_layout.py) ──────────────────────
+    # deployments / treatments / runs (raw_layout.py)
     @property
     def raw_tree(self):
         """The last finished scan (raw_layout.RawTree), or None while the
@@ -407,7 +393,7 @@ class LibrarySelector(QWidget):
             run for (deployment, treatment, run, _p) in self._locations.values()
             if (wanted_deployment is None or deployment == wanted_deployment)
             and (wanted_treatment is None or treatment == wanted_treatment)}
-        for run in sorted(runs, key=_run_sort_key):
+        for run in sorted(runs, key=raw_layout.run_sort_key):
             self.cmb_run.addItem(f"Run {run}", run)
         idx = self.cmb_run.findData(current)
         self.cmb_run.setCurrentIndex(idx if idx >= 0 else 0)
@@ -420,17 +406,14 @@ class LibrarySelector(QWidget):
                 and (want_t is None or treatment == want_t)
                 and (want_r is None or run == want_r))
 
-    # ── video lookup ─────────────────────────────────────────────────────────
-    # From the scan's own video index (every `<stem>_vid_*.mp4` in any VIDEO
-    # folder, collected during the one walk) - a dict lookup per sensor, not
-    # a directory listing per sensor, which on OneDrive was most of the time
-    # a big library took to open.
+    # video lookup, from the scan's video index (a directory listing per
+    # sensor was slow on OneDrive)
     def video_matches_for(self, stem):
         if self._tree is None:
             return []
         return sorted(self._tree.videos.get(stem.upper(), []))
 
-    # ── sensor listing ───────────────────────────────────────────────────────
+    # sensor listing
     def list_sensor_csvs(self, apply_filters=True):
         """Every processed sensor CSV in the current library, tagged with
         its (deployment, treatment) and filtered to the current
@@ -451,11 +434,10 @@ class LibrarySelector(QWidget):
         return rows
 
     def scan_folder(self):
-        """The raw folder the current Deployment/Treatment filters narrow
-        to (the whole raw_sens_data folder for "All"), for callers that
-        scan raw files themselves - the Run filter is applied per file by
-        `_matches_filters`, since a legacy treatment folder with no run
-        subfolders is still Run 1."""
+        """The raw folder the Deployment/Treatment filters narrow to (all of
+        raw_sens_data for "All"), for callers that scan raw files. The Run
+        filter is applied per file by `_matches_filters`: a treatment folder
+        without run subfolders is Run 1."""
         if self._lib_root is None:
             return None
         folder = self._lib_root / RAW_DIR
@@ -470,10 +452,9 @@ class LibrarySelector(QWidget):
     def matches_filters(self, deployment, treatment, run):
         return self._matches_filters(deployment, treatment, run)
 
-    # ── sensor list panel (opt-in via sensor_list=True) ─────────────────────────
+    # sensor list panel (opt-in via sensor_list=True)
     def _on_show_flags_toggled(self, _value):
-        # re-render from the cached call rather than making the host rescan
-        # the filesystem just to react to this checkbox (or Sort by)
+        # re-render from the cached rows, no rescan
         if self._cache is not None:
             rows, kwargs = self._cache
             self.populate_sensor_list(rows, **kwargs)
@@ -481,38 +462,17 @@ class LibrarySelector(QWidget):
     def populate_sensor_list(self, rows, is_bad=None, is_done=None,
                              done_label="In dataset", extra=None,
                              colour=None, order_key=None, progress=None):
-        """Render `rows` (each a dict with at least "stem", usually also
-        "path") into the sensor table - the one behaviour every list of
-        sensors in the app should share:
+        """Fill the sensor table with `rows` (dicts with "stem", usually "path").
 
-          - never flagged bad, not yet done -> white
-          - never flagged bad, done         -> green
-          - flagged bad, not yet done       -> red   (hidden if unticked)
-          - flagged bad, done               -> amber (hidden if unticked;
-            stays visually distinct from a plain "done" row rather than
-            disappearing into green, since bad-but-done still needs
-            attention)
+        Default colours: white to do, green done, red bad, amber bad but done.
+        Bad rows are left out while "Show bad sensors" is unticked.
+        `is_bad(stem)` / `is_done(stem)` default to never; `extra(row)` gives the
+        values for `list_columns`; `done_label` prefixes the counter ("In
+        dataset", "Synced").
 
-        "Show bad sensors" unticked doesn't just stop colouring bad rows -
-        it drops them from the list entirely, so the count of visible rows
-        is the count of rows actually worth looking at right now.
-
-        `is_bad(stem)`/`is_done(stem)` are optional predicates (default:
-        never bad / never done - a caller that only wants the picker's list
-        without status tracking can leave both out). `extra(row)` returns
-        the values for any extra columns configured via `list_columns`, in
-        order. `done_label` is the counter's prefix, e.g. "In dataset" or
-        "Synced" - whatever "done" means for this page.
-
-        A host with its own status model (Annotate's auto/flagged/user-
-        validated states) can override the defaults: `colour(stem)` returns
-        the row's colour (or None for plain), `order_key(row)` sorts the
-        rows (a stable sort - e.g. "needs review" first), and
-        `progress(rows)` returns the counter text.
-
-        The rows are listed in the order Sort by chooses (sensor_sort):
-        "Needs review first" is `order_key`'s order (as given, without
-        one), the others sort by name or recording time.
+        A host with its own states can pass `colour(stem)` (None for plain),
+        `order_key(row)` (the "Needs review first" order) and `progress(rows)`
+        (the counter text). Rows follow the Sort by choice (sensor_sort).
         """
         self._cache = (rows, dict(is_bad=is_bad, is_done=is_done,
                                   done_label=done_label, extra=extra,

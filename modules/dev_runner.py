@@ -1,58 +1,30 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Demo runners - one-click, unattended walkthroughs of the real app,
-started from the console (dev_console.py). Both drive the app's own
-pages and widgets exactly as a person clicking through would, so a demo is
-an honest test of the workflow rather than a separate copy of it:
+"""Demo runners: unattended walkthroughs that drive the real pages and
+widgets, started from the console or with `--demo`.
 
-  Simple demo    - Simple mode's wizard (window.simple_mode_dialog):
-                   library > deployment (DeploymentEditor) > copy the demo
-                   recordings in > process (FileInventory) > Auto process
-                   all > Save and export > predict (the deployed default
-                   model) > download the report.
-  Advanced demo  - the full app's pages: library > BSM Calculator > Study
-                   design (strike rate from the Calculator, sample size) >
-                   Create and edit deployment (the same DeploymentEditor) >
-                   copy in > Raw data processing (the same FileInventory) >
-                   Annotate (Auto process all, Import annotations CSV, Save
-                   and export) > Train > Deploy > Predict > Model comparison
-                   > report.
+  Simple demo    StrikeWorks: library > deployment > copy recordings >
+                 process > Auto process all > Save and export > predict >
+                 report.
+  Advanced demo  Development toolkit: library > BSM Calculator > Study
+                 design > deployment > copy > process > Annotate (Auto
+                 process all, import annotations, export) > Train > Deploy
+                 > Predict > Model comparison > report.
 
-Where the demo's data comes from - the demo pack
-------------------------------------------------
-A folder shaped like a library, shipped to users separately and dropped
-into their libraries folder:
+The demo pack is a library-shaped folder:
 
     demo_data/
       raw_sens_data/<deployment>/<treatment>/[Run <n>/]<recordings>
                                             [VIDEO/<stem>_vid_*.mp4]
       *annotations*.csv        per-sensor annotations (Advanced demo)
-      demo.json                optional - see DemoSource
+      demo.json                optional, see DemoSource
 
-Found (first match) at `<libraries folder>/demo_data`, then the app's own
-`libraries/demo_data`, then the older `Testbed` name (the app's own copy
-first) (`settings.DEMO_DATA_NAME`; `demo_data` is never listed as a library). The
-deployment, treatment and run names come from its folders; each
-recording is *copied* (never moved) into the demo library, which is
-created inside the user's configured libraries folder - so the demo's
-output sits wherever their libraries do (a OneDrive folder stays on
-OneDrive).
+looked for in `<libraries folder>/demo_data`, then `libraries/demo_data`,
+then under the older `Testbed` name (`settings.DEMO_DATA_NAME`). Recordings
+are copied, never moved, into a new demo library in the libraries folder.
 
-Pacing: run from the console, every step - each page or wizard step the
-demo shows - stays on screen at least `MIN_STEP_MS`, so it can be
-followed; run unattended (`run_headless`: `--demo`, the tests) it goes as
-fast as the app does.
-
-Waiting: every async step (a QThread or a subprocess-backed state signal)
-becomes a sequential call via `_wait_for`/`_race`/`_wait_until`, which run
-a nested QEventLoop until the step signals, times out, or `request_stop()`
-is called - the GUI keeps painting throughout. Stop takes effect at the
-next safe point; a training/prediction subprocess already running finishes
-in the background, the demo just stops waiting for it.
+Run from the console, each step stays on screen for at least
+`MIN_STEP_MS`; `run_headless` goes at full speed. Asynchronous steps are
+awaited with `_wait_for`/`_race`/`_wait_until`, which run a nested event
+loop until the signal, a timeout or `request_stop()`.
 """
 import json
 import re
@@ -66,7 +38,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from . import deployment_index as di
 from . import raw_layout, report_center, sensor_config, settings, win_utils
-from .edition import simple_only
+from .startup import simple_only
 
 DEMO_LIBRARY_NAME = "StrikeWorks_demo"
 _FALLBACK_ANNOTATIONS = (settings.app_root() / "input_data"
@@ -80,9 +52,8 @@ _DEFAULT_CONDITIONS = {"head": "3", "flow": "1.32", "point_bep": "100"}
 _DEFAULT_BSM_CONFIG = "pumpflow_configuration"
 _STUDY_TARGET_PRECISION_PP = 10.0
 
-# one generous ceiling for every long step - a "something is actually
-# stuck" backstop, not a per-step budget (76 files over OneDrive took
-# 13 min in September's runs); Stop is the way out of a merely slow run
+# a backstop for a stuck step, not a budget: 76 files over OneDrive once
+# took 13 minutes
 _LONG_TIMEOUT_MS = 1_800_000
 
 # the least time a demo step stays on screen (see Pacing above)
@@ -94,10 +65,10 @@ class _RunnerError(Exception):
 
 
 class _StoppedByUser(Exception):
-    """`request_stop()` was called - not a failure, just an early exit."""
+    """`request_stop()` was called: an early exit, not a failure."""
 
 
-# ── the demo pack ────────────────────────────────────────────────────────────
+# the demo pack
 class DemoSource:
     """The demo pack's contents: one deployment (the first under its
     raw_sens_data), its treatments and runs, their recording folders, the
@@ -183,7 +154,7 @@ class DemoSource:
         return None
 
 
-# ── shared runner machinery ─────────────────────────────────────────────────
+# shared runner machinery
 class _RunnerBase(QObject):
     """Construct, connect `finished`, call `run()`; `request_stop()` cancels."""
 
@@ -201,7 +172,7 @@ class _RunnerBase(QObject):
     def _label(self):
         return "Demo"
 
-    # ── stopping ─────────────────────────────────────────────────────────────
+    # stopping
     def request_stop(self):
         if not self._stop_requested:
             self._stop_requested = True
@@ -215,7 +186,7 @@ class _RunnerBase(QObject):
         if self._stop_requested:
             raise _StoppedByUser()
 
-    # ── pacing ───────────────────────────────────────────────────────────────
+    # pacing
     def _hold_step(self):
         """Wait until the step on screen has been up MIN_STEP_MS."""
         if not self._paced or self._step_shown is None:
@@ -233,7 +204,7 @@ class _RunnerBase(QObject):
         QApplication.processEvents()
         self._step_shown = time.monotonic()
 
-    # ── logging / waiting ────────────────────────────────────────────────────
+    # logging / waiting
     def _log(self, msg):
         print(f"[demo] {msg}")
 
@@ -326,9 +297,9 @@ class _RunnerBase(QObject):
             QApplication.processEvents()
 
     def _wait_thread(self, thread, label):
-        """Waits for a QThread a page started itself (Auto process all) to
-        finish *and* for its queued `done` to reach the page - polling,
-        since the thread may already be done by the time we get it back."""
+        """Wait for a QThread a page started (Auto process all) to finish
+        and for its queued `done` to reach the page. Polls, since the thread
+        may already have finished."""
         self._log(f"Waiting for {label}...")
         box = {}
         if thread.isRunning():
@@ -342,10 +313,9 @@ class _RunnerBase(QObject):
     @staticmethod
     @contextmanager
     def _headless_dialogs(existing_directory=None):
-        """The app's own OK-only info/warning/critical pop-ups and the one
-        folder picker (download report) - fine for a person, a hang for an
-        unattended demo - suppressed around just the call that can raise
-        one, then restored."""
+        """Answer the app's message boxes and the report's folder picker
+        automatically around one call (they would hang an unattended demo),
+        then restore them."""
         orig = (QMessageBox.information, QMessageBox.warning,
                 QMessageBox.critical, QMessageBox.question,
                 QFileDialog.getExistingDirectory)
@@ -367,7 +337,7 @@ class _RunnerBase(QObject):
              QMessageBox.critical, QMessageBox.question,
              QFileDialog.getExistingDirectory) = orig
 
-    # ── entry point ──────────────────────────────────────────────────────────
+    # entry point
     def run(self):
         label = self._label()
         self._log(f"{label} starting.")
@@ -394,7 +364,7 @@ class _RunnerBase(QObject):
     def _run(self):
         raise NotImplementedError
 
-    # ── steps both demos share ──────────────────────────────────────────────
+    # steps both demos share
     def _step_source(self):
         folder = DemoSource.find()
         if folder is None:
@@ -497,11 +467,9 @@ class _RunnerBase(QObject):
             raise _RunnerError("Process: nothing was processed.")
 
     def _reset_validation_state(self):
-        """The demo library is reused between runs, and Auto process all
-        leaves already-validated sensors alone - so a second run would
-        inherit the first run's flags and reviews. Clearing them here
-        (the demo's own library only) makes every run validate, flag and
-        review from scratch."""
+        """Clear the demo library's validation flags and reviews. The
+        library is reused between runs and Auto process all leaves validated
+        sensors alone, so without this a run would inherit the last one's."""
         from . import validation_core as vc
         index_df = di.read_index(self.lib_root)
         if index_df is None:
@@ -517,9 +485,8 @@ class _RunnerBase(QObject):
                   "cleared, so this run starts from scratch.")
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 class SimpleDemoRunner(_RunnerBase):
-    """Simple mode's wizard, end to end - no training."""
+    """StrikeWorks's guided window, end to end - no training."""
 
     def _label(self):
         return "StrikeWorks demo"
@@ -599,18 +566,16 @@ class SimpleDemoRunner(_RunnerBase):
             raise _RunnerError(f"Report: expected output not found at {expected}.")
         self._log(f"Report: downloaded to {expected.parent}.")
 
-    # ── Validate: review the flagged sensors, checking each step ─────────────
+    # Validate: review the flagged sensors, checking each step
     def _check(self, ok, what):
         self._log(f"Validate check {'PASS' if ok else 'FAIL'}: {what}")
         return ok
 
     def _step_review_flagged(self, view):
-        """What a person does after Auto process all, done with the keys
-        they'd use - and checked at every step: the flagged sensors are
-        the top of the list (orange), the arrow keys load the sensor they
-        move to, and Save + Next (Ctrl+V) clears each flag (the sensor
-        turns green and leaves the flagged group) and moves on to the next
-        flagged sensor, until none are left."""
+        """Review the flagged sensors with the keyboard, checking each step:
+        flagged sensors head the list, the arrow keys load the sensor selected,
+        and Save + Next (Ctrl+V) clears the flag and moves to the next flagged
+        sensor until none are left."""
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QColor
         from PySide6.QtTest import QTest
@@ -692,7 +657,6 @@ class SimpleDemoRunner(_RunnerBase):
                   + ("all passed." if not fails else f"- {fails} FAILED."))
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 class AdvancedDemoRunner(_RunnerBase):
     """The full app's pages, end to end - including training a new model."""
 
@@ -713,7 +677,7 @@ class AdvancedDemoRunner(_RunnerBase):
             dlg.open_development_toolkit()
         elif not w.isVisible():
             w.showMaximized()
-        w.home_page._go_advanced()
+        w.expand_sidebar()
         self._step_shown = time.monotonic()      # Home
         self._step_library()
         self._check_stop()
@@ -748,7 +712,7 @@ class AdvancedDemoRunner(_RunnerBase):
         self._step_compare()
         self._step_report()
 
-    # ── BSM Calculator → Study design ────────────────────────────────────────
+    # BSM Calculator → Study design
     def _step_calculator(self):
         self._go("btn_bsm")
         self.window.bsm_page.show_tab(0)        # Calculator
@@ -783,7 +747,7 @@ class AdvancedDemoRunner(_RunnerBase):
                   f"planned N = {self.source.n_recordings} → "
                   f"{' '.join(precision.result_text().split())}")
 
-    # ── Annotate: validate, annotate, export ─────────────────────────────────
+    # Annotate: validate, annotate, export
     def _step_annotate(self):
         self._go("btn_annotate")
         page = self.window.annotation_page
@@ -820,7 +784,7 @@ class AdvancedDemoRunner(_RunnerBase):
         self._log(f"Save and export: {msg} - passed to Model prediction.")
         return df, path
 
-    # ── Model training ───────────────────────────────────────────────────────
+    # Model training
     def _step_train(self, csv_path):
         self._go("btn_ml_training")
         state = self.window.ml_training_page.state
@@ -837,11 +801,10 @@ class AdvancedDemoRunner(_RunnerBase):
         self._log("Model training: final model trained.")
 
     def _ensure_train_ready(self, state):
-        """A single-treatment demo dataset can genuinely fail the region
-        (multiclass) stage's default n-fold check - too few recordings in
-        some region - while the binary stage is fine. If that's the *only*
-        thing blocking, drop the region stage for this run (what "Region
-        model" off already does); anything else is reported in full."""
+        """A small demo dataset can fail the multiclass stage's fold check
+        (too few recordings in a class) while the binary stage is fine. If
+        that is all that blocks the run, train without the multiclass stage;
+        anything else is reported in full."""
         if state.ready:
             return
         fails = [label for s, label, _ in state.checks if s == "fail"]
@@ -867,7 +830,7 @@ class AdvancedDemoRunner(_RunnerBase):
         self._log(f"Deploy: v{version} to {models_dir} "
                   f"({len(deployed)} model file(s)).")
 
-    # ── Model prediction ─────────────────────────────────────────────────────
+    # Model prediction
     def _step_predict(self, df):
         """The dataset just exported, predicted with the models folder's
         default models (the ones shipped with the app) - the model the demo

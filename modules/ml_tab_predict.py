@@ -1,31 +1,18 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""The Predict and Results pages - one of each, shared by StrikeWorks (its
-Predict and Report steps) and the Development toolkit (Model prediction >
-Predict, as its two tabs - PredictTab):
+"""Predict and Results, shared by StrikeWorks (its Predict and Report steps)
+and the toolkit (Model prediction > Predict, as PredictTab's two tabs).
 
-  PredictPanel   - the Dataset and Model cards side by side; Load dataset,
-                   Run prediction and Advanced features; a spinner and the
-                   time elapsed while it runs, one line when it's done; and
-                   the Predicted strikes (strike rate in the centre), Strike
-                   classes and Collisions (collision rate) rings.
-  AdvancedFeaturesWindow - Model mode, the decision threshold and its
-                   override, HIG peak analysis and the blade strike
-                   mortality inputs, in a window that doesn't block (like
-                   Annotations and notes) and closes with its page.
-  ResultsPanel   - the results by treatment, the HIG peak analysis table,
-                   the strike rate, strike class and HIG peak figures, the
-                   acceleration centred on the peak and on the nadir, and -
-                   once a blade strike model has been calculated this
-                   session - the mortality sweep.
+  PredictPanel            dataset and model cards, Load dataset / Run
+                          prediction / Advanced features, run progress, and
+                          the strike, class and collision rings.
+  AdvancedFeaturesWindow  model mode, decision threshold, HIG peak analysis
+                          and the mortality inputs; non-modal, closes with
+                          its page.
+  ResultsPanel            results by treatment, the HIG peak table and the
+                          prediction figures, and the mortality sweep once a
+                          blade strike model has been calculated.
 
-All data comes from the shared PredictionState (BSMState for mortality),
-so both apps' pages show the same run. The models are Settings' defaults
-(PredictionState.use_default_models) - no pickers here.
+Everything reads the shared PredictionState (BSMState for mortality). The
+models are Settings' defaults.
 """
 import re
 from pathlib import Path
@@ -33,23 +20,22 @@ from pathlib import Path
 import numpy as np
 from matplotlib.figure import Figure
 
-from PySide6.QtCore import QElapsedTimer, QEvent, Qt, QTimer
+from PySide6.QtCore import QElapsedTimer, Qt, QTimer
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QGridLayout,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QSizePolicy, QTabWidget,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from . import (
     bsm_figures, hig_peaks, ml_figures, model_measures, recording_rate, settings,
-    severity,
 )
 from .bsm_model import (
     default_vcrit, recompute_mortality, recompute_mortality_at_vcrit,
 )
 from .canvas import FigureCanvas
 from .cards import MetaCard, RingCard, Spinner
-from .layout import scroll_area, Section, when_visible
+from .layout import scroll_area, Section, ToolWindow, when_visible
 from .tables import fill_acceleration_table
 from .theme import PALETTE, PINK, muted_label, style
 
@@ -80,9 +66,9 @@ def _performance(metrics):
 
 
 def model_card_rows(s):
-    """The Model card: each model and its out-of-fold performance (a
-    multiclass model trained before 29 October 2026 has no ROC AUC or
-    specificity saved - the latter comes from its confusion matrix)."""
+    """The Model card: each model and its out-of-fold performance. An
+    older multiclass model has no ROC AUC saved, and its specificity comes
+    from its confusion matrix."""
     bm = s.bin_metrics or {}
     channels = bm.get("channels") or []
     rows = [
@@ -144,7 +130,7 @@ def dataset_card_rows(s):
     ]
 
 
-# ── mortality (BSM) ──────────────────────────────────────────────────────────
+# mortality (BSM)
 # Scaly and eel each come from their own BSM run (BSMState.results):
 # collision exposure differs by species (Leff_m / Leff_t), not just the
 # mortality regression.
@@ -185,14 +171,12 @@ def draw_mortality(fig, bsm):
     bsm_figures.draw_vcrit_sweep(fig, series, title=title)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-class AdvancedFeaturesWindow(QDialog):
+class AdvancedFeaturesWindow(ToolWindow):
     """Model mode, the decision threshold, HIG peak analysis and the blade
-    strike mortality inputs - a window that doesn't block (shown, not
-    exec'd), like Annotations and notes, gone when its page is."""
+    strike mortality inputs. Non-modal; hides with its page."""
 
     def __init__(self, page, owner, state, bsm_state=None):
-        super().__init__(owner)
+        super().__init__(owner, page)
         self.page = page
         self.state = state
         self.bsm = bsm_state
@@ -207,21 +191,8 @@ class AdvancedFeaturesWindow(QDialog):
         self._refresh_treatments()
         self._refresh_mortality()
         self.setMinimumWidth(440)
-        # it belongs to the page: gone when the page is (another page, or
-        # the window closed or minimised)
-        page.installEventFilter(self)
 
-    def eventFilter(self, obj, event):
-        if obj is self.page and event.type() == QEvent.Type.Hide:
-            self.hide()
-        return super().eventFilter(obj, event)
-
-    def bring_up(self):
-        self.show()
-        self.raise_()
-        self.activateWindow()
-
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self):
         v = QVBoxLayout(self)
         v.setContentsMargins(14, 12, 14, 12)
@@ -260,10 +231,8 @@ class AdvancedFeaturesWindow(QDialog):
         v.addWidget(grp)
         v.addWidget(self._hig_section())
 
-        # the mortality inputs: from the BSM run, independent of the
-        # prediction. Scaly and eel are shown together; only eel's
-        # critical velocity is an input (scaly's regression sets its own
-        # floor).
+        # mortality inputs, from the BSM run; only eel's critical velocity
+        # is an input (scaly's regression sets its own)
         grp_bsm = Section("Blade strike model")
         b = QGridLayout(grp_bsm)
         b.setVerticalSpacing(8)
@@ -292,7 +261,7 @@ class AdvancedFeaturesWindow(QDialog):
         v.addWidget(grp_bsm)
         v.addStretch()
 
-    # ── prediction configuration ─────────────────────────────────────────────
+    # prediction configuration
     # (setting, label, suffix, range, decimals, step, shown as: value x scale)
     _HIG_FIELDS = (
         ("height_g", "Peak height", " g", (1, 2000), 1, 5, 1),
@@ -419,7 +388,7 @@ class AdvancedFeaturesWindow(QDialog):
         if self.chk_override.isChecked():
             self.state.set_threshold_override(True, value)
 
-    # ── mortality inputs ─────────────────────────────────────────────────────
+    # mortality inputs
     def _refresh_treatments(self):
         """The treatments of the current prediction (the plot's label)."""
         if self.bsm is None:
@@ -458,12 +427,10 @@ class AdvancedFeaturesWindow(QDialog):
         self.bsm.set_eel_vcrit(value)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 class PredictPanel(QWidget):
-    """The Predict page (see the module docstring), bound to `state`.
-    `owner` is the window its dialogs belong to; `goto_inspect` (the
-    toolkit's) adds the "Inspect low confidence" shortcut - StrikeWorks
-    has no Inspect."""
+    """The Predict page, bound to `state`. `owner` is the window its
+    dialogs belong to; `goto_inspect` (toolkit only) adds "Inspect low
+    confidence"."""
 
     def __init__(self, state, owner, bsm_state=None, goto_inspect=None):
         super().__init__()
@@ -492,7 +459,7 @@ class PredictPanel(QWidget):
         self._refresh_dataset()
         self._show_results()
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self):
         v = QVBoxLayout(self)
         # (8, and the spinner no taller than the status line: the page
@@ -572,7 +539,7 @@ class PredictPanel(QWidget):
 
         v.addStretch(1)
 
-    # ── cards ────────────────────────────────────────────────────────────────
+    # cards
     def _refresh_model(self):
         self.card_model.set_rows(model_card_rows(self.state))
 
@@ -584,7 +551,7 @@ class PredictPanel(QWidget):
         s = self.state
         self.btn_run_predict.setEnabled(s.dataset_df is not None and not s.running)
 
-    # ── dataset and run ──────────────────────────────────────────────────────
+    # dataset and run
     def load_dataset_csv(self):
         path, _ = QFileDialog.getOpenFileName(
             self.owner, "Load dataset CSV", str(settings.get_input_data_dir()),
@@ -664,7 +631,7 @@ class PredictPanel(QWidget):
         dlg.setDetailedText(msg)
         dlg.exec()
 
-    # ── result rings ─────────────────────────────────────────────────────────
+    # result rings
     def _show_results(self):
         s = self.state
         df = s.summary
@@ -722,10 +689,9 @@ class PredictPanel(QWidget):
             self._goto_inspect("low_conf")
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 class ResultsPanel(QWidget):
-    """The Results page (see the module docstring): redrawn when it's
-    next shown after a run, or a blade strike calculation, changes it."""
+    """The Results page: redrawn when next shown after a run or a blade
+    strike calculation changes it."""
 
     def __init__(self, state, bsm_state=None):
         super().__init__()
@@ -800,10 +766,10 @@ class ResultsPanel(QWidget):
                        and all(f"n_{cn}" in df.columns for cn in s.class_names)
                        else [])
         # severity columns only without the HIG peak analysis (its own table)
-        measured = severity.available(df) and s.acc_summary is None
+        measured = hig_peaks.severity_measured(df) and s.acc_summary is None
         headers = (["Treatment", "N", "Strikes", "No strike", "Strike rate",
                     "95% CI", "Mean prob", "Mean conf"] + list(class_names)
-                   + (severity.TABLE_HEADERS if measured else []))
+                   + (hig_peaks.SEVERITY_HEADERS if measured else []))
         self.tbl_results.setColumnCount(len(headers))
         self.tbl_results.setHorizontalHeaderLabels(headers)
         self.tbl_results.setRowCount(0 if df is None else len(df))
@@ -822,7 +788,7 @@ class ResultsPanel(QWidget):
                     pct = nc / n_strike * 100 if n_strike else 0
                     vals.append(f"{nc} ({pct:.0f}%)")
                 if measured:
-                    vals += severity.table_values(r)
+                    vals += hig_peaks.severity_cells(r)
                 for col, val in enumerate(vals):
                     self.tbl_results.setItem(row, col, QTableWidgetItem(val))
         self.tbl_results.resizeColumnsToContents()
@@ -857,7 +823,6 @@ class ResultsPanel(QWidget):
             c[key].draw()
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 class PredictTab(QWidget):
     """Model prediction > Predict: the shared Predict and Results pages,
     as two tabs."""

@@ -1,13 +1,5 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Window helpers shared by MainWindow and Simple mode: the taskbar fix
-for the first visible window, sizing a window to the screen's work area,
-and showing a saved report's folder. Its own module so main.py and
-page_simple_mode.py can both use it without importing each other.
+"""Window helpers for both windows: sizing a window to the screen's work
+area, opening a folder in Explorer, and the taskbar button fix.
 """
 import platform
 from pathlib import Path
@@ -62,7 +54,7 @@ def ensure_taskbar_button(widget):
     """Give `widget` a taskbar button (Windows only).
 
     Windows gives no automatic taskbar button to a dialog whose owner is
-    hidden (Simple mode, while MainWindow waits), nor to a frameless
+    hidden (StrikeWorks, while MainWindow waits), nor to a frameless
     window (MainWindow with the custom title bar), so set WS_EX_APPWINDOW
     explicitly. Call before the widget is first shown: Windows decides on
     the button at first show, and changing the style later doesn't make it

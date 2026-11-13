@@ -1,27 +1,8 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Raw data processing (Sensor processing), built from the same pieces as
-Simple mode's Process step:
-
-  Filters        - the shared LibrarySelector, narrowed by Deployment /
-                   Treatment / Run.
-  Summary cards  - recordings found, processed, validated and flagged bad
-                   for the current filters.
-  File inventory - inventory_widgets.FileInventory: every recording with
-                   the deployment, treatment and run of its folder, Process
-                   selected, and a Console button (the processing log goes
-                   to the app console). Each recording is labelled from its
-                   own folder, so one batch can span several treatments and
-                   runs.
-
-A deployment's details are edited in Create and edit deployment, whose
-Update relabels sensors already processed. The file extensions, filename
-pattern and parser come from the sensor saved on each recording's deployment
-(the selected sensor, for a deployment with none saved).
+"""Raw data processing: the library filters, summary cards (found,
+processed, validated, flagged bad) and the file inventory
+(inventory_widgets.FileInventory, as in StrikeWorks's Process step). Each
+recording is labelled from its own folder and read as its deployment's
+saved sensor.
 """
 from pathlib import Path
 
@@ -73,7 +54,6 @@ class StatCard(QFrame):
         self.set("-", "")
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 class ProcessPage(Page):
     """Raw data processing."""
 
@@ -88,7 +68,7 @@ class ProcessPage(Page):
         self._on_lib_changed()
         self._on_filters_changed()
 
-    # ── report_center.py's Raw data processing section reads these ──────────
+    # report_center.py's Raw data processing section reads these
     @property
     def _files(self):
         return self.inventory.files
@@ -101,7 +81,7 @@ class ProcessPage(Page):
     def _root(self):
         return self.lib_selector.lib_root
 
-    # ── layout ───────────────────────────────────────────────────────────────
+    # layout
     def _build(self, layout):
         page = QWidget()
         row = QHBoxLayout(page)
@@ -158,16 +138,14 @@ class ProcessPage(Page):
                                     key="sensor"))
         di.notifier.plan_saved.connect(self._on_plan_saved)
 
-    # ── filters ──────────────────────────────────────────────────────────────
+    # filters
     def _on_lib_changed(self):
         root = self.lib_selector.lib_root
         if root is not None and not self.lib_selector.syncing:
             self.status.emit(f"Library: {root.name}", 4000)
 
     def _on_filters_changed(self):
-        # lists from the filter box's own scan of the library (one walk,
-        # done in the background when the library opens) - until that has
-        # finished there's nothing to list yet, rather than a second walk
+        # uses the filter box's background scan; empty until it finishes
         tree = self.lib_selector.raw_tree
         self.inventory.set_source(self.lib_selector.lib_root,
                                   self.lib_selector.scan_folder(),
@@ -189,7 +167,7 @@ class ProcessPage(Page):
                else "Processing finished with errors.")
         self.status.emit(f"{msg} {len(stems)} sensor(s) processed.", 5000)
 
-    # ── cards ────────────────────────────────────────────────────────────────
+    # cards
     def _refresh_cards(self):
         files = self.inventory.files
         n = len(files)

@@ -1,44 +1,27 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Subprocess worker: trains the two-stage blade-strike model pipeline.
+"""Training worker: the two-stage blade strike pipeline, ported from
+``01_binary_model.py`` and ``05_multiclass_collapsed.py`` and driven by a
+JSON configuration from the GUI. Runs as a subprocess so sktime/numba never
+load in the GUI; its output goes to the app console.
 
-Port of the ML pipeline scripts ``01_binary_model.py`` (binary strike model)
-and ``05_multiclass_collapsed.py`` (collapsed pump-region model), driven by a
-JSON configuration written by the GUI. Run in a subprocess so that the
-sktime/numba model stack is never imported into the GUI process; stdout is
-streamed line-by-line into the training console.
-
-One run trains the pipeline the prediction page deploys:
-
-    Stage 1  binary      strike vs no-contact (always trained)
-    Stage 2  multiclass  pump region for each ground-truth strike
-                         (trained when ``train_multiclass`` is set)
-
-Outputs land in ``<out_dir>/binary/`` and ``<out_dir>/multiclass/``.
+    Stage 1  binary      strike vs no contact (always)
+    Stage 2  multiclass  pump region of each ground-truth strike
+                         (when ``train_multiclass`` is set)
 
 Usage:
     python train_worker.py --config <train_config.json> --stage cv
     python train_worker.py --config <train_config.json> --stage final
 
-Stage ``cv``   : cross-validation (optionally after a stratified hold-out
-                 split) -> performance_metrics.json, cv_predictions.csv,
-                 misclassified_files_for_review.csv, cv_curves.json,
-                 blade_strike_predictions.csv (binary model only).
-Stage ``final``: retrains on ALL training data and saves the deployment
-                 model(s) (final_model_for_deployment.joblib,
-                 max_sequence_length.npy, model_config.json, channels.json).
+``cv``     cross-validation, after an optional stratified hold-out split:
+           performance_metrics.json, cv_predictions.csv,
+           misclassified_files_for_review.csv, cv_curves.json,
+           blade_strike_predictions.csv (binary only).
+``final``  retrains on all training data and saves the deployment
+           model(s): final_model_for_deployment.joblib,
+           max_sequence_length.npy, model_config.json, channels.json.
 
-The two stages are deliberately separate: the GUI requires the user to
-review the cross-validated performance before committing final models.
-
-Lines beginning with ``##`` are machine-readable progress markers for the
-GUI (##MODEL binary|multiclass, ##FOLD k n, ##STAGE name, ##DONE);
-everything else is human console output, kept close to the original
-scripts' prints.
+Outputs go to ``<out_dir>/binary/`` and ``<out_dir>/multiclass/``. Lines
+starting ``##`` are progress markers for the GUI (##MODEL
+binary|multiclass, ##FOLD k n, ##STAGE name, ##DONE).
 """
 import argparse
 import json
@@ -53,8 +36,12 @@ import pandas as pd
 
 try:
     from . import recording_rate
+    from .model_labels import level_key
+    from .wilson_calc import wilson_ci
 except ImportError:          # run as a script from source (worker_launch.py)
     import recording_rate
+    from model_labels import level_key
+    from wilson_calc import wilson_ci
 
 
 # the GUI reads this stream as UTF-8; make that explicit so symbols like
@@ -70,19 +57,7 @@ def log(msg=""):
     print(msg, flush=True)
 
 
-# ── data preparation (shared by both stages) ─────────────────────────────────
-
-def level_key(value):
-    """Stable key for a raw level value - must match ml_train_state's rule,
-    so the grouping built in the GUI is exactly the one applied here."""
-    try:
-        f = float(value)
-        if f.is_integer():
-            return str(int(f))
-        return repr(f)
-    except (TypeError, ValueError):
-        return str(value).strip()
-
+# data preparation (shared by both stages)
 
 def pad_time_series(ts, target_length):
     if len(ts) >= target_length:
@@ -349,17 +324,6 @@ def _softmax(scores):
     return e / e.sum(axis=1, keepdims=True)
 
 
-def wilson_ci(k, n):
-    if n == 0:
-        return 0.0, 0.0, 0.0
-    z = 1.959964
-    p_hat = k / n
-    denom = 1 + z ** 2 / n
-    centre = (p_hat + z ** 2 / (2 * n)) / denom
-    margin = (z * np.sqrt(p_hat * (1 - p_hat) / n + z ** 2 / (4 * n ** 2))) / denom
-    return p_hat, max(0, centre - margin), min(1, centre + margin)
-
-
 def _package_versions():
     from importlib.metadata import PackageNotFoundError, version
     out = {}
@@ -405,7 +369,7 @@ def provenance_section(cfg, data, t0, kind):
     }
 
 
-# ── binary CV (port of 01_binary_model.py) ───────────────────────────────────
+# binary CV (port of 01_binary_model.py)
 
 def binary_metrics_from_preds(y_true, preds):
     from sklearn.metrics import confusion_matrix
@@ -594,7 +558,7 @@ def run_cv_binary(cfg, data, out_dir, cv_idx, t0):
     return metrics, res
 
 
-# ── multiclass CV (port of 05_multiclass_collapsed.py) ───────────────────────
+# multiclass CV (port of 05_multiclass_collapsed.py)
 
 def run_cv_multiclass(cfg, data, out_dir, cv_idx, t0):
     from sklearn.metrics import (accuracy_score, average_precision_score,
@@ -761,7 +725,7 @@ def run_cv_multiclass(cfg, data, out_dir, cv_idx, t0):
     return metrics, res
 
 
-# ── stages ───────────────────────────────────────────────────────────────────
+# stages
 
 def _cv_one_model(cfg, kind, out_dir):
     """Cross-validation (plus optional hold-out) for one pipeline stage."""

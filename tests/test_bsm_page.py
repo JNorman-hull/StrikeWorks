@@ -40,7 +40,7 @@ class BladeStrikePage(unittest.TestCase):
         cls.main, cls.window = main_window()
         cls.window.resize(1290, 690)
         cls.window.show()
-        cls.window.home_page._go_advanced()
+        cls.window.expand_sidebar()
         pump(200)
         calc = cls.window.bsm_calculator_page
         calc.cmb_config.setCurrentIndex(

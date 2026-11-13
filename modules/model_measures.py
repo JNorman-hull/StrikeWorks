@@ -1,9 +1,3 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """The measures a trained model is described by, under one set of names
 everywhere - Model training's cards, Evaluate, the figures, the model and
 prediction reports, Predict's Model card. The multiclass model's are the
@@ -54,9 +48,9 @@ def _key(metrics, name):
 
 
 def value(metrics, name):
-    """A model's out-of-fold value of measure `name` (None if not saved);
-    a multiclass model trained before 29 October 2026 has its specificity
-    worked out from its confusion matrix."""
+    """A model's out-of-fold value of measure `name` (None if not saved).
+    A multiclass model saved without specificity has it worked out from its
+    confusion matrix."""
     perf = (metrics or {}).get("out_of_fold_performance", {})
     if name == THRESHOLD:
         return perf.get("optimal_threshold")

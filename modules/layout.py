@@ -1,17 +1,11 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
 """Layout helpers shared by the pages: the Page base every sidebar page
-is built on, collapsible Section boxes, splitters and centring, popup
-menus, and running code when a widget is first shown.
+is built on, Section headings, splitters and centring, popup menus, and
+running code when a widget is shown.
 """
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QGroupBox, QHBoxLayout, QMenu, QScrollArea, QSplitter, QTabWidget,
-    QVBoxLayout, QWidget,
+    QDialog, QGroupBox, QHBoxLayout, QMenu, QScrollArea, QSplitter,
+    QTabWidget, QVBoxLayout, QWidget,
 )
 
 from .theme import style
@@ -50,40 +44,51 @@ class TabbedPage(Page):
         self.tabs.setCurrentIndex(index)
 
 
-def discard_widget(w):
-    """Throw away a child widget that has just been taken out of a layout.
+class ToolWindow(QDialog):
+    """A non-modal window beside the main one: `bring_up()` shows it and
+    brings it to the front, and it hides whenever `page` does (another
+    page shown, or the window closed or minimised)."""
 
-    Deliberately NOT `w.setParent(None)`: a widget added to a layout inside
-    a visible window gets a *queued* "show if not hidden" from Qt. If it is
-    discarded again before the event loop runs (a card refreshed twice in a
-    row - e.g. a library switch followed straight away by another refresh)
-    and orphaned with setParent(None), that queued show then pops it up as
-    its own tiny top-level window (titled "python"), which stays on screen
-    until deleteLater gets its turn - and inside a nested event loop (the
-    demo runners' waits) that can be a long time. Hiding it explicitly
-    cancels the queued show, and keeping its parent means it can never
-    become a window at all."""
+    def __init__(self, parent=None, page=None):
+        super().__init__(parent)
+        self._hides_with = page
+        if page is not None:
+            page.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj is self._hides_with and event.type() == QEvent.Type.Hide:
+            self.hide()
+        return super().eventFilter(obj, event)
+
+    def bring_up(self):
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+
+def discard_widget(w):
+    """Hide and delete a widget just taken out of a layout.
+
+    Not `setParent(None)`: Qt queues a show for a widget added to a visible
+    layout, and an orphaned widget then pops up as its own top-level window
+    until deleteLater runs, which can take a while inside the demos' nested
+    event loops. Hiding cancels the queued show."""
     w.hide()
     w.deleteLater()
 
 
 def popup_menu(widget=None):
-    """A right-click or button menu for `widget`, parented to its window
-    (None: no parent - for a button's menu, built before the button is in
-    a window; keep a reference). A menu parented inside the main window
-    warns "must be a top level window" as it opens: the window's central
-    widget has a native handle (win_utils' taskbar fix for StrikeWorks).
+    """A menu for `widget`, parented to its window (no parent when `widget`
+    is None - keep a reference). A menu parented inside the main window warns
+    "must be a top level window", because of win_utils' taskbar fix.
     """
     return QMenu(widget.window() if widget is not None else None)
 
 
 def hsplit(*items):
-    """A row of boxes that fills the page's width and can be resized by
-    dragging the boundaries between them - the app's standard for boxes
-    that sit side by side (a plain QHBoxLayout row can't be resized, and
-    anything with a fixed/maximum width leaves dead space on a wide
-    screen). Each item is a widget, or (widget, weight): the weights set
-    the starting proportions and how extra width is shared."""
+    """A splitter row of `items` filling the width. Each item is a widget or
+    (widget, weight); weights set the starting proportions and how extra width
+    is shared."""
     split = QSplitter(Qt.Orientation.Horizontal)
     split.setChildrenCollapsible(False)
     weights = []
@@ -191,9 +196,8 @@ def on_show(widget, fn):
 
 def when_visible(widget, fn, key="default"):
     """Run `fn` now if `widget` is on screen, else the next time it is shown.
-    Only the latest pending call per `key` is kept - so a page that isn't
-    being looked at does no work at all for a library switch (or three),
-    just once when it's next opened."""
+    Only the latest pending call per `key` is kept, so a hidden page
+    refreshes once however often its data changed."""
     if widget.isVisible():
         fn()
         return
@@ -204,7 +208,7 @@ def when_visible(widget, fn, key="default"):
     watcher.pending[key] = fn
 
 
-# ── section box ──────────────────────────────────────────────────────────────
+# section box
 class Section(QGroupBox):
     """A titled part of a page: the title as a plain heading over the
     contents - no frame, no tick box; an untitled one keeps no room for a

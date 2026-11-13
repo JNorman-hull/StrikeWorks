@@ -1,24 +1,7 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Widgets for entering annotation values (Annotate, and later the
-Misclassification tool's Labels box - the same component, not a second
-implementation).
-
-``AnnotationValueEditor`` is deliberately not ``level_grouper.LevelGrouper``.
-LevelGrouper groups *many observed levels* into *few named classes* for
-training, and is dataframe-agnostic by design (``set_data``/``groups()``/
-``changed``). Annotation entry is "pick or add one value for one
-recording" - a flat known-value list, not a levels-into-classes mapping -
-so it gets its own small widget. What is reused from LevelGrouper is the
-pattern: the widget only holds what it is given and emits a signal on
-change; ``annotation_schema`` is where values actually live and get edited
-(add/rename/remove), the same split ``ml_train_state.py`` keeps from
-LevelGrouper itself.
-"""
+"""Annotation entry, used by Annotate and Misclassification analysis:
+`AnnotationValueEditor` picks or adds one value per variable for the
+current recording, `VariableListDialog` manages the variables. Values are
+stored by `annotation_schema`."""
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QHBoxLayout, QInputDialog, QLabel, QListWidget,
@@ -56,7 +39,7 @@ class AnnotationValueEditor(QWidget):
 
         self.refresh()
 
-    # ── data ─────────────────────────────────────────────────────────────────
+    # data
     def refresh(self, keep_current=True):
         current = self.current() if keep_current else None
         var = asch.get(self.var_name)
@@ -68,9 +51,7 @@ class AnnotationValueEditor(QWidget):
         for v in values:
             self.cmb.addItem(v, v)
         if current and current not in values:
-            # the row's stored value isn't in the known list (e.g. entered
-            # before the value was added, or since removed) - show it
-            # anyway rather than silently discarding what is on disk
+            # a stored value missing from the known list is still shown
             self.cmb.addItem(current, current)
         idx = self.cmb.findData(current or "")
         self.cmb.setCurrentIndex(idx if idx >= 0 else 0)
@@ -93,7 +74,7 @@ class AnnotationValueEditor(QWidget):
     def _on_changed(self, _idx):
         self.changed.emit(self.current())
 
-    # ── manage ───────────────────────────────────────────────────────────────
+    # manage
     def _edit_values(self):
         dlg = _ValueListDialog(self.var_name, self.window())
         dlg.exec()
@@ -190,12 +171,9 @@ class _ValueListDialog(QDialog):
 
 
 class VariableListDialog(QDialog):
-    """Add, rename, remove and group annotation variables (the columns,
-    not their values): one list per group - Annotations and Position
-    annotations - with a button to move the selected variable to the other.
-    Renaming only changes the display label - the index column name is
-    left alone, so historical data stays under the name it was written
-    with."""
+    """Add, rename, remove and move annotation variables between the
+    Annotations and Position annotations lists. Renaming changes only the
+    display label; the index column keeps its name."""
 
     def __init__(self, parent=None):
         super().__init__(parent)

@@ -1,32 +1,9 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Central reporting hub - one place every page's report comes from.
-
-Before this module, six pages each built their own report widget in their
-own format: BSM (Analysis and reporting, now Blade strike calculator's
-Advanced analysis), Model training > Evaluate, Model
-prediction > Report, Misclassification, Annotate (a Markdown outlier), plus
-Study design, Raw data processing and Biological interpretation which had
-no report at all. That is one thing to keep consistent per page instead of
-one shared implementation, and it left the "Final reporting" page a stub
-with nothing to build against.
-
-This module is the shared implementation. Each ``ReportSection`` below
-knows how to (a) tell cheaply whether it currently has anything to report,
-and (b) build its HTML body - reusing the exact same primitives
-(``ml_report._kv_table`` / ``_data_table`` / ``_img_tag`` / ``_DARK``) the
-Model prediction and BSM reports already used, so every section looks the
-same regardless of source. ``ml_tab_report.py`` (Model Prediction > Report)
-is the UI: a checklist of these sections and one "Generate report" action
-that calls ``assemble()``.
-
-Every generated report is written under ``OUTPUT_DATA_DIR`` - one place for
-every report's output, rather than each page picking its own folder
-(a user-chosen dialog, a library-relative path, or nothing at all).
+"""Every report in the app: one `ReportSection` per source (BSM, Study
+design, Raw data processing, Annotation, Model training, Misclassification,
+Model deployment, Model prediction, Model comparison), each able to say
+cheaply whether it has anything to report and to build its HTML from
+ml_report's helpers, so all sections look alike. `assemble()` combines the
+chosen sections into one report; ml_tab_report.py is the dialog.
 """
 from datetime import datetime
 from pathlib import Path
@@ -38,12 +15,9 @@ _HR = "<hr style='margin:32px 0;border:none;border-top:2px solid #cbd5e1;'/>"
 
 
 def _nested_deployment_table(deployments, root, di):
-    """One table - deployment identity columns (rowspan across each
-    deployment's own treatment rows) followed by that treatment's own
-    columns - so treatments are nested inside their deployment in the
-    output table itself, rather than a separate table per deployment
-    under a plain heading."""
-    esc, dark, bord = ml_report._esc, ml_report._DARK, ml_report._BORD
+    """One table for every deployment: its identity columns, spanning its
+    treatments' rows, then each treatment's own columns."""
+    esc, dark, bord = ml_report.esc, ml_report.DARK, ml_report.BORD
     dep_headers = [label for _, label in di.DEPLOYMENT_FIELDS]
     tx_headers = [label for _, label in di.TREATMENT_FIELDS] + ["Runs"]
 
@@ -76,14 +50,10 @@ def _nested_deployment_table(deployments, root, di):
 
 
 class ReportSection:
-    """One report source: cheap availability check + HTML body builder.
-
-    ``build(out_dir)`` renders whatever figures it needs into `out_dir` and
-    returns ``{"html": str, "tables": {name: DataFrame}}`` (or ``None`` if,
-    despite `available`, it turns out there is nothing to write). Figures
-    are embedded as base64 directly into the HTML (the same
-    `embed_images=True` convention every existing report builder already
-    uses), so `assemble()` itself never has to know about images.
+    """One report source: `available` (cheap) and `build(out_dir)`, which
+    draws any figures into `out_dir` and returns {"html": str, "tables":
+    {name: DataFrame}}, or None if there turns out to be nothing. Figures are
+    embedded in the HTML as base64.
     """
 
     def __init__(self, key, title, available, reason, build):
@@ -168,12 +138,9 @@ def assemble(sections, out_dir, checked_keys):
     return ml_report.short_path(doc_path), warnings
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# Section factories. Each takes the MainWindow (so it can reach whichever
-# page/state it needs via getattr(..., None) - safe even before every page
-# has finished constructing, since only the *cheap* availability check runs
-# eagerly; `build()` itself is only ever called once the app is fully up).
-# ═════════════════════════════════════════════════════════════════════════════
+# Section factories. Each takes the MainWindow and reaches pages with
+# getattr(..., None): availability is checked while pages may still be
+# under construction; build() only runs once the app is up.
 def bsm_section(window, formats=("png",), dpi=300):
     sens = getattr(window, "bsm_analysis_page", None)
     bsm_state = getattr(window, "bsm_state", None)
@@ -254,10 +221,8 @@ def bsm_section(window, formats=("png",), dpi=300):
 
 
 def study_design_section(window, formats=("png",), dpi=300):
-    # The precision calculator (Study design) always has a value - it
-    # opens with sensible defaults rather than requiring input - so this
-    # section is always available; the deployment plan half is folded in
-    # underneath it only once a library is selected.
+    # always available (the precision calculator has defaults); the
+    # deployment plan is added once a library is selected
     prep = getattr(window, "setup_page", None)
     precision = getattr(prep, "tab_precision", None) if prep is not None else None
     dep = getattr(window, "deployment_page", None)
@@ -268,8 +233,8 @@ def study_design_section(window, formats=("png",), dpi=300):
         if precision is None:
             return None
         from . import deployment_index as di
-        kv, table, esc, dark = (ml_report._kv_table, ml_report._data_table,
-                                ml_report._esc, ml_report._DARK)
+        kv, table, esc, dark = (ml_report.kv_table, ml_report.data_table,
+                                ml_report.esc, ml_report.DARK)
 
         h = ["<div style='font-family:Segoe UI, Arial, sans-serif;"
              "color:#1e293b;font-size:13px;'>"]
@@ -296,7 +261,7 @@ def study_design_section(window, formats=("png",), dpi=300):
             png = bsm_io.save_fixed(fig, fig_dir / "precision_ci_vs_n",
                                     formats, dpi)
             if png:
-                h.append(ml_report._img_tag(
+                h.append(ml_report.img_tag(
                     png, True, width_cm=STUDY_DESIGN_SIZE_CM[0]))
         except Exception as e:
             problems.append(f"precision figure not drawn ({e})")
@@ -370,7 +335,7 @@ def process_section(window):
         files_ = getattr(proc, "_files", None)
         if not files_:
             return None
-        kv, table, dark = ml_report._kv_table, ml_report._data_table, ml_report._DARK
+        kv, table, dark = ml_report.kv_table, ml_report.data_table, ml_report.DARK
         n = len(files_)
         n_complete = sum(1 for f in files_ if f["complete"])
         n_proc = sum(1 for f in files_ if f["processed"])
@@ -410,13 +375,8 @@ def annotation_section(window):
         root = getattr(ann, "_lib_root", None)
         if root is None:
             return None
-        # ann._index_df/_dataset_stems are only ever refreshed when the
-        # Annotate page itself changes library or saves an annotation -
-        # not when some other page (processing, a deployment plan, a
-        # demo run) writes the same index/model_features.csv on disk.
-        # Re-reading here means the report reflects what's actually on
-        # disk right now, not a stale snapshot from whenever Annotate was
-        # last opened.
+        # re-read from disk: Annotate's cached index misses writes made by
+        # other pages (processing, deployment plans, demos)
         if hasattr(ann, "_load_index"):
             ann._load_index()
         if hasattr(ann, "_load_dataset_stems"):
@@ -425,7 +385,7 @@ def annotation_section(window):
         if df is None:
             return None
         from .deployment_index import BAD_SENS_COL
-        kv, table, dark = ml_report._kv_table, ml_report._data_table, ml_report._DARK
+        kv, table, dark = ml_report.kv_table, ml_report.data_table, ml_report.DARK
 
         total = len(df)
         in_dataset = len(ann._dataset_stems)
@@ -462,13 +422,9 @@ def annotation_section(window):
 
 
 def available_model_entries(window):
-    """Every model that can be reported on: this session's freshly
-    trained binary/multiclass (if any) plus every model deployed to the
-    models folder - the same list Evaluate and Misclassification analysis
-    already offer in their own combos. Shared so the Report page's own
-    model checklist and picker (`training_section`/`misclassification_
-    section`) don't depend on whichever model happens to be selected on
-    either of those other pages right now."""
+    """Every model the reports can cover: this session's trained models (if
+    any) and every model deployed to the models folder - the same list
+    Evaluate and Misclassification analysis offer."""
     tp = getattr(window, "ml_training_page", None)
     training_state = getattr(tp, "state", None) if tp is not None else None
     mp = getattr(window, "ml_prediction_page", None)
@@ -502,11 +458,9 @@ def _figure_folder(entry):
 
 
 def training_section(window, get_entries, formats=("png",), dpi=300):
-    """`get_entries()` - a no-arg callable, typically the Export and
-    report dialog's model checklist - returns the `ModelEntry`s to report
-    on, each with its own figures; called at build time, so it reflects
-    the ticks then, not whatever was last opened on Model training >
-    Evaluate."""
+    """`get_entries()` returns the `ModelEntry`s to report on (the Export
+    and report dialog's ticked models), each with its own figures. It is
+    called when the report is built."""
     entries_avail = available_model_entries(window)
     available = bool(entries_avail)
     reason = "" if available else "No trained or deployed models found."
@@ -569,11 +523,9 @@ def with_partner_stage(entry, entries):
 
 
 def misclassification_section(window, get_entry):
-    """The dialog's own model picker - `get_entry()` chooses which model's
-    misclassifications to report, independent of
-    whatever's currently selected on the Misclassification analysis page
-    itself. Reuses that page's own `_misclassified_rows`/`_video_index` so
-    the content matches exactly what it would show for the same model."""
+    """`get_entry()` returns the model whose misclassifications are
+    reported (the dialog's picker, not the Misclassification analysis
+    page's). Uses that page's `_misclassified_rows` and `_video_index`."""
     mis = getattr(window, "misclassification_page", None)
     available = mis is not None and bool(available_model_entries(window))
     reason = "" if available else "No trained or deployed models found."
@@ -593,8 +545,8 @@ def misclassification_section(window, get_entry):
         for r in rows:
             r["video_matches"] = video_index.get(str(r["file"]), [])
 
-        table, esc, dark = (ml_report._data_table, ml_report._esc,
-                            ml_report._DARK)
+        table, esc, dark = (ml_report.data_table, ml_report.esc,
+                            ml_report.DARK)
         h = ["<div style='font-family:Segoe UI, Arial, sans-serif;"
              "color:#1e293b;font-size:13px;'>"]
         h.append(f"<h1 style='color:{dark};'>Misclassification Report</h1>")
@@ -608,9 +560,7 @@ def misclassification_section(window, get_entry):
         h.append(table(["File", "True", "Predicted", "Confidence",
                         "Treatment", "Video"], rows_))
 
-        # session corrections are page-local editing state, not part of
-        # any deployed/session model's own data - only meaningful when
-        # the picked entry is the one actively being corrected right now
+        # this session's corrections apply only to the model being corrected
         if getattr(mis, "_entry", None) is entry_ and getattr(mis, "_corrections", None):
             h.append(f"<h2 style='color:{dark};'>Changes made this "
                      "session</h2>")
@@ -639,7 +589,7 @@ def deployment_summary_section(window):
     def build(out_dir):
         if not entries:
             return None
-        kv, table, dark = ml_report._kv_table, ml_report._data_table, ml_report._DARK
+        kv, table, dark = ml_report.kv_table, ml_report.data_table, ml_report.DARK
         h = ["<div style='font-family:Segoe UI, Arial, sans-serif;"
              "color:#1e293b;font-size:13px;'>"]
         h.append(f"<h1 style='color:{dark};'>Model Deployment Summary</h1>")
@@ -713,7 +663,7 @@ def biological_section(window, formats=("png",), dpi=300):
     def build(out_dir):
         if bio is None:
             return None
-        esc, table, dark = ml_report._esc, ml_report._data_table, ml_report._DARK
+        esc, table, dark = ml_report.esc, ml_report.data_table, ml_report.DARK
         fig_dir = out_dir / "model_comparison_figures"
         fig_dir.mkdir(parents=True, exist_ok=True)
 
@@ -742,7 +692,7 @@ def biological_section(window, formats=("png",), dpi=300):
             cmp_png = bsm_io.save_fixed(fig, fig_dir / "comparison_bars",
                                         formats, dpi)
             if cmp_png:
-                h.append(ml_report._img_tag(cmp_png, True, width_cm=size[0]))
+                h.append(ml_report.img_tag(cmp_png, True, width_cm=size[0]))
             if bio.mortality_items:
                 # the mortality counterpart - same size rule on its own
                 # bar count
@@ -759,7 +709,7 @@ def biological_section(window, formats=("png",), dpi=300):
                              "model's predicted strike rate (with its 95% "
                              "CI) through each species' Blade Strike Model "
                              "injury model.</p>")
-                    h.append(ml_report._img_tag(mort_png, True,
+                    h.append(ml_report.img_tag(mort_png, True,
                                                 width_cm=size[0]))
         except Exception as e:
             problems.append(f"comparison figures not drawn ({e})")
@@ -790,9 +740,7 @@ def all_sections(window, training_entries_getter=None,
         misclass_entry_getter = misclass_entry_getter or (
             (lambda: entries[0]) if entries else (lambda: None))
     return [
-        # study design comes first - it's the one carrying the
-        # library/folder structure/deployments overview, which the user
-        # wants to see ahead of everything else
+        # study design first: it carries the library and deployments overview
         study_design_section(window, formats=formats, dpi=dpi),
         bsm_section(window, formats=formats, dpi=dpi),
         process_section(window),

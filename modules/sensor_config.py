@@ -1,79 +1,64 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Sensor configurations - one source of truth for how a device's raw files
-are named, paired, parsed and brought onto a common time base.
+"""Sensor configurations: how a device's raw files are named, paired,
+parsed and brought onto a common time base.
 
 A configuration is data: the timestamp clock, the output rate, the files
 that make one recording with their packet sizes and native rates, the
-channel list and the parser. Pages read the *selected* configuration, so
-choosing a different sensor in Setup and deploy > Sensor configuration
-changes raw import and the rate the processed signals are assumed to be at.
+channel list and the parser. Pages read the *selected* configuration
+(Setup and deploy > Sensor configuration), except where a deployment has
+its own saved.
 
 Rates
 -----
-Three different rates matter, and conflating them is the easy mistake:
-
 ``timebase_hz``
-    Ticks per second of the raw counter in the file. Dividing the counter by
-    it gives seconds. RAPID stamps both files from one 2000 Hz clock.
+    Ticks per second of the raw counter; counter / timebase = seconds.
+    RAPID stamps both files from one 2000 Hz clock.
 
 ``native_rate_hz`` (per file)
-    How fast that file's channels actually arrive. For RAPID the .imp block
-    (IMU, pressure, temperature, battery) is 100 Hz and the .hig block is
-    2000 Hz but event-triggered, so it is sparse rather than continuous.
+    How fast that file's channels arrive. RAPID's .imp block (IMU,
+    pressure, temperature, battery) is 100 Hz; its .hig block is 2000 Hz
+    but event-triggered, so sparse.
 
 ``output_rate_hz``
     The uniform grid the processed CSV is written on - 2000 Hz for RAPID.
 
 A device whose files state their own rate (the EEL tag's HIG header) is
-written at the rate of each recording instead, whatever is configured here:
-``SensorConfig.recording_rate`` answers for any recording. Later stages read
-the rate from the processed data itself (recording_rate.py).
+written at each recording's rate instead: ``SensorConfig.recording_rate``
+answers for any recording, and later stages read the rate from the
+processed data (recording_rate.py).
 
-A file's ``method`` says how it gets onto that grid. The 100 Hz .imp
-channels are interpolated up to 2000 Hz. The .hig channels are already at 2000 Hz
-but arrive in bursts around events (about 29% of a typical run, with gaps
-of up to 13 seconds), so they are *standardised*: each recorded sample goes
-into its own slot and every slot the device did not write is set to 0. The
-result is a continuous 2000 Hz series that reads as zero where nothing was
-recorded, which is honest in a way that interpolating across a 13-second
-gap would not be.
+A file's ``method`` says how it reaches the grid. RAPID's .imp channels are
+interpolated up to 2000 Hz. Its .hig channels arrive in bursts around
+events (about 29% of a typical run, with gaps of up to 13 s), so they are
+*standardised*: each recorded sample goes into its own slot and every
+other slot is 0, rather than interpolating across the gaps.
 
 Computed channels
 -----------------
-``magnitudes`` lists which three-axis sensors get a magnitude column -
-``higacc_mag_g``, ``inacc_mag_ms`` (minus g) and ``rot_mag_degs``. All
-three by default. ``nadir_method`` names the passage-nadir detector in
-``rapid_functions.NADIR_METHODS``.
+``magnitudes`` lists the three-axis sensors that get a magnitude column -
+``higacc_mag_g``, ``inacc_mag_ms`` (minus g) and ``rot_mag_degs``; all
+three by default. ``nadir_method`` names the nadir detector in
+``rapid_functions.NADIR_METHODS``: by default the lowest pressure just
+before pressure steps up through the pump, falling back to the lowest
+pressure near the acceleration peak for a recording with no such step.
 
 Adding a sensor
 ---------------
-Two ways, neither of which needs a code change to the pages:
-
 1. In the app: Setup and deploy > Sensor configuration > New / Duplicate,
-   then Save.
-   User configurations are written to the JSON file returned by
-   ``config_path()`` and are read back on the next start.
-
-2. In this file: add a dict to ``BUILTIN``. Built-in configurations always
-   exist, can be edited (the edit is saved as an override) and can be put
-   back with ``reset_to_builtin()``.
+   then Save. User configurations are written to the settings file and
+   read back on the next start.
+2. In code: add a dict to ``BUILTIN``. Built-ins can be edited (saved as
+   an override) and put back with ``reset_to_builtin()``.
 
 Adding a parser
 ---------------
-A configuration names its parser. ``PARSERS`` maps that name to a callable
+``PARSERS`` maps a configuration's parser name to
 
     parser(paths, out_dir, config) -> (DataFrame, summary_dict)
 
-where ``paths`` maps a lowercase file extension to the raw file for one
-recording (``{".imp": Path(...), ".hig": Path(...)}`` for RAPID), ``out_dir``
-is the library's ``processed_sens_data`` folder and ``config`` is the
-SensorConfig in use. This is the single code point a new device needs:
-write the reader, register it here, and point a configuration at it.
+where ``paths`` maps a lower-case extension to that recording's raw file
+(``{".imp": Path(...), ".hig": Path(...)}`` for RAPID), ``out_dir`` is the
+library's ``processed_sens_data`` folder and ``config`` the SensorConfig in
+use. A new device needs only its reader, registered here.
 """
 import re
 from dataclasses import asdict, dataclass, field
@@ -121,10 +106,24 @@ MAGNITUDE_LABELS = {
 # parser can be loaded on its own; this is the list Sensor configuration shows
 # and the default a new configuration takes.
 NADIR_METHOD_LABELS = {
-    "pressure_min_near_peak":
-        "Pressure minimum near the acceleration peak (current)",
+    "pressure_step":
+        "Pressure step at the pump (else near the acceleration peak)",
+    "pressure_near_peak":
+        "Lowest pressure near the acceleration peak",
 }
-DEFAULT_NADIR_METHOD = "pressure_min_near_peak"
+DEFAULT_NADIR_METHOD = "pressure_step"
+# what each does, under the list in Sensor configuration
+NADIR_METHOD_NOTES = {
+    "pressure_step":
+        "The lowest pressure just before pressure steps up through the "
+        "pump. A recording with no such step falls back to the lowest "
+        "pressure within 1.5 s of its largest acceleration.",
+    "pressure_near_peak":
+        "The lowest pressure within 1.5 s of the recording's largest "
+        "acceleration.",
+}
+# the one method there was before the pressure step; it is the step's fallback
+_FORMER_NADIR_METHOD = "pressure_min_near_peak"
 
 # How a file's channels reach the output grid.
 #
@@ -145,7 +144,7 @@ METHODS = [
 _SECTION = "sensor_configs"
 
 
-# ── one raw file within a recording ──────────────────────────────────────────
+# one raw file within a recording
 @dataclass
 class SensorSource:
     """One of the raw files that together make a recording."""
@@ -173,7 +172,7 @@ class SensorSource:
                 f"{output_rate:g} Hz grid")
 
 
-# ── the configuration record ─────────────────────────────────────────────────
+# the configuration record
 @dataclass
 class SensorConfig:
     """Everything about a sensor that raw import and processing depend on."""
@@ -206,7 +205,7 @@ class SensorConfig:
     # the code point for the device's reader (see PARSERS)
     parser: str = "rapid_imp_hig"
 
-    # ── derived values ──────────────────────────────────────────────────────
+    # derived values
     @property
     def files_per_recording(self) -> int:
         return len(self.sources)
@@ -281,7 +280,7 @@ class SensorConfig:
             return "No raw files defined."
         return "; ".join(s.describe(self.output_rate_hz) for s in self.sources)
 
-    # ── serialisation ───────────────────────────────────────────────────────
+    # serialisation
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -303,7 +302,7 @@ class SensorConfig:
         data.update(changes)
         return SensorConfig.from_dict(data)
 
-    # ── validation ──────────────────────────────────────────────────────────
+    # validation
     def problems(self) -> list:
         """Human-readable reasons this configuration cannot be used."""
         out = []
@@ -330,14 +329,13 @@ class SensorConfig:
 
 
 def _upgrade(data: dict) -> dict:
-    """Bring a stored configuration up to the current shape.
-
-    The first version of this file described a sensor with one
-    ``sampling_rate_hz`` plus an optional resample, which could not say that
-    RAPID's .imp channels arrive at 100 Hz and are interpolated up to the
-    2000 Hz grid. Old records are read into the rates-and-sources shape so a
-    user's saved sensors survive the change.
+    """Bring a saved configuration up to date: the nadir method saved
+    before the pressure step existed becomes the pressure step (which falls
+    back to it), and the first format (one ``sampling_rate_hz`` plus an
+    optional resample) is read into the rates-and-sources shape.
     """
+    if data.get("nadir_method") == _FORMER_NADIR_METHOD:
+        data["nadir_method"] = DEFAULT_NADIR_METHOD
     if "sources" in data or "sampling_rate_hz" not in data:
         return data
 
@@ -362,7 +360,7 @@ def _upgrade(data: dict) -> dict:
     return data
 
 
-# ── shipped configurations ───────────────────────────────────────────────────
+# shipped configurations
 # Add a dict here to ship a third sensor. Nothing else in the app needs to
 # change, other than registering its parser in PARSERS below.
 BUILTIN = {
@@ -416,16 +414,13 @@ BUILTIN = {
 DEFAULT_KEY = "rapid"
 
 
-# ── parsers ──────────────────────────────────────────────────────────────────
+# parsers
 _rapid_module = None
 
 
 def _load_rapid_module():
-    """Import rapid_functions, once, on first use.
-
-    Imported on first use so a session that never processes anything
-    doesn't load scipy.
-    """
+    """Import rapid_functions on first use, so a session that never
+    processes anything doesn't load scipy."""
     global _rapid_module
     if _rapid_module is None:
         from . import rapid_functions
@@ -476,21 +471,11 @@ RATE_READERS = {
 }
 
 
-def register_parser(name, fn):
-    """Register a device reader under `name` (see the module docstring)."""
-    PARSERS[name] = fn
-
-
 def get_parser(name):
     return PARSERS.get(name, _parse_unconfigured)
 
 
-# ── resampling ───────────────────────────────────────────────────────────────
-_INTERP_KIND = {"linear": "linear", "cubic": "cubic",
-                "nearest": "nearest", "previous": "previous"}
-
-
-# ── change notification ──────────────────────────────────────────────────────
+# change notification
 class _Notifier(QObject):
     """Emits when the selected configuration changes or is edited."""
     changed = Signal(str)          # key of the selected configuration
@@ -499,7 +484,7 @@ class _Notifier(QObject):
 notifier = _Notifier()
 
 
-# ── store ────────────────────────────────────────────────────────────────────
+# store
 _store = None                      # {"active": key, "configs": {key: cfg}}
 
 
@@ -540,12 +525,9 @@ def _is_unmodified_builtin(cfg) -> bool:
 
 
 def _write():
-    """Persist the choice, and any configuration that differs from default.
-
-    A shipped configuration is only written out once it has actually been
-    edited. Storing an untouched copy would freeze it: a later release
-    improving RAPID's description or adding a field would be shadowed by the
-    stale copy on disk, and the user would never see the change.
+    """Save the selection and any configuration that differs from its
+    built-in. Untouched built-ins aren't written, so later changes to them in
+    code still apply.
     """
     store = _load()
     payload = {

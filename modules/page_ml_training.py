@@ -1,18 +1,4 @@
-# ///////////////////////////////////////////////////////////////
-#
-# StrikeWorks - data extraction, validation, processing and model
-# development tool for underwater passive sensor devices.
-#
-# ///////////////////////////////////////////////////////////////
-"""Model training: Train (with model deployment) and Evaluate (the
-sidebar picks the tab).
-
-Owns the single shared TrainingState.
-
-The tabs enforce the scientific workflow: configure and cross-validate the
-run on Train, review the evaluation, then explicitly accept it by training
-and deploying the final models. Deployed models land in the models folder
-Model Prediction auto-discovers.
+"""Model training: the Train and Evaluate tabs on one shared TrainingState.
 """
 from PySide6.QtCore import Signal
 
@@ -46,6 +32,6 @@ class MLTrainingPage(TabbedPage):
         self.state.deployed.connect(
             lambda _p: self.tab_evaluate.reload_sources())
 
-    # ── cross-page navigation ────────────────────────────────────────────────
+    # cross-page navigation
     def goto_evaluate(self):
         self.main_window.navigate_to("btn_evaluate_train")
